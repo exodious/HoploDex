@@ -215,4 +215,26 @@ describe("CreateDatabaseDialog (contracts/ui-databases.md §2)", () => {
     expect(await screen.findByText(/already exists in that folder/)).toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toHaveAttribute("aria-invalid", "true");
   });
+
+  // Issue #110: a full disk is told as it is, in the banner, with the form kept.
+  it("shows what to do when the disk is full, and keeps the form for another try", async () => {
+    const user = userEvent.setup();
+    const message =
+      "The disk is full. Free some space on the drive that holds /home/sam/Documents/HoploDex/My collection.hoplodex, then try again.";
+    onCreate.mockRejectedValue(
+      new CommandFailure({
+        code: "DISK_FULL",
+        message,
+        details: { path: "/home/sam/Documents/HoploDex/My collection.hoplodex" },
+      }),
+    );
+    const { onOpenChange } = renderDialog(onCreate);
+    await fillPassphrases(user, PASSPHRASE);
+    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
+    await user.click(createButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toHaveValue("My collection");
+  });
 });

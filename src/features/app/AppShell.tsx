@@ -286,7 +286,7 @@ export function AppShell() {
               aria-label="HoploDex — go to the collection"
             >
               <BrandMark />
-              <span className="hd-brand__name">HoploDex</span>
+              <span className="hd-brand__name hd-brand__name--wide">HoploDex</span>
             </button>
 
             <nav className="hd-tabs" aria-label="Sections">
@@ -327,11 +327,28 @@ export function AppShell() {
 
             <div className="hd-topbar__tools">
               <DatabaseMenu />
-              <Button variant="ghost" size="sm" icon="download" onClick={() => setDialog("import")}>
-                Import
+              {/* Below 900px the words hide and these are icons, so the bar
+                  stays in one row at the window's minimum width (#108); the
+                  title is the tooltip. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="download"
+                className="hd-topbar__tool"
+                title="Import"
+                onClick={() => setDialog("import")}
+              >
+                <span className="hd-topbar__tool-label">Import</span>
               </Button>
-              <Button variant="ghost" size="sm" icon="upload" onClick={() => setDialog("export")}>
-                Export
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="upload"
+                className="hd-topbar__tool"
+                title="Export"
+                onClick={() => setDialog("export")}
+              >
+                <span className="hd-topbar__tool-label">Export</span>
               </Button>
               <ThemeToggle />
             </div>

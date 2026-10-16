@@ -470,6 +470,11 @@ for (const theme of ["Light", "Dark"] as const) {
       await $$(".hd-row__name")[0].waitForExist();
       await shot(`01-collection-list-${suffix}`);
 
+      // The window's minimum width: the top bar fits in one row (#108).
+      await resizeWindow(800, SCREENSHOT_WINDOW.height);
+      await shot(`88-collection-list-minimum-width-${suffix}`);
+      await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
+
       await choose("Tiles");
       await $$(".hd-tile__name")[0].waitForExist();
       await shot(`02-collection-tiles-${suffix}`);
@@ -681,6 +686,10 @@ for (const theme of ["Light", "Dark"] as const) {
       await groupBy("Type");
       // #51: one table, its heading and the current group's title sticky.
       await shotStuckRows(`86-grouped-list-sticky-rows-${suffix}`);
+      // The same list at the minimum width: nothing in the table is cut off (#108).
+      await resizeWindow(800, SCREENSHOT_WINDOW.height);
+      await shot(`89-grouped-list-minimum-width-${suffix}`);
+      await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
 
       await choose("Tiles");
       await $$(".hd-tile__name")[0].waitForExist();
@@ -715,6 +724,9 @@ for (const theme of ["Light", "Dark"] as const) {
       await groupBy("Kind");
       await $$("h2.hd-group__title")[0].waitForExist();
       await shotStuckRows(`87-accessories-grouped-list-sticky-rows-${suffix}`);
+      await resizeWindow(800, SCREENSHOT_WINDOW.height);
+      await shot(`90-accessories-list-minimum-width-${suffix}`);
+      await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
     });
 
     it("the accessory form", async () => {

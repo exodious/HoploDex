@@ -28,6 +28,14 @@
 //   real_input scroll X Y N    wheel N notches at X Y (negative: down)
 //   real_input menu PID        the PID's menu bar items, as paths,
 //                                   with any disabled ones marked
+//   real_input activate PID    make the PID's app the frontmost one
+//   real_input quit PID [WHY]  send the PID's app the quit Apple Event, as
+//                                   the Dock's Quit does (to that process only);
+//                                   with a four-letter WHY (rlgo, rest, shut...),
+//                                   its kAEQuitReason, as loginwindow sends
+//                                   one when a log out, restart or shut down
+//                                   asks every application to quit
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -176,7 +184,34 @@ case "press":
         }
     }
     print(pressed ? "pressed" : "not found")
+case "activate":
+    guard let app = NSRunningApplication(processIdentifier: Int32(args[2])!) else { exit(1) }
+    app.activate(options: [.activateAllWindows])
+    usleep(300_000)
+case "quit":
+    guard let pid = Int32(args[2]), let app = NSRunningApplication(processIdentifier: pid)
+    else { exit(1) }
+    if args.count > 3 {
+        // The event itself, with the reason loginwindow adds, addressed to
+        // this process alone, and sent without waiting for a reply (the app
+        // answers it once it has closed).
+        func code(_ text: String) -> OSType { text.utf8.reduce(0) { ($0 << 8) | OSType($1) } }
+        let event = NSAppleEventDescriptor(
+            eventClass: code("aevt"), eventID: code("quit"),
+            targetDescriptor: NSAppleEventDescriptor(processIdentifier: pid),
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID))
+        event.setParam(NSAppleEventDescriptor(enumCode: code(args[3])), forKeyword: code("why?"))
+        let status = AESendMessage(event.aeDesc!, nil, AESendMode(kAENoReply), 5 * 60)
+        print(status == noErr ? "sent" : "not sent (\(status))")
+    } else {
+        // NSRunningApplication.terminate() sends the application a quit Apple
+        // Event (kAEQuitApplication), which AppKit answers with terminate:,
+        // as for the Dock's Quit. It names one process, so nothing else is
+        // asked.
+        print(app.terminate() ? "sent" : "not sent")
+    }
 default:
-    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [MODS] | xbutton X Y back|forward | windows PID | menu PID\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [MODS] | xbutton X Y back|forward | windows PID | menu PID | activate PID | quit PID [WHY]\n".data(using: .utf8)!)
     exit(2)
 }

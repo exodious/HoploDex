@@ -26,6 +26,17 @@ import { repoRoot, seedBinary } from "./build";
 interface SandboxState {
   dir: string | undefined;
 }
+/** The name every sandbox directory starts with, in the system's temp folder
+ * (`fs.mkdtempSync` adds six random letters and digits). */
+export const SANDBOX_PREFIX = "hoplodex-e2e-";
+
+/** The file the harness writes into a sandbox when it makes it: the process
+ * id of the process that owns it. Only a directory that has one is a
+ * sandbox for {@link sweepStaleSandboxes}; the prefix alone is not enough
+ * (us13 writes plain files named `hoplodex-e2e-screen-<pid>.png` into the same
+ * folder). {@link removeSandbox} deletes it last. */
+export const OWNER_MARKER = ".hoplodex-e2e-owner";
+
 const stateKey = Symbol.for("io.github.exodious.HoploDex.e2e.sandbox");
 const globals = globalThis as { [stateKey]?: SandboxState };
 const state: SandboxState = (globals[stateKey] ??= { dir: undefined });
@@ -66,8 +77,11 @@ export const SHADER_CACHE = path.join(repoRoot, "node_modules", ".cache", "hoplo
  * Returns the sandbox's directory.
  */
 export function isolateAppData(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
   state.dir = root;
+  // Says whose sandbox this is, so a later run can tell it from one still in
+  // use and sweep it if this process never got to removeSandbox() (#111).
+  fs.writeFileSync(path.join(root, OWNER_MARKER), `${process.pid}\n`);
   const [data, cache, config, documents] = ["data", "cache", "config", "documents"].map((name) => {
     const dir = path.join(root, name);
     fs.mkdirSync(dir, { recursive: true });
@@ -188,16 +202,142 @@ export function seedCollection(options: { pendingFrom?: string } = {}): string {
   return passphrase;
 }
 
-/** Removes the sandbox. The app and its webview may still be shutting down,
- * and write cache files as they go, so removing the directory once can leave
- * some behind: it removes at once, and waits only before trying again. */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Removes the directory `root`, retrying for up to `timeoutMs` ms, and
+ * returns whether it is gone. The app's processes may still be shutting down
+ * (on Windows, WebView2's browser process keeps its user data folder open for
+ * a moment after the app that started it is gone, and `rmSync` then throws
+ * EPERM or EBUSY rather than returning), and write cache files as they go.
+ *
+ * The owner marker goes last, so a directory that can't be removed yet is
+ * still one a later run knows to sweep (it is put back if the final step
+ * fails after it went).
+ */
+async function removeDirectory(root: string, timeoutMs: number): Promise<boolean> {
+  const marker = path.join(root, OWNER_MARKER);
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown;
+  for (let delay = 50; ; delay = Math.min(delay * 2, 1000)) {
+    try {
+      if (!fs.existsSync(root)) return true;
+      for (const name of fs.readdirSync(root)) {
+        if (name !== OWNER_MARKER)
+          fs.rmSync(path.join(root, name), { recursive: true, force: true });
+      }
+      fs.rmSync(marker, { force: true });
+      try {
+        fs.rmdirSync(root);
+      } catch (error) {
+        if (!fs.existsSync(marker) && fs.existsSync(root)) {
+          fs.writeFileSync(marker, `${process.pid}\n`);
+        }
+        throw error;
+      }
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+      lastError = error;
+    }
+    if (Date.now() >= deadline) break;
+    await sleep(delay);
+  }
+  console.warn(
+    `Could not remove the E2E sandbox ${root} after ${timeoutMs} ms; the next run will sweep it ` +
+      `once this process has exited (${lastError instanceof Error ? lastError.message : lastError})`,
+  );
+  return false;
+}
+
+/** How long {@link removeSandbox} keeps trying. A tree-killed app's
+ * WebView2 releases its folder within a second; this is for a slow disk or a
+ * virus scanner, and it is only spent when something holds the folder. */
+const REMOVE_TIMEOUT_MS = 30_000;
+
+/** Removes the sandbox. It tries again for up to 30 s, and logs a sandbox it
+ * could not remove rather than dropping it silently. */
 export async function removeSandbox() {
   const root = state.dir;
   if (!root) return;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 500));
-    fs.rmSync(root, { recursive: true, force: true });
-    if (!fs.existsSync(root)) break;
-  }
   state.dir = undefined;
+  await removeDirectory(root, REMOVE_TIMEOUT_MS);
+}
+
+/** Whether a process with this id is running. Not being allowed to signal it
+ * (EPERM) means it is. */
+export function processRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+/** The owner marker's process id, or undefined if `dir` has no readable one. */
+function ownerOf(dir: string): number | undefined {
+  try {
+    const marker = path.join(dir, OWNER_MARKER);
+    if (!fs.lstatSync(marker).isFile()) return undefined;
+    const text = fs.readFileSync(marker, "utf-8").trim();
+    return /^\d{1,10}$/.test(text) && Number(text) > 0 ? Number(text) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The sandboxes in `parent` that an earlier run left behind: a real
+ * directory (not a link) directly in it, named {@link SANDBOX_PREFIX} and six
+ * letters or digits, that holds an owner marker (a plain file) whose process
+ * is no longer running. Anything else is not ours and is never listed: a
+ * file, a folder without a marker, a sandbox whose owner still runs (another
+ * worker of this run, a `npm run session` or another run entirely), and one
+ * this process owns.
+ */
+export function findStaleSandboxes(
+  parent: string = os.tmpdir(),
+  isRunning: (pid: number) => boolean = processRunning,
+): string[] {
+  const name = new RegExp(`^${SANDBOX_PREFIX}[A-Za-z0-9]{6}$`);
+  const stale: string[] = [];
+  for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !name.test(entry.name)) continue;
+    const dir = path.join(parent, entry.name);
+    const owner = ownerOf(dir);
+    if (owner === undefined || owner === process.pid || isRunning(owner)) continue;
+    stale.push(dir);
+  }
+  return stale;
+}
+
+/**
+ * Removes the sandboxes earlier, interrupted runs left in the system's temp
+ * folder (a Ctrl+C, a crashed worker or a closed session never reaches
+ * {@link removeSandbox}), at the start of a run (#111). It logs each one it
+ * removes and each one it could not (something still holds it); it never
+ * throws, so a run isn't stopped by an old folder. Safe beside other runs:
+ * see {@link findStaleSandboxes}.
+ */
+export async function sweepStaleSandboxes(
+  parent: string = os.tmpdir(),
+  isRunning: (pid: number) => boolean = processRunning,
+  timeoutMs = 5000,
+): Promise<{ removed: string[]; kept: string[] }> {
+  const removed: string[] = [];
+  const kept: string[] = [];
+  let stale: string[] = [];
+  try {
+    stale = findStaleSandboxes(parent, isRunning);
+  } catch (error) {
+    console.warn(`Could not look for old E2E sandboxes in ${parent}: ${String(error)}`);
+  }
+  for (const dir of stale) {
+    ((await removeDirectory(dir, timeoutMs)) ? removed : kept).push(dir);
+  }
+  if (removed.length > 0) {
+    console.log(`Removed ${removed.length} E2E sandbox(es) an earlier run left behind.`);
+  }
+  return { removed, kept };
 }

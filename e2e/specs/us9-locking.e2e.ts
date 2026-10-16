@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { killApp, relaunchApp } from "../support/app";
+import { appPid, killApp, relaunchApp, waitForAppToQuit } from "../support/app";
+import { sendLogOutQuitEvent, skipWithoutMacInput } from "../support/macInput";
 import { realKey, skipWithoutRealInput } from "../support/realInput";
 import { sandboxPath, seedCollection } from "../support/sandbox";
 import {
@@ -17,6 +18,7 @@ import {
   expect,
   fieldValue,
   fill,
+  openFirearm,
   scratchDocuments,
   selectChooserRow,
   selectOption,
@@ -153,6 +155,37 @@ describe("User Story 6 (003) - Lock the Application When I Step Away", () => {
     });
 
     expect(await chooserSays("HoploDex locked “Locked” after 1 minute without use.")).toBe(true);
+  });
+
+  // FR-039, #107: on macOS a log out, restart or shut down asks every
+  // application to quit with the quit Apple Event and a reason. Cancelling it
+  // (as a user's Quit is, to ask about unsaved changes) cancels the log out.
+  it("quits at once for a log out's quit event, keeping unsaved input as pending changes (macOS)", async function () {
+    skipWithoutMacInput(this);
+    // The idle lock above left the chooser.
+    await submitPassphrase(E2E_PASSPHRASE);
+    await $('nav[aria-label="Sections"]').waitForExist();
+    // The open lands on the collection list, not on the record.
+    await openFirearm(`${firearm.make} ${firearm.model}`);
+    await editNotes("typed before the log out");
+
+    // The quit loginwindow sends, to this process only.
+    sendLogOutQuitEvent(appPid());
+    // The process ends without the unsaved-changes question being answered.
+    await waitForAppToQuit(15000);
+
+    await relaunchApp();
+    await browser.waitUntil(
+      async () => (await browser.execute(() => document.readyState)) === "complete",
+      { timeout: 10000, timeoutMsg: "the relaunched app never finished loading" },
+    );
+    await waitForChooser();
+    await submitPassphrase(E2E_PASSPHRASE);
+    expect(await pendingQuestion()).toContain("Your changes were kept.");
+    await clickButton("Resume editing");
+    await dialogTitled(`Edit ${firearm.make} ${firearm.model}`);
+    expect(await fieldValue("Notes")).toBe("typed before the log out");
+    await clickButton("Cancel");
   });
 });
 

@@ -12,6 +12,7 @@ import {
   isolateAppData,
   removeSandbox,
   seedCollection,
+  sweepStaleSandboxes,
 } from "./support/sandbox";
 
 // The E2E build (support/build.ts) is `cargo build --profile e2e --features
@@ -114,8 +115,18 @@ export const config: WebdriverIO.Config = {
   // exit: WebdriverIO stops for an instance of webdriverio's
   // SevereServiceError and only logs anything else this hook throws, even an
   // Error named so (#92).
-  onPrepare: () => {
+  onPrepare: async () => {
+    // Sandboxes an interrupted run left in the temp folder (#111).
+    await sweepStaleSandboxes();
     if (!buildApp()) throw new SevereServiceError("building the app for E2E failed");
+  },
+
+  // A worker that ends without reaching afterSession (WebdriverIO gives up
+  // on a session whose app died, say) leaves its sandbox; every worker is gone
+  // by now, so the run's own leftovers are swept here, and an interrupted
+  // run's at the start of the next (#111).
+  onComplete: async () => {
+    await sweepStaleSandboxes(undefined, undefined, 15_000);
   },
 
   beforeSession: async (config, _capabilities, specs, cid) => {

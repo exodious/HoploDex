@@ -371,6 +371,10 @@ describe("DatabaseChooser (User Story 2)", () => {
       "HoploDex can't read “Main collection”: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed.",
     ],
     ["DATABASE_DAMAGED", "“Main collection” is damaged and can't be opened."],
+    [
+      "DISK_FULL",
+      "The disk is full, so HoploDex couldn't open “Main collection”. Free some space on the drive that holds it, then try again. The file has not been changed.",
+    ],
   ])("explains %s below the passphrase, which stays for another try", async (code, text) => {
     const user = userEvent.setup();
     renderChooser({ openDatabase: failing(code) });
@@ -578,6 +582,10 @@ describe("DatabaseChooser (User Story 2)", () => {
     [
       { kind: "backupFailed", databasePath: main.path, reason: "databaseUnreachable" } as const,
       "“Main collection” was not backed up: its file could not be reached. Its changes will be backed up at the next close.",
+    ],
+    [
+      { kind: "backupFailed", databasePath: main.path, reason: "insufficientSpace" } as const,
+      "“Main collection” was not backed up: there isn't enough free space on the drive that holds the backups. Free some space on it, or change the backup location. Its changes will be backed up at the next close.",
     ],
     [
       { kind: "closed", databasePath: main.path, reason: "lockedByUser" } as const,

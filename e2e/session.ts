@@ -10,6 +10,7 @@ import {
   isolateAppData,
   removeSandbox,
   seedCollection,
+  sweepStaleSandboxes,
 } from "./support/sandbox";
 
 /**
@@ -155,6 +156,9 @@ async function main() {
 
   console.log("Building the E2E app (run `npm run build` first if the frontend changed)...");
   if (!buildApp()) throw new Error("building the app for E2E failed");
+
+  // Sandboxes an interrupted run or session left in the temp folder (#111).
+  await sweepStaleSandboxes();
 
   const stopped = interrupted();
   const ended = { value: false };

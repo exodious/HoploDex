@@ -17,6 +17,9 @@ mod macos;
 #[cfg(target_os = "macos")]
 #[doc(hidden)]
 pub use macos::observe_notifications;
+/// Makes macOS's `terminate:` ask before ending the app (#107).
+#[cfg(target_os = "macos")]
+pub use macos::{QuitSource, Termination, ask_before_terminate, reply_to_terminate};
 #[cfg(windows)]
 mod windows;
 

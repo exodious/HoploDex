@@ -11,6 +11,7 @@ import {
   listedNames,
 } from "../support/ui";
 import { createDatabase, invokeCommand, search } from "../support/ui";
+import { resizeWindow } from "../support/screenshots";
 
 /**
  * End-to-end coverage of User Story 2's acceptance scenarios (spec.md),
@@ -187,5 +188,71 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     expect(Math.abs(stuck.headTop - stuck.topbar)).toBeLessThanOrEqual(1);
     expect(stuck.headCovered).toBe(false);
     expect(stuck.groupAtTop).toBe(stuck.secondTitle);
+  });
+
+  // #108: the window's minimum width is 800px (main.rs); the top bar used to
+  // run past it, so the page scrolled sideways. Last in the file because it
+  // rewrites the tab counts in place to the widest ones a person could see.
+  it("keeps the top bar and the page inside the window at its minimum width (#108)", async () => {
+    // getWindowSize reports no height without screenshots' window manager
+    // setup, so the size to restore is the page's own.
+    const [width, height] = await browser.execute(() => [window.innerWidth, window.innerHeight]);
+    const original = { width, height };
+    await resizeWindow(800, original.height);
+    try {
+      const fit = await browser.execute(() => {
+        for (const count of document.querySelectorAll(".hd-tab__count")) count.textContent = "9999";
+        const insurance = [...document.querySelectorAll(".hd-tab")].find((tab) =>
+          tab.textContent?.startsWith("Insurance"),
+        )!;
+        if (!insurance.querySelector(".hd-tab__alert")) {
+          const alert = document.createElement("span");
+          alert.className = "hd-tab__alert hd-num";
+          alert.textContent = "9999";
+          insurance.append(alert);
+        }
+        // The widest Coverage pill, in the first row: the table used to cut
+        // it off at its right edge.
+        const coverage = document.querySelector(".hd-table td.hd-col--coverage");
+        coverage?.replaceChildren();
+        const pill = document.createElement("span");
+        pill.className = "hd-badge hd-badge--warn";
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("width", "16");
+        icon.setAttribute("height", "16");
+        pill.append(icon, "Under-insured");
+        coverage?.append(pill);
+        const table = document.querySelector(".hd-table")!.getBoundingClientRect();
+        const clipped = [...document.querySelectorAll<HTMLElement>(".hd-table td, .hd-table th")]
+          .filter((cell) => cell.scrollWidth > cell.clientWidth)
+          .map((cell) => `${cell.className}: ${cell.textContent?.slice(0, 30)}`);
+        const inner = document.querySelector<HTMLElement>(".hd-topbar__inner")!;
+        return {
+          clipped,
+          // The columns together fill the table (a group title that spanned
+          // the hidden columns made the table add one of its own).
+          headRight: [...document.querySelectorAll(".hd-table th")]
+            .filter((th) => getComputedStyle(th).display !== "none")
+            .reduce((right, th) => Math.max(right, th.getBoundingClientRect().right), 0),
+          pillRight: pill.getBoundingClientRect().right,
+          tableRight: table.right,
+          innerWidth: window.innerWidth,
+          pageWidth: document.documentElement.scrollWidth,
+          barWidth: inner.scrollWidth,
+          barClient: inner.clientWidth,
+          wordmark: getComputedStyle(document.querySelector(".hd-brand__name")!).display,
+        };
+      });
+      expect(fit.innerWidth).toBeLessThan(900);
+      expect(fit.pageWidth).toBeLessThanOrEqual(fit.innerWidth);
+      expect(fit.barWidth).toBeLessThanOrEqual(fit.barClient);
+      expect(fit.wordmark).toBe("none");
+      // And nothing in the collection table is cut off at that width.
+      expect(fit.clipped).toEqual([]);
+      expect(fit.pillRight).toBeLessThanOrEqual(fit.tableRight);
+      expect(fit.headRight).toBeGreaterThanOrEqual(fit.tableRight - 2);
+    } finally {
+      await resizeWindow(original.width, original.height);
+    }
   });
 });

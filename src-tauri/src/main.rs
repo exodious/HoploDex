@@ -45,16 +45,30 @@ const QUIT_REQUESTED: &str = "app:quit-requested";
 /// is let through rather than asked about (research.md §17).
 static OS_ENDING: AtomicBool = AtomicBool::new(false);
 
+/// Asks the frontend to quit: the unsaved-changes question first, then
+/// `quit_application` (research.md §17).
+fn request_quit(app: &AppHandle) {
+    if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
+        log::warn!("could not emit {QUIT_REQUESTED}: {err}");
+    }
+}
+
 /// The OS ends the application (FR-039): the open database closes at once,
 /// keeping unsaved input as pending changes before the key is cleared and
-/// decrypted document copies are deleted, with no backup; then it exits.
-fn end_for_the_os(app: &AppHandle) {
+/// decrypted document copies are deleted, with no backup. Safe to run twice
+/// at once (the second waits for the first's close).
+fn close_for_the_os(app: &AppHandle) {
     OS_ENDING.store(true, Ordering::SeqCst);
     // The session's close ends the preview first (the PDF surface is closed
     // and the helper killed), then the copies the PDF viewer left on macOS
     // are swept (FR-003a, research.md §7).
     lifecycle::will_shut_down(&app.state::<Session>(), &app.state::<MachineSettings>());
     app.state::<MachineSettings>().sweep_hold_leftovers();
+}
+
+/// [`close_for_the_os`], then the app exits.
+fn end_for_the_os(app: &AppHandle) {
+    close_for_the_os(app);
     app.exit(0);
 }
 
@@ -175,7 +189,7 @@ fn main() {
     // script in the page, so it must never reach a shipped build.
     #[cfg(feature = "e2e")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
-    builder
+    let app = builder
         // The PDF surface's documents, from memory (research.md §4).
         .register_asynchronous_uri_scheme_protocol(
             protocol_handler::SCHEME,
@@ -292,9 +306,7 @@ fn main() {
             // about first, and the database is closed normally.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                if let Err(err) = window.app_handle().emit(QUIT_REQUESTED, ()) {
-                    log::warn!("could not emit {QUIT_REQUESTED}: {err}");
-                }
+                request_quit(window.app_handle());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -378,29 +390,59 @@ fn main() {
             hoplodex_lib::commands::import_export::resolve_import_conflicts,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app, event| match event {
-            // An exit without a code is the user quitting (the application
-            // menu, the last window): a request, like closing the window.
-            // `quit_application` and the termination signals exit with one.
-            // One the OS asks for as it shuts down is let through.
-            RunEvent::ExitRequested { code: None, api, .. }
-                if !OS_ENDING.load(Ordering::SeqCst) =>
-            {
-                api.prevent_exit();
-                if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
-                    log::warn!("could not emit {QUIT_REQUESTED}: {err}");
+        .expect("error while building tauri application");
+    // Every macOS `terminate:` (⌘Q, the application menu's and the Dock's
+    // Quit, an Apple Event quit) is a request, like the window's close
+    // button (research.md §17, #107). tao ends the app from
+    // `applicationWillTerminate:` with no `RunEvent::ExitRequested`, so the
+    // delegate is asked first. A quit the OS sends as a session ends (its
+    // Apple Event names a log out, restart or shut down, or the power-off
+    // notice came first) must not be cancelled, or the log out is: it is
+    // answered NSTerminateLater, closed off the main thread (FR-039), then
+    // replied to. The app's own exit with a code (`quit_application`,
+    // `end_for_the_os`) stops the loop and never calls `terminate:`.
+    #[cfg(target_os = "macos")]
+    {
+        let handle = app.handle().clone();
+        platform::ask_before_terminate(move |source| {
+            if source == platform::QuitSource::User && !OS_ENDING.load(Ordering::SeqCst) {
+                request_quit(&handle);
+                return platform::Termination::Cancel;
+            }
+            // The close waits on other threads, some of which wait on this
+            // one, so it can't run here; the reply is queued back to it.
+            let app = handle.clone();
+            let spawned = thread::Builder::new().name("os-terminate".into()).spawn(move || {
+                close_for_the_os(&app);
+                platform::reply_to_terminate(true);
+            });
+            match spawned {
+                Ok(_) => platform::Termination::Later,
+                Err(err) => {
+                    log::error!("could not close for the OS ending the app: {err}");
+                    platform::Termination::Now
                 }
             }
-            // Decrypted copies of opened documents live only as long as the
-            // session (FR-035); the startup sweep covers abnormal exits.
-            RunEvent::Exit => {
-                clear_opened_documents_cache(app);
-                // Not there when the exit is a setup that failed.
-                if let Some(machine) = app.try_state::<MachineSettings>() {
-                    machine.sweep_hold_leftovers();
-                }
-            }
-            _ => {}
         });
+    }
+    app.run(|app, event| match event {
+        // An exit without a code is the user quitting (the application
+        // menu, the last window): a request, like closing the window.
+        // `quit_application` and the termination signals exit with one.
+        // One the OS asks for as it shuts down is let through.
+        RunEvent::ExitRequested { code: None, api, .. } if !OS_ENDING.load(Ordering::SeqCst) => {
+            api.prevent_exit();
+            request_quit(app);
+        }
+        // Decrypted copies of opened documents live only as long as the
+        // session (FR-035); the startup sweep covers abnormal exits.
+        RunEvent::Exit => {
+            clear_opened_documents_cache(app);
+            // Not there when the exit is a setup that failed.
+            if let Some(machine) = app.try_state::<MachineSettings>() {
+                machine.sweep_hold_leftovers();
+            }
+        }
+        _ => {}
+    });
 }

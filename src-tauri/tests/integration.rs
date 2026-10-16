@@ -29,6 +29,7 @@ mod chooser_details_test;
 mod csp_test;
 mod database_open_test;
 mod deletion_wipe_test;
+mod disk_full_test;
 mod disposition_reversal_test;
 mod document_test;
 mod document_types_test;

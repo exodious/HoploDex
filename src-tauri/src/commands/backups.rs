@@ -278,7 +278,9 @@ pub mod ops {
 
     fn io_failure(path: &Path, err: &io::Error) -> CommandError {
         log::error!("restore: {}: {err}", path.display());
-        CommandError::new("INTERNAL_ERROR", "The backup couldn't be copied.")
+        CommandError::from_io(err, || {
+            CommandError::new("INTERNAL_ERROR", "The backup couldn't be copied.")
+        })
     }
 
     /// Removes a restore's copy, and the journal checking it may leave.
@@ -580,7 +582,12 @@ pub mod ops {
 
     fn change_io_failure(path: &Path, err: &io::Error) -> CommandError {
         log::error!("passphrase change: {}: {err}", path.display());
-        CommandError::new("INTERNAL_ERROR", "The copy with the new passphrase couldn't be made.")
+        CommandError::from_io(err, || {
+            CommandError::new(
+                "INTERNAL_ERROR",
+                "The copy with the new passphrase couldn't be made.",
+            )
+        })
     }
 
     /// How often the copy's size is reported while `sqlcipher_export` runs,

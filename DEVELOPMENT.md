@@ -859,6 +859,15 @@ which leaves the database as it found it, and the other tests don't depend
 on it. us8's restore-dialog regressions are an example. The screenshot walk
 uses no real input, so it runs everywhere.
 
+One exception runs on macOS only: us7's quit test (#107) presses ⌘Q, chooses
+the app menu's Quit and sends the quit Apple Event the Dock's Quit sends (to
+the sandboxed app's process only) with `e2e/support/macInput.ts`, which
+compiles `src-tauri/examples/real_input.swift`. us9 sends the quit event with
+a log out's reason (`kAEReallyLogOut`), which must end the app at once with
+its unsaved input kept as pending changes. It needs Accessibility for
+whatever runs the suite (as `quit-cleanup.py` does) and is skipped on the
+other platforms.
+
 The PDF surface and window controls checks do not use that helper. They are
 Rust examples run outside WebDriver, and each OS gives them its own input
 script in `src-tauri/examples/`: `real_input.py` (Linux; it wraps
@@ -1026,6 +1035,19 @@ of it:
   passphrase survives a relaunch. A computer without a keyring is tested in
   Rust and Vitest, not in E2E (`tests/keyring_test.rs`,
   `DatabaseChooser.test.tsx`, `DatabaseSettingsDialog.test.tsx`).
+- A sandbox is a `hoplodex-e2e-XXXXXX` directory in the system's temp
+  folder with an owner file (`.hoplodex-e2e-owner`, the creating process's
+  id) written at creation (#111). When a session ends, `removeSandbox()`
+  retries for up to 30 s, because on Windows WebView2's processes keep the
+  folder open for a moment after the app is killed, and logs a folder it could
+  not remove. A run that is interrupted (Ctrl+C, a crash) never gets there, so
+  `onPrepare` and `onComplete` in `wdio.conf.ts` and the `npm run session`
+  launcher sweep first (`sweepStaleSandboxes`): a directory directly in the
+  temp folder, with that name and an owner file, whose owner process is no
+  longer running. Anything else there is left alone (the screenshots' plain
+  `hoplodex-e2e-screen-<pid>.png` files, a folder from before the owner file
+  existed, a sandbox another run is using), so several runs can be live at
+  once. Delete old unmarked ones by hand.
 - E2E steps don't sleep. The frontend counts its backend calls and pending
   search debounces (`src/lib/busy.ts`, `window.__hoplodexBusy`), and the
   helpers in `e2e/support/ui.ts` call `settle()` after each action, which

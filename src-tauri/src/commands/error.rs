@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io;
 use std::path::Path;
 
 use serde::Serialize;
@@ -7,6 +8,7 @@ use serde_json::{Value, json};
 use crate::db::{DbError, OpenError};
 use crate::models::database::OperationKind;
 use crate::models::record::RecordRef;
+use crate::services::disk_space;
 use crate::services::import_reader::limits::ImportLimit;
 
 /// The single error shape returned by every Tauri IPC command, per
@@ -162,6 +164,47 @@ impl CommandError {
                 "path": path.to_string_lossy(),
             }),
         ))
+    }
+
+    /// The code of [`CommandError::disk_full`].
+    pub const DISK_FULL: &'static str = "DISK_FULL";
+
+    /// A write ran out of room while it was being made (issue #110): unlike
+    /// `INSUFFICIENT_SPACE`, which refuses before anything is written and
+    /// knows how much is needed, this is the disk itself saying it is full,
+    /// from SQLite (`SQLITE_FULL`) or the OS (`ENOSPC`, `ERROR_DISK_FULL`).
+    /// `path` is the file that was being changed, when the caller knows it
+    /// ([`located_at`](Self::located_at) adds it later). Nothing a failed
+    /// write began is kept.
+    pub fn disk_full(path: Option<&Path>) -> Self {
+        let message = match path {
+            Some(path) => format!(
+                "The disk is full. Free some space on the drive that holds {}, then try again.",
+                path.display()
+            ),
+            None => "The disk is full. Free some space on the drive that holds this database, \
+                     then try again."
+                .to_owned(),
+        };
+        Self::new(Self::DISK_FULL, message).with_details(path.and_then(path_details))
+    }
+
+    /// Names the file a `DISK_FULL` that a lower layer raised without one
+    /// was about; any other error, and a `DISK_FULL` that already names its
+    /// file, is returned as it is.
+    pub fn located_at(self, path: &Path) -> Self {
+        if self.code == Self::DISK_FULL && self.details.is_none() {
+            Self::disk_full(Some(path))
+        } else {
+            self
+        }
+    }
+
+    /// Sorts a filesystem error: a full disk is `DISK_FULL`, anything else
+    /// is what `otherwise` makes of it. The one place an I/O error becomes a
+    /// `CommandError`, so a full disk never reads as an unexpected error.
+    pub fn from_io(err: &io::Error, otherwise: impl FnOnce() -> Self) -> Self {
+        if disk_space::is_disk_full(err) { Self::disk_full(None) } else { otherwise() }
     }
 
     /// FR-027. `reason` is `missing`, `notWritable` or `insufficientSpace`.
@@ -327,6 +370,7 @@ impl CommandError {
             }
             _ => match err.sqlite_error_code() {
                 Some(rusqlite::ErrorCode::DatabaseCorrupt) => Self::database_damaged(false),
+                Some(rusqlite::ErrorCode::DiskFull) => Self::disk_full(None),
                 Some(rusqlite::ErrorCode::SystemIoFailure | rusqlite::ErrorCode::CannotOpen) => {
                     Self::new(Self::DATABASE_UNAVAILABLE, "HoploDex can't reach the database file.")
                 }
@@ -352,6 +396,10 @@ impl From<DbError> for CommandError {
         match err {
             DbError::Sqlite(err) => Self::from_db(err),
             DbError::Exists(path) => Self::database_exists(&path),
+            DbError::Io(err) => Self::from_io(&err, || {
+                log::error!("db error: {err}");
+                Self::new("INTERNAL_ERROR", "An unexpected error occurred.")
+            }),
             other => {
                 log::error!("db error: {other}");
                 Self::new("INTERNAL_ERROR", "An unexpected error occurred.")

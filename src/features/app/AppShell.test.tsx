@@ -1057,3 +1057,30 @@ describe("Following a link to a policy or a firearm, and Back", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Insurance" })).toBeInTheDocument();
   });
 });
+
+// #108: below 900px the top bar drops the wordmark and shows Import and
+// Export as icons, so it fits the window's 800px minimum. The CSS does the
+// hiding, so what the names rely on must stay in the markup.
+describe("The top bar's narrow form keeps its accessible names (#108)", () => {
+  beforeEach(() => {
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+  });
+
+  it("names the brand, Import and Export, with a tooltip on the two buttons", () => {
+    renderShell();
+    const bar = within(document.querySelector<HTMLElement>(".hd-topbar")!);
+
+    expect(
+      bar.getByRole("button", { name: "HoploDex — go to the collection" }),
+    ).toBeInTheDocument();
+    for (const name of ["Import", "Export"]) {
+      const button = bar.getByRole("button", { name });
+      expect(button).toHaveAttribute("title", name);
+      // The word stays in the page for assistive technology; CSS hides it.
+      expect(button.querySelector(".hd-topbar__tool-label")).toHaveTextContent(name);
+    }
+    // Only the wordmark is dropped when the bar narrows: the owl is not.
+    expect(document.querySelector(".hd-brand__name--wide")).toHaveTextContent("HoploDex");
+    expect(document.querySelector(".hd-brand .hd-brand__mark")).not.toBeNull();
+  });
+});

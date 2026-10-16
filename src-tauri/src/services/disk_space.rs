@@ -22,6 +22,28 @@ impl From<InsufficientSpace> for CommandError {
     }
 }
 
+/// Whether `err` is the OS saying the disk is full or the user's quota is
+/// used up: `ENOSPC` and `EDQUOT` on Linux and macOS, `ERROR_DISK_FULL` (112),
+/// `ERROR_HANDLE_DISK_FULL` (39) and `ERROR_DISK_QUOTA_EXCEEDED` on Windows
+/// (issue #110). The pre-check above can't see a disk that fills while a
+/// file is being written, nor a quota.
+pub fn is_disk_full(err: &io::Error) -> bool {
+    matches!(err.kind(), io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded)
+}
+
+/// [`is_disk_full`] for `err` or any error it wraps, for a writer that
+/// reports its I/O errors inside its own type.
+pub fn chain_is_disk_full(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(err);
+    while let Some(err) = current {
+        if err.downcast_ref::<io::Error>().is_some_and(is_disk_full) {
+            return true;
+        }
+        current = err.source();
+    }
+    false
+}
+
 /// The bytes a copy of a `len`-byte file needs: its size plus 5%, rounded
 /// up.
 pub fn room_for_copy(len: u64) -> u64 {
