@@ -541,7 +541,9 @@ pub mod ops {
             format,
             !records.accessory_ids.is_empty(),
         )?;
-        let exported = export_rows(conn, &reserved, records, on_progress, is_cancelled);
+        let exported = export_rows(conn, &reserved, records, on_progress, is_cancelled)
+            // A disk that fills while the rows are written names the folder.
+            .map_err(|e| e.located_at(destination_folder));
         match &exported {
             // The accessory file was reserved for a table the export did not
             // need after all (an id with no record).
@@ -642,7 +644,9 @@ pub mod ops {
             let dest_name = photo_file_name(prefix, owner.id(), &photo.original_filename);
             let dest_name = write_new_file(photos_folder_path, &dest_name, &photo.original_bytes)
                 .map_err(|e| {
-                CommandError::new("INTERNAL_ERROR", format!("Could not write photo file: {e}"))
+                CommandError::from_io(&e, || {
+                    CommandError::new("INTERNAL_ERROR", format!("Could not write photo file: {e}"))
+                })
             })?;
             names.push(dest_name);
             *counted += 1;
@@ -676,21 +680,24 @@ pub mod ops {
             format: SpreadsheetFormat,
             wants_accessory_csv: bool,
         ) -> Result<Self, CommandError> {
-            let failed = |what: &str, e: std::io::Error| {
-                CommandError::new("INTERNAL_ERROR", format!("Could not create {what}: {e}"))
+            let failed = |what: &str, path: &Path, e: std::io::Error| {
+                CommandError::from_io(&e, || {
+                    CommandError::new("INTERNAL_ERROR", format!("Could not create {what}: {e}"))
+                })
+                .located_at(path)
             };
             let taken = |e: &std::io::Error| e.kind() == std::io::ErrorKind::AlreadyExists;
             // The destination itself may be new; only what is inside it is
             // reserved exclusively.
             std::fs::create_dir_all(destination_folder)
-                .map_err(|e| failed("the destination folder", e))?;
+                .map_err(|e| failed("the destination folder", destination_folder, e))?;
             for n in 1..=10_000 {
                 let base = if n == 1 { base_name.to_owned() } else { format!("{base_name}-{n}") };
                 let photos_folder = destination_folder.join(format!("{base}_photos"));
                 match std::fs::create_dir(&photos_folder) {
                     Ok(()) => {}
                     Err(e) if taken(&e) => continue,
-                    Err(e) => return Err(failed("the photos folder", e)),
+                    Err(e) => return Err(failed("the photos folder", &photos_folder, e)),
                 }
                 let spreadsheet_path =
                     destination_folder.join(format!("{base}.{}", format.extension()));
@@ -701,7 +708,7 @@ pub mod ops {
                         if taken(&e) {
                             continue;
                         }
-                        return Err(failed("the export file", e));
+                        return Err(failed("the export file", &spreadsheet_path, e));
                     }
                 };
                 let accessory_csv = if wants_accessory_csv && format == SpreadsheetFormat::Csv {
@@ -715,7 +722,7 @@ pub mod ops {
                             if taken(&e) {
                                 continue;
                             }
-                            return Err(failed("the accessory export file", e));
+                            return Err(failed("the accessory export file", &path, e));
                         }
                     }
                 } else {

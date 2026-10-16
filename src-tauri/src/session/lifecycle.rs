@@ -44,7 +44,8 @@ pub fn create(
             db::DbError::Io(err) if err.kind() == io::ErrorKind::PermissionDenied => {
                 folder_error(path.parent().unwrap_or(path), &err)
             }
-            other => other.into(),
+            // `create_database` has already removed what it made.
+            other => CommandError::from(other).located_at(path),
         })?;
     if session.is_open() {
         // A switch, as in `open`: the other database is closed normally
@@ -75,7 +76,8 @@ pub fn open(
         close_normal(session, session.current_id(), machine, CloseReason::Switched).ok();
     }
     file_swap::finish_interrupted(path);
-    let conn = db::open_database(path, passphrase, &machine.identity(), take_over)?;
+    let conn = db::open_database(path, passphrase, &machine.identity(), take_over)
+        .map_err(|err| CommandError::from(err).located_at(path))?;
     // The passphrase opened it: now what a replacement left beside it can go.
     file_swap::remove_leftovers(path);
     session.install(prepare(machine, conn, path)?);
@@ -91,10 +93,10 @@ pub(crate) fn prepare(
     conn: Connection,
     path: &Path,
 ) -> Result<OpenDatabase, CommandError> {
-    let opened_backup = take_backup_stamp(&conn)?;
+    let opened_backup = take_backup_stamp(&conn).map_err(|err| err.located_at(path))?;
     let location: String = conn
         .query_row("SELECT backup_location FROM collection_settings", [], |row| row.get(0))
-        .map_err(CommandError::from_db)?;
+        .map_err(|err| CommandError::from_db(err).located_at(path))?;
     // Before the connection goes into the session, so no command waits on
     // it. It is part of the open: the 1s of SC-003 includes it, timed in
     // `performance_test.rs`.

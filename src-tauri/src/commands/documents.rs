@@ -485,8 +485,13 @@ impl Opener for E2eOpener {
 
 // ---------------------------------------------------------------- the copy
 
-fn copy_error(what: &str, e: impl std::fmt::Display) -> CommandError {
-    CommandError::new("INTERNAL_ERROR", format!("Could not prepare the document: {what}: {e}"))
+/// A failure to write the copy: `what` of it, at `path`. A full disk is
+/// `DISK_FULL`, naming `path`.
+fn copy_error(what: &str, path: &Path, e: std::io::Error) -> CommandError {
+    CommandError::from_io(&e, || {
+        CommandError::new("INTERNAL_ERROR", format!("Could not prepare the document: {what}: {e}"))
+    })
+    .located_at(path)
 }
 
 /// Writes (or reuses) the copy of `document` that is handed to the other
@@ -503,11 +508,11 @@ fn write_copy(
 ) -> Result<PathBuf, CommandError> {
     let folder = root.join(id.to_string());
     if let Some(parent) = root.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| copy_error("its folder", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| copy_error("its folder", parent, e))?;
     }
     private_dir(root)?;
     private_dir(&folder)?;
-    protect_folder(&folder).map_err(|e| copy_error("its folder's protection", e))?;
+    protect_folder(&folder).map_err(|e| copy_error("its folder's protection", &folder, e))?;
     let path = folder.join(format!(
         "{}.{}",
         safe_stem(&document.original_filename),
@@ -517,18 +522,22 @@ fn write_copy(
     match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.is_file() && meta.len() == bytes.len() as u64 => return Ok(path),
         Ok(meta) if meta.is_dir() => {
-            return Err(copy_error("its file", "a folder is in the way"));
+            return Err(copy_error(
+                "its file",
+                &path,
+                std::io::Error::other("a folder is in the way"),
+            ));
         }
         // A link, or a file of another length: replaced.
-        Ok(_) => std::fs::remove_file(&path).map_err(|e| copy_error("its file", e))?,
+        Ok(_) => std::fs::remove_file(&path).map_err(|e| copy_error("its file", &path, e))?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(copy_error("its file", e)),
+        Err(e) => return Err(copy_error("its file", &path, e)),
     }
-    create_private_file(&path, bytes).map_err(|e| copy_error("its file", e))?;
+    create_private_file(&path, bytes).map_err(|e| copy_error("its file", &path, e))?;
     if let Err(e) = mark_untrusted(&path) {
         // A copy that can't be marked is not handed on.
         let _ = secure_delete_file(&path);
-        return Err(copy_error("its mark", e));
+        return Err(copy_error("its mark", &path, e));
     }
     Ok(path)
 }
@@ -555,26 +564,30 @@ fn private_dir(path: &Path) -> Result<(), CommandError> {
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                     private_dir_existing(path)
                 }
-                Err(e) => Err(copy_error("its folder", e)),
+                Err(e) => Err(copy_error("its folder", path, e)),
             }
         }
-        Err(e) => Err(copy_error("its folder", e)),
+        Err(e) => Err(copy_error("its folder", path, e)),
     }
 }
 
 /// A folder that is already there is used only if it is a directory (not a
 /// link) owned by the user.
 fn private_dir_existing(path: &Path) -> Result<(), CommandError> {
-    let meta = std::fs::symlink_metadata(path).map_err(|e| copy_error("its folder", e))?;
+    let meta = std::fs::symlink_metadata(path).map_err(|e| copy_error("its folder", path, e))?;
     if !meta.is_dir() {
-        return Err(copy_error("its folder", "it is not a folder"));
+        return Err(copy_error("its folder", path, std::io::Error::other("it is not a folder")));
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         // SAFETY: `geteuid` has no preconditions and cannot fail.
         if meta.uid() != unsafe { libc::geteuid() } {
-            return Err(copy_error("its folder", "it belongs to another user"));
+            return Err(copy_error(
+                "its folder",
+                path,
+                std::io::Error::other("it belongs to another user"),
+            ));
         }
     }
     Ok(())
@@ -594,8 +607,14 @@ fn create_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
     let mut file = options.open(path)?;
-    file.write_all(bytes)?;
-    file.flush()
+    // A copy that couldn't be written whole (the disk filled) is not left
+    // behind: it was made here, by `create_new`.
+    let written = file.write_all(bytes).and_then(|()| file.flush());
+    if written.is_err() {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+    }
+    written
 }
 
 /// The copy's file name without its extension: the stored name's last path

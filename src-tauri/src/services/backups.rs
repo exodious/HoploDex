@@ -365,6 +365,9 @@ pub fn same_path(a: &Path, b: &Path) -> bool {
 pub enum LocationProblem {
     Missing,
     NotWritable,
+    /// The folder's disk is full: not even the check's probe file fits
+    /// (issue #110).
+    InsufficientSpace,
 }
 
 impl LocationProblem {
@@ -373,6 +376,7 @@ impl LocationProblem {
         match self {
             Self::Missing => "missing",
             Self::NotWritable => "notWritable",
+            Self::InsufficientSpace => "insufficientSpace",
         }
     }
 }
@@ -399,7 +403,11 @@ pub fn check_location(folder: &Path, make_if_missing: bool) -> Result<(), Locati
         }
         Err(err) => {
             log::warn!("can't write backups to {}: {err}", folder.display());
-            Err(LocationProblem::NotWritable)
+            Err(if disk_space::is_disk_full(&err) {
+                LocationProblem::InsufficientSpace
+            } else {
+                LocationProblem::NotWritable
+            })
         }
     }
 }
@@ -419,9 +427,15 @@ impl BackupFailure {
     /// stop, which is not a failure.
     pub fn reason(&self) -> Option<BackupFailureReason> {
         match self {
+            Self::Location(LocationProblem::InsufficientSpace) | Self::InsufficientSpace(_) => {
+                Some(BackupFailureReason::InsufficientSpace)
+            }
             Self::Location(_) => Some(BackupFailureReason::LocationUnavailable),
-            Self::InsufficientSpace(_) => Some(BackupFailureReason::InsufficientSpace),
             Self::Stopped => None,
+            // The disk filled while the copy was being written (issue #110).
+            Self::Io(err) if disk_space::is_disk_full(err) => {
+                Some(BackupFailureReason::InsufficientSpace)
+            }
             Self::Io(_) => Some(BackupFailureReason::Io),
         }
     }
@@ -477,7 +491,7 @@ pub fn make_backup(machine: &MachineSettings, job: BackupJob) -> Result<PathBuf,
     let made = copy_chunked(&source, out, job.cancel, job.progress)
         .and_then(|()| {
             stamp_backup(job.conn, &partial, job.name, &job.now)
-                .map_err(|err| CopyError::Io(io::Error::other(err)))
+                .map_err(|err| CopyError::Io(sqlite_as_io(err)))
         })
         .and_then(|()| if (job.cancel)() { Err(CopyError::Stopped) } else { Ok(()) })
         .and_then(|()| finalize(&partial, &final_path).map_err(CopyError::Io));
@@ -492,6 +506,16 @@ pub fn make_backup(machine: &MachineSettings, job: BackupJob) -> Result<PathBuf,
             log::error!("the backup of {} failed: {err}", job.database_path.display());
             Err(BackupFailure::Io(err))
         }
+    }
+}
+
+/// A SQLite failure while stamping the copy, as the I/O error it stands for:
+/// a full disk stays recognizable as one.
+fn sqlite_as_io(err: rusqlite::Error) -> io::Error {
+    if err.sqlite_error_code() == Some(rusqlite::ErrorCode::DiskFull) {
+        io::Error::new(io::ErrorKind::StorageFull, err)
+    } else {
+        io::Error::other(err)
     }
 }
 

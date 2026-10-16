@@ -10,6 +10,7 @@ use rust_xlsxwriter::Workbook;
 use std::borrow::Cow;
 
 use crate::commands::CommandError;
+use crate::services::disk_space;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpreadsheetFormat {
@@ -599,8 +600,21 @@ pub fn parse_scaled_decimal(
     Ok(Some(scaled))
 }
 
-fn export_error(what: &str, e: impl std::fmt::Display) -> CommandError {
-    CommandError::new("INTERNAL_ERROR", format!("{what}: {e}"))
+/// A failure writing the export; a full disk is `DISK_FULL`, whichever
+/// writer reported it. The workbook writer holds its I/O errors without
+/// exposing them as a `source`, so they are looked for by variant.
+fn export_error(what: &str, e: impl std::error::Error + 'static) -> CommandError {
+    let any: &(dyn std::error::Error + 'static) = &e;
+    let full = match any.downcast_ref::<rust_xlsxwriter::XlsxError>() {
+        Some(rust_xlsxwriter::XlsxError::IoError(io)) => disk_space::is_disk_full(io),
+        Some(rust_xlsxwriter::XlsxError::ZipError(zip)) => disk_space::chain_is_disk_full(zip),
+        _ => disk_space::chain_is_disk_full(any),
+    };
+    if full {
+        CommandError::disk_full(None)
+    } else {
+        CommandError::new("INTERNAL_ERROR", format!("{what}: {e}"))
+    }
 }
 
 /// The characters that make a spreadsheet program read a cell as a formula.

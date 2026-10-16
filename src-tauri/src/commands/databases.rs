@@ -179,6 +179,9 @@ pub mod ops {
     /// The field error for a folder the new database can't be put in.
     pub(crate) fn folder_error(folder: &Path, err: &io::Error) -> CommandError {
         log::warn!("could not use {} for a new database: {err}", folder.display());
+        if disk_space::is_disk_full(err) {
+            return CommandError::disk_full(Some(folder));
+        }
         let message = if err.kind() == io::ErrorKind::PermissionDenied {
             "HoploDex can't write to this folder."
         } else {
@@ -1084,4 +1087,28 @@ pub async fn set_idle_paused(
 ) -> Result<(), CommandError> {
     ops::set_idle_paused(&session, reason, paused);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::path::Path;
+
+    use super::ops::folder_error;
+
+    /// A folder that can't be made because the disk is full says so
+    /// (issue #110), rather than "couldn't create this folder" on the field.
+    #[test]
+    fn a_folder_that_cannot_be_made_for_lack_of_room_says_the_disk_is_full() {
+        let folder = Path::new("/somewhere/HoploDex");
+        #[cfg(unix)]
+        let code = 28;
+        #[cfg(windows)]
+        let code = 112;
+        let full = folder_error(folder, &io::Error::from_raw_os_error(code));
+        assert_eq!(full.code, "DISK_FULL");
+        assert!(full.message.contains("Free some space"), "{}", full.message);
+        let denied = folder_error(folder, &io::Error::from(io::ErrorKind::PermissionDenied));
+        assert_eq!(denied.code, "VALIDATION_ERROR");
+    }
 }

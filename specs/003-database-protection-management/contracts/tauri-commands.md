@@ -64,6 +64,7 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): e
 | `DATABASE_EXISTS` | `{ path }` | create would overwrite an existing file |
 | `DATABASE_DAMAGED` | `{ backupsAvailable: boolean }` | FR-028 |
 | `INSUFFICIENT_SPACE` | `{ bytesNeeded, bytesAvailable, path }` | FR-016 |
+| `DISK_FULL` | `{ path? }` | "The disk is full. Free some space on the drive that holds <path>, then try again." A write ran out of room while it was being made (SQLite's `SQLITE_FULL`, or the OS's `ENOSPC` / `ERROR_DISK_FULL` / `ERROR_HANDLE_DISK_FULL`): an open, a create, a save, a restore's or passphrase change's copy. Nothing the failed write began is kept. _Amended 2026-10-15: added for #110; a full disk used to be `INTERNAL_ERROR`. Unlike `INSUFFICIENT_SPACE`, which refuses before anything is written, it carries no sizes._ |
 | `BACKUP_LOCATION_UNAVAILABLE` | `{ path, reason: "missing" \| "notWritable" \| "insufficientSpace" }` | FR-027 |
 | `KEYRING_UNAVAILABLE` | — | FR-019 |
 | `OPERATION_STOPPED` | `{ operation, importedCount?, deletedCount?, leftBehindCount?, folder? }` | FR-037 |
@@ -78,6 +79,11 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): e
 
 `BACKUP_LOCATION_UNAVAILABLE` and `INSUFFICIENT_SPACE` are also how a move of
 backups to a new location is refused before anything is written (FR-026).
+
+_Amended 2026-10-15 (#110): a backup at close whose copy runs out of room part
+way (or whose folder can't even hold the write check's probe file) fails with
+`failureReason: "insufficientSpace"`, as a copy refused beforehand does, not
+`io`._
 
 ---
 

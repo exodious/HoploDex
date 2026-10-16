@@ -45,6 +45,8 @@ function openFailureText(databaseName: string, error: unknown): string {
       return `${name} was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed.`;
     case "DATABASE_DAMAGED":
       return `${name} is damaged and can't be opened.`;
+    case "DISK_FULL":
+      return `The disk is full, so HoploDex couldn't open ${name}. Free some space on the drive that holds it, then try again. The file has not been changed.`;
     case "DATABASE_UNREADABLE":
       return `HoploDex can't read ${name}: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed.`;
     default:
@@ -54,7 +56,8 @@ function openFailureText(databaseName: string, error: unknown): string {
 
 const BACKUP_FAILURE: Record<Extract<ChooserNotice, { kind: "backupFailed" }>["reason"], string> = {
   locationUnavailable: "the backup location is not available",
-  insufficientSpace: "there is not enough space there",
+  insufficientSpace:
+    "there isn't enough free space on the drive that holds the backups. Free some space on it, or change the backup location",
   interrupted: "the backup was interrupted",
   io: "the backup was interrupted",
   databaseUnreachable: "its file could not be reached",

@@ -678,6 +678,8 @@ impl SessionInner {
 /// SQLite reports an I/O error, or can't reopen a file, when the drive
 /// under an open database has gone (`CommandError::from_db` gives these
 /// `DATABASE_UNAVAILABLE`): the same as finding it unreachable beforehand.
+/// A full disk (`DISK_FULL`) leaves the session working, and names the
+/// database's file.
 fn storage_lost_if_unreachable<T>(
     open: &mut OpenDatabase,
     result: Result<T, CommandError>,
@@ -687,7 +689,8 @@ fn storage_lost_if_unreachable<T>(
             open.storage_lost = true;
             Err(CommandError::database_unavailable(&open.path))
         }
-        other => other,
+        Err(err) => Err(err.located_at(&open.path)),
+        Ok(value) => Ok(value),
     }
 }
 
