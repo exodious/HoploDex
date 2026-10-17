@@ -63,7 +63,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
 - [X] T004 Write the hot-journal probe in `src-tauri/tests/upgrade_steps_test.rs`: in a database with a 5,000-row table, set `cache_size = 1`, `BEGIN IMMEDIATE`, rebuild the table in research.md §7's order (create `new_x`, copy, drop `x`, rename) without committing; while the transaction is open, copy the database through `RawFile` (never `std::fs`) and its `-journal` file to another folder; drop nothing else. Open the copy with its passphrase and assert the original rows and `sqlite_schema` are back and `PRAGMA integrity_check` is `ok`
 - [X] T005 On Linux, run T003 and T004 in the dev container (`scripts/dev-container.sh bash -c 'cargo test --manifest-path src-tauri/Cargo.toml --features test-kdf --test integration upgrade_steps_test::'`). If T003 fails, change research.md §4 step 2 to take the lock with the open marker's write instead and tell the owner, since Cancel would then not leave the file byte-for-byte untouched; if T004 fails, stop and ask the owner (the in-place upgrade would need research.md §7's copy-and-swap alternative). Record the outcome in research.md §14
 - [X] T006 [P] On macOS, in the macOS 26 VM, run T003 and T004 as T005 does and apply T005's rules to the outcome
-- [ ] T007 [P] On Windows, on the Windows test machine, run T003 and T004 as T005 does and apply T005's rules to the outcome (Windows' file locks differ most from POSIX ones)
+- [X] T007 [P] On Windows, on the Windows test machine, run T003 and T004 as T005 does and apply T005's rules to the outcome (Windows' file locks differ most from POSIX ones)
 
 ### First task 2: the runner replaces `apply_migrations` (research.md §7)
 

@@ -682,7 +682,12 @@ _Probed on Linux (T005, `tests/upgrade_steps_test.rs`, SQLCipher with the
 - _macOS 26 (T006, tart VM, standard user, same filter): both probes hold and
   the child-process helper runs, 3 tests passed, so §4 step 2 and §7 stand as
   written there too. Nothing the probes check differed from Linux._
-- _Windows (T007) runs the same filter._
+- _Windows Server 2025 (T007, same filter): both probes hold, 3 tests passed
+  including the child-process check, so §4 step 2 and §7 stand as written.
+  Windows' mandatory `LockFileEx` locks made no difference: after `BEGIN
+  EXCLUSIVE; COMMIT` the lock refused the second connection and the child
+  process with "database is locked", and reading the file and its `-journal`
+  through `RawFile` while the lock was held raised no sharing error._
 
 **E2E** needs a database older than the app.
 - An `e2e` build appends one test-only step, `9000_e2e_upgrade_check`, which
