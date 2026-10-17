@@ -244,6 +244,39 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     );
     expect(props.onOpenChange).not.toHaveBeenCalled();
   });
+
+  // The constitution's UI consistency: a refused field takes the focus, as in every form.
+  it("moves focus to the field the backend refused, once Save is through", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings).mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "Check the backup settings.",
+        fieldErrors: { keepCount: "Keep between 1 and 100 backups." },
+      }),
+    );
+    renderSettings();
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "500");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await screen.findByText("Keep between 1 and 100 backups.");
+    await waitFor(() => expect(screen.getByLabelText("Keep the latest")).toHaveFocus());
+  });
+
+  it("moves focus to Keep the latest when it isn't a whole number", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await screen.findByText("Enter a whole number of backups.");
+    expect(screen.getByLabelText("Keep the latest")).toHaveFocus();
+  });
 });
 
 describe("DatabaseSettingsDialog: Keep the latest and the backups switch (issue #35)", () => {

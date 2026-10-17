@@ -23,6 +23,7 @@ import "./databases.css";
 const PHASES: Record<RestoreProgress["phase"], string> = {
   copying: "Copying the backup…",
   checking: "Checking the backup…",
+  upgrading: "Upgrading the restored copy…",
   savingCurrent: "Backing up the current database…",
   replacing: "Replacing the database…",
 };
@@ -109,8 +110,12 @@ function RestoreForm({
   onDone: () => void;
 }) {
   const session = useSession();
+  const scope = useContext(SessionScopeContext);
   const [selected, setSelected] = useState<string>(list?.backups[0]?.path ?? "");
   const [confirming, setConfirming] = useState(false);
+  // 009 FR-019: the check before the confirmation, and what it found.
+  const [checking, setChecking] = useState(false);
+  const [upgradeTo, setUpgradeTo] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<RestoreProgress | null>(null);
   const [fieldError, setFieldError] = useState<string | undefined>();
@@ -131,18 +136,30 @@ function RestoreForm({
   const when = chosen ? formatDateTime(chosen.madeAt) : "";
   const quoted = `“${name}”`;
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!chosen) return;
-    // Only checked here; it is read for the restore after the confirmation.
-    if (!passphrase.current?.read()) {
+    if (!chosen || checking) return;
+    const typed = passphrase.current?.read();
+    if (!typed) {
       setFieldError("Enter the passphrase of this backup.");
       passphrase.current?.focus();
       return;
     }
     setFieldError(undefined);
     setRefusal(null);
-    setConfirming(true);
+    // The backup is opened and read first, so the confirmation can say
+    // whether it will be upgraded (009 contracts/ui.md §6). It is read again
+    // for the restore after the confirmation.
+    setChecking(true);
+    try {
+      const check = await databasesService.checkBackup(scope, chosen.path, typed, databasePath);
+      setUpgradeTo(check.upgradeTo);
+      setConfirming(true);
+    } catch (error) {
+      showFailure(error);
+    } finally {
+      setChecking(false);
+    }
   }
 
   async function restore() {
@@ -154,7 +171,9 @@ function RestoreForm({
     onRunningChange(true);
     setProgress(null);
     try {
-      await session.restoreBackup(chosen.path, typed, databasePath);
+      await (upgradeTo
+        ? session.restoreBackup(chosen.path, typed, databasePath, true)
+        : session.restoreBackup(chosen.path, typed, databasePath));
       onRunningChange(false);
       onDone();
     } catch (error) {
@@ -176,6 +195,7 @@ function RestoreForm({
     switch (error.code) {
       case "PASSPHRASE_INCORRECT":
         setFieldError(`That passphrase didn't open the backup from ${when}.`);
+        passphrase.current?.focus();
         return;
       case "INSUFFICIENT_SPACE":
         setRefusal({
@@ -203,6 +223,18 @@ function RestoreForm({
       case "DATABASE_DAMAGED":
         setRefusal({
           text: `The backup from ${when} is damaged and can't be restored. Nothing has been changed.`,
+          changeLocation: false,
+        });
+        return;
+      case "DATABASE_NEWER_VERSION":
+        setRefusal({
+          text: "This backup was made by a newer version of HoploDex, so this version can't restore it.",
+          changeLocation: false,
+        });
+        return;
+      case "UPGRADE_FAILED":
+        setRefusal({
+          text: "The backup couldn't be upgraded for this version, so nothing was restored. The database is as it was, and a backup of it was saved before the restore began.",
           changeLocation: false,
         });
         return;
@@ -234,7 +266,7 @@ function RestoreForm({
 
   const backups = list?.backups ?? [];
   return (
-    <form className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
+    <form className="hd-dialog__form" onSubmit={(event) => void handleSubmit(event)} noValidate>
       <div className="hd-dialog__body hd-form-section">
         {list === null ? (
           <p className="hd-field__hint">Looking for backups…</p>
@@ -254,7 +286,11 @@ function RestoreForm({
             minCardWidth={480}
             options={backups.map((backup) => ({
               value: backup.path,
-              label: `${formatDateTime(backup.madeAt)} — ${formatBytes(backup.sizeBytes)}`,
+              label:
+                `${formatDateTime(backup.madeAt)} — ${formatBytes(backup.sizeBytes)}` +
+                (backup.beforeUpgradeTo
+                  ? ` — before upgrading to HoploDex ${backup.beforeUpgradeTo}`
+                  : ""),
             }))}
           />
         )}
@@ -289,7 +325,7 @@ function RestoreForm({
         <Button variant="secondary" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" variant="danger" disabled={!chosen}>
+        <Button type="submit" variant="danger" disabled={!chosen} pending={checking}>
           Restore
         </Button>
       </footer>
@@ -298,9 +334,13 @@ function RestoreForm({
         onOpenChange={setConfirming}
         title={`Replace ${quoted} with the backup from ${when}?`}
         description={
-          databasePath
-            ? "The backup takes its place, and the damaged file is kept beside it."
-            : "The backup takes its place, after the database is backed up as it is now."
+          <>
+            {databasePath
+              ? "The backup takes its place, and the damaged file is kept beside it."
+              : "The backup takes its place, after the database is backed up as it is now."}
+            {upgradeTo &&
+              ` This backup was made by an earlier version of HoploDex, so it is upgraded for HoploDex ${upgradeTo} as it is restored. The backup itself stays as it is, and earlier versions can still open it.`}
+          </>
         }
         confirmLabel="Restore"
         onConfirm={() => void restore()}

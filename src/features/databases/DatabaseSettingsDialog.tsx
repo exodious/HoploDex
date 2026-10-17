@@ -15,6 +15,7 @@ import {
   useToast,
 } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
+import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { CommandFailure } from "../../services/tauriClient";
 import { useSessionScope } from "../session/sessionScope";
 import { chooseDocumentOpening, useDocumentOpening } from "../media/documentOpening";
@@ -111,6 +112,9 @@ export function DatabaseSettingsDialog({
 
 type Errors = Partial<Record<"keepCount" | "location", string>>;
 
+/** The order the fields are read in, for the first one refused to take the focus. */
+const FIELD_ORDER = ["keepCount", "location"] as const satisfies readonly (keyof Errors)[];
+
 /** Why a move left backups at the old location (003 FR-026). */
 type LeftBehind = NonNullable<Extract<ExistingBackupsOutcome, { action: "move" }>["leftBehind"]>;
 
@@ -180,6 +184,16 @@ function SettingsForm({
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  // The field that was refused, to focus once Save is through and the form is
+  // enabled again (a disabled field can't take focus).
+  const [refused, setRefused] = useState<keyof Errors | null>(null);
+
+  useEffect(() => {
+    if (saving || !refused) return;
+    focusFormField(formRef.current, refused);
+    setRefused(null);
+  }, [saving, refused]);
   // A changed location with backups at the old one (003 FR-026, US3-4a), or an
   // old one that can't be reached (003 US3-4b): nothing is saved until answered.
   const [question, setQuestion] = useState<OldLocationBackups | null>(null);
@@ -216,8 +230,12 @@ function SettingsForm({
   }
 
   function showSaveError(e: unknown) {
-    if (e instanceof CommandFailure && e.fieldErrors) setErrors(e.fieldErrors);
-    else
+    if (e instanceof CommandFailure && e.fieldErrors) {
+      setErrors(e.fieldErrors);
+      // As every form does (the constitution's UI consistency): the first
+      // field the backend refused takes the focus.
+      setRefused(firstRefusedField(FIELD_ORDER, e.fieldErrors) ?? null);
+    } else
       setServerError(e instanceof CommandFailure ? e.message : "The settings couldn't be saved.");
   }
 
@@ -332,6 +350,7 @@ function SettingsForm({
     const count = Number(keepCount.trim());
     if (!Number.isInteger(count) || keepCount.trim() === "") {
       setErrors({ keepCount: "Enter a whole number of backups." });
+      setRefused("keepCount");
       return;
     }
     setErrors({});
@@ -370,7 +389,7 @@ function SettingsForm({
 
   return (
     <>
-      <form className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
+      <form ref={formRef} className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
         <div className="hd-dialog__body hd-form-section">
           {serverError && (
             <p className="hd-banner hd-banner--error" role="alert">
@@ -386,21 +405,23 @@ function SettingsForm({
               onCheckedChange={setEnabled}
               hint="When a changed database locks or HoploDex quits, at most once a day."
             />
-            <NumberField
-              label="Keep the latest"
-              value={keepCount}
-              min={MIN_KEEP_COUNT}
-              max={MAX_KEEP_COUNT}
-              disabled={saving || backupsOff}
-              onValueChange={(text) => {
-                setKeepCount(text);
-                setErrors((current) => ({ ...current, keepCount: undefined }));
-              }}
-              error={errors.keepCount}
-              fieldClassName="hd-field--third"
-              suffix="backups"
-            />
-            <div className="hd-field" data-disabled={backupsOff || undefined}>
+            <div data-field="keepCount">
+              <NumberField
+                label="Keep the latest"
+                value={keepCount}
+                min={MIN_KEEP_COUNT}
+                max={MAX_KEEP_COUNT}
+                disabled={saving || backupsOff}
+                onValueChange={(text) => {
+                  setKeepCount(text);
+                  setErrors((current) => ({ ...current, keepCount: undefined }));
+                }}
+                error={errors.keepCount}
+                fieldClassName="hd-field--third"
+                suffix="backups"
+              />
+            </div>
+            <div className="hd-field" data-field="location" data-disabled={backupsOff || undefined}>
               <span className="hd-field__label" id="backup-location-label">
                 Location
               </span>

@@ -39,6 +39,7 @@ function renderDialog(props: Partial<RestoreBackupDialogProps> = {}) {
   const session: SessionState = {
     status: null,
     openDatabase: vi.fn(),
+    upgradeDatabase: vi.fn(),
     createDatabase: vi.fn(),
     closeDatabase: vi.fn(),
     lockDatabase: vi.fn(),
