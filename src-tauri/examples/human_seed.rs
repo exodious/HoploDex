@@ -189,9 +189,10 @@ fn usage(problem: &str) -> ! {
 
 fn main() {
     // A `test-kdf` build keys with a KDF no other build uses (db/cipher.rs).
-    if cfg!(feature = "test-kdf") {
+    // `upgrade-test-steps` adds test-only upgrade steps (009 research.md §14).
+    if cfg!(feature = "test-kdf") || cfg!(feature = "upgrade-test-steps") {
         eprintln!(
-            "The human-testing seed must be built without the test-kdf feature: no other build could open what it makes."
+            "The human-testing seed must be built without the test-kdf and upgrade-test-steps features: no other build could open what it makes."
         );
         std::process::exit(1);
     }

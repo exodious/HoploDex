@@ -380,6 +380,22 @@ impl CommandError {
     }
 }
 
+impl CommandError {
+    /// A failed create or upgrade (009 research.md §7), rolled back: the SQLite
+    /// error underneath maps as any other (a full disk, a damaged file), and
+    /// anything else is an internal error, logged with the step's name or the
+    /// link check, never row values.
+    pub fn from_upgrade(err: crate::db::upgrade::UpgradeError) -> Self {
+        match err.into_sqlite() {
+            Ok(sqlite) => Self::from_db(sqlite),
+            Err(other) => {
+                log::error!("upgrade error: {other}");
+                Self::new("INTERNAL_ERROR", "An unexpected error occurred.")
+            }
+        }
+    }
+}
+
 impl std::fmt::Display for CommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.code, self.message)
@@ -396,6 +412,7 @@ impl From<DbError> for CommandError {
         match err {
             DbError::Sqlite(err) => Self::from_db(err),
             DbError::Exists(path) => Self::database_exists(&path),
+            DbError::Upgrade(err) => Self::from_upgrade(err),
             DbError::Io(err) => Self::from_io(&err, || {
                 log::error!("db error: {err}");
                 Self::new("INTERNAL_ERROR", "An unexpected error occurred.")
@@ -422,6 +439,7 @@ impl From<OpenError> for CommandError {
             }
             OpenError::Damaged => Self::database_damaged(false),
             OpenError::Internal(err) => Self::from_db(err),
+            OpenError::Upgrade(err) => Self::from_upgrade(err),
         }
     }
 }

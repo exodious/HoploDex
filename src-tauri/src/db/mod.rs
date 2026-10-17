@@ -41,6 +41,8 @@ pub enum DbError {
     Random(#[from] getrandom::Error),
     #[error("a file already exists at {}", .0.display())]
     Exists(PathBuf),
+    #[error("{0}")]
+    Upgrade(#[from] upgrade::UpgradeError),
 }
 
 /// Why a database did not open (003 research.md §2). Each maps to one command
@@ -65,6 +67,10 @@ pub enum OpenError {
     Damaged,
     #[error("database error: {0}")]
     Internal(rusqlite::Error),
+    /// The steps due at open failed and were rolled back (009 research.md
+    /// §7); the file is as it was.
+    #[error("{0}")]
+    Upgrade(#[from] upgrade::UpgradeError),
 }
 
 impl OpenError {
@@ -140,7 +146,7 @@ fn initialize(
 ) -> Result<Connection, DbError> {
     let conn = Connection::open(path)?;
     configure(&conn, passphrase)?;
-    apply_migrations(&conn)?;
+    upgrade::upgrade(&conn, &upgrade::build_steps(path), None)?;
     // The settings row goes in before `app_state` exists, so its
     // change-tracking trigger finds no backup record to mark: creating a
     // database is not a change to back up (003 FR-025).
@@ -208,7 +214,7 @@ pub fn open_database(
     }
     // Step 3, read-only: a migration this build doesn't know means a newer
     // version of HoploDex has changed the data layout.
-    if has_unknown_migration(&conn).map_err(OpenError::classify)? {
+    if has_unknown_migration(&conn, path).map_err(OpenError::classify)? {
         return Err(OpenError::NewerVersion);
     }
     // Step 4, read-only: open on another computer. This computer's own
@@ -233,13 +239,19 @@ pub fn open_database(
 
     // Step 5: the housekeeping writes. Setting the marker also takes the
     // write lock, which exclusive locking mode then keeps, so any other
-    // connection to the file is refused as "in use" from here on.
-    apply_migrations(&conn).map_err(OpenError::classify)?;
-    conn.execute(
-        "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",
-        rusqlite::params![machine.id, machine.display_name, now_utc()],
-    )
-    .map_err(OpenError::classify)?;
+    // connection to the file is refused as "in use" from here on. Steps due
+    // are applied by the runner, which sets the marker in the same
+    // transaction. (A stopgap: 009 T046 asks the question first.)
+    let marker = upgrade::OpenMarker::now(machine);
+    if upgrade::steps_due(&conn, path).map_err(OpenError::classify)?.is_empty() {
+        conn.execute(
+            "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",
+            rusqlite::params![marker.machine_id, marker.machine_name, marker.since],
+        )
+        .map_err(OpenError::classify)?;
+    } else {
+        upgrade::upgrade(&conn, &upgrade::build_steps(path), Some(&marker))?;
+    }
     Ok(conn)
 }
 
@@ -281,19 +293,21 @@ pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, Op
     if !is_hoplodex_database(&conn).map_err(OpenError::classify)? {
         return Err(OpenError::PassphraseIncorrect);
     }
-    if has_unknown_migration(&conn).map_err(OpenError::classify)? {
+    if has_unknown_migration(&conn, path).map_err(OpenError::classify)? {
         return Err(OpenError::NewerVersion);
     }
     Ok(conn)
 }
 
-/// Whether `schema_migrations` names a migration this build doesn't have.
-fn has_unknown_migration(conn: &Connection) -> rusqlite::Result<bool> {
+/// Whether `schema_migrations` names a migration this build doesn't have
+/// (for the database at `path`: [`upgrade::build_steps`]).
+fn has_unknown_migration(conn: &Connection, path: &Path) -> rusqlite::Result<bool> {
+    let steps = upgrade::build_steps(path);
     let mut stmt = conn.prepare("SELECT name FROM schema_migrations")?;
     let names = stmt.query_map([], |row| row.get::<_, String>(0))?;
     for name in names {
         let name = name?;
-        if !MIGRATIONS.iter().any(|(known, _)| *known == name) {
+        if !steps.iter().any(|(known, _)| *known == name) {
             return Ok(true);
         }
     }
@@ -396,36 +410,6 @@ fn reclaim(conn: &Connection) {
     if let Err(err) = conn.execute_batch("VACUUM") {
         log::warn!("could not vacuum the database after a delete: {err}");
     }
-}
-
-fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (
-            name TEXT PRIMARY KEY,
-            applied_at TEXT NOT NULL
-        )",
-    )?;
-
-    for (name, sql) in MIGRATIONS {
-        let already_applied: bool = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name = ?1)",
-            [name],
-            |row| row.get(0),
-        )?;
-        if already_applied {
-            continue;
-        }
-
-        let tx = conn.unchecked_transaction()?;
-        tx.execute_batch(sql)?;
-        tx.execute(
-            "INSERT INTO schema_migrations (name, applied_at) VALUES (?1, datetime('now'))",
-            [name],
-        )?;
-        tx.commit()?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

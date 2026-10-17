@@ -11,7 +11,9 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-use hoplodex_lib::db::{self, raw_file::RawFile};
+use hoplodex_lib::commands::insurance::ops as insurance_ops;
+use hoplodex_lib::db::upgrade::{self, UpgradeError, testing};
+use hoplodex_lib::db::{self, OpenError, raw_file::RawFile};
 use rusqlite::{Connection, ErrorCode};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -190,7 +192,7 @@ fn an_interrupted_rebuild_rolls_back_from_its_hot_journal() {
     assert_eq!(original.rows.len(), 5000);
     let original_hash = file_hash(&conn);
 
-    // The rebuild in research.md §7's order, never committed.
+    // The rebuild in 009 research.md §7's order, never committed.
     conn.pragma_update(None, "cache_size", 1).unwrap();
     conn.execute_batch(
         "BEGIN IMMEDIATE;
@@ -238,4 +240,332 @@ fn an_interrupted_rebuild_rolls_back_from_its_hot_journal() {
     assert_eq!(snapshot(&again), original);
     drop(again);
     conn.execute_batch("ROLLBACK").unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// The runner (009 research.md §7, §14; 009 tasks.md T008). Every test uses
+// test-only steps registered for its own temporary folder with
+// `testing::scope`, on a database made before the scope was taken (so it is
+// older than the build's steps) and then upgraded.
+// ---------------------------------------------------------------------------
+
+const STEP_A: (&str, &str) =
+    ("9001_test_a", "CREATE TABLE t_a (id INTEGER PRIMARY KEY, note TEXT);");
+const STEP_B: (&str, &str) =
+    ("9002_test_b", "CREATE TABLE t_b (id INTEGER PRIMARY KEY); INSERT INTO t_b (id) VALUES (1);");
+/// Valid SQL up to its last statement, which names a table that is not there.
+const STEP_INVALID: (&str, &str) = (
+    "9003_test_invalid",
+    "CREATE TABLE t_invalid (id INTEGER PRIMARY KEY); INSERT INTO no_such_table VALUES (1);",
+);
+/// Leaves a child row whose parent is missing; the foreign keys are off while
+/// a step runs, so only the runner's link check can see it.
+const STEP_ORPHAN: (&str, &str) = (
+    "9004_test_orphan",
+    "CREATE TABLE t_parent (id INTEGER PRIMARY KEY);
+     CREATE TABLE t_child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES t_parent (id));
+     INSERT INTO t_child (id, parent_id) VALUES (1, 99);",
+);
+/// Updates collection rows, which fires the change-tracking triggers.
+const STEP_TOUCH_POLICIES: (&str, &str) =
+    ("9005_test_touch_policies", "UPDATE insurance_policies SET notes = 'touched by a step';");
+
+/// What an upgrade must leave exactly as it was when it fails: the layout and
+/// the `schema_migrations` rows.
+#[derive(Debug, PartialEq)]
+struct Layout {
+    schema: Vec<SchemaRow>,
+    applied: Vec<String>,
+}
+
+fn layout(conn: &Connection) -> Layout {
+    let schema = conn
+        .prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let applied = conn
+        .prepare("SELECT name FROM schema_migrations ORDER BY rowid")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    Layout { schema, applied }
+}
+
+fn foreign_keys_are_on(conn: &Connection) -> bool {
+    conn.query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0)).unwrap() == 1
+}
+
+fn changes_waiting(conn: &Connection) -> i64 {
+    conn.query_row("SELECT changes_waiting FROM app_state", [], |row| row.get(0)).unwrap()
+}
+
+/// A closed database made by the build, with one policy in it, in a folder of
+/// its own. Its `changes_waiting` is set as asked.
+fn older_database(waiting: i64) -> (TempDir, std::path::PathBuf) {
+    let (conn, dir) = TestDb::new().into_parts();
+    insurance_ops::create_policy(
+        &conn,
+        &support::policy("Range rider", "2025-01-01", "2026-01-01", None),
+    )
+    .unwrap();
+    conn.execute("UPDATE app_state SET changes_waiting = ?1", [waiting]).unwrap();
+    drop(conn);
+    let path = dir.path().join(TestDb::FILE_NAME);
+    (dir, path)
+}
+
+/// Runs the runner over `path` with the build's steps (and any registered for
+/// its folder), on a connection with the app's settings. The connection is
+/// returned to look at, still holding the file.
+fn run_upgrade(path: &Path) -> (Connection, Result<(), UpgradeError>) {
+    let conn = app_connection(path);
+    first_read(&conn).expect("the first read");
+    let result = upgrade::upgrade(&conn, &upgrade::build_steps(path), None);
+    (conn, result)
+}
+
+#[test]
+fn the_steps_due_apply_in_one_transaction_with_a_row_each() {
+    let (dir, path) = older_database(0);
+    let scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_B]);
+    let (conn, result) = run_upgrade(&path);
+    result.expect("the upgrade");
+
+    let applied = layout(&conn).applied;
+    assert_eq!(applied.len(), 5, "{applied:?}");
+    assert_eq!(&applied[3..], ["9001_test_a", "9002_test_b"]);
+    let rows: i64 = conn.query_row("SELECT count(*) FROM t_b", [], |row| row.get(0)).unwrap();
+    assert_eq!(rows, 1);
+    assert!(foreign_keys_are_on(&conn), "foreign keys must be on again after success");
+    // Nothing is due any more, and a second run changes nothing.
+    assert!(upgrade::steps_due(&conn, &path).unwrap().is_empty());
+    let before = layout(&conn);
+    upgrade::upgrade(&conn, &upgrade::build_steps(&path), None).unwrap();
+    assert_eq!(layout(&conn), before);
+    drop(scope);
+}
+
+#[test]
+fn steps_due_names_the_build_steps_after_the_databases_own() {
+    let (dir, path) = older_database(0);
+    let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_B]);
+    let conn = app_connection(&path);
+    first_read(&conn).unwrap();
+    assert_eq!(upgrade::steps_due(&conn, &path).unwrap(), ["9001_test_a", "9002_test_b"]);
+}
+
+/// 009 research.md §7: the steps and their rows are one transaction, so a
+/// failure in a later step takes the earlier ones with it (009 spec.md Edge Cases,
+/// several releases skipped).
+fn assert_nothing_applied(
+    path: &Path,
+    outcome: impl FnOnce(&Connection) -> Result<(), UpgradeError>,
+) -> UpgradeError {
+    let conn = app_connection(path);
+    first_read(&conn).unwrap();
+    let before = layout(&conn);
+    let error = outcome(&conn).expect_err("the upgrade should have failed");
+    assert_eq!(layout(&conn), before, "a failed upgrade left a step or a row behind");
+    assert!(foreign_keys_are_on(&conn), "foreign keys must be on again after a failure");
+    assert!(conn.is_autocommit(), "the failed upgrade left its transaction open");
+    drop(conn);
+    // And on disk, for the next open.
+    let conn = app_connection(path);
+    first_read(&conn).unwrap();
+    assert_eq!(layout(&conn), before, "the file was changed by a failed upgrade");
+    error
+}
+
+#[test]
+fn a_failure_after_the_second_step_leaves_neither_step_nor_row() {
+    let (dir, path) = older_database(0);
+    let _scope = testing::scope(dir.path())
+        .extra_steps(&[STEP_A, STEP_B])
+        .fail_at(testing::Point::AfterStep(2));
+    let error = assert_nothing_applied(&path, |conn| {
+        upgrade::upgrade(conn, &upgrade::build_steps(&path), None)
+    });
+    assert!(matches!(error, UpgradeError::Injected(_)), "{error:?}");
+}
+
+#[test]
+fn a_step_with_invalid_sql_leaves_neither_it_nor_the_steps_before_it() {
+    let (dir, path) = older_database(0);
+    let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_INVALID]);
+    let error = assert_nothing_applied(&path, |conn| {
+        upgrade::upgrade(conn, &upgrade::build_steps(&path), None)
+    });
+    // The error names the step, and carries no row value.
+    assert!(
+        matches!(&error, UpgradeError::Step { name, .. } if name == "9003_test_invalid"),
+        "{error:?}"
+    );
+    assert!(error.to_string().contains("9003_test_invalid"), "{error}");
+}
+
+#[test]
+fn an_orphan_row_fails_at_the_link_check_and_is_rolled_back() {
+    let (dir, path) = older_database(0);
+    let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_ORPHAN]);
+    let error = assert_nothing_applied(&path, |conn| {
+        upgrade::upgrade(conn, &upgrade::build_steps(&path), None)
+    });
+    assert!(matches!(error, UpgradeError::LinkCheck { .. }), "{error:?}");
+    assert!(!error.to_string().contains("99"), "the error must not carry row values: {error}");
+}
+
+#[test]
+fn a_failure_at_the_link_check_or_before_the_commit_rolls_back_too() {
+    for point in [testing::Point::AtLinkCheck, testing::Point::BeforeCommit] {
+        let (dir, path) = older_database(0);
+        let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_B]).fail_at(point);
+        let error = assert_nothing_applied(&path, |conn| {
+            upgrade::upgrade(conn, &upgrade::build_steps(&path), None)
+        });
+        assert!(matches!(error, UpgradeError::Injected(_)), "{point:?}: {error:?}");
+    }
+}
+
+#[test]
+fn changes_waiting_is_the_same_after_a_step_that_updates_collection_rows() {
+    for waiting in [0, 1] {
+        let (dir, path) = older_database(waiting);
+        let _scope = testing::scope(dir.path()).extra_steps(&[STEP_TOUCH_POLICIES]);
+        let (conn, result) = run_upgrade(&path);
+        result.unwrap();
+        let notes: String =
+            conn.query_row("SELECT notes FROM insurance_policies", [], |row| row.get(0)).unwrap();
+        assert_eq!(notes, "touched by a step", "the step did not run");
+        assert_eq!(changes_waiting(&conn), waiting);
+    }
+}
+
+#[test]
+fn the_upgrade_does_not_record_a_saved_version() {
+    let (dir, path) = older_database(0);
+    {
+        let conn = app_connection(&path);
+        first_read(&conn).unwrap();
+        conn.execute("UPDATE app_state SET last_saved_version = '0.0.1'", []).unwrap();
+    }
+    let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A]);
+    let (conn, result) = run_upgrade(&path);
+    result.unwrap();
+    let saved: String =
+        conn.query_row("SELECT last_saved_version FROM app_state", [], |row| row.get(0)).unwrap();
+    assert_eq!(saved, "0.0.1");
+}
+
+#[test]
+fn the_open_marker_is_written_in_the_same_transaction_when_one_is_given() {
+    let (dir, path) = older_database(0);
+    let _scope =
+        testing::scope(dir.path()).extra_steps(&[STEP_A]).fail_at(testing::Point::BeforeCommit);
+    let conn = app_connection(&path);
+    first_read(&conn).unwrap();
+    let marker = upgrade::OpenMarker::now(&support::other_machine());
+    upgrade::upgrade(&conn, &upgrade::build_steps(&path), Some(&marker)).unwrap_err();
+    let holder: Option<String> =
+        conn.query_row("SELECT open_machine_id FROM app_state", [], |row| row.get(0)).unwrap();
+    assert_eq!(holder.as_deref(), Some(support::test_machine().id.as_str()), "the marker leaked");
+}
+
+#[test]
+fn a_hook_runs_at_its_point_with_the_connection_inside_the_transaction() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let (dir, path) = older_database(0);
+    let seen = Arc::new(AtomicUsize::new(0));
+    let in_transaction = Arc::new(AtomicUsize::new(0));
+    let (seen_by_hook, in_transaction_by_hook) = (seen.clone(), in_transaction.clone());
+    let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_B]).at_point(
+        testing::Point::AfterStep(1),
+        move |conn| {
+            seen_by_hook.fetch_add(1, Ordering::SeqCst);
+            // Step 1 is in, step 2 is not, and the transaction is still open.
+            let t_a: i64 = conn
+                .query_row("SELECT count(*) FROM sqlite_schema WHERE name = 't_a'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            let t_b: i64 = conn
+                .query_row("SELECT count(*) FROM sqlite_schema WHERE name = 't_b'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            if t_a == 1 && t_b == 0 && !conn.is_autocommit() {
+                in_transaction_by_hook.fetch_add(1, Ordering::SeqCst);
+            }
+        },
+    );
+    run_upgrade(&path).1.unwrap();
+    assert_eq!(seen.load(Ordering::SeqCst), 1);
+    assert_eq!(in_transaction.load(Ordering::SeqCst), 1);
+}
+
+/// The scope's isolation (009 research.md §14): a database in another folder
+/// gets no extra step, whether it is made or opened while the scope is held,
+/// and the steps are gone when the scope is dropped.
+#[test]
+fn a_scope_reaches_only_databases_in_its_folder() {
+    let (dir, path) = older_database(0);
+    let other = TempDir::new().unwrap();
+    let other_path = other.path().join(TestDb::FILE_NAME);
+
+    let scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_B]);
+    let conn =
+        db::create_database(&other_path, &support::passphrase(), &support::test_machine()).unwrap();
+    let names = layout(&conn).applied;
+    assert_eq!(names.len(), 3, "an extra step reached a database in another folder: {names:?}");
+    assert!(upgrade::steps_due(&conn, &other_path).unwrap().is_empty());
+    drop(conn);
+    let reopened =
+        db::open_database(&other_path, &support::passphrase(), &support::test_machine(), false)
+            .unwrap();
+    assert_eq!(layout(&reopened).applied.len(), 3);
+    drop(reopened);
+
+    // The folder it names does get them, on open (the open path calls the
+    // runner until 009 T046).
+    let conn =
+        db::open_database(&path, &support::passphrase(), &support::test_machine(), false).unwrap();
+    assert_eq!(layout(&conn).applied.len(), 5);
+    drop(conn);
+
+    drop(scope);
+    assert_eq!(upgrade::build_steps(&path).len(), 3, "the scope's steps outlived it");
+}
+
+#[test]
+fn a_database_with_a_step_this_build_lacks_is_newer_and_refused() {
+    let (dir, path) = older_database(0);
+    {
+        let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A]);
+        run_upgrade(&path).1.unwrap();
+    }
+    // The scope is gone, so the database holds a step the build lacks.
+    let result = db::open_database(&path, &support::passphrase(), &support::test_machine(), false);
+    assert!(matches!(result, Err(OpenError::NewerVersion)), "{result:?}");
+}
+
+#[test]
+fn an_open_that_fails_its_upgrade_leaves_the_file_as_it_was() {
+    let (dir, path) = older_database(0);
+    let before = {
+        let conn = app_connection(&path);
+        first_read(&conn).unwrap();
+        layout(&conn)
+    };
+    let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_INVALID]);
+    let result = db::open_database(&path, &support::passphrase(), &support::test_machine(), false);
+    assert!(matches!(result, Err(OpenError::Upgrade(_))), "{result:?}");
+    let conn = app_connection(&path);
+    first_read(&conn).unwrap();
+    assert_eq!(layout(&conn), before);
 }
