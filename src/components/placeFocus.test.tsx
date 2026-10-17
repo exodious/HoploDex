@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Button } from "./Button";
 import { ChoiceCards } from "./ChoiceCards";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -74,6 +74,57 @@ describe("placeFocus", () => {
 
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     expect(focus).toHaveBeenLastCalledWith({ focusVisible: false });
+  });
+});
+
+// Regression (#114): a closing dialog gave focus back to its opener with a
+// plain focus(), which WebKitGTK rings after a mouse click.
+describe("a closing dialog returns focus to its opener", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function Opener({ confirm, open }: { confirm?: boolean; open: boolean }) {
+    return (
+      <>
+        <button>Opener</button>
+        {confirm ? (
+          <ConfirmDialog
+            open={open}
+            onOpenChange={() => {}}
+            title="Delete firearm?"
+            description="This permanently removes the record."
+            onConfirm={() => {}}
+          />
+        ) : (
+          <Dialog open={open} onOpenChange={() => {}} title="Restore from a backup">
+            <input aria-label="Field" />
+          </Dialog>
+        )}
+      </>
+    );
+  }
+
+  it.each([
+    ["a Dialog", false],
+    ["a ConfirmDialog", true],
+  ])("%s: with the ring only after a key", async (_name, confirm) => {
+    const { rerender } = render(<Opener confirm={confirm} open={false} />);
+    const opener = screen.getByRole("button", { name: "Opener" });
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    const lastFocusOnOpener = () => focus.mock.calls[focus.mock.contexts.lastIndexOf(opener)];
+
+    for (const [press, ring] of [
+      [() => fireEvent.pointerDown(opener), false],
+      [() => fireEvent.keyDown(opener, { key: "Enter" }), true],
+    ] as const) {
+      press();
+      opener.focus();
+      rerender(<Opener confirm={confirm} open />);
+      await screen.findByRole(confirm ? "alertdialog" : "dialog");
+      rerender(<Opener confirm={confirm} open={false} />);
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(opener).toHaveFocus();
+      expect(lastFocusOnOpener()).toEqual([{ focusVisible: ring }]);
+    }
   });
 });
 

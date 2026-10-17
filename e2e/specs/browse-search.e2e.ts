@@ -12,6 +12,7 @@ import {
 } from "../support/ui";
 import { createDatabase, invokeCommand, search } from "../support/ui";
 import { resizeWindow } from "../support/screenshots";
+import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of 001 US2's acceptance scenarios (001 spec.md),
@@ -188,6 +189,62 @@ describe("001 US2 - Browse, Search, and Group the Collection (was us2-browse-sea
     expect(Math.abs(stuck.headTop - stuck.topbar)).toBeLessThanOrEqual(1);
     expect(stuck.headCovered).toBe(false);
     expect(stuck.groupAtTop).toBe(stuck.secondTitle);
+  });
+
+  // #114: Radix gave focus back to a menu's button with a plain focus(), and
+  // WebKitGTK rang it after a mouse choice. Only real input shows it: the
+  // walk's synthetic pointerdown and WebDriver's clicks don't.
+  it("returns focus to the Group by and Database buttons with the ring only after a key (#114)", async function () {
+    skipWithoutRealInput(this);
+    const trigger = 'button[aria-haspopup="menu"][aria-label^="Group by"]';
+    const focusOn = (selector: string) =>
+      browser.execute((css: string) => {
+        const active = document.activeElement;
+        return {
+          onButton: active === document.querySelector(css),
+          ring: active?.matches(":focus-visible") ?? false,
+        };
+      }, selector);
+    const menuClosed = () => $('[role="menu"]').waitForExist({ reverse: true, timeout: 5000 });
+
+    await realClick(trigger);
+    await realClick('[role="menuitemradio"]*=Type');
+    await menuClosed();
+    expect(await focusOn(trigger)).toEqual({ onButton: true, ring: false });
+
+    // A key choice: the ring shows, so a keyboard user sees where they are.
+    await realKey("Return");
+    await $('[role="menu"]').waitForDisplayed({ timeout: 5000 });
+    await realKey("Down");
+    await realKey("Return");
+    await menuClosed();
+    expect(await focusOn(trigger)).toEqual({ onButton: true, ring: true });
+
+    await realClick(trigger);
+    await $('[role="menu"]').waitForDisplayed({ timeout: 5000 });
+    await realKey("Escape");
+    await menuClosed();
+    expect(await focusOn(trigger)).toEqual({ onButton: true, ring: true });
+
+    // A click elsewhere closes the Database menu without ringing its button.
+    await realClick("button.hd-db-menu");
+    await $('[role="menu"]').waitForDisplayed({ timeout: 5000 });
+    await realClick("h1");
+    await menuClosed();
+    expect(await focusOn("button.hd-db-menu")).toEqual({ onButton: true, ring: false });
+
+    // A dialog closed with the mouse gives focus back to its button the same way.
+    await realClick("button=Add firearm");
+    await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
+    await realClick("button=Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 5000 });
+    const afterDialog = await browser.execute(() => ({
+      name: document.activeElement?.textContent?.trim(),
+      ring: document.activeElement?.matches(":focus-visible") ?? false,
+    }));
+    expect(afterDialog).toEqual({ name: "Add firearm", ring: false });
+
+    await groupBy("None");
   });
 
   // #108: the window's minimum width is 800px (main.rs); the top bar used to

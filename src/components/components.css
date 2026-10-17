@@ -1064,7 +1064,9 @@
 
 .hd-toasts {
   position: fixed;
-  right: var(--space-6);
+  /* Beside the scroll bar a dialog's scroll lock removes, so a toast doesn't
+     move when one opens (#117; RunningHead.css says how). */
+  right: calc(var(--space-6) + var(--removed-body-scroll-bar-size, 0px));
   bottom: var(--space-6);
   display: flex;
   flex-direction: column;

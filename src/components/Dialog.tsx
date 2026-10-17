@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Icon } from "./Icon";
 import { LOCK_SHORTCUT, useLock } from "./lock";
-import { placeFocus } from "./placeFocus";
+import { currentOpener, placeFocus } from "./placeFocus";
 import "./components.css";
 
 const FIRST_FIELD = [
@@ -56,7 +56,7 @@ export function Dialog({
   // this captures and restores it here, once, for every dialog.
   const previouslyFocused = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
+    if (open) previouslyFocused.current = currentOpener();
   }, [open]);
   return (
     <RadixDialog.Root
@@ -73,7 +73,7 @@ export function Dialog({
           {...(description ? {} : { "aria-describedby": undefined })}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            previouslyFocused.current?.focus();
+            placeFocus(previouslyFocused.current);
           }}
           onOpenAutoFocus={(event) => {
             // Start in the first field rather than on the header's close
