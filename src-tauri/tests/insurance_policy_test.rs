@@ -394,3 +394,166 @@ fn notes_are_cleared_when_updated_with_null() {
     assert_eq!(updated.notes, None);
     assert_eq!(insurance_ops::get_policy(&db.conn, created.id).unwrap().notes, None);
 }
+
+// ---- 009 US2: a policy name means one policy (009 FR-007, FR-008) ----
+
+/// A schedule-only policy (no blanket limit), so the blanket-overlap rule
+/// never decides these tests' outcomes.
+fn rider(
+    name: &str,
+    start: &str,
+    end: &str,
+) -> hoplodex_lib::models::insurance_policy::InsurancePolicyInput {
+    policy(name, start, end, None)
+}
+
+fn policy_count(db: &TestDb) -> usize {
+    insurance_ops::list_policies(&db.conn).unwrap().len()
+}
+
+/// The text 009 contracts/tauri-commands.md gives for `fieldErrors.name`.
+fn duplicate_name_message(other: &str) -> String {
+    use chrono::Datelike;
+    format!(
+        "\u{201c}{other}\u{201d} is already the name of another policy. Give this one a \
+         different name, such as \u{201c}{other} {}\u{201d}.",
+        chrono::Local::now().year()
+    )
+}
+
+fn assert_name_refused(err: &hoplodex_lib::commands::CommandError, stored_name: &str) {
+    assert_eq!(err.code, "VALIDATION_ERROR", "{err:?}");
+    let fields = err.field_errors.as_ref().expect("a field error");
+    assert_eq!(fields.len(), 1, "only the name is blamed: {fields:?}");
+    assert_eq!(fields["name"], duplicate_name_message(stored_name));
+}
+
+/// 009 US2-1, 009 FR-007, 009 FR-008, 009 SC-003: another case, or
+/// surrounding spaces, is the same name.
+#[test]
+fn a_second_policy_with_the_same_name_is_refused_ignoring_case_and_surrounding_spaces() {
+    let db = TestDb::new();
+    insurance_ops::create_policy(&db.conn, &rider("Homeowners rider", "2025-01-01", "2026-01-01"))
+        .unwrap();
+
+    for attempt in
+        ["Homeowners rider", "homeowners rider ", " HOMEOWNERS RIDER", "Homeowners Rider"]
+    {
+        let err =
+            insurance_ops::create_policy(&db.conn, &rider(attempt, "2026-01-01", "2027-01-01"))
+                .expect_err(attempt);
+        assert_name_refused(&err, "Homeowners rider");
+        assert_eq!(policy_count(&db), 1, "nothing was saved for {attempt:?}");
+    }
+}
+
+/// 009 US2-1, 009 FR-007: expired and future policies count too.
+#[test]
+fn an_expired_and_a_future_policy_keep_their_names_too() {
+    let db = TestDb::new();
+    insurance_ops::create_policy(&db.conn, &rider("Old rider", "2000-01-01", "2001-01-01"))
+        .unwrap();
+    insurance_ops::create_policy(&db.conn, &rider("Coming rider", "2998-01-01", "2999-01-01"))
+        .unwrap();
+
+    let err =
+        insurance_ops::create_policy(&db.conn, &rider("old RIDER", "2025-01-01", "2026-01-01"))
+            .expect_err("expired policy's name");
+    assert_name_refused(&err, "Old rider");
+
+    let err = insurance_ops::create_policy(
+        &db.conn,
+        &rider(" Coming Rider ", "2025-01-01", "2026-01-01"),
+    )
+    .expect_err("future policy's name");
+    assert_name_refused(&err, "Coming rider");
+    assert_eq!(policy_count(&db), 2);
+}
+
+/// 009 US2-1, 009 FR-007: an edit follows the same rule, but a policy keeps
+/// its own name in any form.
+#[test]
+fn renaming_a_policy_to_another_ones_name_is_refused_but_its_own_name_is_free() {
+    let db = TestDb::new();
+    insurance_ops::create_policy(&db.conn, &rider("Homeowners rider", "2025-01-01", "2026-01-01"))
+        .unwrap();
+    let second = insurance_ops::create_policy(
+        &db.conn,
+        &rider("Collector schedule", "2025-01-01", "2026-01-01"),
+    )
+    .unwrap();
+
+    let err = insurance_ops::update_policy(
+        &db.conn,
+        second.id,
+        &rider(" HOMEOWNERS rider ", "2025-01-01", "2026-01-01"),
+    )
+    .expect_err("another policy's name in another case");
+    assert_name_refused(&err, "Homeowners rider");
+    assert_eq!(
+        insurance_ops::get_policy(&db.conn, second.id).unwrap().name,
+        "Collector schedule",
+        "nothing was saved"
+    );
+
+    for own in ["Collector schedule", "COLLECTOR schedule", "  Collector schedule  "] {
+        let saved = insurance_ops::update_policy(
+            &db.conn,
+            second.id,
+            &rider(own, "2025-01-01", "2026-01-01"),
+        )
+        .unwrap_or_else(|e| panic!("{own:?} is the policy's own name: {e:?}"));
+        assert_eq!(saved.name, own);
+    }
+}
+
+/// 009 research.md §2: only the letters A-Z are matched in either case, and
+/// only U+0020 is trimmed.
+#[test]
+fn only_a_to_z_and_the_space_are_folded_so_other_names_can_sit_side_by_side() {
+    let db = TestDb::new();
+    for name in ["\u{c9}glise", "\u{e9}glise", "Rider", "Rider\t"] {
+        insurance_ops::create_policy(&db.conn, &rider(name, "2025-01-01", "2026-01-01"))
+            .unwrap_or_else(|e| panic!("{name:?} is a different name: {e:?}"));
+    }
+    assert_eq!(policy_count(&db), 4);
+}
+
+/// 009 FR-007: the name is stored as typed; the comparison never rewrites it.
+#[test]
+fn a_name_is_stored_as_typed_with_its_spaces() {
+    let db = TestDb::new();
+    let created =
+        insurance_ops::create_policy(&db.conn, &rider(" Rider ", "2025-01-01", "2026-01-01"))
+            .unwrap();
+    assert_eq!(created.name, " Rider ");
+    assert_eq!(insurance_ops::get_policy(&db.conn, created.id).unwrap().name, " Rider ");
+}
+
+/// 009 FR-007, 009 plan.md "First tasks" 1: the database refuses a clashing
+/// name by itself, `idx_insurance_policies_name`, under SQLCipher.
+#[test]
+fn the_database_itself_refuses_a_clashing_policy_name() {
+    let db = TestDb::new();
+    insurance_ops::create_policy(&db.conn, &rider("Homeowners rider", "2025-01-01", "2026-01-01"))
+        .unwrap();
+
+    // Not through the ops, so the ops' check can't be what refuses. The error
+    // must name the index: another reason (a column the insert leaves out)
+    // would not prove the backstop.
+    let err = db
+        .conn
+        .execute(
+            "INSERT INTO insurance_policies (
+                name, policy_number, insurance_company, effective_start_date,
+                effective_end_date, created_at, updated_at
+            ) VALUES (' homeowners RIDER', 'P-2', 'Acme', '2026-01-01', '2027-01-01',
+                datetime('now'), datetime('now'))",
+            [],
+        )
+        .expect_err("the index refuses the second name");
+    assert!(err.to_string().contains("idx_insurance_policies_name"), "{err}");
+
+    let one = insurance_ops::list_policies(&db.conn).unwrap();
+    assert_eq!(one.len(), 1);
+}

@@ -232,4 +232,49 @@ describe("InsurancePolicyForm (001 FR-027, FR-036)", () => {
     fireEvent.change(notes, { target: { value: "x".repeat(4001) } });
     expect(screen.getByText("4,001 of 4,000")).toBeInTheDocument();
   });
+
+  // 009 US2-1, 009 FR-008, contracts/ui.md §9.
+  it("shows the backend's duplicate-name error at Name, moves focus there and changes no other field", async () => {
+    const user = userEvent.setup();
+    const message =
+      "\u201cHomeowners rider\u201d is already the name of another policy. Give this one a different name, such as \u201cHomeowners rider 2026\u201d.";
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message,
+        fieldErrors: { name: message },
+      }),
+    );
+    render(<InsurancePolicyForm onSubmit={onSubmit} />);
+    await fillRequired(user);
+    // Focus is somewhere else when the answer comes back.
+    await user.click(screen.getByLabelText(/Policy number/));
+    const name = screen.getByLabelText(/Policy name/);
+
+    await user.click(screen.getByRole("button", { name: "Add policy" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(name).toHaveAccessibleDescription(expect.stringContaining(message));
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    expect(name).toHaveFocus();
+    // Nothing else is flagged or changed, and no banner repeats the message.
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(
+      screen.getAllByRole("textbox").filter((box) => box.getAttribute("aria-invalid") === "true"),
+    ).toEqual([name]);
+    expect(name).toHaveValue("Homeowner's rider");
+    expect(screen.getByLabelText(/Policy number/)).toHaveValue("HR-1");
+    expect(screen.getByLabelText(/Insurance company/)).toHaveValue("Acme");
+    expect(screen.getByLabelText(/Coverage starts/)).toHaveValue("2026-01-01");
+  });
+
+  // 009 US2-1, contracts/ui.md §9.
+  it("hints that each policy needs its own name", () => {
+    render(<InsurancePolicyForm onSubmit={vi.fn()} />);
+
+    expect(screen.getByLabelText(/Policy name/)).toHaveAccessibleDescription(
+      expect.stringContaining("Each policy needs its own name."),
+    );
+  });
 });

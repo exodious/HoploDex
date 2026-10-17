@@ -57,3 +57,64 @@ fn the_import_match_and_the_duplicate_checks_use_an_index() {
         "idx_firearms_active_nickname",
     );
 }
+
+// ---- 009 US2: policy names (009 FR-006, FR-007, 009 research.md §2) ----
+
+fn assert_searches_policy_name_index(conn: &Connection, name: &str, sql: &str) {
+    let steps = plan(conn, sql);
+    assert!(
+        steps.iter().any(|s| s.contains("SEARCH insurance_policies USING INDEX")
+            && s.contains("idx_insurance_policies_name")),
+        "{name} should search `idx_insurance_policies_name`, the plan was {steps:?}"
+    );
+    assert!(
+        !steps.iter().any(|s| s.contains("SCAN insurance_policies")),
+        "{name} scans every policy: {steps:?}"
+    );
+}
+
+/// `sql` with each run of whitespace made one space, so a source file's line
+/// breaks and indentation don't matter.
+fn flat(sql: &str) -> String {
+    sql.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The statements are inline in their functions rather than named constants,
+/// so this test reaches them by text: it plans the statement as the
+/// contract gives it (009 contracts/tauri-commands.md) and fails when the
+/// source no longer holds that text, so the plan checked is the plan run.
+fn assert_in_source(source: &str, file: &str, sql: &str) {
+    assert!(
+        flat(source).contains(&flat(sql)),
+        "{file} no longer holds `{}`; this test and the code must say the same",
+        flat(sql)
+    );
+}
+
+#[test]
+fn the_policy_name_check_and_import_lookups_use_the_name_index() {
+    const NAME_CLASH_SQL: &str = "SELECT name FROM insurance_policies
+        WHERE trim(name) = trim(?1) COLLATE NOCASE AND id IS NOT ?2";
+    const IMPORT_LOOKUP_SQL: &str =
+        "SELECT id FROM insurance_policies WHERE trim(name) = trim(:name) COLLATE NOCASE";
+
+    let db = TestDb::new();
+    for n in 0..20 {
+        hoplodex_lib::commands::insurance::ops::create_policy(
+            &db.conn,
+            &support::policy(&format!("Policy {n}"), "2020-01-01", "2099-01-01", None),
+        )
+        .unwrap();
+    }
+
+    assert_searches_policy_name_index(&db.conn, "the form's name check", NAME_CLASH_SQL);
+    assert_searches_policy_name_index(&db.conn, "import's lookup", IMPORT_LOOKUP_SQL);
+
+    assert_in_source(include_str!("../src/commands/insurance.rs"), "insurance.rs", NAME_CLASH_SQL);
+    let import = include_str!("../src/commands/import_export.rs");
+    assert_eq!(
+        flat(import).matches(&flat(IMPORT_LOOKUP_SQL)).count(),
+        2,
+        "import_export.rs holds the lookup once for the firearm row and once for the accessory row"
+    );
+}
