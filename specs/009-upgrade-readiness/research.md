@@ -233,10 +233,15 @@ for (003 FR-007).
 - **The result** is `DatabaseNotes.upgraded = { version, backupPath, atBackupLocation }`.
   It is shown once in the collection's notes area, like the "backup opened
   directly" note (FR-017).
-- **A failure while running** (`UPGRADE_FAILED`, details `backupPath`, or none
-  if the backup wasn't finished) is shown in the chooser's row, as other open
-  failures are: "HoploDex couldn't upgrade “X”, so it is as it was and hasn't
-  been opened. Its backup from before the upgrade is at <path>."
+- **A failure while running** is one of two kinds:
+  - In the backup phase (the location check, the copy, the stamp, the
+    rename), it is `UPGRADE_BACKUP_FAILED` (or the location refusals), the
+    partial file is removed, and the database stays waiting so a folder can
+    be chosen (§6, FR-012).
+  - From the first step on, it is `UPGRADE_FAILED`, which always carries
+    `backupPath`, since the backup was finished before any step ran. It is
+    shown in the chooser's row, as other open failures are, in
+    contracts/ui.md §4's words.
 
 ## §6 The backup before an upgrade (FR-011 to FR-014)
 
@@ -485,13 +490,13 @@ and still a backup (FR-010).
 folder this computer cached for the database (its recent entry) when there is
 one. The chooser's text becomes:
 
-> “X” was last used by a newer version of HoploDex, which upgraded it. Update
-> HoploDex to open it. The file has not been changed. A backup made before
-> the upgrade opens in this version: look in <folder>, or in the “HoploDex
-> backups” folder next to the database if you haven't chosen another backup
-> location.
+> “X” was last used by a newer version of HoploDex, which upgraded it.
+> Update HoploDex to open it. The file has not been changed. A backup saved
+> before that upgrade opens in this version: look for one whose name ends in
+> “before” and a version number, in <folder>.
 
-Without a cached folder, the sentence names only the default folder. This
+Without a cached folder, <folder> is "the “HoploDex backups” folder next to
+the database, or the backup location you chose for it" (contracts/ui.md §8). This
 wording ships in 0.1.0 (FR-018). The same text is used when a restore or
 `check_backup` meets a newer backup.
 
@@ -600,28 +605,50 @@ release.
 
 ## §14 Testing the upgrade: test-only steps, forced failures and interruptions (SC-005, US4)
 
-**Decision**: the hooks are compiled only with `test-kdf` and
-`debug_assertions`, the gate `db::cipher::test_kdf` already uses, so no
-shipped or E2E build has them. `db::upgrade::testing` provides:
+**Decision**: the hooks are compiled only with a Cargo feature of their own,
+`upgrade-test-steps`.
+- `test-kdf` turns it on, so the usual test command is unchanged.
+- The release `performance_test` is built with it alone. `test-kdf` can't be
+  used there, because `db::cipher` refuses it without debug assertions, and
+  SC-007 must be timed in a release build.
+- `db/upgrade.rs` refuses to compile it with `custom-protocol` (every shipped
+  build) or `e2e`, as `db::cipher` refuses `test-kdf`. The app (`main.rs`) and
+  the examples refuse to run with it. So no shipped or E2E build has them.
 
-- **Extra steps.** `with_extra_steps(&[(name, sql)])`, a guard that appends
-  test-only steps on this thread. The tests use two:
-  - a rebuild of `photos`, which links to firearms and accessories and is
-    linked from their `thumbnail_photo_id`, changing a `CHECK` and recreating
-    its indexes and triggers;
-  - a rebuild of `disposition_history` that adds a required unique
-    identifier filled with §7's expression.
+**Scope.** Every hook is registered for a folder, `testing::scope(dir)`, and
+applies to any database whose file is in that folder, on whichever thread
+works on it. `upgrade_database` is `async` and may run on another thread
+than the test's, and a cancel test needs two threads, so a thread-local guard
+wouldn't reach it. A folder keeps concurrent tests apart, since each test has
+its own temporary folder, and it covers the restore's `.<file>.new` copy
+beside the database. The registry is process-wide behind a mutex; a scope
+clears its entries when dropped.
+
+`db::upgrade::testing` provides:
+
+- **Extra steps.** `scope(dir).extra_steps(&[(name, sql)])` appends test-only
+  steps to `build_steps()` for databases in that folder. The step SQL is
+  kept in the module as constants, so every test program (the integration
+  tests and `performance_test`) uses the same text:
+  - `PHOTOS_REBUILD`: a rebuild of `photos`, which links to firearms and
+    accessories and is linked from their `thumbnail_photo_id`, changing a
+    `CHECK` and recreating its indexes and triggers;
+  - `HISTORY_UID_FILL`: a rebuild of `disposition_history` that adds a
+    required unique identifier filled with §7's expression.
 
   They are US4's independent test, and `release_upgrade_test` runs them over
   the 0.1.0 fixture.
-- **Forced failures.** `fail_at(point)`. The points are: before the backup;
+- **Forced failures.** `scope(dir).fail_at(point)`. The points are: before the backup;
   during the copy (I/O error); at the stamp; before the backup's rename; after
   each step; at the link check (an orphan row is planted in a test step); and
   before the commit. Each run then checks that the database's rows and
-  layout are exactly the fixture's, that the error was `UPGRADE_FAILED`, or
-  `UPGRADE_BACKUP_FAILED` before the backup was made, that no `.partial` file
-  is left, and that the next open asks again (SC-005).
-- **Interruptions.** `at_point(point, hook)` runs `hook(&Connection)` at a
+  layout are exactly the fixture's and that no `.partial` file is left
+  (SC-005). A point in the backup phase (before the backup, during the copy,
+  the stamp, the rename) gives `UPGRADE_BACKUP_FAILED` with the database
+  still waiting, so the same `awaitingId` can retry. A point from the first
+  step on gives `UPGRADE_FAILED` with `backupPath`, the database is dropped,
+  and the next open asks again.
+- **Interruptions.** `scope(dir).at_point(point, hook)` runs `hook(&Connection)` at a
   point. The interruption test sets `cache_size = 1` so that changes spill
   into the file. At each point inside the transaction it copies the database,
   through `RawFile` (never `std::fs`, which would drop the lock), and its
@@ -648,6 +675,13 @@ shipped or E2E build has them. `db::upgrade::testing` provides:
   the step, so no other spec sees the question.
 - `scripts/human-testing.sh --release --older` puts the same copy in the
   human-testing sandbox, as "Older collection", for the manual checks.
+- **Holding the phases on screen.** The fixture upgrades in well under a
+  second, so the screenshot walk and the screen-reader check couldn't see
+  each phase. An `e2e` build reads `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS`, as
+  it reads `HOPLODEX_E2E_IDLE_MINUTE_SECONDS`. When it is set, the backup
+  phase waits that long before its first chunk (stoppable, like a chunk),
+  and the upgrade phase waits that long before the commit. No other build
+  reads it.
 
 ## §15 The recent list read by an earlier version (found at planning)
 
@@ -683,7 +717,8 @@ listed in plan.md for a look.
   chunk, with `showNow`, and the chooser's dialog shows on it or after a
   second. `performance_test.rs` checks that the first `upgrade:progress`
   arrives within 1 s of `upgrade_database` being called on a 10,000-item
-  database.
+  database that `testing::PHOTOS_REBUILD` makes older. It runs in a release
+  build with `upgrade-test-steps` (§14).
 - **The interface stays responsive**: `upgrade_database` is `async` and runs off
   the UI thread, as today.
 
@@ -705,8 +740,9 @@ listed in plan.md for a look.
   in the keyring is kept until the upgrade ends, zeroized when it is dropped
   (§4). The chooser keeps none.
 - **Upgrade steps** are pure SQL compiled into the binary. They can't be
-  supplied at run time; test-only steps exist only in `test-kdf` and `e2e`
-  builds. A dropped table's pages are zeroed (`secure_delete`).
+  supplied at run time. Test-only steps exist only in Rust test builds with
+  `upgrade-test-steps`, which a `custom-protocol` (shipped) or `e2e` build
+  refuses to compile, and in `e2e` builds (one empty table). A dropped table's pages are zeroed (`secure_delete`).
 - **Identifiers** are random (OS RNG), never shown, and not exported.
 - **`check_backup`** reveals only whether a passphrase opens a backup and its
   layout. With `databasePath`, it is authorized as the damaged restore is
@@ -719,7 +755,8 @@ listed in plan.md for a look.
 
 ## §18 Dependencies and licensing
 
-No new runtime dependency. `sha2` 0.10 becomes a dev-dependency of
+No new runtime dependency. One new Cargo feature, `upgrade-test-steps`
+(§14), which pulls in no crate. `sha2` 0.10 becomes a dev-dependency of
 `src-tauri`. It is already in `Cargo.lock` through `secret-service` and
 `tauri-codegen`, is MIT/Apache-2.0, and has no advisory. The audit runs
 unchanged.

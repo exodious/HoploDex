@@ -180,5 +180,8 @@ only.
 ## Process modes and builds
 
 No new process mode. An `e2e` build applies one extra step,
-`9000_e2e_upgrade_check`, after `MIGRATIONS` (research.md §14). No other
-build has it.
+`9000_e2e_upgrade_check`, after `MIGRATIONS`, and reads
+`HOPLODEX_E2E_UPGRADE_PHASE_SECONDS`, which holds each upgrade phase on
+screen that long (research.md §14). No other build has either. The Rust
+tests' test-only steps and fault points need the `upgrade-test-steps`
+feature, which no shipped or E2E build compiles.

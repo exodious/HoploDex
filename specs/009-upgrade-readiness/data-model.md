@@ -85,8 +85,11 @@ checks every line (research.md §11).
 
 ### Test-only steps (not stored in any shipped build)
 
-- `db::upgrade::testing::with_extra_steps`, in `test-kdf` debug builds only:
-  the `photos` and `disposition_history` rebuilds of research.md §14.
+- `db::upgrade::testing`'s `PHOTOS_REBUILD` and `HISTORY_UID_FILL` (the
+  `photos` and `disposition_history` rebuilds of research.md §14), applied
+  through `testing::scope(dir).extra_steps(…)` to databases in that folder.
+  Compiled only with the `upgrade-test-steps` feature, which `test-kdf` turns
+  on and `custom-protocol` and `e2e` builds refuse.
 - `9000_e2e_upgrade_check`, in `e2e` builds only: one empty table.
 
 ## Stored: backup files (amends 003 data-model.md "Backup files")

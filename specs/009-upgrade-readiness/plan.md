@@ -87,7 +87,9 @@ planning and become the first tests against SQLCipher (research.md §14).
     `performance_test.rs`, plus every test that inserts photos, documents or
     policies directly (research.md §1).
 - **Test-only steps and fault injection** (`db::upgrade::testing`) are
-  compiled only with `test-kdf` and debug assertions (research.md §14).
+  compiled only with the `upgrade-test-steps` feature. `test-kdf` turns it
+  on, the release `performance_test` uses it alone, and a build with
+  `custom-protocol` or `e2e` refuses to compile with it (research.md §14).
 - **The stored database made by 0.1.0** is
   `tests/fixtures/releases/0.1.0.hoplodex`, made by
   `examples/release_fixture.rs` from the human seed's Main collection, with
@@ -96,7 +98,9 @@ planning and become the first tests against SQLCipher (research.md §14).
   `RestoreBackupDialog`, `DatabaseNotes`, `InsurancePolicyForm`.
 - **E2E**: the US3 journey in `databases.e2e.ts`, using the stored 0.1.0
   database and the `e2e` build's test-only step. The US2 journey is in
-  `value-insurance.e2e.ts`. The screenshot walk gets the new screens.
+  `value-insurance.e2e.ts`. The screenshot walk gets the new screens, with
+  each upgrade phase held on screen by the `e2e` build's
+  `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS` (research.md §14).
 
 **Target Platform**: desktop: Windows 10+, macOS 26+, Linux (WebKitGTK 2.40+),
 unchanged. The upgrade is SQL and file I/O, so it is the same on each OS. The
@@ -141,7 +145,7 @@ dialog states in the chooser and restore dialog, and one note.
 | I. Code Quality | Lint/static analysis, review, small single-purpose modules, no speculative abstraction | **One runner**: `db::upgrade` both creates and upgrades a database, and the restore uses it too. No second path applies steps. **One comparison** for policy names: the index's expression, used by the form's check and import's lookup. **One backup routine** with a `kind`, not a second copy of `make_backup`. **Refactor, not workaround**: `open_database` returns `Opened` and every caller follows; `make_backup` takes `BackupKind` everywhere; `restore_backup` gains `upgrade`; no `_with_upgrade` siblings. The upgrade flow is its own module (`session/upgrade.rs`) rather than growing `lifecycle.rs`. `clippy`, `rustfmt`, `eslint`, `prettier`, the citations check |
 | II. Testing (NON-NEGOTIABLE) | Tests first, real persistence, one test per acceptance scenario, isolation | Every scenario and criterion maps to a named test (quickstart.md). Upgrades are tested against a stored 0.1.0 database and test-only steps, with failure forced at each point and power loss simulated by copying the file and its hot journal mid-transaction. The manifest test fails on a doctored copy (red check). The fixture is made by a refusing-`test-kdf` example; E2E and human testing copy it into their sandbox, never near real data. Three manual procedures, numbered, naming "Older collection" and `release fixture 0.1.0` |
 | III. UX Consistency | One component set and pattern, WCAG 2.1 AA | The question is the standard `ConfirmDialog`, non-destructive with focus on Upgrade (One Enter rule). The progress dialog follows the closing screen's show-at-once-or-after-a-second rule and its `ProgressBar`. The folder choice uses the folder picker the settings dialog uses. The note is in the existing notes area, and the failure in the existing open-failure slot. The policy name error uses the form's field-error pattern. The phase line is a live region, so a screen reader hears the change |
-| IV. Performance | 100 ms feedback / 1 s completion, 500 ms search, no UI-thread blocking | No step due: one existing read, timed in `performance_test.rs`. The upgrade is an `async` command with progress from its first chunk; SC-007 is measured at 10,000 items with the test-only rebuild. The policy-name check and the lookup use the new index. **Performance-sensitive** (the open path, a rebuild over 10,000 items): the PR reports the timings |
+| IV. Performance | 100 ms feedback / 1 s completion, 500 ms search, no UI-thread blocking | No step due: one existing read, timed in `performance_test.rs`. The upgrade is an `async` command with progress from its first chunk; SC-007 is measured at 10,000 items with the test-only rebuild, in the release `performance_test` built with `upgrade-test-steps`. The policy-name check and the lookup use the new index. **Performance-sensitive** (the open path, a rebuild over 10,000 items): the PR reports the timings |
 | V. User Privacy | Local only, real deletion, no hidden copies | The backup is local, at the location the user set or a folder they choose, and is named in the question and the note (Principle V: "make it clear what leaves the device and where it goes"; nothing leaves). A cancelled or failed backup's partial file is securely deleted; dropped tables' pages are zeroed (`secure_delete`). Identifiers are random and never shown |
 | Security & Data Handling | Encryption at rest, vetted dependencies, no cipher change | No cipher change. The backup is a byte copy, protected by the passphrase current when made. The waiting database holds the derived key, not the passphrase, and sleep and screen lock drop it. A chosen folder is validated and written exclusively. The new commands are on the main web view only, and reach the waiting database only by its id. PR notes come from research.md §17 |
 | Licensing | GPLv3-compatible dependencies and assets with recorded source | `sha2` is MIT/Apache-2.0 and dev-only. The stored 0.1.0 database is generated by the project from its own seed data (research.md §18) |
@@ -279,6 +283,8 @@ CLAUDE.md, DEVELOPMENT.md             # the schema rule from 0.1.0 on; "Changing
    - a copied file and hot journal from mid-transaction (cache spilled) roll
      back on a keyed open;
    - the `trim(name) COLLATE NOCASE` index refuses and is used by the lookup.
+     This one is tested with Story 2 (tasks.md T020, T022), since the index
+     exists only once that story adds it.
 
    If the first fails, take the lock with the marker write instead and tell
    the owner, since Cancel would then not be byte-for-byte untouched. If the
@@ -335,8 +341,8 @@ on a closed one unless the owner asks.
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
 | A new session slot, `awaiting_upgrade`, beside the open database, dropped by quit, sleep, screen lock, shutdown and any other open | FR-010's question must come before anything is written, and 003 FR-007 keeps the passphrase from being held while the user decides; only a keyed connection held by the backend does both (research.md §4) | Refuse and resend: the passphrase must then be kept in the chooser or typed again, and a field in the question takes FR-010's focus from Upgrade. Open first and then ask: Cancel would have written the marker |
-| Test-only hooks in the library (`db::upgrade::testing`), compiled only with `test-kdf` and debug assertions | SC-005 needs a failure at each point and power loss mid-transaction, against the real runner; FR-020 needs a rebuild step before any real one exists | Faults from outside (killing a process, filling a disk) can't hit each point reliably, and a real rebuild step would change 0.1.0's layout |
-| One step that only `e2e` builds apply (`9000_e2e_upgrade_check`) | The US3 journey needs a database older than the app, and until 0.2.0 no shipped step makes one | Building a second app binary for one spec would double the E2E build time on every OS |
+| Test-only hooks in the library (`db::upgrade::testing`), compiled only with the `upgrade-test-steps` feature, which `test-kdf` turns on and `custom-protocol` and `e2e` builds refuse | SC-005 needs a failure at each point and power loss mid-transaction, against the real runner; FR-020 needs a rebuild step before any real one exists | Faults from outside (killing a process, filling a disk) can't hit each point reliably, and a real rebuild step would change 0.1.0's layout |
+| One step that only `e2e` builds apply (`9000_e2e_upgrade_check`), and an `e2e`-only hold on each upgrade phase (`HOPLODEX_E2E_UPGRADE_PHASE_SECONDS`) | The US3 journey needs a database older than the app, and until 0.2.0 no shipped step makes one. The screenshot walk and the screen-reader check need each phase on screen, and the stored 0.1.0 database upgrades in well under a second | Building a second app binary for one spec would double the E2E build time on every OS. Screenshots of a larger database would still race the phases |
 | Lenient reading of `machine.json` (research.md §15), beyond the spec's database layout | The downgrade the spec supports (FR-013, FR-018) runs 0.1.0 against a later `machine.json`; today that loses the recent list. It must ship in 0.1.0 to help at all | Leaving it means the first downgrade a beta tester makes empties their recent list |
 
 ## Post-Design Constitution Check

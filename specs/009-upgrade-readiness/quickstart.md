@@ -16,6 +16,14 @@ scripts/dev-container.sh bash -c 'npm run build && npm run screenshots'
 Expected: every test passes, and the screenshot walk shows contracts/ui.md
 §10's new screens.
 
+The performance figures (SC-007) come from the release `performance_test`,
+built with `upgrade-test-steps` so it can make a 10,000-item database that
+needs the test-only `photos` rebuild (research.md §14, §16):
+
+```sh
+scripts/dev-container.sh bash -c 'CARGO_PROFILE_RELEASE_PANIC=unwind cargo test --manifest-path src-tauri/Cargo.toml --release --features upgrade-test-steps --test performance_test -- --ignored --nocapture --test-threads=1'
+```
+
 The E2E and screenshot runs open `src-tauri/tests/fixtures/releases/0.1.0.hoplodex`
 (passphrase `release fixture 0.1.0`), copied into their sandbox. The `e2e`
 build's extra step (research.md §14) makes it older than the app.
@@ -107,8 +115,10 @@ build's extra step (research.md §14) makes it older than the app.
 
 ### M3: A screen reader hears the phases (Linux with Orca, or macOS with VoiceOver)
 
-1. Do Setup S1 with the screen reader on.
+1. Do Setup S1 with the screen reader on, launching with
+   `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS=5 scripts/human-testing.sh --reset --release --older`
+   so each phase stays up for 5 seconds.
 2. Press **Enter** on **Upgrade**. Expected: the question's title and
-   description are read when it opens, and "Upgrading “Older collection”…"
-   is announced when the phase changes (a 0.1.0-sized database may finish
-   before the backup phase is announced; that is expected).
+   description are read when it opens, then "Saving a backup of “Older
+   collection”…", and "Upgrading “Older collection”…" when the phase
+   changes.

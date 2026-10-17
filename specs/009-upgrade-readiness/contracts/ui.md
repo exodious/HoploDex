@@ -165,6 +165,9 @@ gains: "Each policy needs its own name."
 
 ## 10. Screenshot walk additions (`e2e/screenshots/screens.e2e.ts`)
 
+The walk sets `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS` for the upgrade's screens,
+so each phase stays up long enough to capture (research.md §14).
+
 - the upgrade question (§1), from the stored 0.1.0 database (research.md
   §14);
 - the progress dialog in each phase (§2);
