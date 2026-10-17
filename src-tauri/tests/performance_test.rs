@@ -795,6 +795,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
             &backup,
             &passphrase(),
             Target::Open(large.session.current_id()),
+            false,
         )
     });
     restored.unwrap();

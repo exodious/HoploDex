@@ -768,6 +768,7 @@ fn a_backup_a_restore_and_a_passphrase_change_keep_every_identifier() {
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
     assert_eq!(world.identifiers(), before, "restored");

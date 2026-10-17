@@ -316,6 +316,7 @@ fn a_restore_of_the_open_database_is_a_new_session() {
         &backup,
         &passphrase(),
         Target::Open(ended),
+        false,
     )
     .unwrap();
 
@@ -332,6 +333,7 @@ fn a_restore_of_the_open_database_is_a_new_session() {
         &backup,
         &passphrase(),
         Target::Open(ended),
+        false,
     );
     assert_eq!(late.unwrap_err().code, "DATABASE_CLOSED");
     assert_eq!(world.session.current_id(), current, "the open session is left as it was");

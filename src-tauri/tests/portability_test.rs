@@ -56,6 +56,7 @@ fn copy_of_fixture() -> (TempDir, PathBuf) {
 
 fn open(path: &Path, passphrase: &str) -> Result<Connection, OpenError> {
     db::open_database(path, &Passphrase::from_input(passphrase.to_owned()), &stranger(), false)
+        .map(db::Opened::expect_ready)
 }
 
 #[test]

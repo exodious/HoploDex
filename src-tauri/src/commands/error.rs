@@ -170,6 +170,15 @@ impl CommandError {
         })))
     }
 
+    /// The `awaitingId` of an `UPGRADE_NEEDED` that [`upgrade_needed_to_open`]
+    /// made.
+    ///
+    /// [`upgrade_needed_to_open`]: Self::upgrade_needed_to_open
+    pub fn awaiting_id(&self) -> Option<SessionId> {
+        let raw = self.details.as_ref()?.get("awaitingId")?.as_u64()?;
+        SessionId::from_request(raw)
+    }
+
     /// 009 FR-019: `restore_backup` without `upgrade: true` for a backup that
     /// needs one; nothing was copied or written.
     pub fn upgrade_needed_to_restore(version: &str) -> Self {
@@ -194,6 +203,24 @@ impl CommandError {
             "backupPath": backup_path.to_string_lossy(),
             "atBackupLocation": at_backup_location,
         })))
+    }
+
+    /// A rolled-back upgrade (a step, the link check, the commit) as the command
+    /// reports it: `UPGRADE_FAILED` naming `backup_path` (009 FR-015), or
+    /// `DISK_FULL` naming the file `database_path` when its disk filled.
+    pub fn upgrade_error(
+        err: crate::db::upgrade::UpgradeError,
+        backup_path: &Path,
+        at_backup_location: bool,
+        database_path: &Path,
+    ) -> Self {
+        log::error!("upgrading {} failed and was rolled back: {err}", database_path.display());
+        let error = Self::from_upgrade(err);
+        if error.code == Self::DISK_FULL {
+            error.located_at(database_path)
+        } else {
+            Self::upgrade_failed(backup_path, at_backup_location)
+        }
     }
 
     /// 009 FR-012: the backup before the upgrade failed while it was being
@@ -506,7 +533,6 @@ impl From<OpenError> for CommandError {
             }
             OpenError::Damaged => Self::database_damaged(false),
             OpenError::Internal(err) => Self::from_db(err),
-            OpenError::Upgrade(err) => Self::from_upgrade(err),
         }
     }
 }

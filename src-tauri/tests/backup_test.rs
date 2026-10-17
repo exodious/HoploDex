@@ -572,6 +572,7 @@ fn the_upgrade_stamp_is_cleared_when_a_backup_is_restored() {
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
 
@@ -1021,6 +1022,7 @@ fn every_firearms_identifier_is_equal_in_the_backup_and_after_restoring_it() {
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
 
@@ -1141,6 +1143,7 @@ fn an_accessory_its_photo_and_its_identifier_survive_a_backup_and_a_restore_of_i
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
 
@@ -1240,6 +1243,7 @@ fn a_mount_of_an_accessory_on_a_firearm_and_of_a_firearm_on_an_accessory_survive
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
 

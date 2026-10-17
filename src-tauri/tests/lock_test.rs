@@ -606,7 +606,7 @@ fn a_close_during_the_reading_of(way: &str, go: impl FnOnce(&World)) {
     let (outcome, went_ahead_in, ended_in) = thread::scope(|scope| {
         let reader = scope.spawn(|| {
             let operation = world.session.operations().begin(OperationKind::Import, None).unwrap();
-            operation.set_reading(true);
+            operation.set_user_stoppable(true);
             let started = Instant::now();
             let outcome = import_export::read_import_files(
                 Path::new(env!("CARGO_BIN_EXE_hoplodex")),
@@ -688,14 +688,14 @@ fn cancel_import_stops_only_an_import_that_is_reading() {
 
     // Another kind of operation is never stopped by it.
     let export = operations.begin(OperationKind::Export, None).unwrap();
-    export.set_reading(true);
+    export.set_user_stoppable(true);
     import_export::cancel_import(operations);
     assert!(!export.is_cancelled());
     drop(export);
 
     // An import reading its files is, and the stop is the user's.
     let reading = operations.begin(OperationKind::Import, None).unwrap();
-    reading.set_reading(true);
+    reading.set_user_stoppable(true);
     import_export::cancel_import(operations);
     assert!(reading.is_cancelled() && reading.is_stopped_by_user());
     drop(reading);
@@ -797,6 +797,7 @@ fn a_sleep_abandons_a_restore_and_leaves_the_database_as_it_was() {
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     );
     join(&sleeper);
     world.events.on_event(|_, _| {});

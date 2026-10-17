@@ -2101,7 +2101,7 @@ pub mod ops {
 
     /// `cancel_import`: the running import stops if it is still reading.
     pub fn cancel_import(operations: &Operations) {
-        operations.stop_reading_import();
+        operations.stop_by_user(OperationKind::Import);
     }
 
     /// [`resolve_import_conflicts`] against the session's open database, which
@@ -2508,7 +2508,7 @@ pub async fn import_collection(
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
     let operation = session.session.operations().begin(OperationKind::Import, None)?;
     // The reading is the phase `cancel_import` may stop.
-    operation.set_reading(true);
+    operation.set_user_stoppable(true);
     let files = input
         .files
         .iter()
@@ -2557,7 +2557,7 @@ pub async fn import_collection(
             );
         },
     )?;
-    operation.set_reading(false);
+    operation.set_user_stoppable(false);
     // Phase two: the rows are saved under the session's lock, as before.
     ops::import_in_session(
         &session.session,

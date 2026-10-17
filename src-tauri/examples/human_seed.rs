@@ -165,7 +165,8 @@ fn main() {
 
     let identity = must(MachineSettings::load(&paths.config), "machine.json").identity();
     let conn = must(
-        db::open_database(&paths.main, &passphrase(), &identity, false),
+        db::open_database(&paths.main, &passphrase(), &identity, false)
+            .map(db::Opened::expect_ready),
         "reopening the main database",
     );
     print_summary(&conn);

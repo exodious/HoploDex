@@ -203,7 +203,8 @@ fn creating_opening_and_closing_without_changes_leaves_nothing_waiting() {
     lifecycle::open(&session, &machine, &path, &passphrase(), false).unwrap();
     lifecycle::close_normal(&session, session.current_id(), &machine, CloseReason::Closed).unwrap();
 
-    let conn = db::open_database(&path, &passphrase(), &test_machine(), false).unwrap();
+    let conn =
+        db::open_database(&path, &passphrase(), &test_machine(), false).unwrap().expect_ready();
     assert!(!changes_waiting(&conn));
 }
 
@@ -230,7 +231,8 @@ fn sqlcipher_export_into_an_attached_copy_does_not_fire_the_triggers() {
     db.conn.execute("DETACH DATABASE copy", []).unwrap();
 
     assert!(!changes_waiting(&db.conn));
-    let copied = db::open_database(&copy, &passphrase(), &test_machine(), false).unwrap();
+    let copied =
+        db::open_database(&copy, &passphrase(), &test_machine(), false).unwrap().expect_ready();
     assert!(!changes_waiting(&copied), "the export must not fire the copy's triggers");
     let firearms: i64 =
         copied.query_row("SELECT count(*) FROM firearms", [], |r| r.get(0)).unwrap();

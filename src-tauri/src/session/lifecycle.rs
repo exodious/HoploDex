@@ -23,7 +23,9 @@ use crate::services::passphrase::Passphrase;
 use crate::services::suggestions;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
-use crate::session::{ImmediateClose, OpenDatabase, Session, SessionId, SessionInner, pending};
+use crate::session::{
+    ImmediateClose, OpenDatabase, Session, SessionId, SessionInner, pending, upgrade,
+};
 
 /// How long a sleep or shutdown waits for a close already under way, or
 /// for a stopped operation to unwind. The OS allows a few seconds at most
@@ -38,6 +40,8 @@ pub fn create(
     path: &Path,
     passphrase: &Passphrase,
 ) -> Result<(), CommandError> {
+    // Whatever waits for an upgrade is let go of first (009 research.md §4).
+    session.drop_awaiting_upgrade();
     let conn =
         db::create_database(path, passphrase, &machine.identity()).map_err(|err| match err {
             // The folder passed its checks but refused the file itself.
@@ -62,7 +66,9 @@ pub fn create(
 /// it left beside the database removed once the passphrase has opened it
 /// (003 research.md §4). A refused open installs nothing and changes nothing.
 /// A database marked open on another computer opens only with `take_over`
-/// (003 FR-032).
+/// (003 FR-032). A database in an older layout is not opened: it waits, keyed
+/// and unchanged, and the open fails with `UPGRADE_NEEDED` and the id the
+/// answer names (009 FR-010; [`upgrade_database`](super::upgrade::upgrade_database)).
 pub fn open(
     session: &Session,
     machine: &MachineSettings,
@@ -70,18 +76,36 @@ pub fn open(
     passphrase: &Passphrase,
     take_over: bool,
 ) -> Result<(), CommandError> {
+    session.drop_awaiting_upgrade();
     if session.is_open() {
         // The frontend closes first itself, to ask about unsaved changes;
         // this covers anything else. It can only fail when nothing is open.
         close_normal(session, session.current_id(), machine, CloseReason::Switched).ok();
     }
     file_swap::finish_interrupted(path);
-    let conn = db::open_database(path, passphrase, &machine.identity(), take_over)
+    let opened = db::open_database(path, passphrase, &machine.identity(), take_over)
         .map_err(|err| CommandError::from(err).located_at(path))?;
     // The passphrase opened it: now what a replacement left beside it can go.
     file_swap::remove_leftovers(path);
-    session.install(prepare(machine, conn, path)?);
-    Ok(())
+    match opened {
+        db::Opened::Ready(conn) => {
+            session.install(prepare(machine, conn, path)?);
+            Ok(())
+        }
+        db::Opened::UpgradeDue { conn, steps_due, marker_seen } => {
+            Err(upgrade::wait_for_answer(session, conn, path, steps_due, marker_seen))
+        }
+    }
+}
+
+/// Quits (003 research.md §17): whatever waits for an upgrade is dropped, and
+/// the open database is closed as a quit. The caller exits the application.
+pub fn quit(session: &Session, machine: &MachineSettings) {
+    session.drop_awaiting_upgrade();
+    if session.is_open() {
+        // It can only fail when nothing is open any more.
+        close_normal(session, session.current_id(), machine, CloseReason::Quit).ok();
+    }
 }
 
 /// Wraps a freshly opened connection for the session, warms what the first
@@ -534,12 +558,17 @@ pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
 /// with the idle lock on, an open database locks at once.
 pub fn will_sleep(session: &Session, machine: &MachineSettings) {
     session.events().emit("system:clear-passphrase-fields", json!({}));
+    // A database waiting for its upgrade is dropped, which also closes the
+    // question in the chooser (009 research.md §4).
+    session.drop_awaiting_upgrade();
     let closing = {
         let closing = session.closing();
         closing.normal.is_some() || closing.immediate.is_some()
     };
     let idle_lock_on = session.idle().settings().is_some_and(|settings| settings.idle_enabled);
-    if closing || idle_lock_on {
+    // The backup before an upgrade is stopped, as any operation is.
+    let upgrading = session.operations().running_kind() == Some(OperationKind::Upgrade);
+    if closing || idle_lock_on || upgrading {
         close_immediate(session, machine, CloseReason::Sleep);
     }
 }
@@ -548,6 +577,7 @@ pub fn will_sleep(session: &Session, machine: &MachineSettings) {
 /// the option on, the open database locks as a normal close.
 pub fn screen_locked(session: &Session, machine: &MachineSettings) {
     session.events().emit("system:clear-passphrase-fields", json!({}));
+    session.drop_awaiting_upgrade();
     let lock_on_screen_lock =
         session.idle().settings().is_some_and(|settings| settings.on_screen_lock);
     if lock_on_screen_lock {
@@ -560,6 +590,9 @@ pub fn screen_locked(session: &Session, machine: &MachineSettings) {
 /// changes are kept before the key is cleared and document copies are
 /// deleted, and no backup is made.
 pub fn will_shut_down(session: &Session, machine: &MachineSettings) {
+    // An upgrade's backup is stopped by the immediate close below, as any
+    // operation is.
+    session.drop_awaiting_upgrade();
     close_immediate(session, machine, CloseReason::Shutdown);
 }
 

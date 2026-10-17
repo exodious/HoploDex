@@ -24,8 +24,11 @@ use serde::Serialize;
 use crate::commands::CommandError;
 use crate::commands::import_export::ImportSessionStore;
 use crate::db;
-use crate::models::database::{ChooserNotice, DatabaseNotes, Draft, LockSettings, PendingState};
+use crate::models::database::{
+    ChooserNotice, DatabaseNotes, Draft, LockSettings, OpenedBackupNote, PendingState,
+};
 use crate::services::machine_settings::MachineSettings;
+use crate::services::passphrase::Passphrase;
 use crate::services::preview::{Preview, PreviewLoading};
 use clock::{Clock, SystemClock};
 use fingerprint::{FileFingerprint, FingerprintCheck};
@@ -259,6 +262,50 @@ pub struct SessionInner {
     closing: Mutex<Closing>,
     /// Signalled when a close under way finishes.
     closing_changed: Condvar,
+    /// The database waiting for the answer to the upgrade question (009
+    /// research.md §4). Separate from `open`, so no collection command, scoped
+    /// or not, can reach it.
+    awaiting_upgrade: Mutex<Option<AwaitingUpgrade>>,
+    /// The `awaitingId` of the `upgrade_database` call that took the waiting
+    /// database out of the slot and is still working, or 0: what
+    /// `cancel_upgrade` finds the backup it stops by.
+    upgrading: AtomicU64,
+}
+
+/// A backup opened directly that needs an upgrade: its stamp is taken inside
+/// the upgrade transaction, not before the question, so Cancel leaves the
+/// file untouched and still a backup (009 research.md §8).
+pub struct AwaitingBackupStamp {
+    /// The identity the file gets, which the backup before the upgrade is
+    /// named and stamped with.
+    pub new_database_id: String,
+    /// What `prepare` shows once the file has become a database of its own.
+    pub note: OpenedBackupNote,
+}
+
+/// The database waiting for the answer to the upgrade question (009 FR-010, data-model.md
+/// "AwaitingUpgrade"): keyed and holding the file's exclusive lock, with
+/// nothing written. Dropping it closes the connection, which releases the lock
+/// and clears the key.
+pub struct AwaitingUpgrade {
+    /// The `awaitingId` the chooser answers with.
+    pub id: SessionId,
+    pub conn: Connection,
+    pub path: PathBuf,
+    pub name: String,
+    pub database_id: String,
+    /// The step names to apply, in order.
+    pub steps_due: Vec<&'static str>,
+    /// The open marker found at the question, compared again at Upgrade.
+    pub marker_seen: db::SeenMarker,
+    pub backup_stamp: Option<AwaitingBackupStamp>,
+    /// A typed passphrase the open will save or refresh in the keyring once
+    /// the upgrade succeeds (003 FR-017, FR-018); zeroized when dropped.
+    pub save_passphrase: Option<Passphrase>,
+    /// The database's backup location, resolved for this computer.
+    pub backup_folder: PathBuf,
+    /// The backup location is the default one, made when missing.
+    pub backup_folder_is_default: bool,
 }
 
 /// A close under way.
@@ -305,6 +352,8 @@ impl Session {
             open_path: Mutex::new(None),
             closing: Mutex::new(Closing::default()),
             closing_changed: Condvar::new(),
+            awaiting_upgrade: Mutex::new(None),
+            upgrading: AtomicU64::new(0),
         }))
     }
 
@@ -656,6 +705,56 @@ impl SessionInner {
         self.current.store(0, Ordering::SeqCst);
         self.idle.stop();
         *self.open_path.lock().expect("session mutex poisoned") = None;
+    }
+
+    fn awaiting(&self) -> MutexGuard<'_, Option<AwaitingUpgrade>> {
+        self.awaiting_upgrade.lock().expect("session mutex poisoned")
+    }
+
+    /// Puts a database that needs an upgrade in the waiting slot, in place of
+    /// any other (009 research.md §4).
+    pub(crate) fn wait_for_upgrade(&self, waiting: AwaitingUpgrade) {
+        let replaced = self.awaiting().replace(waiting);
+        // Its connection closes outside the slot's lock.
+        drop(replaced);
+    }
+
+    /// Drops the waiting database, if there is one: its connection closes, the
+    /// file's lock is released and the key cleared, and nothing was written.
+    /// Called when any open, create or restore begins, at quit, sleep, screen
+    /// lock and shutdown (009 research.md §4). Returns whether one was waiting.
+    pub fn drop_awaiting_upgrade(&self) -> bool {
+        let dropped = self.awaiting().take();
+        dropped.is_some()
+    }
+
+    /// Puts a database back in the waiting slot after the backup before its
+    /// upgrade could not be made, for a retry under the same id; dropped
+    /// instead when another database has been put there meanwhile.
+    pub(crate) fn put_back_for_upgrade(&self, waiting: AwaitingUpgrade) {
+        let mut slot = self.awaiting();
+        if slot.is_none() {
+            *slot = Some(waiting);
+        }
+    }
+
+    /// The `awaitingId` of the upgrade at work, or `SessionId::NONE`.
+    pub(crate) fn upgrading_id(&self) -> SessionId {
+        SessionId(self.upgrading.load(Ordering::SeqCst))
+    }
+
+    pub(crate) fn set_upgrading_id(&self, id: SessionId) {
+        self.upgrading.store(id.get(), Ordering::SeqCst);
+    }
+
+    /// Keeps `passphrase` with the database waiting under `id`, to save or
+    /// refresh in the keyring once it is upgraded and open (003 FR-017,
+    /// FR-018; 009 research.md §4 "The passphrase"). Nothing happens for any
+    /// other id.
+    pub(crate) fn keep_passphrase_for_upgrade(&self, id: SessionId, passphrase: Passphrase) {
+        if let Some(waiting) = self.awaiting().as_mut().filter(|waiting| waiting.id == id) {
+            waiting.save_passphrase = Some(passphrase);
+        }
     }
 
     /// The database most recently closed in this run, if any.

@@ -804,7 +804,8 @@ fn opening_a_database_warms_the_pages_the_suggestions_read() {
     let (conn, dir) = db.into_parts();
     drop(conn);
 
-    let bare = db::open_database(&path, &passphrase(), &test_machine(), false).unwrap();
+    let bare =
+        db::open_database(&path, &passphrase(), &test_machine(), false).unwrap().expect_ready();
     let bare_bytes = page_cache_bytes(&bare);
     drop(bare);
 

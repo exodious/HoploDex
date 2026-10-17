@@ -370,6 +370,15 @@ pub struct DatabaseNotes {
     pub upgraded: Option<UpgradedNote>,
 }
 
+/// What restoring a backup would do, from `check_backup` (009 FR-019).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCheck {
+    /// The version the backup is upgraded for when restored, or `None` when
+    /// it is in the current layout.
+    pub upgrade_to: Option<String>,
+}
+
 /// The payload of `upgrade:progress` (009 contracts/tauri-commands.md
 /// "Events"): bytes of the backup made before an upgrade, then the upgrade's
 /// steps. `Upgrading` is sent once with `processed = total = 0` and again after

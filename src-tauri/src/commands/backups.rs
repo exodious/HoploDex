@@ -11,7 +11,9 @@ use tauri::{AppHandle, State};
 use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::commands::databases::PROBE_DIR;
-use crate::models::database::{BackupList, BackupsDeleted, DatabaseStatus, PassphraseChanged};
+use crate::models::database::{
+    BackupCheck, BackupList, BackupsDeleted, DatabaseStatus, PassphraseChanged,
+};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::Session;
@@ -34,8 +36,8 @@ pub mod ops {
     use crate::commands::databases::ops::{refresh_saved, status};
     use crate::db::{self, OpenError, cipher, raw_file::RawFile};
     use crate::models::database::{
-        BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind, PassphraseChanged,
-        PendingState, RestorePhase,
+        BackupCheck, BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind,
+        PassphraseChanged, PendingState, RestorePhase, UpgradedNote,
     };
     use crate::services::backups::{self, BackupFailure, BackupJob, BackupKind, CopyError};
     use crate::services::disk_space;
@@ -156,20 +158,66 @@ pub mod ops {
     /// opened with that backup's passphrase afterwards. With `database_path`
     /// it restores a database that doesn't open, with nothing open; without
     /// it, the open database, which must be the session the request named.
+    ///
+    /// A backup in an older layout is refused with `UPGRADE_NEEDED` before
+    /// anything is copied, unless `upgrade` says the user was told (009
+    /// FR-019): then the restored copy is upgraded before it replaces anything.
     pub fn restore_backup(
         session: &Session,
         machine: &MachineSettings,
         backup_path: &str,
         backup_passphrase: &Passphrase,
         target: Target<'_>,
+        upgrade: bool,
     ) -> Result<DatabaseStatus, CommandError> {
         let backup = Path::new(backup_path);
+        // Whatever waits for an upgrade is let go of first (009 research.md §4).
+        session.drop_awaiting_upgrade();
         match target {
-            Target::Open(id) => restore_open(session, id, machine, backup, backup_passphrase),
-            Target::At(path) => {
-                restore_damaged(session, machine, backup, backup_passphrase, Path::new(path))
+            Target::Open(id) => {
+                restore_open(session, id, machine, backup, backup_passphrase, upgrade)
             }
+            Target::At(path) => restore_damaged(
+                session,
+                machine,
+                backup,
+                backup_passphrase,
+                Path::new(path),
+                upgrade,
+            ),
         }
+    }
+
+    /// What restoring `backup` would do (009 FR-019), before anything is
+    /// copied: opens it read-only and reports the version it would be upgraded
+    /// for, if it is in an older layout. Refuses as `restore_backup` does
+    /// before it copies: `NOT_FOUND`, `PASSPHRASE_INCORRECT`, `DATABASE_DAMAGED`,
+    /// `DATABASE_NEWER_VERSION`, and, for a damaged database at `path`, the
+    /// refusals that authorize it (#62). Without a path it names the open
+    /// session.
+    pub fn check_backup(
+        session: &Session,
+        machine: &MachineSettings,
+        backup_path: &str,
+        passphrase: &Passphrase,
+        target: Target<'_>,
+    ) -> Result<BackupCheck, CommandError> {
+        let backup = Path::new(backup_path);
+        let (database_path, expected_id) = match target {
+            Target::Open(id) => (session.inspect(id, |open| Ok(open.path.clone()))?, None),
+            Target::At(path) => {
+                let path = Path::new(path);
+                let expected = authorize_damaged_restore(machine, backup, path)?;
+                replaceable_target(path)?;
+                (path.to_owned(), Some(expected))
+            }
+        };
+        backup_len(backup)?;
+        let inspected = inspect_backup(backup, passphrase, &database_path)?;
+        if expected_id.is_some_and(|expected| inspected.database_id != expected) {
+            return Err(not_its_backup());
+        }
+        Ok(BackupCheck { upgrade_to: inspected.upgrade_to })
     }
 
     /// The backup's length, which must be a file that is there.
@@ -180,14 +228,25 @@ pub mod ops {
         }
     }
 
-    /// Checks the backup's passphrase against its first page before
-    /// anything is copied, so a wrong one is refused at once. Returns the
-    /// database id stored inside the backup, which is what says whose
-    /// backup it is (the file's name is only a convenience).
-    fn check_backup_passphrase(
+    /// What a read-only look at a backup found.
+    struct InspectedBackup {
+        /// The database id stored inside the backup, which is what says
+        /// whose backup it is (the file's name is only a convenience).
+        database_id: String,
+        /// The version it is upgraded for when restored: `Some` when steps
+        /// are due on it (009 FR-019).
+        upgrade_to: Option<String>,
+    }
+
+    /// Opens the backup read-only before anything is copied, so a wrong
+    /// passphrase, a damaged file and a newer layout are refused at once. The
+    /// steps due are those of the build for the database it would replace, at
+    /// `database_path` (009 research.md §9).
+    fn inspect_backup(
         backup: &Path,
         passphrase: &Passphrase,
-    ) -> Result<String, CommandError> {
+        database_path: &Path,
+    ) -> Result<InspectedBackup, CommandError> {
         let checked = Connection::open_with_flags(backup, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .and_then(|conn| {
                 conn.pragma_update(None, "key", passphrase.as_str())?;
@@ -195,12 +254,20 @@ pub mod ops {
                 conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| {
                     row.get::<_, i64>(0)
                 })?;
-                conn.query_row("SELECT database_id FROM app_state", [], |row| {
-                    row.get::<_, String>(0)
-                })
+                let database_id =
+                    conn.query_row("SELECT database_id FROM app_state", [], |row| {
+                        row.get::<_, String>(0)
+                    })?;
+                let newer = db::has_unknown_migration(&conn, database_path)?;
+                let due = db::upgrade::steps_due(&conn, database_path)?;
+                Ok((database_id, newer, !due.is_empty()))
             });
         match checked {
-            Ok(database_id) => Ok(database_id),
+            Ok((_, true, _)) => Err(OpenError::NewerVersion.into()),
+            Ok((database_id, false, due)) => Ok(InspectedBackup {
+                database_id,
+                upgrade_to: due.then(|| crate::APP_VERSION.to_owned()),
+            }),
             Err(err) => Err(match OpenError::classify(err) {
                 OpenError::Damaged => CommandError::database_damaged(false),
                 other => other.into(),
@@ -208,26 +275,46 @@ pub mod ops {
         }
     }
 
+    /// A restored copy, ready to replace the database.
+    struct RestoredCopy {
+        /// When the backup was made, from its stamp.
+        made_at: Option<String>,
+        /// Steps were due on the copy and it was upgraded.
+        upgraded: bool,
+    }
+
     /// Copies the backup to `.<file>.new` beside the database, opens it with
     /// its passphrase, proves it sound and stamps it as the restored
     /// database: nothing waiting to be backed up (its content is a backup),
-    /// no backup stamp, no open marker, and its identity kept. Returns when
-    /// the backup was made. The copy is created exclusively: whatever is
-    /// already at that name is not ours and stays, and the restore fails
-    /// (#63). On any later failure the copy, which is ours, is removed.
+    /// no backup stamp, no open marker, and its identity kept. When `upgrade`
+    /// is set and the copy is in an older layout, it is then upgraded, here
+    /// and not in the database it will replace (009 research.md §9). The copy
+    /// is created exclusively: whatever is already at that name is not ours
+    /// and stays, and the restore fails (#63). On any later failure the copy,
+    /// which is ours, is removed.
     fn prepare_restored_copy(
         session: &Session,
         operation: &OperationGuard,
         backup: &Path,
         new: &Path,
         passphrase: &Passphrase,
-    ) -> Result<Option<String>, CommandError> {
+        upgrade: Option<RestoreUpgrade>,
+    ) -> Result<RestoredCopy, CommandError> {
         let out = scratch::create(new).map_err(|err| io_failure(new, &err))?;
-        let prepared = copy_check_and_stamp(session, operation, backup, out, new, passphrase);
+        let prepared =
+            copy_check_and_stamp(session, operation, backup, out, new, passphrase, upgrade);
         if prepared.is_err() {
             remove_copy(new);
         }
         prepared
+    }
+
+    /// Where a restore that may upgrade its copy stands (009 FR-019).
+    #[derive(Clone, Copy)]
+    struct RestoreUpgrade<'a> {
+        /// Where the backup restored from is, for `UPGRADE_FAILED`.
+        backup: &'a Path,
+        at_backup_location: bool,
     }
 
     fn copy_check_and_stamp(
@@ -237,7 +324,8 @@ pub mod ops {
         out: File,
         new: &Path,
         passphrase: &Passphrase,
-    ) -> Result<Option<String>, CommandError> {
+        upgrade: Option<RestoreUpgrade>,
+    ) -> Result<RestoredCopy, CommandError> {
         let events = session.events();
         let source = File::open(backup).map_err(|err| io_failure(backup, &err))?;
         let copied = backups::copy_chunked(
@@ -270,11 +358,27 @@ pub mod ops {
              COMMIT;",
         )
         .map_err(CommandError::from_db)?;
+        let mut upgraded = false;
+        if let Some(upgrade) = upgrade
+            && !db::upgrade::steps_due(&conn, new).map_err(CommandError::from_db)?.is_empty()
+        {
+            progress(events, RestorePhase::Upgrading, 0, 0);
+            db::upgrade::upgrade(&conn, &db::upgrade::build_steps(new), None, &mut |_, _| {})
+                .map_err(|err| {
+                    CommandError::upgrade_error(
+                        err,
+                        upgrade.backup,
+                        upgrade.at_backup_location,
+                        new,
+                    )
+                })?;
+            upgraded = true;
+        }
         drop(conn);
         if operation.is_cancelled() {
             return Err(stopped());
         }
-        Ok(made_at)
+        Ok(RestoredCopy { made_at, upgraded })
     }
 
     fn io_failure(path: &Path, err: &io::Error) -> CommandError {
@@ -302,6 +406,7 @@ pub mod ops {
         machine: &MachineSettings,
         backup: &Path,
         passphrase: &Passphrase,
+        upgrade: bool,
     ) -> Result<DatabaseStatus, CommandError> {
         let operation = session.operations().begin(OperationKind::Restore, None)?;
         let events = session.events();
@@ -327,12 +432,26 @@ pub mod ops {
         // The bar shows at once (003 SC-005); checking the passphrase derives a
         // key, which takes longer than the 100 ms feedback budget.
         progress(events, RestorePhase::Copying, 0, restored_len);
-        check_backup_passphrase(backup, passphrase)?;
+        let inspected = inspect_backup(backup, passphrase, &path)?;
+        // Before anything is copied: the user was not told it is upgraded.
+        let upgrade_to = inspected.upgrade_to.as_deref();
+        if let Some(version) = upgrade_to.filter(|_| !upgrade) {
+            return Err(CommandError::upgrade_needed_to_restore(version));
+        }
+        let at_backup_location =
+            backups::same_path(backup.parent().unwrap_or(backup), &settings.folder);
 
-        // 2. The restored copy, known good before the current database is
-        // touched.
+        // 2. The restored copy, known good (and, if it needs it, upgraded)
+        // before the current database is touched.
         let new = file_swap::new_path(&path);
-        let made_at = prepare_restored_copy(session, &operation, backup, &new, passphrase)?;
+        let restored = prepare_restored_copy(
+            session,
+            &operation,
+            backup,
+            &new,
+            passphrase,
+            upgrade.then_some(RestoreUpgrade { backup, at_backup_location }),
+        )?;
 
         // 3. The "before restoring" backup, whatever the once-a-day limit
         // and even with automatic backups off: it makes the restore
@@ -395,16 +514,29 @@ pub mod ops {
             return Err(err);
         }
         backups::rotate(&settings.folder, &database_id, settings.keep, Some(backup));
-        let conn = db::open_database(&path, passphrase, &machine.identity(), false)?;
+        let conn =
+            db::open_database(&path, passphrase, &machine.identity(), false)?.into_ready()?;
         let mut reopened = lifecycle::prepare(machine, conn, &path)?;
-        reopened.notes.restored_with_passphrase_of = made_at;
+        reopened.notes.restored_with_passphrase_of = restored.made_at;
+        reopened.notes.upgraded =
+            restored.upgraded.then(|| upgraded_note(backup, at_backup_location));
         // A saved passphrase now opens it only if it is the backup's.
         refresh_saved(machine, &path, &reopened.database_id, passphrase);
-        let restored = status(&reopened, machine);
+        let status = status(&reopened, machine);
         // The backup's lock settings come with it.
         session.reinstalled(&reopened);
         *slot = Some(reopened);
-        restored
+        status
+    }
+
+    /// The note an open or a restore that upgraded the database shows once,
+    /// for a restore with the backup restored from (009 FR-017).
+    fn upgraded_note(backup: &Path, at_backup_location: bool) -> UpgradedNote {
+        UpgradedNote {
+            version: crate::APP_VERSION.to_owned(),
+            backup_path: backup.to_string_lossy().into_owned(),
+            at_backup_location,
+        }
     }
 
     /// Whether the restore may replace `path` with `backup`, decided only
@@ -480,10 +612,21 @@ pub mod ops {
         backup: &Path,
         passphrase: &Passphrase,
         path: &Path,
+        upgrade: bool,
     ) -> Result<DatabaseStatus, CommandError> {
         // Before anything is closed or written.
         let expected_id = authorize_damaged_restore(machine, backup, path)?;
         replaceable_target(path)?;
+        // Before anything is closed, too: the backup may need an upgrade the
+        // user was not told of, or be another database's.
+        let restored_len = backup_len(backup)?;
+        let inspected = inspect_backup(backup, passphrase, path)?;
+        if inspected.database_id != expected_id {
+            return Err(not_its_backup());
+        }
+        if let Some(version) = inspected.upgrade_to.as_deref().filter(|_| !upgrade) {
+            return Err(CommandError::upgrade_needed_to_restore(version));
+        }
         if session.is_open() {
             lifecycle::close_normal(session, session.current_id(), machine, CloseReason::Switched)
                 .ok();
@@ -491,14 +634,18 @@ pub mod ops {
         let operation = session.operations().begin(OperationKind::Restore, None)?;
         let events = session.events();
         let database_folder = path.parent().unwrap_or(Path::new("")).to_owned();
-        let restored_len = backup_len(backup)?;
         disk_space::check_room_for_copy(restored_len, &database_folder)?;
         progress(events, RestorePhase::Copying, 0, restored_len);
-        if check_backup_passphrase(backup, passphrase)? != expected_id {
-            return Err(not_its_backup());
-        }
         let new = file_swap::new_path(path);
-        let made_at = prepare_restored_copy(session, &operation, backup, &new, passphrase)?;
+        // The backup is in the folder cached for this database (authorized).
+        let restored = prepare_restored_copy(
+            session,
+            &operation,
+            backup,
+            &new,
+            passphrase,
+            upgrade.then_some(RestoreUpgrade { backup, at_backup_location: true }),
+        )?;
 
         progress(events, RestorePhase::Replacing, 0, 0);
         if operation.is_cancelled() {
@@ -519,13 +666,14 @@ pub mod ops {
                 return Err(err);
             }
         };
-        let conn = db::open_database(path, passphrase, &machine.identity(), false)?;
-        let mut restored = lifecycle::prepare(machine, conn, path)?;
-        restored.notes.restored_with_passphrase_of = made_at;
-        restored.notes.damaged_file_kept_at =
+        let conn = db::open_database(path, passphrase, &machine.identity(), false)?.into_ready()?;
+        let mut reopened = lifecycle::prepare(machine, conn, path)?;
+        reopened.notes.restored_with_passphrase_of = restored.made_at;
+        reopened.notes.upgraded = restored.upgraded.then(|| upgraded_note(backup, true));
+        reopened.notes.damaged_file_kept_at =
             set_aside.then(|| kept.to_string_lossy().into_owned());
-        refresh_saved(machine, path, &restored.database_id, passphrase);
-        session.install(restored);
+        refresh_saved(machine, path, &reopened.database_id, passphrase);
+        session.install(reopened);
         crate::commands::databases::ops::database_status(session, machine)
     }
 
@@ -700,6 +848,7 @@ pub mod ops {
         // when the replacement was refused, the current one.
         let reopen_with = if replaced.is_ok() { new } else { current };
         let reopened = db::open_database(&path, reopen_with, &machine.identity(), false)
+            .and_then(db::Opened::into_ready)
             .map_err(CommandError::from)
             .and_then(|conn| lifecycle::prepare(machine, conn, &path));
         let database_id = match reopened {
@@ -971,11 +1120,30 @@ pub async fn list_backups(
     ops::list_backups(&session, &machine, target)
 }
 
+/// What restoring a backup would do, before anything is copied (009 FR-019).
+/// Unscoped like `restore_backup`: with a `database_path` it works on a
+/// damaged database with nothing open, and otherwise needs the request's
+/// session.
+#[tauri::command]
+pub async fn check_backup(
+    backup_path: String,
+    passphrase: String,
+    database_path: Option<String>,
+    request: Request<'_>,
+    session: State<'_, Session>,
+    machine: State<'_, MachineSettings>,
+) -> Result<BackupCheck, CommandError> {
+    let passphrase = Passphrase::from_input(passphrase);
+    let target = Target::from_request(database_path.as_deref(), request.headers())?;
+    ops::check_backup(&session, &machine, &backup_path, &passphrase, target)
+}
+
 #[tauri::command]
 pub async fn restore_backup(
     backup_path: String,
     backup_passphrase: String,
     database_path: Option<String>,
+    upgrade: Option<bool>,
     request: Request<'_>,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
@@ -983,7 +1151,14 @@ pub async fn restore_backup(
     let backup_passphrase = Passphrase::from_input(backup_passphrase);
     // The open database is restored only in the session the request names.
     let target = Target::from_request(database_path.as_deref(), request.headers())?;
-    ops::restore_backup(&session, &machine, &backup_path, &backup_passphrase, target)
+    ops::restore_backup(
+        &session,
+        &machine,
+        &backup_path,
+        &backup_passphrase,
+        target,
+        upgrade.unwrap_or(false),
+    )
 }
 
 #[tauri::command]

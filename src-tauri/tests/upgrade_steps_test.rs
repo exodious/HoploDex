@@ -13,7 +13,7 @@ use std::process::Command;
 
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::db::upgrade::{self, UpgradeError, testing};
-use hoplodex_lib::db::{self, OpenError, raw_file::RawFile};
+use hoplodex_lib::db::{self, OpenError, Opened, raw_file::RawFile};
 use rusqlite::{Connection, ErrorCode};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -325,7 +325,7 @@ fn older_database(waiting: i64) -> (TempDir, std::path::PathBuf) {
 fn run_upgrade(path: &Path) -> (Connection, Result<(), UpgradeError>) {
     let conn = app_connection(path);
     first_read(&conn).expect("the first read");
-    let result = upgrade::upgrade(&conn, &upgrade::build_steps(path), None);
+    let result = upgrade::upgrade(&conn, &upgrade::build_steps(path), None, &mut |_, _| {});
     (conn, result)
 }
 
@@ -345,7 +345,7 @@ fn the_steps_due_apply_in_one_transaction_with_a_row_each() {
     // Nothing is due any more, and a second run changes nothing.
     assert!(upgrade::steps_due(&conn, &path).unwrap().is_empty());
     let before = layout(&conn);
-    upgrade::upgrade(&conn, &upgrade::build_steps(&path), None).unwrap();
+    upgrade::upgrade(&conn, &upgrade::build_steps(&path), None, &mut |_, _| {}).unwrap();
     assert_eq!(layout(&conn), before);
     drop(scope);
 }
@@ -402,7 +402,7 @@ fn a_failure_after_the_second_step_leaves_neither_step_nor_row() {
         .extra_steps(&[STEP_A, STEP_B])
         .fail_at(testing::Point::AfterStep(2));
     let error = assert_nothing_applied(&path, |conn| {
-        upgrade::upgrade(conn, &upgrade::build_steps(&path), None)
+        upgrade::upgrade(conn, &upgrade::build_steps(&path), None, &mut |_, _| {})
     });
     assert!(matches!(error, UpgradeError::Injected(_)), "{error:?}");
 }
@@ -412,7 +412,7 @@ fn a_step_with_invalid_sql_leaves_neither_it_nor_the_steps_before_it() {
     let (dir, path) = older_database(0);
     let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_INVALID]);
     let error = assert_nothing_applied(&path, |conn| {
-        upgrade::upgrade(conn, &upgrade::build_steps(&path), None)
+        upgrade::upgrade(conn, &upgrade::build_steps(&path), None, &mut |_, _| {})
     });
     // The error names the step, and carries no row value.
     assert!(
@@ -427,7 +427,7 @@ fn an_orphan_row_fails_at_the_link_check_and_is_rolled_back() {
     let (dir, path) = older_database(0);
     let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_ORPHAN]);
     let error = assert_nothing_applied(&path, |conn| {
-        upgrade::upgrade(conn, &upgrade::build_steps(&path), None)
+        upgrade::upgrade(conn, &upgrade::build_steps(&path), None, &mut |_, _| {})
     });
     assert!(matches!(error, UpgradeError::LinkCheck { .. }), "{error:?}");
     assert!(!error.to_string().contains("99"), "the error must not carry row values: {error}");
@@ -439,7 +439,7 @@ fn a_failure_at_the_link_check_or_before_the_commit_rolls_back_too() {
         let (dir, path) = older_database(0);
         let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_B]).fail_at(point);
         let error = assert_nothing_applied(&path, |conn| {
-            upgrade::upgrade(conn, &upgrade::build_steps(&path), None)
+            upgrade::upgrade(conn, &upgrade::build_steps(&path), None, &mut |_, _| {})
         });
         assert!(matches!(error, UpgradeError::Injected(_)), "{point:?}: {error:?}");
     }
@@ -483,7 +483,8 @@ fn the_open_marker_is_written_in_the_same_transaction_when_one_is_given() {
     let conn = app_connection(&path);
     first_read(&conn).unwrap();
     let marker = upgrade::OpenMarker::now(&support::other_machine());
-    upgrade::upgrade(&conn, &upgrade::build_steps(&path), Some(&marker)).unwrap_err();
+    upgrade::upgrade(&conn, &upgrade::build_steps(&path), Some(&marker), &mut |_, _| {})
+        .unwrap_err();
     let holder: Option<String> =
         conn.query_row("SELECT open_machine_id FROM app_state", [], |row| row.get(0)).unwrap();
     assert_eq!(holder.as_deref(), Some(support::test_machine().id.as_str()), "the marker leaked");
@@ -541,14 +542,21 @@ fn a_scope_reaches_only_databases_in_its_folder() {
     drop(conn);
     let reopened =
         db::open_database(&other_path, &support::passphrase(), &support::test_machine(), false)
-            .unwrap();
+            .unwrap()
+            .expect_ready();
     assert_eq!(layout(&reopened).applied.len(), 3);
     drop(reopened);
 
-    // The folder it names does get them, on open (the open path calls the
-    // runner until 009 T046).
-    let conn =
+    // The folder it names is asked about them on open (009 T046): the open
+    // changes nothing, and the steps apply when the caller upgrades.
+    let opened =
         db::open_database(&path, &support::passphrase(), &support::test_machine(), false).unwrap();
+    let Opened::UpgradeDue { conn, steps_due, .. } = opened else {
+        panic!("an open with steps due must not apply them");
+    };
+    assert_eq!(steps_due, ["9001_test_a", "9002_test_b"]);
+    assert_eq!(layout(&conn).applied.len(), 3);
+    upgrade::upgrade(&conn, &upgrade::build_steps(&path), None, &mut |_, _| {}).unwrap();
     assert_eq!(layout(&conn).applied.len(), 5);
     drop(conn);
 
@@ -568,8 +576,60 @@ fn a_database_with_a_step_this_build_lacks_is_newer_and_refused() {
     assert!(matches!(result, Err(OpenError::NewerVersion)), "{result:?}");
 }
 
+/// 009 research.md §4 steps 1 and 2: an open with steps due writes nothing,
+/// not even the open marker, and still holds the file's lock; nothing else
+/// asks the question twice.
 #[test]
-fn an_open_that_fails_its_upgrade_leaves_the_file_as_it_was() {
+fn an_open_with_steps_due_writes_nothing_and_holds_the_lock() {
+    let (dir, path) = older_database(0);
+    let hash_before = {
+        let conn = app_connection(&path);
+        first_read(&conn).unwrap();
+        file_hash(&conn)
+    };
+    let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A]);
+    let opened =
+        db::open_database(&path, &support::passphrase(), &support::test_machine(), false).unwrap();
+    let Opened::UpgradeDue { conn, steps_due, marker_seen } = opened else {
+        panic!("steps are due");
+    };
+    assert_eq!(steps_due, ["9001_test_a"]);
+    // The test machine made it and left its marker.
+    assert_eq!(marker_seen.machine_id.as_deref(), Some(support::test_machine().id.as_str()));
+    assert_eq!(file_hash(&conn), hash_before, "the file changed");
+    let second = app_connection(&path);
+    let err = first_read(&second).expect_err("a second connection must be refused");
+    assert!(is_locked(&err), "{err}");
+    drop(second);
+    // Dropped unanswered, the file is as it was and opens again.
+    drop(conn);
+    let again =
+        db::open_database(&path, &support::passphrase(), &support::test_machine(), false).unwrap();
+    assert!(matches!(again, Opened::UpgradeDue { .. }));
+}
+
+/// The marker another computer left is refused before the upgrade question,
+/// and the take-over resend reaches it with the marker it found.
+#[test]
+fn the_open_marker_comes_before_the_question() {
+    let (dir, path) = older_database(0);
+    drop(
+        db::open_database(&path, &support::passphrase(), &support::other_machine(), true)
+            .unwrap()
+            .expect_ready(),
+    );
+    let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A]);
+    let refused = db::open_database(&path, &support::passphrase(), &support::test_machine(), false);
+    assert!(matches!(refused, Err(OpenError::OpenElsewhere { .. })), "{refused:?}");
+    let taken =
+        db::open_database(&path, &support::passphrase(), &support::test_machine(), true).unwrap();
+    let Opened::UpgradeDue { marker_seen, .. } = taken else { panic!("steps are due") };
+    assert_eq!(marker_seen.machine_id.as_deref(), Some(support::other_machine().id.as_str()));
+}
+
+/// A failed upgrade after the question leaves the file as it was.
+#[test]
+fn an_upgrade_that_fails_after_the_question_leaves_the_file_as_it_was() {
     let (dir, path) = older_database(0);
     let before = {
         let conn = app_connection(&path);
@@ -577,8 +637,14 @@ fn an_open_that_fails_its_upgrade_leaves_the_file_as_it_was() {
         layout(&conn)
     };
     let _scope = testing::scope(dir.path()).extra_steps(&[STEP_A, STEP_INVALID]);
-    let result = db::open_database(&path, &support::passphrase(), &support::test_machine(), false);
-    assert!(matches!(result, Err(OpenError::Upgrade(_))), "{result:?}");
+    let opened =
+        db::open_database(&path, &support::passphrase(), &support::test_machine(), false).unwrap();
+    let Opened::UpgradeDue { conn, .. } = opened else { panic!("steps are due") };
+    let marker = upgrade::OpenMarker::now(&support::test_machine());
+    let failed =
+        upgrade::upgrade(&conn, &upgrade::build_steps(&path), Some(&marker), &mut |_, _| {});
+    assert!(failed.is_err());
+    drop(conn);
     let conn = app_connection(&path);
     first_read(&conn).unwrap();
     assert_eq!(layout(&conn), before);

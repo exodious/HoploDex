@@ -22,7 +22,7 @@ use tempfile::TempDir;
 
 /// Opens `path` as this test's computer would.
 fn open(path: &Path, passphrase: &Passphrase) -> Result<Connection, OpenError> {
-    db::open_database(path, passphrase, &test_machine(), false)
+    db::open_database(path, passphrase, &test_machine(), false).map(db::Opened::expect_ready)
 }
 
 #[test]
@@ -253,7 +253,9 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
         ]
     );
     // The connection is gone: the file opens again, and the marker is clear.
-    let conn = db::open_database(&path, &passphrase(), &support::other_machine(), false).unwrap();
+    let conn = db::open_database(&path, &passphrase(), &support::other_machine(), false)
+        .unwrap()
+        .expect_ready();
     let marker: String =
         conn.query_row("SELECT open_machine_id FROM app_state", [], |r| r.get(0)).unwrap();
     assert_eq!(marker, support::other_machine().id, "another computer opens it without a warning");
@@ -360,7 +362,8 @@ fn opening_a_second_database_closes_the_first_as_a_switch() {
     // "Second" was closed normally: another computer opens it without a
     // warning.
     db::open_database(&setup.db_path("Second"), &passphrase(), &support::other_machine(), false)
-        .unwrap();
+        .unwrap()
+        .expect_ready();
 }
 
 #[test]

@@ -74,7 +74,9 @@ impl World {
     /// and closes it again. The pause lets the file's time move on.
     fn change_on_another_computer(&self) {
         thread::sleep(Duration::from_millis(50));
-        let conn = db::open_database(&self.path(), &passphrase(), &other_machine(), false).unwrap();
+        let conn = db::open_database(&self.path(), &passphrase(), &other_machine(), false)
+            .unwrap()
+            .expect_ready();
         conn.execute("UPDATE collection_settings SET idle_lock_minutes = 12", []).unwrap();
         drop(conn);
     }

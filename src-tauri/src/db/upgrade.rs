@@ -103,15 +103,19 @@ impl UpgradeError {
     }
 }
 
-/// The open marker an upgrade at open writes in its transaction, so "this
-/// computer holds the database" and the upgrade are one atomic change
-/// (009 research.md §4 step 5c).
+/// What an upgrade at open writes besides the steps, in its transaction: the
+/// open marker, so "this computer holds the database" and the upgrade are one
+/// atomic change (009 research.md §4 step 5c), and, for a backup opened
+/// directly, taking its stamp (009 research.md §8).
 #[derive(Debug, Clone)]
 pub struct OpenMarker {
     pub machine_id: String,
     pub machine_name: String,
     /// UTC ISO-8601, as `open_since` stores it.
     pub since: String,
+    /// The file is a backup opened directly: it becomes a database of its
+    /// own, with this new `database_id`, and its stamp is cleared.
+    pub take_backup_stamp_as: Option<String>,
 }
 
 impl OpenMarker {
@@ -121,7 +125,15 @@ impl OpenMarker {
             machine_id: machine.id.clone(),
             machine_name: machine.display_name.clone(),
             since: super::now_utc(),
+            take_backup_stamp_as: None,
         }
+    }
+
+    /// The same marker, taking the backup stamp with `database_id` as the new
+    /// identity (009 research.md §8).
+    pub fn taking_backup_stamp_as(mut self, database_id: String) -> Self {
+        self.take_backup_stamp_as = Some(database_id);
+        self
     }
 }
 
@@ -196,13 +208,17 @@ fn table_exists(conn: &Connection, name: &str) -> rusqlite::Result<bool> {
 /// Any error before the commit rolls everything back. It never records the
 /// saved version: an upgrade is not a save (008 FR-015). Pass the list
 /// [`build_steps`] returns; a step the database already has is skipped.
+///
+/// `progress(done, due)` is called after each step is applied (not yet
+/// committed), `due` being how many this run applies.
 pub fn upgrade(
     conn: &Connection,
     steps: &[(&str, &str)],
     marker: Option<&OpenMarker>,
+    progress: &mut dyn FnMut(usize, usize),
 ) -> Result<(), UpgradeError> {
     conn.execute_batch("PRAGMA foreign_keys = OFF")?;
-    let result = run(conn, steps, marker);
+    let result = run(conn, steps, marker, progress);
     if result.is_err()
         && !conn.is_autocommit()
         && let Err(err) = conn.execute_batch("ROLLBACK")
@@ -220,6 +236,7 @@ fn run(
     conn: &Connection,
     steps: &[(&str, &str)],
     marker: Option<&OpenMarker>,
+    progress: &mut dyn FnMut(usize, usize),
 ) -> Result<(), UpgradeError> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
 
@@ -239,6 +256,7 @@ fn run(
         None
     };
 
+    let due = steps.iter().filter(|(name, _)| !applied.iter().any(|done| done == name)).count();
     let mut _count = 0usize;
     for (name, sql) in steps {
         if applied.iter().any(|done| done == name) {
@@ -252,6 +270,7 @@ fn run(
         )
         .map_err(step)?;
         _count += 1;
+        progress(_count, due);
         reach!(conn, Point::AfterStep(_count));
     }
 
@@ -260,6 +279,14 @@ fn run(
             "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",
             rusqlite::params![marker.machine_id, marker.machine_name, marker.since],
         )?;
+        if let Some(database_id) = &marker.take_backup_stamp_as {
+            conn.execute(
+                "UPDATE app_state
+                 SET database_id = ?1, backup_made_at = NULL, backup_of_name = NULL,
+                     backup_before_upgrade_to = NULL",
+                [database_id],
+            )?;
+        }
     }
 
     reach!(conn, Point::AtLinkCheck);

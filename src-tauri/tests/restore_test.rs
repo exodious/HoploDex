@@ -147,6 +147,7 @@ impl World {
             backup,
             &Passphrase::from_input(with.to_owned()),
             Target::Open(self.session.current_id()),
+            false,
         )
     }
 
@@ -382,6 +383,7 @@ fn a_file_planted_at_the_copys_name_fails_the_restore_of_a_damaged_database() {
         &listed[0].path,
         &passphrase(),
         Target::At(&world.path().to_string_lossy()),
+        false,
     )
     .unwrap_err();
 
@@ -498,6 +500,7 @@ fn a_damaged_database_is_restored_and_kept_aside() {
         &listed[0].path,
         &passphrase(),
         Target::At(&world.path().to_string_lossy()),
+        false,
     )
     .unwrap();
 
@@ -519,6 +522,7 @@ impl World {
             backup,
             &passphrase(),
             Target::At(&target.to_string_lossy()),
+            false,
         )
     }
 }
@@ -841,6 +845,7 @@ fn restoring_a_damaged_database_checks_only_the_space_for_the_restored_copy() {
         &listed[0].path,
         &passphrase(),
         Target::At(&world.path().to_string_lossy()),
+        false,
     )
     .unwrap();
 

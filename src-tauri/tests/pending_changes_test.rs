@@ -348,7 +348,8 @@ fn pending_changes_for_a_record_deleted_elsewhere_can_only_be_discarded() {
             &support::other_machine(),
             false,
         )
-        .unwrap();
+        .unwrap()
+        .expect_ready();
         conn.execute("DELETE FROM pending_changes", []).unwrap();
         firearms::delete_firearm(&conn, id, true).unwrap();
         conn.execute(
@@ -785,7 +786,8 @@ fn a_resumed_edit_whose_accessory_was_deleted_elsewhere_can_only_be_discarded() 
             &support::other_machine(),
             false,
         )
-        .unwrap();
+        .unwrap()
+        .expect_ready();
         conn.execute("DELETE FROM pending_changes", []).unwrap();
         accessories::delete_accessory(&conn, id, true).unwrap();
         conn.execute(

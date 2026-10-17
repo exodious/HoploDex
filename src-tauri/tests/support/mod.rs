@@ -73,7 +73,8 @@ impl TestDb {
         let path = dir.path().join(Self::FILE_NAME);
         std::fs::copy(template, &path).expect("failed to copy the template database");
         let conn = db::open_database(&path, &passphrase(), &test_machine(), false)
-            .expect("failed to open the copy of the template database");
+            .expect("failed to open the copy of the template database")
+            .expect_ready();
         Self { conn, dir }
     }
 
@@ -95,7 +96,8 @@ impl TestDb {
     pub fn reopen(&mut self) {
         drop(std::mem::replace(&mut self.conn, Connection::open_in_memory().unwrap()));
         self.conn = db::open_database(&self.path(), &passphrase(), &test_machine(), false)
-            .expect("failed to reopen the test database");
+            .expect("failed to reopen the test database")
+            .expect_ready();
     }
 
     /// The connection and the directory that must outlive it, for tests
