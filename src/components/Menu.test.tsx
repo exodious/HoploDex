@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { Button } from "./Button";
 import { Menu, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuItem, MenuSeparator } from "./Menu";
 import { useState } from "react";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { Dialog } from "./Dialog";
 
 function renderMenu() {
@@ -133,6 +134,80 @@ describe("Menu returns focus to its button (#114)", () => {
       { focusVisible: false },
     ]);
   });
+});
+
+// Regression (#114): a dialog chosen from a menu item (the Database menu, a
+// record's Mount menu) remembered the item as its opener, which is gone when
+// the dialog closes, so focus fell to the page. It returns to the menu's button.
+describe("A dialog opened from a menu item returns focus to the menu's button (#114)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function MenuOpening({ kind }: { kind: "dialog" | "confirm" }) {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <Menu trigger={<Button>Database</Button>}>
+          <MenuItem onSelect={() => setOpen(true)}>Settings…</MenuItem>
+        </Menu>
+        {kind === "dialog" ? (
+          <Dialog
+            open={open}
+            onOpenChange={setOpen}
+            title="Settings"
+            footer={<Button onClick={() => setOpen(false)}>Cancel</Button>}
+          >
+            Body
+          </Dialog>
+        ) : (
+          <ConfirmDialog
+            open={open}
+            onOpenChange={setOpen}
+            title="Settings"
+            description="Sure?"
+            onConfirm={() => undefined}
+          />
+        )}
+      </>
+    );
+  }
+
+  const dialogs = [
+    { kind: "dialog", role: "dialog" },
+    { kind: "confirm", role: "alertdialog" },
+  ] as const;
+
+  for (const { kind, role } of dialogs) {
+    for (const close of ["Escape", "Cancel"] as const) {
+      it(`${kind} closed by ${close}, chosen by mouse and by key`, async () => {
+        const user = userEvent.setup();
+        const focus = vi.spyOn(HTMLElement.prototype, "focus");
+        render(<MenuOpening kind={kind} />);
+        const trigger = screen.getByRole("button", { name: "Database" });
+        const closeDialog = async () => {
+          if (close === "Escape") await user.keyboard("{Escape}");
+          else await user.click(screen.getByRole("button", { name: "Cancel" }));
+          await waitFor(() => expect(screen.queryByRole(role)).not.toBeInTheDocument());
+        };
+        const lastFocusOnTrigger = () => focus.mock.calls[focus.mock.contexts.lastIndexOf(trigger)];
+
+        await user.click(trigger);
+        await user.click(await screen.findByRole("menuitem", { name: "Settings…" }));
+        await screen.findByRole(role);
+        await closeDialog();
+        expect(trigger).toHaveFocus();
+        // The ring follows the input that closed the dialog.
+        expect(lastFocusOnTrigger()).toEqual([{ focusVisible: close === "Escape" }]);
+
+        await user.keyboard("{Enter}");
+        await screen.findByRole("menu");
+        await user.keyboard("{ArrowDown}{Enter}");
+        await screen.findByRole(role);
+        await closeDialog();
+        expect(trigger).toHaveFocus();
+        expect(lastFocusOnTrigger()).toEqual([{ focusVisible: close === "Escape" }]);
+      });
+    }
+  }
 });
 
 function RadioMenu({ onChange }: { onChange?: (value: string) => void }) {
