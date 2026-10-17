@@ -1,8 +1,10 @@
 import * as RadixSelect from "@radix-ui/react-select";
+import { useRef } from "react";
 import type { ReactNode } from "react";
 import { FieldFrame } from "./Field";
 import { useFieldIds } from "./fieldIds";
 import { Icon } from "./Icon";
+import { placeFocus } from "./placeFocus";
 import "./components.css";
 
 export interface SelectOption {
@@ -44,6 +46,7 @@ export function Select({
 }: SelectProps) {
   const { inputId, hintId, errorId, describedBy } = useFieldIds(id, hint, error);
   const labelId = `${inputId}-label`;
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   return (
     <FieldFrame
@@ -60,6 +63,7 @@ export function Select({
     >
       <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
         <RadixSelect.Trigger
+          ref={triggerRef}
           id={inputId}
           className={["hd-select__trigger", error && "hd-input--error"].filter(Boolean).join(" ")}
           aria-labelledby={labelId}
@@ -72,7 +76,17 @@ export function Select({
           </RadixSelect.Icon>
         </RadixSelect.Trigger>
         <RadixSelect.Portal>
-          <RadixSelect.Content className="hd-select__content" position="popper" sideOffset={4}>
+          <RadixSelect.Content
+            className="hd-select__content"
+            position="popper"
+            sideOffset={4}
+            // Radix focuses the trigger with a plain `focus()`; the ring
+            // follows the last input instead (#114).
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              placeFocus(triggerRef.current);
+            }}
+          >
             <RadixSelect.Viewport className="hd-select__viewport">
               {options.map((option) => (
                 <RadixSelect.Item

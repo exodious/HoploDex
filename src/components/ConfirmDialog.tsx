@@ -145,7 +145,7 @@ export function ConfirmDialog({
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            previouslyFocused.current?.focus();
+            placeFocus(previouslyFocused.current);
           }}
         >
           <header className="hd-dialog__header">

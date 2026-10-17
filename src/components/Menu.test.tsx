@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Button } from "./Button";
 import { Menu, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuItem, MenuSeparator } from "./Menu";
@@ -77,6 +77,61 @@ describe("Menu (specs/003 contracts/ui-databases.md §0)", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
     expect(trigger).toHaveFocus();
     expect(Object.values(handlers).every((handler) => handler.mock.calls.length === 0)).toBe(true);
+  });
+});
+
+// Regression (#114): focus returned to the button with a plain focus(), which
+// the engine may ring even after a mouse choice. It goes through `placeFocus`,
+// so the ring follows the last input.
+describe("Menu returns focus to its button (#114)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("without the ring after a mouse choice, with it after a key choice or Escape", async () => {
+    const user = userEvent.setup();
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    render(<RadioMenu />);
+    const trigger = screen.getByRole("button", { name: /Group by/ });
+    const lastFocusOnTrigger = () => {
+      const at = focus.mock.contexts.lastIndexOf(trigger);
+      return focus.mock.calls[at];
+    };
+
+    await user.click(trigger);
+    await user.click(await screen.findByRole("menuitemradio", { name: "Type" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+    expect(lastFocusOnTrigger()).toEqual([{ focusVisible: false }]);
+
+    await user.keyboard("{Enter}");
+    await screen.findAllByRole("menuitemradio");
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+    expect(lastFocusOnTrigger()).toEqual([{ focusVisible: true }]);
+
+    await user.click(trigger);
+    await screen.findAllByRole("menuitemradio");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+    expect(lastFocusOnTrigger()).toEqual([{ focusVisible: true }]);
+  });
+
+  it("without the ring when a click outside closes it", async () => {
+    const user = userEvent.setup();
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    render(<RadioMenu />);
+    const trigger = screen.getByRole("button", { name: /Group by/ });
+
+    await user.click(trigger);
+    await screen.findAllByRole("menuitemradio");
+    fireEvent.pointerDown(document.body);
+
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+    expect(focus.mock.calls[focus.mock.contexts.lastIndexOf(trigger)]).toEqual([
+      { focusVisible: false },
+    ]);
   });
 });
 

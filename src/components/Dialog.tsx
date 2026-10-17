@@ -73,7 +73,7 @@ export function Dialog({
           {...(description ? {} : { "aria-describedby": undefined })}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            previouslyFocused.current?.focus();
+            placeFocus(previouslyFocused.current);
           }}
           onOpenAutoFocus={(event) => {
             // Start in the first field rather than on the header's close
