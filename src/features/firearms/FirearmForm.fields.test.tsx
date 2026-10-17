@@ -387,6 +387,30 @@ describe("FirearmForm nickname (001 FR-031)", () => {
     await user.click(screen.getByRole("button", { name: "Add firearm" }));
 
     expect(await screen.findByText(message)).toBeInTheDocument();
+    // The constitution's UI consistency: a refused field takes the focus, as
+    // one the form's own check refused does.
+    expect(screen.getByLabelText("Nickname")).toHaveFocus();
+  });
+
+  it("moves focus to the first field the backend refused, in the form's order", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "The firearm record has validation errors.",
+        fieldErrors: {
+          estimatedValue: "Estimated value must be 0 or more.",
+          nickname: "That nickname is already used.",
+        },
+      }),
+    );
+    render(<FirearmForm onSubmit={onSubmit} />);
+
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Add firearm" }));
+
+    expect(await screen.findByText("That nickname is already used.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Nickname")).toHaveFocus();
   });
 
   it("prefills the nickname when editing", () => {
@@ -622,6 +646,8 @@ describe("FirearmForm physical details (001 FR-039, US1-17)", () => {
     await user.click(screen.getByRole("button", { name: "Add firearm" }));
 
     expect(await screen.findByText("Weight must be greater than 0.")).toBeInTheDocument();
+    // The backend names the scaled field; the pounds box takes the focus.
+    expect(weightLb()).toHaveFocus();
   });
 
   // 001 US1-17: clearing all six removes the Physical details panel

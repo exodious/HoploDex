@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button, DateField, MoneyField, TextArea, TextField } from "../../components";
 import { parseDateInput } from "../../lib/dates";
+import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
@@ -174,18 +175,12 @@ export function InsurancePolicyForm({
     void save();
   }
 
-  function focusField(field: Field) {
-    formRef.current
-      ?.querySelector<HTMLElement>(`[data-field="${field}"] :is(input, textarea)`)
-      ?.focus();
-  }
-
   /** Validates and saves; resolves whether it was saved. */
   async function save(): Promise<boolean> {
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
-      focusField(firstInvalid);
+      focusFormField(formRef.current, firstInvalid);
       return false;
     }
 
@@ -214,8 +209,8 @@ export function InsurancePolicyForm({
         setServerError(error);
         // A field the backend refused (009 FR-008: a duplicate name) takes the
         // focus, as a field the form's own check refused does.
-        const refused = FIELD_ORDER.find((field) => error.fieldErrors?.[field]);
-        if (refused) focusField(refused);
+        const refused = firstRefusedField(FIELD_ORDER, error.fieldErrors);
+        if (refused) focusFormField(formRef.current, refused);
         return false;
       }
       throw error;

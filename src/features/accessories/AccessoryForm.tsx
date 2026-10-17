@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { flushSync } from "react-dom";
 import { Button, DateField, MoneyField, Select, TextArea, TextField } from "../../components";
 import { futureDateError, parseDateInput, todayIso } from "../../lib/dates";
+import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
@@ -426,9 +427,7 @@ export function AccessoryForm({
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
-      formRef.current
-        ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea, button)`)
-        ?.focus();
+      focusFormField(formRef.current, firstInvalid);
       return false;
     }
 
@@ -468,6 +467,10 @@ export function AccessoryForm({
     } catch (error) {
       if (error instanceof CommandFailure) {
         flushSync(() => setServerError(error));
+        // A field the backend refused takes the focus, as one the form's own
+        // check refused does.
+        const refused = firstRefusedField(FIELD_ORDER, error.fieldErrors);
+        if (refused) focusFormField(formRef.current, refused);
         return false;
       }
       throw error;

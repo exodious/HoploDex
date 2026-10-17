@@ -677,6 +677,8 @@ describe("DisposeDialog recipient maximum", () => {
 
     expect(await screen.findByText(MESSAGE)).toBeInTheDocument();
     expect(recipient).toHaveAccessibleDescription(expect.stringContaining(MESSAGE));
+    // The refused field takes the focus, as in the other forms.
+    expect(recipient).toHaveFocus();
     // On the field, not in the dialog's banner.
     expect(screen.getByRole("dialog").querySelector(".hd-banner")).toBeNull();
 

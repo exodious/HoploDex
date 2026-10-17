@@ -23,6 +23,7 @@ import {
 } from "../../lib/dates";
 import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
+import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
 import {
@@ -1089,9 +1090,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       if ((REGISTRATION_GROUP_FIELDS as readonly Field[]).includes(firstInvalid)) {
         flushSync(() => setRegistrationGroupOpen(true));
       }
-      formRef.current
-        ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea, button)`)
-        ?.focus();
+      focusFormField(formRef.current, firstInvalid);
       return false;
     }
 
@@ -1188,6 +1187,18 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     }
   }
 
+  /** A save the backend refused on a field moves focus to the first such field
+   * in the form's order, as a field the form's own check refused does. The
+   * groups it sits in are open by now. An identity clash with no year points
+   * at Year of manufacture, the place to act, so that takes the focus. */
+  function focusRefusedField(error: CommandFailure) {
+    const fieldErrors = error.fieldErrors;
+    const refused = firstRefusedField(FIELD_ORDER, fieldErrors, SERVER_FIELD);
+    if (!refused) return;
+    const clashNeedsYear = refused === "serialNumber" && form.yearOfManufacture === "";
+    focusFormField(formRef.current, clashNeedsYear ? "yearOfManufacture" : refused);
+  }
+
   /** 002 FR-009, contracts/ui-identification.md
    * §4: an `ORIGINAL_MARKS_MATCH` opens a confirm-to-save dialog instead of
    * the usual error banner; every other failure behaves as before. */
@@ -1206,6 +1217,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
           revealOriginGroupFor(error);
           revealPhysicalGroupFor(error);
           revealRegistrationGroupFor(error);
+          focusRefusedField(error);
         }
         return false;
       }

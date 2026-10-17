@@ -449,6 +449,29 @@ describe("AccessoryForm saving (006 US1-1, US1-5)", () => {
       expect.stringContaining(message),
     );
   });
+
+  it("moves focus to the first field the backend refused, in the form's order", async () => {
+    // The constitution's UI consistency: as the firearm form and the policy form do.
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "The accessory record has validation errors.",
+        fieldErrors: {
+          notes: "Notes are too long.",
+          estimatedValue: "Estimated value must be 0 or more.",
+        },
+      }),
+    );
+    render(<AccessoryForm onSubmit={onSubmit} />);
+
+    await chooseKind(user, "Sling");
+    await nameIt(user);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Estimated value must be 0 or more.")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Estimated value/)).toHaveFocus();
+  });
 });
 
 // specs/004-cartridges-action-types, reused by specs/006 US1-6: a blank
