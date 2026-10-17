@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
@@ -36,12 +36,19 @@ function mockScope(forAll: ExportScope, forFiltered: ExportScope = forAll) {
   );
 }
 
-function renderDialog(browseState: Parameters<typeof ExportDialog>[0]["browse"] = browse) {
-  render(
+function dialogElement(browseState: Parameters<typeof ExportDialog>[0]["browse"], open = true) {
+  return (
     <CollectionContext.Provider value={{ firearms: [] } as unknown as CollectionState}>
-      <ExportDialog open onOpenChange={vi.fn()} browse={browseState} />
-    </CollectionContext.Provider>,
+      <ExportDialog open={open} onOpenChange={vi.fn()} browse={browseState} />
+    </CollectionContext.Provider>
   );
+}
+
+/** Renders the dialog open and waits for it to show, which it does once the
+ * counts are read (#116). */
+async function renderDialog(browseState: Parameters<typeof ExportDialog>[0]["browse"] = browse) {
+  render(dialogElement(browseState));
+  await screen.findByRole("dialog", { name: "Export collection" });
 }
 
 beforeEach(() => {
@@ -51,8 +58,8 @@ beforeEach(() => {
 });
 
 describe("ExportDialog disclosure (Constitution V: what leaves the device, and where)", () => {
-  it("describes the export as not encrypted and points to encrypted backups (003 FR-031)", () => {
-    renderDialog();
+  it("describes the export as not encrypted and points to encrypted backups (003 FR-031)", async () => {
+    await renderDialog();
 
     const dialog = screen.getByRole("dialog", { name: "Export collection" });
     const description = document.getElementById(dialog.getAttribute("aria-describedby") ?? "");
@@ -62,8 +69,8 @@ describe("ExportDialog disclosure (Constitution V: what leaves the device, and w
     expect(screen.getByText("not encrypted", { selector: "strong" })).toBeInTheDocument();
   });
 
-  it("says, before anything is chosen, that the export is unencrypted and leaves HoploDex", () => {
-    renderDialog();
+  it("says, before anything is chosen, that the export is unencrypted and leaves HoploDex", async () => {
+    await renderDialog();
 
     const note = screen.getByRole("note");
     expect(note).toHaveTextContent(/unencrypted/i);
@@ -75,7 +82,7 @@ describe("ExportDialog disclosure (Constitution V: what leaves the device, and w
 
   it("names the chosen destination folder in the notice before the user confirms", async () => {
     const user = userEvent.setup();
-    renderDialog();
+    await renderDialog();
 
     await user.type(screen.getByLabelText(/Save to folder/), "/home/sam/Documents/backups");
 
@@ -90,7 +97,7 @@ describe("ExportDialog disclosure (Constitution V: what leaves the device, and w
 
   it("follows the folder as it changes", async () => {
     const user = userEvent.setup();
-    renderDialog();
+    await renderDialog();
     const folder = screen.getByLabelText(/Save to folder/);
 
     await user.type(folder, "/tmp/a");
@@ -112,20 +119,20 @@ describe("ExportDialog registration disclosure (005 FR-020, US4-2)", () => {
 
   it("ends with serial numbers and values when no firearm is registered", async () => {
     mockScope(none);
-    renderDialog();
+    await renderDialog();
     await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(PLAIN));
   });
 
   it("adds registration details when the export includes a registered firearm", async () => {
     mockScope(registered);
-    renderDialog();
+    await renderDialog();
     await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION));
   });
 
   it("follows the scope: the current results decide it once they are chosen", async () => {
     const user = userEvent.setup();
     mockScope(registered, none);
-    renderDialog(filtered);
+    await renderDialog(filtered);
     await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(WITH_REGISTRATION));
 
     await user.click(await screen.findByRole("radio", { name: /Current results/ }));
@@ -138,7 +145,7 @@ describe("ExportDialog registration disclosure (005 FR-020, US4-2)", () => {
   it("adds registration details when the current results hold a registered firearm", async () => {
     const user = userEvent.setup();
     mockScope(none, registered);
-    renderDialog(filtered);
+    await renderDialog(filtered);
     await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(PLAIN));
 
     await user.click(await screen.findByRole("radio", { name: /Current results/ }));
@@ -158,7 +165,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
 
   it("reads the whole collection's counts from get_export_scope", async () => {
     mockScope(scope({ firearmCount: 3, accessoryCount: 2 }));
-    renderDialog();
+    await renderDialog();
 
     expect(await screen.findByText(/3 firearms and 2 accessories/)).toBeInTheDocument();
     expect(importExportService.getExportScope).toHaveBeenCalledWith(
@@ -173,7 +180,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
       scope({ firearmCount: 3, accessoryCount: 2 }),
       scope({ firearmCount: 5, accessoryCount: 4 }),
     );
-    renderDialog(filtered);
+    await renderDialog(filtered);
 
     expect(
       await screen.findByRole("radio", { name: /Entire collection.*3 firearms and 2 accessories/ }),
@@ -189,7 +196,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
 
   it("hints that the current results include what is mounted on them, only for that scope", async () => {
     const user = userEvent.setup();
-    renderDialog(filtered);
+    await renderDialog(filtered);
     const hint = "Includes everything mounted on these firearms.";
     expect(screen.queryByText(hint)).not.toBeInTheDocument();
 
@@ -202,7 +209,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
 
   it("names accessories, with their serial numbers, values and photos, when the export includes one", async () => {
     mockScope(scope({ includesAccessories: true, includesRegistration: false }));
-    renderDialog();
+    await renderDialog();
 
     await waitFor(() =>
       expect(screen.getByRole("note")).toHaveTextContent(
@@ -213,7 +220,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
 
   it("words the accessories and the registration details in one sentence", async () => {
     mockScope(scope({ includesAccessories: true, includesRegistration: true }));
-    renderDialog();
+    await renderDialog();
 
     await waitFor(() =>
       expect(screen.getByRole("note")).toHaveTextContent(
@@ -226,7 +233,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
 
   it("says nothing of accessories when the scope has none", async () => {
     mockScope(scope({ accessoryCount: 0, includesAccessories: false }));
-    renderDialog();
+    await renderDialog();
 
     await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(/serial numbers/));
     expect(screen.getByRole("note")).not.toHaveTextContent(/accessories/i);
@@ -238,7 +245,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
       scope({ includesAccessories: true }),
       scope({ accessoryCount: 0, includesAccessories: false }),
     );
-    renderDialog(filtered);
+    await renderDialog(filtered);
     await waitFor(() => expect(screen.getByRole("note")).toHaveTextContent(/accessories, with/));
 
     await user.click(await screen.findByRole("radio", { name: /Current results/ }));
@@ -255,7 +262,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
       exportedAccessoryCount: 2,
       exportedPhotoCount: 1,
     });
-    renderDialog();
+    await renderDialog();
 
     await user.type(screen.getByLabelText(/Save to folder/), "/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
@@ -276,7 +283,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
       exportedAccessoryCount: 2,
       exportedPhotoCount: 1,
     });
-    renderDialog();
+    await renderDialog();
 
     await user.type(screen.getByLabelText(/Save to folder/), "/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
@@ -304,7 +311,7 @@ describe("ExportDialog exporting the current results (001 US5, filtered export)"
   it("sends scope filtered with the page's search when the current results are chosen", async () => {
     const user = userEvent.setup();
     vi.mocked(importExportService.exportCollection).mockResolvedValue(exported);
-    renderDialog(filtered);
+    await renderDialog(filtered);
     await user.type(screen.getByLabelText(/Save to folder/), "/out");
     await user.click(await screen.findByRole("radio", { name: /Current results/ }));
 
@@ -323,7 +330,7 @@ describe("ExportDialog exporting the current results (001 US5, filtered export)"
   it("sends scope all, with no filter, when the entire collection stays chosen", async () => {
     const user = userEvent.setup();
     vi.mocked(importExportService.exportCollection).mockResolvedValue(exported);
-    renderDialog(filtered);
+    await renderDialog(filtered);
     await user.type(screen.getByLabelText(/Save to folder/), "/out");
 
     await user.click(screen.getByRole("button", { name: "Export" }));
@@ -335,5 +342,90 @@ describe("ExportDialog exporting the current results (001 US5, filtered export)"
       scope: "all",
       filter: undefined,
     });
+  });
+});
+
+// #116: a centred dialog that opens and then grows moves, so the counts and the
+// disclosure that lengthen it are read before it shows.
+describe("ExportDialog opens at the size it keeps (#116)", () => {
+  const filtered = { ...browse, query: "glock" };
+  /** A `get_export_scope` that answers when the test says so. */
+  function holdScopes() {
+    const answers: Record<"all" | "filtered", (scope: ExportScope) => void> = {
+      all: () => {},
+      filtered: () => {},
+    };
+    vi.mocked(importExportService.getExportScope).mockImplementation(
+      (_scope, input) =>
+        new Promise((resolve) => {
+          answers[input.scope] = resolve;
+        }),
+    );
+    return answers;
+  }
+
+  it("shows nothing until the counts are read, then opens with them in its first render", async () => {
+    const answers = holdScopes();
+    render(dialogElement(browse));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await act(async () => answers.all(scope({ firearmCount: 3, accessoryCount: 2 })));
+
+    const dialog = screen.getByRole("dialog", { name: "Export collection" });
+    expect(within(dialog).getByText("Exports 3 firearms and 2 accessories.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("note")).toHaveTextContent("and accessories, with");
+  });
+
+  it("waits for the current results' counts too when a filter is active", async () => {
+    const answers = holdScopes();
+    render(dialogElement(filtered));
+
+    await act(async () => answers.all(scope({ firearmCount: 3, accessoryCount: 2 })));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await act(async () => answers.filtered(scope({ firearmCount: 1, accessoryCount: 0 })));
+    const dialog = screen.getByRole("dialog", { name: "Export collection" });
+    expect(
+      within(dialog).getByRole("radio", {
+        name: /Entire collection.*3 firearms and 2 accessories/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("radio", { name: /Current results.*1 firearm and 0 accessories/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens with the note naming everything when reading the counts fails", async () => {
+    vi.mocked(importExportService.getExportScope).mockRejectedValue(new Error("no"));
+    render(dialogElement(browse));
+
+    const dialog = await screen.findByRole("dialog", { name: "Export collection" });
+    expect(within(dialog).getByRole("note")).toHaveTextContent("and accessories, with");
+  });
+
+  it("opens anyway when reading is slow, and fills the counts in when they come", async () => {
+    const answers = holdScopes();
+    render(dialogElement(browse));
+
+    expect(await screen.findByRole("dialog", { name: "Export collection" })).toBeInTheDocument();
+    expect(screen.queryByText(/^Exports \d+ firearm/)).not.toBeInTheDocument();
+    await act(async () => answers.all(scope({ firearmCount: 3, accessoryCount: 2 })));
+    expect(screen.getByText("Exports 3 firearms and 2 accessories.")).toBeInTheDocument();
+  });
+
+  it("reads again at the next opening, and shows nothing stale while it does", async () => {
+    mockScope(scope({ firearmCount: 3, accessoryCount: 2 }));
+    const view = render(dialogElement(browse));
+    await screen.findByRole("dialog", { name: "Export collection" });
+
+    view.rerender(dialogElement(browse, false));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    const answers = holdScopes();
+    view.rerender(dialogElement(browse));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => answers.all(scope({ firearmCount: 4, accessoryCount: 2 })));
+    expect(screen.getByText("Exports 4 firearms and 2 accessories.")).toBeInTheDocument();
+    expect(importExportService.getExportScope).toHaveBeenCalledTimes(2);
   });
 });

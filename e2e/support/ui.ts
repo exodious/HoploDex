@@ -130,6 +130,44 @@ export async function clickButton(text: string, { settles = true }: { settles?: 
   if (settles) await settle();
 }
 
+/** Runs `open`, which opens a dialog without waiting for the app to settle
+ * (`clickButton(…, { settles: false })`), and returns the dialog's layout
+ * height in the frame it first appeared and once the app is idle (#116). Dialogs are
+ * centred, so one that is a different height by then has moved, by half the
+ * difference. The first height is read in a mutation observer, before the
+ * data the dialog loads can arrive. */
+export async function dialogHeightWhenOpened(
+  open: () => Promise<unknown>,
+): Promise<{ first: number; settled: number }> {
+  const DIALOG = '[role="dialog"], [role="alertdialog"]';
+  await browser.execute((selector: string) => {
+    const w = window as unknown as { __firstDialogHeight?: number | null };
+    w.__firstDialogHeight = null;
+    const observer = new MutationObserver(() => {
+      const dialog = document.querySelector<HTMLElement>(selector);
+      if (!dialog) return;
+      w.__firstDialogHeight = dialog.offsetHeight;
+      observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }, DIALOG);
+  await open();
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        () =>
+          (window as unknown as { __firstDialogHeight?: number | null }).__firstDialogHeight !=
+          null,
+      ),
+    { timeoutMsg: "no dialog appeared" },
+  );
+  await settle();
+  return browser.execute((selector: string) => {
+    const first = (window as unknown as { __firstDialogHeight: number }).__firstDialogHeight;
+    return { first, settled: document.querySelector<HTMLElement>(selector)!.offsetHeight };
+  }, DIALOG);
+}
+
 /** Opens the firearm form's disclosure group with this title if it is
  * closed (each starts closed on a record with none of its fields recorded).
  * Its button's text also carries a summary, so match on the title. */

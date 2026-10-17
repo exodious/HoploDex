@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Checkbox, ChoiceCards, ConfirmDialog, Icon, Select } from "../../components";
+import {
+  Checkbox,
+  ChoiceCards,
+  ConfirmDialog,
+  Icon,
+  Select,
+  useShownOnceLoaded,
+} from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { capitalized, describeCounts, hasAny, kindNoun } from "../mounts/recordCounts";
 import { RecordName } from "../mounts/RecordName";
@@ -76,6 +83,10 @@ function PolicyDeleteBody({
       ? "covered by the blanket policy in force"
       : "uninsured";
 
+  // Shown once what the policy covers is read, so it opens at the size it
+  // keeps: the choices below it are most of its height (#116).
+  const shown = useShownOnceLoaded(true, impact != null || loadError != null);
+
   const ready =
     impact != null &&
     (scheduled === 0 ||
@@ -103,7 +114,7 @@ function PolicyDeleteBody({
 
   return (
     <ConfirmDialog
-      open
+      open={shown}
       onOpenChange={onOpenChange}
       title={`Delete ${policy.name}?`}
       description={
