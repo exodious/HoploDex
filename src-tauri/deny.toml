@@ -52,6 +52,27 @@ ignore = [
     { id = "RUSTSEC-2025-0081", reason = "unic-char-property: unmaintained, via urlpattern in tauri-utils" },
     { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version: unmaintained, via urlpattern in tauri-utils" },
     { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident: unmaintained, via urlpattern in tauri-utils" },
+    # zip 7.2 and 8.6: extracting an archive to disk keeps SUID/SGID bits
+    # (RUSTSEC-2026-0367), writes symlinks that point outside the destination
+    # (RUSTSEC-2026-0368), and applies permissions through them
+    # (RUSTSEC-2026-0369). All three are high; each is fixed in zip 9.
+    #
+    # No fix to take yet: the newest calamine (0.36.1) requires zip ^8.6 and
+    # the newest rust_xlsxwriter (0.99.1) ^8.3 (0.96 here requires ^7.2), and
+    # HoploDex's own zip dependency is the 8.x calamine uses.
+    #
+    # Not reachable. Every advisory is in the extract-to-disk API
+    # (`ZipArchive::extract`, `ZipStreamReader::extract`), and nothing calls
+    # it: HoploDex only reads entries in memory (import_reader/reader.rs,
+    # document_types.rs), calamine reads entries, and rust_xlsxwriter only
+    # writes. HoploDex never runs privileged either. Checked 2026-10-17 at
+    # calamine 0.36.0 and rust_xlsxwriter 0.96.0.
+    #
+    # Review by 2026-11-30, or as soon as calamine and rust_xlsxwriter accept
+    # zip 9.
+    { id = "RUSTSEC-2026-0367", reason = "zip <9 extract keeps SUID/SGID: extract is never called; calamine and rust_xlsxwriter don't accept zip 9 yet" },
+    { id = "RUSTSEC-2026-0368", reason = "zip <9 extract writes symlinks outside the destination: extract is never called; calamine and rust_xlsxwriter don't accept zip 9 yet" },
+    { id = "RUSTSEC-2026-0369", reason = "zip <9 extract applies permissions through symlinks: extract is never called; calamine and rust_xlsxwriter don't accept zip 9 yet" },
 ]
 
 # License audit. HoploDex is released under GPL-3.0-only, so every crate
