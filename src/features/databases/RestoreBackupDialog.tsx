@@ -7,6 +7,7 @@ import {
   Dialog,
   PassphraseField,
   ProgressBar,
+  useShownOnceLoaded,
 } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
 import { formatBytes } from "../../lib/bytes";
@@ -39,10 +40,6 @@ export interface RestoreBackupDialogProps {
   onChangeLocation?: () => void;
 }
 
-/** How long the dialog waits for the backup list before it opens anyway,
- * showing that it is still looking (a slow network folder). */
-const LIST_WAIT_MS = 400;
-
 /** Restores a database from one of its backups (003 contracts/ui-databases.md
  * §9, FR-028). The backup's own passphrase is asked for, since it keeps the
  * one it was made with. The current database is backed up first, or, when
@@ -59,28 +56,25 @@ export function RestoreBackupDialog({
   const scope = useContext(SessionScopeContext);
   const [running, setRunning] = useState(false);
   const [list, setList] = useState<BackupList | null>(null);
-  const [waited, setWaited] = useState(false);
 
   // The list is read before the dialog shows, so it opens at its full size
-  // rather than opening on "Looking for backups…" and then growing: a
-  // centred dialog that grows moves, and WebKitGTK only repaints the new
-  // size on the next mouse move or key press.
+  // rather than opening on "Looking for backups…" and then growing (#116);
+  // a slow network folder opens it anyway, showing that it is still looking.
   useEffect(() => {
     let current = true;
     databasesService.listBackups(scope, databasePath).then(
       (listed) => current && setList(listed),
       () => current && setList({ folder: "", available: false, backups: [] }),
     );
-    const timer = window.setTimeout(() => current && setWaited(true), LIST_WAIT_MS);
     return () => {
       current = false;
-      window.clearTimeout(timer);
     };
   }, [scope, databasePath]);
+  const shown = useShownOnceLoaded(open, list !== null);
 
   return (
     <Dialog
-      open={open && (list !== null || waited)}
+      open={shown}
       onOpenChange={onOpenChange}
       title={databasePath ? `Restore “${name}” from a backup` : "Restore from a backup"}
       size="lg"

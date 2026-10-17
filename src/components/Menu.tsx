@@ -1,8 +1,9 @@
-import { useId } from "react";
+import { useId, useRef } from "react";
 import type { ReactElement, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
+import { placeFocus } from "./placeFocus";
 import "./components.css";
 
 export interface MenuProps {
@@ -15,12 +16,18 @@ export interface MenuProps {
 }
 
 /** A menu of actions opened from a button, with menu roles, arrow-key
- * navigation, and Escape returning focus to the button (WCAG 2.1 AA,
- * specs/003 contracts/ui-databases.md §0). */
+ * navigation, and focus returning to the button when it closes (WCAG 2.1 AA,
+ * specs/003 contracts/ui-databases.md §0). The button shows its focus ring
+ * then only after a key, as `placeFocus` does everywhere (#114). */
 export function Menu({ trigger, children, align = "start" }: MenuProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // A right-click outside leaves focus where the person clicked, as Radix does.
+  const rightClicked = useRef(false);
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
+      <DropdownMenu.Trigger asChild ref={triggerRef}>
+        {trigger}
+      </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           className="hd-menu"
@@ -28,6 +35,17 @@ export function Menu({ trigger, children, align = "start" }: MenuProps) {
           sideOffset={6}
           loop
           ref={focusCheckedItem}
+          onInteractOutside={(event) => {
+            const click = event.detail.originalEvent as MouseEvent;
+            rightClicked.current = click.button === 2 || (click.button === 0 && click.ctrlKey);
+          }}
+          // Radix focuses the button with a plain `focus()`, which the engine
+          // may ring after a mouse choice (WebKitGTK does).
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (!rightClicked.current) placeFocus(triggerRef.current);
+            rightClicked.current = false;
+          }}
         >
           {children}
         </DropdownMenu.Content>
@@ -38,11 +56,13 @@ export function Menu({ trigger, children, align = "start" }: MenuProps) {
 
 /** A menu of radio items opens with focus on the checked one, where Radix
  * would start at the first item (005 contracts/ui-registration.md §6). Radix
- * places focus in its own mount effects, so this waits a frame. */
+ * places focus in its own mount effects, so this waits a frame. The item is
+ * ringed only after a key: WebView2 rang it on a mouse open once anything had
+ * been typed (#114). */
 function focusCheckedItem(content: HTMLElement | null) {
   if (!content) return;
   requestAnimationFrame(() => {
-    content.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')?.focus();
+    placeFocus(content.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]'));
   });
 }
 

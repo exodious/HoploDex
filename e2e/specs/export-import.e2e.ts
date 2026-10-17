@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
-import { createDatabase, listedNames, scratchDocuments, search } from "../support/ui";
+import { createDatabase, dialogHeightWhenOpened, listedNames } from "../support/ui";
+import { scratchDocuments, search } from "../support/ui";
 import { writeSheetsWorkbook } from "../support/spreadsheets";
 
 /**
@@ -232,4 +233,28 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     expect(await listedNames()).toEqual([]);
     await search("");
   });
+});
+
+describe("Issue #116 - Export dialog shifts up a few pixels after it appears", () => {
+  before(async () => {
+    // The journey above leaves its database open when the whole file runs.
+    if (await $("button=Create a new database…").isExisting()) await createDatabase();
+  });
+
+  // The dialog is centred and reads the export's counts and disclosure after
+  // it appears. If those lengthened it then, it moved up by half the growth.
+  for (const [name, term] of [
+    ["the whole collection", ""],
+    ["a search", "ExportE2E"],
+  ] as const) {
+    it(`opens as tall as it stays once its counts arrive, for ${name} (#116)`, async () => {
+      await search(term);
+      const { first, settled } = await dialogHeightWhenOpened(() =>
+        clickButton("Export", { settles: false }),
+      );
+      expect(first).toBe(settled);
+      await clickButton("Cancel");
+      await search("");
+    });
+  }
 });

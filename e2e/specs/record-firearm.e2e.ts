@@ -23,6 +23,7 @@ import {
 } from "../support/ui";
 import type { NewFirearm } from "../support/ui";
 import { createDatabase } from "../support/ui";
+import { relaunchApp } from "../support/app";
 
 /**
  * End-to-end coverage of 001 US1's acceptance scenarios (001 spec.md),
@@ -318,5 +319,102 @@ describe("001 US1 - Record a Firearm (was us1-record-firearm)", () => {
     });
     await $(".hd-runhead").waitForExist({ reverse: true });
     await expect($("#record-name")).toBeFocused();
+  });
+});
+
+/** What a modal dialog's scroll lock must leave where it was: the top bar, the
+ * pinned strip with its actions, and the toasts' corner. */
+const PAGE_BARS = [
+  ".hd-topbar",
+  ".hd-topbar__inner",
+  ".hd-record__bar",
+  ".hd-runhead",
+  ".hd-runhead__inner",
+  ".hd-runhead__actions",
+  ".hd-toasts",
+];
+
+describe("Issue #117 - Nothing on the page moves when a modal opens", () => {
+  // The app's web view draws overlay scroll bars by default (they take no
+  // room, so there is nothing to lose); GTK_OVERLAY_SCROLLING=0 gives it the
+  // classic bars macOS shows with "Show scroll bars: Always" and Windows
+  // always shows, where a modal's scroll lock takes the bar away and the page
+  // widens. The setting is this block's alone.
+  before(async () => {
+    process.env.GTK_OVERLAY_SCROLLING = "0";
+    await relaunchApp();
+    await createDatabase({ name: "Scroll bars" });
+    // Enough notes for the record to scroll well past its plate.
+    const notes = Array.from({ length: 80 }, (_, i) => `Range note ${i + 1}.`).join("\n");
+    await addFirearm({
+      make: "E2EBars",
+      model: "Long",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "BAR-1",
+      notes,
+    });
+  });
+
+  after(() => {
+    delete process.env.GTK_OVERLAY_SCROLLING;
+  });
+
+  const snapshot = () =>
+    browser.execute((selectors: string[]) => {
+      const rects: Record<string, { left: number; right: number }> = {};
+      for (const selector of selectors) {
+        const box = document.querySelector(selector)?.getBoundingClientRect();
+        if (box) rects[selector] = { left: box.left, right: box.right };
+      }
+      return { scrollbar: window.innerWidth - document.documentElement.clientWidth, rects };
+    }, PAGE_BARS);
+
+  /** Opens something that locks scrolling with `open`, checks that every bar
+   * is where it was and that the lock took the scroll bar away, then `close`s it. */
+  async function expectBarsStay(open: () => Promise<void>, close: () => Promise<void>) {
+    const before = await snapshot();
+    // On Linux the bar is there to be taken away: without this a run with
+    // overlay bars would pass whatever the page did.
+    if (process.platform === "linux") expect(before.scrollbar).toBeGreaterThan(0);
+    await open();
+    await settle();
+    const during = await snapshot();
+    expect(await browser.execute(() => document.body.hasAttribute("data-scroll-locked"))).toBe(
+      true,
+    );
+    expect(during.scrollbar).toBe(0);
+    expect(during.rects).toEqual(before.rects);
+    await close();
+  }
+
+  const closeModal = async () => {
+    await browser.keys(["Escape"]);
+    await $('[role="dialog"], [role="alertdialog"], [role="menu"]').waitForExist({
+      reverse: true,
+    });
+    await settle();
+  };
+
+  it("keeps the top bar, the pinned strip and the toasts in place under a dialog, a confirmation and a menu (#117)", async () => {
+    // The page's top: the top bar and toasts are all there is to move.
+    await browser.execute(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    await settle();
+    await expectBarsStay(() => clickButton("Edit"), closeModal);
+
+    // Scrolled until the strip shows, which is fixed to the window's edges.
+    await scrollToPinnedStrip();
+    await expectBarsStay(() => clickPinned("Edit"), closeModal);
+    await expectBarsStay(() => clickPinned("Delete"), closeModal);
+    await expectBarsStay(async () => {
+      await browser.execute(() => {
+        document
+          .querySelector("button.hd-db-menu")!
+          .dispatchEvent(
+            new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+          );
+      });
+      await $('[role="menu"]').waitForExist();
+    }, closeModal);
   });
 });

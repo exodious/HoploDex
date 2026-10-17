@@ -43,6 +43,7 @@ export { Dialog } from "./Dialog";
 export { placeFocus } from "./placeFocus";
 export type { DialogProps } from "./Dialog";
 export { LOCK_SHORTCUT, LockContext, useLock } from "./lock";
+export { useShownOnceLoaded } from "./useShownOnceLoaded";
 export { ConfirmDialog } from "./ConfirmDialog";
 export type { ConfirmDialogProps } from "./ConfirmDialog";
 export { Menu, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator } from "./Menu";

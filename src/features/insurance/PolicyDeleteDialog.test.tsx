@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
 import * as insuranceService from "./insuranceService";
@@ -295,5 +295,59 @@ describe("PolicyDeleteDialog (001 FR-034)", () => {
     expect(await screen.findByText("This policy still covers 2 firearm(s).")).toBeInTheDocument();
     expect(onDeleted).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+});
+
+// #116: its choices are most of its height, so a centred dialog that opened
+// without them and grew when they came moved by half of that.
+describe("PolicyDeleteDialog opens at the size it keeps (#116)", () => {
+  function renderOpen() {
+    render(
+      <PolicyDeleteDialog
+        open
+        onOpenChange={vi.fn()}
+        policy={policy}
+        onDeleted={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+  }
+
+  /** A `getPolicyDeletionImpact` that answers when the test says so. */
+  function holdImpact() {
+    let answer: (loaded: PolicyDeletionImpact) => void = () => {};
+    vi.mocked(insuranceService.getPolicyDeletionImpact).mockReturnValue(
+      new Promise((resolve) => (answer = resolve)),
+    );
+    renderOpen();
+    return (loaded: PolicyDeletionImpact) => act(async () => answer(loaded));
+  }
+
+  it("shows nothing until what the policy covers is read, then opens with the choices", async () => {
+    const answer = holdImpact();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    await answer(impact);
+
+    const dialog = screen.getByRole("alertdialog", { name: "Delete Collectibles rider?" });
+    expect(within(dialog).getByRole("radio", { name: /Leave unscheduled/ })).toBeInTheDocument();
+    expect(within(dialog).queryByText("Checking what this policy covers…")).not.toBeInTheDocument();
+  });
+
+  it("opens anyway when reading is slow, saying that it is still checking", async () => {
+    const answer = holdImpact();
+
+    expect(await screen.findByText("Checking what this policy covers…")).toBeInTheDocument();
+    await answer(impact);
+    expect(screen.getByRole("radio", { name: /Leave unscheduled/ })).toBeInTheDocument();
+  });
+
+  it("opens with the reason when reading fails", async () => {
+    vi.mocked(insuranceService.getPolicyDeletionImpact).mockRejectedValue(
+      new CommandFailure({ code: "INTERNAL_ERROR", message: "This policy couldn't be checked." }),
+    );
+    renderOpen();
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("This policy couldn't be checked.");
   });
 });

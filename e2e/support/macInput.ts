@@ -12,6 +12,14 @@ import { fileURLToPath } from "node:url";
  * WebDriver can't reach and which differ on each OS. Needs Accessibility for
  * whatever runs the suite, as the macOS checks in DEVELOPMENT.md do. A test
  * that uses it starts with {@link skipWithoutMacInput}.
+ *
+ * Every function here is addressed to the process `pid` (a key by
+ * `CGEvent.postToPid`, the menu bar and the quit events through the
+ * Accessibility API and Apple Events), because the suite's workers run apps
+ * side by side and a new one takes the front. Only the real_input tool's
+ * `activate`, which {@link pressCommandQ} and {@link chooseMenuBarItem} call
+ * first, and its pointer and `key` commands (not used here) go to the
+ * frontmost app or the screen.
  */
 
 const SOURCE = fileURLToPath(new URL("../../src-tauri/examples/real_input.swift", import.meta.url));
@@ -37,20 +45,25 @@ function realInput(): string {
   return tool;
 }
 
-/** Makes `pid`'s app the frontmost one, so a key press reaches it. */
+/** Makes `pid`'s app the frontmost one, so the menu bar and a key sent to the
+ * frontmost app reach it (addressed to the frontmost app, not to `pid`: it
+ * can lose the front again at once, to another app that launches). */
 function bringToFront(pid: number) {
   execFileSync(realInput(), ["activate", String(pid)]);
 }
 
-/** Presses ⌘Q in the app with process id `pid`. */
+/** Presses ⌘Q in the app with process id `pid`. The key is posted to that
+ * process alone (`CGEvent.postToPid`), not to whichever app is frontmost when
+ * it arrives: another worker's app, launched meanwhile, takes the front, and
+ * a global ⌘Q would quit it instead (#122). */
 export function pressCommandQ(pid: number) {
   bringToFront(pid);
   // 12 is the virtual key code of Q.
-  execFileSync(realInput(), ["key", "12", "cmd"]);
+  execFileSync(realInput(), ["key-to", String(pid), "12", "cmd"]);
 }
 
 /** Quits the app with process id `pid` as the Dock's Quit does: with the
- * quit Apple Event, sent to that one process (`terminate:` on its side). */
+ * quit Apple Event, addressed to that one process (`terminate:` on its side). */
 export function sendQuitEvent(pid: number) {
   const result = execFileSync(realInput(), ["quit", String(pid)])
     .toString()
@@ -80,7 +93,8 @@ export function quitMenuItemTitle(pid: number): string {
 }
 
 /** Chooses the menu bar item titled `title` in the app with process id `pid`
- * through the Accessibility API, as VoiceOver would. */
+ * through the Accessibility API, as VoiceOver would (addressed to that
+ * process; the app is brought to the front first). */
 export function chooseMenuBarItem(pid: number, title: string) {
   bringToFront(pid);
   const result = execFileSync(realInput(), ["press", String(pid), title])

@@ -925,7 +925,11 @@ uses no real input, so it runs everywhere.
 One exception runs on macOS only: `databases`' quit test (#107) presses ⌘Q, chooses
 the app menu's Quit and sends the quit Apple Event the Dock's Quit sends (to
 the sandboxed app's process only) with `e2e/support/macInput.ts`, which
-compiles `src-tauri/examples/real_input.swift`. `locking` sends the quit event with
+compiles `src-tauri/examples/real_input.swift`. Every one of its functions is addressed to
+the test's own process (⌘Q by `key-to`, which posts the key with
+`CGEvent.postToPid`; the others through Accessibility and Apple Events), because
+the suite's workers run apps side by side and a new one takes the front: a
+global `key` goes to whichever app is frontmost when it arrives (#122). `locking` sends the quit event with
 a log out's reason (`kAEReallyLogOut`), which must end the app at once with
 its unsaved input kept as pending changes. It needs Accessibility for
 whatever runs the suite (as `quit-cleanup.py` does) and is skipped on the

@@ -20,7 +20,12 @@
 //   real_input key CODE [MODS] press a key (a virtual key code), with the
 //                                   modifiers MODS held: cmd, shift, alt
 //                                   (Option) and ctrl, joined with +
-//                                   (cmd+shift)
+//                                   (cmd+shift); goes to the frontmost
+//                                   app, whichever that is on arrival
+//   real_input key-to PID CODE [MODS]
+//                              the same key, posted to the PID's process
+//                                   alone (CGEvent.postToPid), so no other app
+//                                   can receive it
 //   real_input xbutton X Y back|forward
 //                                   the mouse's back or forward button
 //                                   (buttons 3 and 4)
@@ -122,25 +127,30 @@ case "find":
         found = true
     }
     if !found { exit(1) }
-case "key":
-    let code = CGKeyCode(args[2])!
+case "key", "key-to":
+    // "key" posts to the session, so the frontmost app gets it, whichever
+    // that is when it arrives; "key-to" posts to one process, so no other app
+    // can receive it.
+    let target: Int32? = args[1] == "key-to" ? Int32(args[2])! : nil
+    let rest = Array(args.dropFirst(target == nil ? 2 : 3))
+    let code = CGKeyCode(rest[0])!
+    var flags: CGEventFlags = []
+    for modifier in (rest.count > 1 ? rest[1] : "").split(separator: "+") {
+        switch modifier {
+        case "cmd": flags.insert(.maskCommand)
+        case "shift": flags.insert(.maskShift)
+        case "alt": flags.insert(.maskAlternate)
+        case "ctrl": flags.insert(.maskControl)
+        default: FileHandle.standardError.write("unknown modifier \(modifier)\n".data(using: .utf8)!); exit(2)
+        }
+    }
     for down in [true, false] {
         let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)!
         // Always set: an event with the flags unset takes the modifiers of the
         // key event posted before it, so Escape after Command+O reached nothing
         // (Command+Escape belongs to the system).
-        var flags: CGEventFlags = []
-        for modifier in (args.count > 3 ? args[3] : "").split(separator: "+") {
-            switch modifier {
-            case "cmd": flags.insert(.maskCommand)
-            case "shift": flags.insert(.maskShift)
-            case "alt": flags.insert(.maskAlternate)
-            case "ctrl": flags.insert(.maskControl)
-            default: FileHandle.standardError.write("unknown modifier \(modifier)\n".data(using: .utf8)!); exit(2)
-            }
-        }
         event.flags = flags
-        event.post(tap: .cghidEventTap)
+        if let pid = target { event.postToPid(pid) } else { event.post(tap: .cghidEventTap) }
         usleep(50_000)
     }
 case "scroll":
@@ -212,6 +222,6 @@ case "quit":
         print(app.terminate() ? "sent" : "not sent")
     }
 default:
-    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [MODS] | xbutton X Y back|forward | windows PID | menu PID | activate PID | quit PID [WHY]\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | text PID | press PID TITLE | clickt X Y | find PID ROLE TITLE | key CODE [MODS] | key-to PID CODE [MODS] | xbutton X Y back|forward | windows PID | menu PID | activate PID | quit PID [WHY]\n".data(using: .utf8)!)
     exit(2)
 }

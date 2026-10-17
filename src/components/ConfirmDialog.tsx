@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Button } from "./Button";
-import { placeFocus } from "./placeFocus";
+import { currentOpener, placeFocus } from "./placeFocus";
 import "./components.css";
 
 /** What a question's body can hold that takes focus or input. */
@@ -79,7 +79,7 @@ export function ConfirmDialog({
   const contentRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
+    if (open) previouslyFocused.current = currentOpener();
   }, [open]);
 
   function run(action: () => void | Promise<unknown>, which: "confirm" | "alternative") {
@@ -145,7 +145,7 @@ export function ConfirmDialog({
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            previouslyFocused.current?.focus();
+            placeFocus(previouslyFocused.current);
           }}
         >
           <header className="hd-dialog__header">

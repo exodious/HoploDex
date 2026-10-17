@@ -1,11 +1,17 @@
 /* The continuation strip: a band of the record's sheet pinned under the top
    bar, closed by the same heavy ink rule that divides the plate. It slides
-   out from beneath the top bar (which sits above it) when it appears. */
+   out from beneath the top bar (which sits above it) when it appears.
+
+   A modal dialog's scroll lock removes the page's scroll bar (react-remove-scroll
+   pads the page's own content for it, and sets this variable to its width), so
+   a fixed element anchored to the right edge widens by the bar's width and its
+   contents move. Keeping `right` that far in from the edge leaves it where it
+   was (#117). */
 .hd-runhead {
   position: fixed;
   top: var(--topbar-height);
   left: 0;
-  right: 0;
+  right: var(--removed-body-scroll-bar-size, 0px);
   z-index: 45;
   background: var(--sheet);
   border-bottom: 1.5px solid var(--ink);

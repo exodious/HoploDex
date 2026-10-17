@@ -11,7 +11,7 @@ import {
 } from "../support/ui";
 import { goTo, isButtonDisabled, openFirearm, policyCardText, selectOption } from "../support/ui";
 import { titleBlock } from "../support/ui";
-import { createDatabase } from "../support/ui";
+import { createDatabase, dialogHeightWhenOpened } from "../support/ui";
 
 /**
  * End-to-end coverage of 001 US3 (001 spec.md), driven against the real
@@ -257,6 +257,42 @@ describe("001 US3 - Track Value and Insurance Coverage (was us3-value-insurance)
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
     await expect($("article.hd-policy*=InsE2E Overlap New")).not.toExist();
+  });
+});
+
+describe("Issue #116 - Dialogs that load their content open at the size they keep", () => {
+  before(async () => {
+    // The journey above leaves its database open when the whole file runs.
+    if (await $("button=Create a new database…").isExisting()) await createDatabase();
+  });
+
+  // The Delete policy question is centred and lists what is scheduled under
+  // the policy, which it reads after it appears: it moved by half of that.
+  it("opens the Delete policy question as tall as it stays once what is scheduled is read (#116)", async () => {
+    await goTo("Collection");
+    await addFirearmWithValue({
+      make: "InsE2EDialog",
+      model: "116",
+      serial: "INS-D-1",
+      valueDollars: "500",
+    });
+    await back();
+    await addPolicy({
+      name: "InsE2E Dialog Rider",
+      policyNumber: "D-1",
+      startDate: "2020-01-01",
+      endDate: isoDaysFromNow(365),
+    });
+    await openCoverage("InsE2EDialog 116");
+    await assignCoverage({ policyName: "InsE2E Dialog Rider", amountDollars: "500" });
+    await goTo("Insurance");
+
+    const { first, settled } = await dialogHeightWhenOpened(() =>
+      clickInPolicyCard("InsE2E Dialog Rider", "Delete InsE2E Dialog Rider"),
+    );
+
+    expect(first).toBe(settled);
+    await clickButton("Cancel");
   });
 });
 
