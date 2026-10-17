@@ -679,7 +679,10 @@ _Probed on Linux (T005, `tests/upgrade_steps_test.rs`, SQLCipher with the
   is not deleted, only its header zeroed, so a `-journal` file may stay beside
   an open database and a rolled-back copy until the connection closes. Its
   presence therefore says nothing about whether it is hot._
-- _macOS (T006) and Windows (T007) run the same filter._
+- _macOS 26 (T006, tart VM, standard user, same filter): both probes hold and
+  the child-process helper runs, 3 tests passed, so §4 step 2 and §7 stand as
+  written there too. Nothing the probes check differed from Linux._
+- _Windows (T007) runs the same filter._
 
 **E2E** needs a database older than the app.
 - An `e2e` build appends one test-only step, `9000_e2e_upgrade_check`, which
