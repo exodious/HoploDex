@@ -56,11 +56,13 @@ export function Menu({ trigger, children, align = "start" }: MenuProps) {
 
 /** A menu of radio items opens with focus on the checked one, where Radix
  * would start at the first item (005 contracts/ui-registration.md §6). Radix
- * places focus in its own mount effects, so this waits a frame. */
+ * places focus in its own mount effects, so this waits a frame. The item is
+ * ringed only after a key: WebView2 rang it on a mouse open once anything had
+ * been typed (#114). */
 function focusCheckedItem(content: HTMLElement | null) {
   if (!content) return;
   requestAnimationFrame(() => {
-    content.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')?.focus();
+    placeFocus(content.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]'));
   });
 }
 

@@ -134,6 +134,28 @@ describe("Menu returns focus to its button (#114)", () => {
       { focusVisible: false },
     ]);
   });
+
+  it("opens on the checked item with the ring only after a key, even after typing elsewhere", async () => {
+    const user = userEvent.setup();
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    render(<RadioMenu />);
+    const trigger = screen.getByRole("button", { name: /Group by/ });
+    const lastFocusOn = (element: HTMLElement) =>
+      focus.mock.calls[focus.mock.contexts.lastIndexOf(element)];
+
+    await user.keyboard("x");
+    await user.click(trigger);
+    let checked = (await screen.findAllByRole("menuitemradio"))[2];
+    await waitFor(() => expect(checked).toHaveFocus());
+    expect(lastFocusOn(checked)).toEqual([{ focusVisible: false }]);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    await user.keyboard("{Enter}");
+    checked = (await screen.findAllByRole("menuitemradio"))[2];
+    await waitFor(() => expect(checked).toHaveFocus());
+    expect(lastFocusOn(checked)).toEqual([{ focusVisible: true }]);
+  });
 });
 
 // Regression (#114): a dialog chosen from a menu item (the Database menu, a
