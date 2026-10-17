@@ -1,9 +1,9 @@
 //! Listing, restoring and deleting a database's backups, and changing its
-//! passphrase (specs/003-database-protection-management
-//! contracts/tauri-commands.md "long-running operations"; FR-015, FR-016,
-//! FR-028, FR-029; research.md §3, §4, §8). The commands are thin; the logic
-//! is in [`ops`], which the tests call directly. Each passphrase becomes a
-//! [`Passphrase`] at once and is wiped when the command returns (FR-007).
+//! passphrase (003 contracts/tauri-commands.md "long-running operations";
+//! 003 FR-015, FR-016, FR-028, FR-029; 003 research.md §3, §4, §8). The
+//! commands are thin; the logic is in [`ops`], which the tests call
+//! directly. Each passphrase becomes a [`Passphrase`] at once and is wiped
+//! when the command returns (003 FR-007).
 
 use tauri::ipc::Request;
 use tauri::{AppHandle, State};
@@ -50,9 +50,9 @@ pub mod ops {
     use crate::session::scoped::Target;
     use crate::session::{OpenDatabase, Session, SessionEvents, SessionId, database_name};
 
-    /// Where a database's backups are and what is there (FR-028): the open
+    /// Where a database's backups are and what is there (003 FR-028): the open
     /// database's, or, for one that doesn't open, the folder and id this
-    /// computer cached when it last opened it (research.md §8).
+    /// computer cached when it last opened it (003 research.md §8).
     pub fn list_backups(
         session: &Session,
         machine: &MachineSettings,
@@ -112,7 +112,7 @@ pub mod ops {
             })
     }
 
-    /// Reports a restore's progress (contracts/tauri-commands.md).
+    /// Reports a restore's progress (003 contracts/tauri-commands.md).
     fn progress(events: &dyn SessionEvents, phase: &str, processed: u64, total: u64) {
         events.emit(
             "restore:progress",
@@ -125,7 +125,7 @@ pub mod ops {
     }
 
     /// Holds the session for an operation that replaces the open database's
-    /// file, once that file is known to still be this session's (research.md
+    /// file, once that file is known to still be this session's (003 research.md
     /// §6), as before any write. A file another computer has taken over is
     /// closed as a take-over.
     fn hold_still_ours(
@@ -152,7 +152,7 @@ pub mod ops {
         }
     }
 
-    /// Replaces a database with one of its backups (FR-028, research.md §8),
+    /// Replaces a database with one of its backups (003 FR-028, research.md §8),
     /// opened with that backup's passphrase afterwards. With `database_path`
     /// it restores a database that doesn't open, with nothing open; without
     /// it, the open database, which must be the session the request named.
@@ -278,7 +278,9 @@ pub mod ops {
 
     fn io_failure(path: &Path, err: &io::Error) -> CommandError {
         log::error!("restore: {}: {err}", path.display());
-        CommandError::new("INTERNAL_ERROR", "The backup couldn't be copied.")
+        CommandError::from_io(err, || {
+            CommandError::new("INTERNAL_ERROR", "The backup couldn't be copied.")
+        })
     }
 
     /// Removes a restore's copy, and the journal checking it may leave.
@@ -321,7 +323,7 @@ pub mod ops {
             (&database_folder, restored_len),
             (&settings.folder, current_len),
         ])?;
-        // The bar shows at once (SC-005); checking the passphrase derives a
+        // The bar shows at once (003 SC-005); checking the passphrase derives a
         // key, which takes longer than the 100 ms feedback budget.
         progress(events, "copying", 0, restored_len);
         check_backup_passphrase(backup, passphrase)?;
@@ -333,7 +335,7 @@ pub mod ops {
 
         // 3. The "before restoring" backup, whatever the once-a-day limit
         // and even with automatic backups off: it makes the restore
-        // undoable (FR-028). Without it there is no restore.
+        // undoable (003 FR-028). Without it there is no restore.
         progress(events, "savingCurrent", 0, current_len);
         let saved = backups::make_backup(
             machine,
@@ -375,7 +377,7 @@ pub mod ops {
         session.clear_opened_documents();
         if let Err(err) = file_swap::replace(&path) {
             // The original is unchanged, but closed, and the backend never
-            // holds its passphrase (FR-007): the user opens it again.
+            // holds its passphrase (003 FR-007): the user opens it again.
             session.forget_open();
             session.set_last_closed(&path);
             events.emit(
@@ -458,7 +460,7 @@ pub mod ops {
         }
     }
 
-    /// Restores a database that no longer opens (US3-6). No "before
+    /// Restores a database that no longer opens (003 US3-6). No "before
     /// restoring" backup can be made of it, so it is kept, renamed
     /// `<name> damaged <YYYY-MM-DD HHMMSS>.hoplodex` beside the restored
     /// database, and only the room for the restored copy is needed.
@@ -566,7 +568,7 @@ pub mod ops {
         Ok(set_aside)
     }
 
-    /// Reports a passphrase change's progress (contracts/tauri-commands.md).
+    /// Reports a passphrase change's progress (003 contracts/tauri-commands.md).
     fn change_progress(events: &dyn SessionEvents, phase: &str, processed: u64, total: u64) {
         events.emit(
             "passphrase_change:progress",
@@ -580,24 +582,29 @@ pub mod ops {
 
     fn change_io_failure(path: &Path, err: &io::Error) -> CommandError {
         log::error!("passphrase change: {}: {err}", path.display());
-        CommandError::new("INTERNAL_ERROR", "The copy with the new passphrase couldn't be made.")
+        CommandError::from_io(err, || {
+            CommandError::new(
+                "INTERNAL_ERROR",
+                "The copy with the new passphrase couldn't be made.",
+            )
+        })
     }
 
     /// How often the copy's size is reported while `sqlcipher_export` runs,
-    /// which has no progress callback of its own (research.md §3).
+    /// which has no progress callback of its own (003 research.md §3).
     const EXPORT_POLL_EVERY: Duration = Duration::from_millis(100);
 
     /// The new passphrase's field error when it is the current one.
     const SAME_PASSPHRASE: &str = "Choose a passphrase different from the current one.";
 
-    /// Changes the open database's passphrase (FR-015, FR-016; research.md
+    /// Changes the open database's passphrase (003 FR-015, FR-016; 003 research.md
     /// §3, §4): a copy keyed with `new` is made beside it, proved sound and
     /// complete, and only then put in its place in one step, and the
     /// previous file is securely deleted. Until that step the database is
     /// untouched, so a failure or a stop leaves it opening with `current`
     /// and all its content, and the copy is removed. Either passphrase is
-    /// held for this operation only (FR-007). `scratch_dir` takes the
-    /// page-1 probe that checks `current` (research.md §1a).
+    /// held for this operation only (003 FR-007). `scratch_dir` takes the
+    /// page-1 probe that checks `current` (003 research.md §1a).
     pub fn change_passphrase(
         session: &Session,
         id: SessionId,
@@ -606,7 +613,7 @@ pub mod ops {
         current: &Passphrase,
         new: &Passphrase,
     ) -> Result<PassphraseChanged, CommandError> {
-        // 1. The new passphrase follows the rules for setting one (FR-003),
+        // 1. The new passphrase follows the rules for setting one (003 FR-003),
         // and is a change: copying the file to the key it already has would
         // only cost the time.
         let problem =
@@ -619,20 +626,20 @@ pub mod ops {
         }
         let mut slot = hold_still_ours(session, id)?;
         let open = slot.as_mut().expect("held open");
-        // The copy would carry the row (FR-039), and a form still opening is
+        // The copy would carry the row (003 FR-039), and a form still opening is
         // not the moment to re-key the file.
         if open.pending != PendingState::None {
             return Err(CommandError::pending_changes_unresolved());
         }
 
-        // 2. Room for a second copy beside the database (FR-016).
+        // 2. Room for a second copy beside the database (003 FR-016).
         let path = open.path.clone();
         let len = RawFile::of(&open.conn)
             .and_then(|file| file.size())
             .map_err(|err| change_io_failure(&path, &err))?;
         disk_space::check_room_for_copy(len, path.parent().unwrap_or(Path::new("")))?;
 
-        // The bar gets its total now (SC-005): the check below derives a
+        // The bar gets its total now (003 SC-005): the check below derives a
         // key, which takes longer than the 100 ms feedback budget.
         let total = export_total(&open.conn)?;
         let events = session.events();
@@ -704,7 +711,7 @@ pub mod ops {
                 database_id
             }
             Err(err) => {
-                // Closed, and the backend keeps no passphrase (FR-007): the
+                // Closed, and the backend keeps no passphrase (003 FR-007): the
                 // user opens it again.
                 log::error!("could not reopen {} after changing its passphrase", path.display());
                 session.forget_open();
@@ -725,7 +732,7 @@ pub mod ops {
             old_file_removed: replaced.old_removed,
             old_file_path: (!replaced.old_removed)
                 .then(|| replaced.old_path.to_string_lossy().into_owned()),
-            // A saved passphrase follows the change (FR-018, US4-7).
+            // A saved passphrase follows the change (003 FR-018, US4-7).
             passphrase_saved: refresh_saved(machine, &path, &database_id, new),
         })
     }
@@ -744,10 +751,10 @@ pub mod ops {
     }
 
     /// Fills the empty `.<file>.new` the caller created, keyed with `new`, by
-    /// `sqlcipher_export` into an attachment (research.md §3), reporting its
+    /// `sqlcipher_export` into an attachment (003 research.md §3), reporting its
     /// size as it grows, and stamps it: no open marker, no pending changes, and a change waiting
     /// to be backed up, since backups made before now keep the old
-    /// passphrase (FR-025, research.md §5).
+    /// passphrase (003 FR-025, research.md §5).
     fn rekeyed_copy(
         conn: &Connection,
         operation: &OperationGuard,
@@ -816,7 +823,7 @@ pub mod ops {
     }
 
     /// Opens the copy on its own with the new passphrase and proves it sound
-    /// (research.md §4) and complete: every table has as many rows as the
+    /// (003 research.md §4) and complete: every table has as many rows as the
     /// database it was copied from, which is idle meanwhile.
     fn check_rekeyed_copy(
         conn: &Connection,
@@ -875,11 +882,11 @@ pub mod ops {
             .collect()
     }
 
-    /// Deletes every backup of the open database (FR-029, US3-4): only the
+    /// Deletes every backup of the open database (003 FR-029, US3-4): only the
     /// files its listing names, never another database's in a shared
     /// folder, each by secure deletion. One that can't be deleted is left
     /// and reported. A sleep stops it between files, and a file whose
-    /// overwrite was under way is removed without finishing (FR-037).
+    /// overwrite was under way is removed without finishing (003 FR-037).
     /// Deleting backups is not a change to the collection.
     pub fn delete_all_backups(
         session: &Session,
@@ -899,7 +906,7 @@ pub mod ops {
 
     /// Deletes every backup of the database `database_id` in `folder`, as
     /// [`delete_all_backups`] does: the current location's, or the old one's
-    /// when the location changes (FR-026). Registered as `deleteBackups`, so
+    /// when the location changes (003 FR-026). Registered as `deleteBackups`, so
     /// a sleep stops it between files.
     pub(crate) fn delete_backups_in(
         session: &Session,

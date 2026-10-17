@@ -1,4 +1,4 @@
-//! specs/007-document-preview User Story 1's text and CSV previews (tasks.md
+//! 007 US1's text and CSV previews (007 tasks.md
 //! T030, US1-4, research.md §12): `services::preview::text::decode` turns the
 //! stored bytes into the string the viewer shows as a text child of a `<pre>`.
 //! It is total (every input gives a string) and inert (nothing is parsed,

@@ -1,8 +1,8 @@
 //! CSV/XLSX export (`rust_xlsxwriter`/`csv`) and the recognition of an
-//! imported table's rows per contracts/spreadsheet-format.md. Reading the file
+//! imported table's rows per 001 contracts/spreadsheet-format.md. Reading the file
 //! itself is `services::import_reader`'s, in a confined child (feature 008).
 //! Kept in the Rust backend
-//! (research.md §6) so the business logic that must be tested against a
+//! (001 research.md §6) so the business logic that must be tested against a
 //! real SQLCipher DB — matching, validation, conflict resolution — never
 //! crosses the IPC boundary mid-computation.
 
@@ -10,6 +10,7 @@ use rust_xlsxwriter::Workbook;
 use std::borrow::Cow;
 
 use crate::commands::CommandError;
+use crate::services::disk_space;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpreadsheetFormat {
@@ -26,15 +27,13 @@ impl SpreadsheetFormat {
     }
 }
 
-/// Column order per contracts/spreadsheet-format.md. `photo_filenames` is
-/// export-only (ignored on import, FR-019). specs/002-firearm-identification
-/// adds seven columns after `condition` and before `photo_filenames`
-/// (contracts/spreadsheet-format.md's "New columns");
-/// specs/004-cartridges-action-types adds `cartridge` and `action_type`
-/// directly after `caliber` (FR-022); specs/005-regulated-item-types adds
-/// four registration columns after `original_serial_number` (FR-019);
-/// specs/006-accessory-links puts `record_id` first and `mounted_on` before
-/// `photo_filenames`. Import finds columns by header, not by position, so
+/// Column order per 001 contracts/spreadsheet-format.md. `photo_filenames` is
+/// export-only (ignored on import, 001 FR-019). Spec 002 adds seven columns
+/// after `condition` and before `photo_filenames` (002 contracts/spreadsheet-format.md's
+/// "New columns"); spec 004 adds `cartridge` and `action_type` directly after
+/// `caliber` (004 FR-022); spec 005 adds four registration columns after
+/// `original_serial_number` (005 FR-019); spec 006 puts `record_id` first and
+/// `mounted_on` before `photo_filenames`. Import finds columns by header, not by position, so
 /// this order is the export's only.
 pub const FIREARM_COLUMNS: &[&str] = &[
     "record_id",
@@ -82,7 +81,7 @@ pub const FIREARM_COLUMNS: &[&str] = &[
 ];
 
 /// The accessory table's columns, in export order
-/// (specs/006-accessory-links contracts/spreadsheet-format.md "Accessory
+/// (006 contracts/spreadsheet-format.md "Accessory
 /// table: columns"). Read by header on import, like the firearm table's.
 pub const ACCESSORY_COLUMNS: &[&str] = &[
     "record_id",
@@ -109,10 +108,10 @@ pub const ACCESSORY_COLUMNS: &[&str] = &[
 ];
 
 /// One exported row — every cell already formatted as display text (blank
-/// string for an absent value), per contracts/spreadsheet-format.md.
+/// string for an absent value), per 001 contracts/spreadsheet-format.md.
 #[derive(Debug, Clone, Default)]
 pub struct FirearmExportRow {
-    /// specs/006-accessory-links FR-019: the record's identifier, never
+    /// 006 FR-019: the record's identifier, never
     /// blank.
     pub record_id: String,
     pub make: String,
@@ -121,7 +120,7 @@ pub struct FirearmExportRow {
     pub serial_number: String,
     pub no_serial_attested: String,
     pub caliber: String,
-    /// specs/004-cartridges-action-types FR-022: the recorded cartridge, or
+    /// 004 FR-022: the recorded cartridge, or
     /// blank.
     pub cartridge: String,
     /// The action's name (`Bolt action`), or blank.
@@ -151,13 +150,13 @@ pub struct FirearmExportRow {
     pub origin: String,
     pub year_of_manufacture: String,
     /// Always blank for a Re-imported firearm: the United States is
-    /// displayed, never stored (data-model.md).
+    /// displayed, never stored (002 data-model.md).
     pub country_of_manufacture: String,
     pub importer_name: String,
     pub original_make: String,
     pub original_model: String,
     pub original_serial_number: String,
-    /// specs/005-regulated-item-types FR-019: the classification's name, the
+    /// 005 FR-019: the classification's name, the
     /// form, the approved date (`YYYY-MM-DD`) and "Registered to", each
     /// blank when there is none.
     pub registered_as: String,
@@ -165,7 +164,7 @@ pub struct FirearmExportRow {
     pub registration_approved: String,
     pub registered_to: String,
     /// The direct host's identifier, a firearm's or an accessory's, or blank
-    /// (FR-023).
+    /// (006 FR-023).
     pub mounted_on: String,
     pub photo_filenames: String,
 }
@@ -220,7 +219,7 @@ impl FirearmExportRow {
 }
 
 /// One exported accessory row, every cell display text
-/// (contracts/spreadsheet-format.md "Accessory table: columns").
+/// (006 contracts/spreadsheet-format.md "Accessory table: columns").
 #[derive(Debug, Clone, Default)]
 pub struct AccessoryExportRow {
     pub record_id: String,
@@ -278,10 +277,10 @@ impl AccessoryExportRow {
 /// One raw imported row — every cell as the string found in the source
 /// file (or `None` if the column was blank/absent), before any validation
 /// or type coercion. `photo_filenames` is deliberately omitted: ignored on
-/// import per FR-019.
+/// import per 001 FR-019.
 #[derive(Debug, Clone, Default)]
 pub struct RawImportRow {
-    /// specs/006-accessory-links FR-022: the identifier cell, as found
+    /// 006 FR-022: the identifier cell, as found
     /// (trimmed, `None` when blank or the column is absent).
     pub record_id: Option<String>,
     pub make: Option<String>,
@@ -323,7 +322,7 @@ pub struct RawImportRow {
     pub registration_form: Option<String>,
     pub registration_approved: Option<String>,
     pub registered_to: Option<String>,
-    /// The host's identifier cell (FR-023), as found.
+    /// The host's identifier cell (006 FR-023), as found.
     pub mounted_on: Option<String>,
 }
 
@@ -358,7 +357,7 @@ fn non_blank(value: &str) -> Option<String> {
 }
 
 /// Which column of a table each column of the file is, by header
-/// (research.md §12): trimmed and in any letter case. A header that is not a
+/// (004 research.md §12): trimmed and in any letter case. A header that is not a
 /// known column maps to `None` and its cells are ignored; a known column the
 /// file does not have reads as blank on every row.
 struct HeaderMap {
@@ -375,9 +374,9 @@ fn header_name(header: &str) -> String {
 
 impl HeaderMap {
     /// Fails, naming the column, when two headers are the same known column
-    /// (contracts/spreadsheet-format.md "Columns are read by header"), and
+    /// (004 contracts/spreadsheet-format.md "Columns are read by header"), and
     /// naming `source` (the file, and the sheet of a workbook that holds
-    /// several), since one import can take two files (specs/006 FR-022).
+    /// several), since one import can take two files (006 FR-022).
     fn new<'a>(
         columns: &'static [&'static str],
         headers: impl Iterator<Item = &'a str>,
@@ -505,12 +504,12 @@ impl RawAccessoryRow {
 
 /// Formats a whole-dollar amount as plain digits (`1250`: no `$`, no
 /// thousands separator, no decimals), or `""` when absent — the
-/// spreadsheet-format.md "Amounts" convention (FR-037).
+/// 001 contracts/spreadsheet-format.md "Amounts" convention (001 FR-037).
 pub fn dollars_to_string(dollars: Option<i64>) -> String {
     dollars.map(|d| d.to_string()).unwrap_or_default()
 }
 
-/// Parses an amount cell into whole dollars (FR-037). A leading `$`,
+/// Parses an amount cell into whole dollars (001 FR-037). A leading `$`,
 /// thousands commas and whitespace are dropped, and a zero fraction
 /// (`450.00`) is accepted; a value with non-zero cents, a sign, or any other
 /// text is an `Err` naming `column`, never rounded. A blank cell is `None`.
@@ -543,7 +542,7 @@ pub fn parse_whole_dollars(column: &str, value: &Option<String>) -> Result<Optio
 
 /// Formats a stored scaled integer (`1625` hundredths, `405` tenths) as a
 /// plain decimal with no trailing zeros (`16.25`, `18`, `40.5`), or `""` when
-/// absent — the spreadsheet-format.md "Physical details" convention (FR-039).
+/// absent — the 001 contracts/spreadsheet-format.md "Physical details" convention (001 FR-039).
 pub fn scaled_to_string(value: Option<i64>, places: u32) -> String {
     let Some(value) = value else {
         return String::new();
@@ -558,7 +557,7 @@ pub fn scaled_to_string(value: Option<i64>, places: u32) -> String {
 }
 
 /// Parses a physical-detail cell into a positive integer scaled by
-/// `10^places` (FR-039): `16.25` with 2 places is 1625. More precision than
+/// `10^places` (001 FR-039): `16.25` with 2 places is 1625. More precision than
 /// `places` is rounded half up to the nearest storable unit (`16.255` is
 /// 1626, `40.54` with 1 place is 405); a sign, zero (including a value that
 /// rounds to zero) or any other text is an `Err` naming `column`. A blank
@@ -599,15 +598,28 @@ pub fn parse_scaled_decimal(
     Ok(Some(scaled))
 }
 
-fn export_error(what: &str, e: impl std::fmt::Display) -> CommandError {
-    CommandError::new("INTERNAL_ERROR", format!("{what}: {e}"))
+/// A failure writing the export; a full disk is `DISK_FULL`, whichever
+/// writer reported it. The workbook writer holds its I/O errors without
+/// exposing them as a `source`, so they are looked for by variant.
+fn export_error(what: &str, e: impl std::error::Error + 'static) -> CommandError {
+    let any: &(dyn std::error::Error + 'static) = &e;
+    let full = match any.downcast_ref::<rust_xlsxwriter::XlsxError>() {
+        Some(rust_xlsxwriter::XlsxError::IoError(io)) => disk_space::is_disk_full(io),
+        Some(rust_xlsxwriter::XlsxError::ZipError(zip)) => disk_space::chain_is_disk_full(zip),
+        _ => disk_space::chain_is_disk_full(any),
+    };
+    if full {
+        CommandError::disk_full(None)
+    } else {
+        CommandError::new("INTERNAL_ERROR", format!("{what}: {e}"))
+    }
 }
 
 /// The characters that make a spreadsheet program read a cell as a formula.
 const FORMULA_TRIGGERS: [char; 6] = ['=', '+', '-', '@', '\t', '\r'];
 
 /// Protects one CSV text cell against formula injection (Constitution V,
-/// contracts/spreadsheet-format.md): a cell starting with a formula trigger
+/// 006 contracts/spreadsheet-format.md): a cell starting with a formula trigger
 /// gets a leading `'`. `unprotect_csv_cell` is its exact inverse for every
 /// cell this writes.
 fn protect_csv_cell(cell: &str) -> Cow<'_, str> {
@@ -688,7 +700,7 @@ fn write_sheet<'a>(
 }
 
 /// Writes one workbook: the "Firearms" sheet, and the "Accessories" sheet
-/// when `accessories` is given (contracts/spreadsheet-format.md "Two
+/// when `accessories` is given (006 contracts/spreadsheet-format.md "Two
 /// tables"). The workbook goes to `out`, a file the export created
 /// exclusively (issue #74).
 pub fn write_workbook(
@@ -730,7 +742,7 @@ impl TableRows {
     }
 }
 
-/// Which table a sheet is (contracts/spreadsheet-format.md "Recognising a
+/// Which table a sheet is (006 contracts/spreadsheet-format.md "Recognising a
 /// table on import").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TableKind {
@@ -746,7 +758,7 @@ pub struct ReadTable {
     pub rows: TableRows,
 }
 
-/// FR-022: the header row decides. `firearm_type` without `kind` is the
+/// 006 FR-022: the header row decides. `firearm_type` without `kind` is the
 /// firearm table, `kind` without `firearm_type` the accessory table; both or
 /// neither is not a table, and stops the import naming `source`.
 fn recognise(headers: &[String], source: &str) -> Result<TableKind, CommandError> {
@@ -797,7 +809,7 @@ enum Rows {
     Firearms(HeaderMap, Vec<RawImportRow>),
     Accessories(HeaderMap, Vec<RawAccessoryRow>),
     /// A table of a kind the import already has one of, which is an error
-    /// (FR-022) whose message needs only the source: its rows are not kept.
+    /// (006 FR-022) whose message needs only the source: its rows are not kept.
     Discarded(TableKind),
 }
 
@@ -816,8 +828,8 @@ fn start(headers: &[String], source: &str) -> Result<Rows, CommandError> {
 
 /// One sheet's rows turned into import rows as they arrive, batch by batch,
 /// so the cells of a large table are not held beside the rows made of them
-/// (008's research.md §9). The first row is the header: it decides the table
-/// (FR-022), and each later row is mapped through it and its cells dropped.
+/// (008 research.md §9). The first row is the header: it decides the table
+/// (006 FR-022), and each later row is mapped through it and its cells dropped.
 ///
 /// A sheet whose header row is blank, or that has no row, is ignored
 /// (`finish` gives `None`). A header that is no table, or names a column

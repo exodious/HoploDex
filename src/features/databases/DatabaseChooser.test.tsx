@@ -63,12 +63,12 @@ function renderChooser(session: Partial<SessionState> = {}, selectPath?: string)
   return value;
 }
 
-describe("DatabaseChooser (contracts/ui-databases.md §1)", () => {
+describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.getChooserState).mockReset();
   });
 
-  // 003 US1 Scenario 1
+  // 003 US1-1
   it("welcomes a first run with the two page actions as large buttons", async () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ recent: [], selectedPath: null }),
@@ -133,8 +133,8 @@ describe("DatabaseChooser (contracts/ui-databases.md §1)", () => {
     expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
   });
 
-  // 003 US1 Scenario 6
-  it("says a wrong passphrase didn't open it and keeps the field for another try (FR-006)", async () => {
+  // 003 US1-6
+  it("says a wrong passphrase didn't open it and keeps the field for another try (003 FR-006)", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
     const session = renderChooser({
@@ -163,7 +163,7 @@ describe("DatabaseChooser (contracts/ui-databases.md §1)", () => {
     expect(again).toHaveAccessibleDescription(/That passphrase didn't open “Main collection”/);
   });
 
-  it("shows the opening state at once, before the open returns (SC-003)", async () => {
+  it("shows the opening state at once, before the open returns (003 SC-003)", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
     let finish: () => void = () => {};
@@ -208,7 +208,7 @@ describe("DatabaseChooser (contracts/ui-databases.md §1)", () => {
   });
 });
 
-describe("DatabaseChooser (User Story 2)", () => {
+describe("DatabaseChooser (003 US2)", () => {
   const PASSPHRASE = "correct horse battery staple";
 
   beforeEach(() => {
@@ -233,7 +233,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     );
   }
 
-  // 003 US2 Scenario 3
+  // 003 US2-3
   it("lists the recent databases, most recent first, with their folders", async () => {
     renderChooser();
 
@@ -247,7 +247,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     expect(within(rows[1]).getByTitle("/mnt/nas/family")).toBeInTheDocument();
   });
 
-  // 003 US2 Scenario 4, US6 Scenario 1
+  // 003 US2-4, US6-1
   it("selects the database just closed", async () => {
     renderChooser({}, shared.path);
 
@@ -301,7 +301,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     await waitFor(() => expect(screen.queryByText("Shared collection")).not.toBeInTheDocument());
   });
 
-  // 003 US2 Scenario 5
+  // 003 US2-5
   it("every row can be removed from the list, which leaves the file alone", async () => {
     const user = userEvent.setup();
     renderChooser();
@@ -318,7 +318,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
   });
 
-  it("opens another database file chosen with the native dialog (US2-2)", async () => {
+  it("opens another database file chosen with the native dialog (003 US2-2)", async () => {
     const user = userEvent.setup();
     const other = "/media/usb/Club armory.hoplodex";
     vi.mocked(openFileDialog).mockResolvedValue(other);
@@ -338,7 +338,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     );
     const field = await screen.findByLabelText("Passphrase for “Club armory”");
     await waitFor(() => expect(field).toHaveFocus());
-    // Nothing is known about a file this computer hasn't opened (FR-040).
+    // Nothing is known about a file this computer hasn't opened (003 FR-040).
     expect(screen.queryByText("Last opened here")).not.toBeInTheDocument();
     await user.type(field, `${PASSPHRASE}{Enter}`);
     expect(session.openDatabase).toHaveBeenCalledWith(other, PASSPHRASE);
@@ -371,6 +371,10 @@ describe("DatabaseChooser (User Story 2)", () => {
       "HoploDex can't read “Main collection”: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed.",
     ],
     ["DATABASE_DAMAGED", "“Main collection” is damaged and can't be opened."],
+    [
+      "DISK_FULL",
+      "The disk is full, so HoploDex couldn't open “Main collection”. Free some space on the drive that holds it, then try again. The file has not been changed.",
+    ],
   ])("explains %s below the passphrase, which stays for another try", async (code, text) => {
     const user = userEvent.setup();
     renderChooser({ openDatabase: failing(code) });
@@ -401,7 +405,7 @@ describe("DatabaseChooser (User Story 2)", () => {
 
   const since = "2026-09-25T14:30:05Z";
 
-  it("names the other computer and when, for a database open elsewhere (FR-032)", async () => {
+  it("names the other computer and when, for a database open elsewhere (003 FR-032)", async () => {
     const user = userEvent.setup();
     renderChooser({
       openDatabase: failing("DATABASE_OPEN_ELSEWHERE", { machineName: "Workshop PC", since }),
@@ -457,7 +461,7 @@ describe("DatabaseChooser (User Story 2)", () => {
     );
     const takeOver = within(confirm).getByRole("button", { name: "Take over" });
     expect(takeOver).toHaveClass("hd-button--danger");
-    // Nothing from the refused open was kept (FR-007): it is asked for again.
+    // Nothing from the refused open was kept (003 FR-007): it is asked for again.
     const field = within(confirm).getByLabelText("Passphrase for “Main collection”");
     expect(field).toHaveValue("");
     await waitFor(() => expect(field).toHaveFocus());
@@ -580,6 +584,10 @@ describe("DatabaseChooser (User Story 2)", () => {
       "“Main collection” was not backed up: its file could not be reached. Its changes will be backed up at the next close.",
     ],
     [
+      { kind: "backupFailed", databasePath: main.path, reason: "insufficientSpace" } as const,
+      "“Main collection” was not backed up: there isn't enough free space on the drive that holds the backups. Free some space on it, or change the backup location. Its changes will be backed up at the next close.",
+    ],
+    [
       { kind: "closed", databasePath: main.path, reason: "lockedByUser" } as const,
       "HoploDex locked “Main collection”.",
     ],
@@ -606,7 +614,7 @@ describe("DatabaseChooser (User Story 2)", () => {
   });
 });
 
-describe("DatabaseChooser (User Story 3)", () => {
+describe("DatabaseChooser (003 US3)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
     vi.mocked(databasesService.listBackups).mockReset().mockResolvedValue({
@@ -627,7 +635,7 @@ describe("DatabaseChooser (User Story 3)", () => {
     return user;
   }
 
-  it("offers restoring a damaged database when it has backups (US3-6)", async () => {
+  it("offers restoring a damaged database when it has backups (003 US3-6)", async () => {
     const user = await openFailing(
       new CommandFailure({
         code: "DATABASE_DAMAGED",
@@ -717,7 +725,7 @@ describe("DatabaseChooser (User Story 3)", () => {
   });
 });
 
-describe("DatabaseChooser (User Story 5)", () => {
+describe("DatabaseChooser (003 US5)", () => {
   const saved: RecentDatabase = { ...main, passphraseSaved: true };
 
   beforeEach(() => {
@@ -735,7 +743,7 @@ describe("DatabaseChooser (User Story 5)", () => {
     expect(remember).toBeEnabled();
   });
 
-  it("remembers only once the FR-017 confirmation is accepted", async () => {
+  it("remembers only once the 003 FR-017 confirmation is accepted", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ keyringAvailable: true }),
@@ -791,7 +799,7 @@ describe("DatabaseChooser (User Story 5)", () => {
     expect(session.openDatabase).toHaveBeenCalledWith(saved.path, null);
   });
 
-  it("asks for the passphrase when the saved one no longer opens it (US5-5)", async () => {
+  it("asks for the passphrase when the saved one no longer opens it (003 US5-5)", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ recent: [saved, shared], keyringAvailable: true }),
@@ -822,8 +830,8 @@ describe("DatabaseChooser (User Story 5)", () => {
     expect(session.openDatabase).toHaveBeenLastCalledWith(saved.path, "the new passphrase here");
   });
 
-  // 003 US5 Scenario 4
-  it("disables remembering on a computer with no keyring (FR-019)", async () => {
+  // 003 US5-4
+  it("disables remembering on a computer with no keyring (003 FR-019)", async () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ keyringAvailable: false }),
     );
@@ -837,8 +845,8 @@ describe("DatabaseChooser (User Story 5)", () => {
   });
 });
 
-// 003 US6 Scenarios 1, 4a, 5 and 8: the notice a lock leaves in the chooser (the "lockedByUser" notice, for Ctrl+L, is checked above).
-describe("DatabaseChooser after a lock (User Story 6, contracts/ui-databases.md §1, §3, §14)", () => {
+// 003 US6-1, US6-4a, US6-5 and US6-8: the notice a lock leaves in the chooser (the "lockedByUser" notice, for Ctrl+L, is checked above).
+describe("DatabaseChooser after a lock (003 US6, contracts/ui-databases.md §1, §3, §14)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
     vi.mocked(databasesService.onChooserNotices)
@@ -945,7 +953,7 @@ describe("DatabaseChooser after a lock (User Story 6, contracts/ui-databases.md 
     expect(screen.getByText("HoploDex locked “Main collection”.")).toBeInTheDocument();
   });
 
-  // 003 US6 Scenario 1: the chooser shows the locked database selected, its passphrase prompt open.
+  // 003 US6-1: the chooser shows the locked database selected, its passphrase prompt open.
   it("selects the locked database with its passphrase field focused", async () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ notices: [{ kind: "closed", databasePath: shared.path, reason: "idle" }] }),
@@ -968,7 +976,7 @@ describe("DatabaseChooser after a lock (User Story 6, contracts/ui-databases.md 
   });
 });
 
-describe("What the chooser knows about the selected database (FR-040)", () => {
+describe("What the chooser knows about the selected database (003 FR-040)", () => {
   /** A moment `days` ago, at 09:12 local time. */
   function daysAgo(days: number, hours = 9, minutes = 12): Date {
     const now = new Date();

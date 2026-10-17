@@ -1,5 +1,5 @@
-//! specs/004-cartridges-action-types FR-002 and FR-004a: the built-in
-//! cartridge catalog, checked against research.md §2's invariants so that a
+//! 004 FR-002 and FR-004a: the built-in
+//! cartridge catalog, checked against 004 research.md §2's invariants so that a
 //! catalog edit that breaks one fails here, not in front of a user.
 
 use std::collections::{BTreeSet, HashMap};
@@ -11,7 +11,7 @@ use hoplodex_lib::services::entry_text::entry_key;
 
 const CATALOG_FILE: &str = include_str!("../src/services/cartridges/catalog.tsv");
 
-/// research.md §2's class list, in its order.
+/// 004 research.md §2's class list, in its order.
 const CLASSES: &[&str] = &[
     ".17",
     ".20",
@@ -43,11 +43,11 @@ const CLASSES: &[&str] = &[
     ".410 bore",
 ];
 
-/// research.md §2 invariant 5: entries whose name's first number is not
+/// 004 research.md §2 invariant 5: entries whose name's first number is not
 /// their bore.
 const EXCEPTIONS: &[&str] = &[".38-40 Winchester", "7.65x53mm Argentine"];
 
-/// research.md §2: ranks 1 to 25, which SC-001 is measured on.
+/// 004 research.md §2: ranks 1 to 25, which 004 SC-001 is measured on.
 const TOP_25: &[&str] = &[
     "9x19mm Parabellum",
     ".22 Long Rifle",
@@ -105,7 +105,7 @@ fn the_file_starts_with_its_origin_and_license_header() {
     assert!(!header.is_empty(), "catalog.tsv must start with a # header");
     assert!(header.contains("written for HoploDex"), "the header states where it came from");
     assert!(header.contains("GPL-3.0-only"), "the header states its license");
-    assert!(header.contains("SAAMI") && header.contains("C.I.P."), "research.md §1's note");
+    assert!(header.contains("SAAMI") && header.contains("C.I.P."), "004 research.md §1's note");
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn invariant_4_every_caliber_is_a_class_on_research_s_list() {
         );
         assert!(
             CLASSES.contains(&entry.caliber.as_str()),
-            "{:?} has {:?}, which is not on research.md §2's list",
+            "{:?} has {:?}, which is not on 004 research.md §2's list",
             entry.name,
             entry.caliber
         );

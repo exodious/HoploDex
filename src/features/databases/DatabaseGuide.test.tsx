@@ -6,7 +6,7 @@ import type { SessionState } from "../session/sessionStore";
 import { DatabaseGuide, DatabaseGuideLink } from "./DatabaseGuide";
 import type { DatabaseStatus } from "./types";
 
-// contracts/ui-databases.md §11, FR-030
+// 003 contracts/ui-databases.md §11, FR-030
 describe("DatabaseGuide", () => {
   it("is a dialog titled About databases and security", () => {
     render(<DatabaseGuide open onOpenChange={vi.fn()} />);

@@ -131,7 +131,7 @@ describe("the key table", () => {
     expect(blocked("macos", "Mod+]")).toBe(true);
     expect(blocked("macos", "Mod+ArrowLeft", false)).toBe(true);
     expect(blocked("macos", "Mod+ArrowRight", false)).toBe(true);
-    // ⌘←/→ move the caret in text (FR-013).
+    // ⌘←/→ move the caret in text (008 FR-013).
     expect(blocked("macos", "Mod+ArrowLeft", true)).toBe(false);
     expect(blocked("macos", "Mod+ArrowRight", true)).toBe(false);
     for (const platform of ["windows", "linux"] as const) {

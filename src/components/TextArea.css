@@ -1,5 +1,4 @@
-/* The character counter under a TextArea with a `limit` (specs/008-hardening-batch
-   contracts/ui.md §3). */
+/* The character counter under a TextArea with a `limit` (008 contracts/ui.md §3). */
 .hd-textarea__counter {
   margin: 0;
   font-size: var(--text-sm);

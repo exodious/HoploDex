@@ -5,8 +5,8 @@ import type { PageSize } from "./types";
 import { useTiffPages } from "./useTiffPages";
 import type { TiffZoom } from "./useTiffPages";
 
-// specs/007-document-preview/research.md §14 (TIFF pages, zoom and memory),
-// tasks.md T040. The hook is given the scroll area's measurements (it never
+// 007 research.md §14 (TIFF pages, zoom and memory),
+// 007 T040. The hook is given the scroll area's measurements (it never
 // touches layout itself), so everything here is plain numbers:
 //
 //   useTiffPages({ previewId, pages, viewportWidth, viewportHeight, scrollTop,
@@ -121,7 +121,7 @@ afterEach(() => {
   setDevicePixelRatio(1);
 });
 
-describe("useTiffPages: what is requested (research.md §14)", () => {
+describe("useTiffPages: what is requested (007 research.md §14)", () => {
   it("starts in fit width for a multi-page TIFF and fit page for a single page", () => {
     const multi = mount(pagesOf(3), { initialZoom: undefined });
     expect(multi.result.current.zoom).toBe("fitWidth");
@@ -215,7 +215,7 @@ describe("useTiffPages: what is requested (research.md §14)", () => {
   });
 });
 
-describe("useTiffPages: memory (research.md §14)", () => {
+describe("useTiffPages: memory (007 research.md §14)", () => {
   it("keeps at most 8 bitmaps, evicting the least recently shown and revoking its blob URL", async () => {
     const { result, scrollTo } = mount(pagesOf(20));
     await flush();
@@ -252,7 +252,7 @@ describe("useTiffPages: memory (research.md §14)", () => {
   });
 });
 
-describe("useTiffPages: zoom (research.md §14)", () => {
+describe("useTiffPages: zoom (007 research.md §14)", () => {
   it("scales the pages at once and re-renders 150 ms after the last zoom input", async () => {
     vi.useFakeTimers();
     const { result } = mount(pagesOf(3));
@@ -328,7 +328,7 @@ describe("useTiffPages: zoom (research.md §14)", () => {
   });
 
   // A fit outside 50-400% (a tiny scan, or a huge one): the button that would move
-  // the wrong way is off, and the other steps into the range (tasks.md T148).
+  // the wrong way is off, and the other steps into the range (007 T148).
   it("turns zoom in off at a fit above 400%, and zoom out steps down to 400%", () => {
     const tiny: PageSize[] = [{ width: 100, height: 100 }]; // fit width: 968 / 100 -> 726%
     const { result } = mount(tiny, { initialZoom: "fitWidth" });
@@ -373,7 +373,7 @@ describe("useTiffPages: zoom (research.md §14)", () => {
   });
 });
 
-describe("useTiffPages: the current page (research.md §14)", () => {
+describe("useTiffPages: the current page (007 research.md §14)", () => {
   it.each([
     [0, 0],
     [100, 0], // page 0 fills the view; page 1 starts below it

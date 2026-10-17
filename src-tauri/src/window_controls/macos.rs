@@ -1,4 +1,4 @@
-//! macOS: the native browser controls (research.md §13, §14, §15).
+//! macOS: the native browser controls (008 research.md §13, §14, §15).
 //!
 //! Tauri's web view on macOS is wry's `WryWebView`, a `WKWebView` subclass.
 //! [`apply`] adds three methods to that class, once, after the main window's
@@ -18,16 +18,16 @@
 //!   Look Up, doing nothing. Checked in the macOS 26 VM: it is also the entry
 //!   of ⌃⌘D's Look Up, which the page never sees as a key event.
 //!
-//! The kept items are the ones research.md §13 names: Cut, Copy, Paste, the
+//! The kept items are the ones 008 research.md §13 names: Cut, Copy, Paste, the
 //! Spelling and Grammar menu (with Show Spelling and Grammar and Check
 //! Spelling While Typing), the spelling guesses, Ignore and Learn Spelling,
 //! and AppKit's Emoji & Symbols. AppKit also adds AutoFill to every context
 //! menu after the hook, in a way no public API removes. The owner chose to
-//! keep it in the editing and copying menus (spec.md Clarifications
+//! keep it in the editing and copying menus (008 spec.md Clarifications
 //! 2026-10-11), and where the filter leaves no item the hook has the menu
 //! cancelled (`cancelTrackingWithoutAnimation`, once it is up), so a blank
-//! area, a button or an image opens none (research.md §13). The page's
-//! `webkitmouseforcewillbegin` handling (§12) covers the force click's Look
+//! area, a button or an image opens none (008 research.md §13). The page's
+//! `webkitmouseforcewillbegin` handling (008 research.md §12) covers the force click's Look
 //! Up.
 //!
 //! The class is shared by every wry web view, so the PDF surface's child web
@@ -53,7 +53,7 @@ use objc2_foundation::{NSArray, NSString};
 use tauri::{Runtime, WebviewWindow};
 
 /// `WKMenuItemIdentifier…` names (the `identifier` WebKit gives each item)
-/// that are kept (research.md §13).
+/// that are kept (008 research.md §13).
 const KEPT_IDENTIFIERS: &[&str] = &[
     "WKMenuItemIdentifierCut",
     "WKMenuItemIdentifierCopy",
@@ -66,7 +66,7 @@ const KEPT_IDENTIFIERS: &[&str] = &[
 ];
 
 /// The action of a Select All item that arrives without WebKit's identifier
-/// (FR-011 offers select all where the system does).
+/// (008 FR-011 offers select all where the system does).
 const SELECT_ALL_ACTION: &str = "selectAll:";
 
 /// The Spelling and Grammar menu's two kept items.
@@ -137,13 +137,13 @@ fn decide(items: &[Item], keep: impl Fn(&Item) -> bool) -> Vec<bool> {
 
 /// Installs the menu filter on the main web view's class. `log_items` logs
 /// every menu item offered and whether it was kept, for the window controls
-/// check (research.md §18). Where the filter leaves no item, the menu is
-/// cancelled once it is up, so no menu opens (the owner's decision, spec.md
+/// check (008 research.md §18). Where the filter leaves no item, the menu is
+/// cancelled once it is up, so no menu opens (the owner's decision, 008 spec.md
 /// Clarifications 2026-10-11: AppKit adds AutoFill after the hook, and a
 /// menu of AutoFill alone isn't offered).
 ///
 /// Called on the `main` web view from `setup()` by `window_controls::apply`
-/// (T080), in release and E2E builds only (research.md §15), on the main
+/// (008 T080), in release and E2E builds only (008 research.md §15), on the main
 /// thread, which `with_webview` runs it on. Runs once per process: the class
 /// is shared by every wry web view, so a second call changes nothing.
 pub(crate) fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> tauri::Result<()> {
@@ -371,7 +371,7 @@ fn submenu_of(item: &AnyObject) -> Option<Retained<AnyObject>> {
     unsafe { msg_send![item, submenu] }
 }
 
-/// Removes from `menu` everything but what research.md §13 keeps, logging each
+/// Removes from `menu` everything but what 008 research.md §13 keeps, logging each
 /// item. `level` is 0 for the context menu and 1 for the spelling submenu.
 fn filter_menu(menu: &AnyObject) {
     filter_level(menu, 0);
@@ -462,7 +462,7 @@ mod tests {
             assert!(keep_top_level(&item(kept)), "{kept}");
         }
         assert!(keep_top_level(&action("orderFrontCharacterPalette:")));
-        // Select All without WebKit's identifier (FR-011): by its action.
+        // Select All without WebKit's identifier (008 FR-011): by its action.
         assert!(keep_top_level(&action("selectAll:")));
         assert!(keep_top_level(&Item {
             identifier: Some("selectAll:".into()),

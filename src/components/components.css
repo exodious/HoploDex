@@ -1064,7 +1064,9 @@
 
 .hd-toasts {
   position: fixed;
-  right: var(--space-6);
+  /* Beside the scroll bar a dialog's scroll lock removes, so a toast doesn't
+     move when one opens (#117; RunningHead.css says how). */
+  right: calc(var(--space-6) + var(--removed-body-scroll-bar-size, 0px));
   bottom: var(--space-6);
   display: flex;
   flex-direction: column;
@@ -1178,7 +1180,7 @@
   color: var(--niter);
 }
 
-/* ── Passphrase strength (FR-003) ─────────────────────────────────────── */
+/* ── Passphrase strength (003 FR-003) ─────────────────────────────────────── */
 
 .hd-passphrase {
   display: flex;
@@ -1363,7 +1365,7 @@
   padding: var(--space-1);
 }
 
-/* Eight rows, then it scrolls (contracts/ui-entry.md §1). */
+/* Eight rows, then it scrolls (004 contracts/ui-entry.md §1). */
 .hd-combobox__list {
   --combobox-row: 36px;
   max-height: calc(8 * var(--combobox-row));

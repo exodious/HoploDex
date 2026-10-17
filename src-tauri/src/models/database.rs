@@ -1,6 +1,5 @@
-//! The shared types of specs/003-database-protection-management's
-//! contracts/tauri-commands.md, camelCase over IPC and mirrored by
-//! `src/features/databases/types.ts`. Each user story adds its own
+//! The shared types of 003 contracts/tauri-commands.md, camelCase over IPC and
+//! mirrored by `src/features/databases/types.ts`. Each user story adds its own
 //! `validate_*_input` here.
 
 use std::collections::HashMap;
@@ -13,7 +12,7 @@ use crate::commands::CommandError;
 use crate::services::passphrase::{Passphrase, new_passphrase_problem};
 use crate::session::SessionId;
 
-/// A database file's extension, for databases and backups alike (research.md
+/// A database file's extension, for databases and backups alike (003 research.md
 /// §19).
 pub const DATABASE_EXTENSION: &str = "hoplodex";
 
@@ -73,7 +72,7 @@ text_enum!(BackupFailureReason {
     DatabaseUnreachable => "databaseUnreachable",
 });
 
-// A note shown once in the collection (contracts/ui-databases.md §10).
+// A note shown once in the collection (003 contracts/ui-databases.md §10).
 text_enum!(NoteKind {
     DiskEncryption => "diskEncryption",
     OpenedBackup => "openedBackup",
@@ -85,7 +84,7 @@ text_enum!(BackupLocationKind {
     Custom => "custom",
 });
 
-// What `resolve_pending_changes` is told (FR-039; 008 FR-003, research.md
+// What `resolve_pending_changes` is told (003 FR-039; 008 FR-003, research.md
 // §6): the prompt's two choices, and the two reports of whether the resumed
 // form opened.
 text_enum!(PendingAction {
@@ -96,7 +95,7 @@ text_enum!(PendingAction {
 });
 
 /// Where a session's pending changes stand (008 data-model.md "PendingState",
-/// research.md §6).
+/// 008 research.md §6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PendingState {
     /// The database holds none.
@@ -109,7 +108,7 @@ pub enum PendingState {
     Resuming,
 }
 
-// What to do with the backups at the old location when it changes (FR-026,
+// What to do with the backups at the old location when it changes (003 FR-026,
 // research.md §22).
 text_enum!(ExistingBackupsChoice {
     Move => "move",
@@ -117,7 +116,7 @@ text_enum!(ExistingBackupsChoice {
     Delete => "delete",
 });
 
-// Why a move of backups left some at the old location (FR-026). `NameTaken`
+// Why a move of backups left some at the old location (003 FR-026). `NameTaken`
 // only when taken names were the only reason.
 text_enum!(LeftBehindReason {
     NameTaken => "nameTaken",
@@ -126,13 +125,13 @@ text_enum!(LeftBehindReason {
     Io => "io",
 });
 
-// Why the idle clock is paused from the frontend (research.md §15). Running
+// Why the idle clock is paused from the frontend (003 research.md §15). Running
 // operations pause it from the backend's own registry.
 text_enum!(IdlePauseReason {
     NativeDialog => "nativeDialog",
 });
 
-/// A recent-list entry as the chooser shows it (FR-012).
+/// A recent-list entry as the chooser shows it (003 FR-012).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentDatabase {
@@ -143,19 +142,19 @@ pub struct RecentDatabase {
     pub last_opened_at: String,
     /// The file exists at `path`.
     pub available: bool,
-    /// FR-017, on this computer.
+    /// 003 FR-017, on this computer.
     pub passphrase_saved: bool,
-    /// The backups at its backup location (FR-040), or `None` when this
+    /// The backups at its backup location (003 FR-040), or `None` when this
     /// computer doesn't know where they are, can't read the folder, or a
     /// chosen folder isn't there. A missing default folder means none yet.
     pub backups: Option<BackupSummary>,
     /// The file's modification time, ISO-8601 UTC, when it has changed since
-    /// this computer last closed it (FR-040): another computer, or something
+    /// this computer last closed it (003 FR-040): another computer, or something
     /// outside HoploDex, has written to it.
     pub changed_since_left_at: Option<String>,
 }
 
-/// The backups of a database the chooser lists (FR-040), found by their
+/// The backups of a database the chooser lists (003 FR-040), found by their
 /// file names alone, so nothing is decrypted.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -174,7 +173,7 @@ pub struct RecentRemoved {
     pub removed: bool,
 }
 
-/// `set_document_opening`'s answer (007, contracts/tauri-commands.md "Setting
+/// `set_document_opening`'s answer (007 contracts/tauri-commands.md "Setting
 /// commands"): whether the setting changed, `false` when the user cancelled
 /// the confirmation or the value was already set.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -183,7 +182,7 @@ pub struct DocumentOpeningChanged {
     pub changed: bool,
 }
 
-/// `save_passphrase`'s and `forget_saved_passphrase`'s answer (FR-017,
+/// `save_passphrase`'s and `forget_saved_passphrase`'s answer (003 FR-017,
 /// FR-018).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -191,12 +190,12 @@ pub struct PassphraseSaved {
     pub passphrase_saved: bool,
 }
 
-/// Something to tell the user in the chooser, once (data-model.md
+/// Something to tell the user in the chooser, once (003 data-model.md
 /// "Machine-local"). Kept in `machine.json` until shown.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ChooserNotice {
-    /// A lock (FR-033); the chooser shows nothing for an ordinary close.
+    /// A lock (003 FR-033); the chooser shows nothing for an ordinary close.
     Closed {
         reason: CloseReason,
         database_path: String,
@@ -212,13 +211,13 @@ pub enum ChooserNotice {
         imported_count: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         deleted_count: Option<u64>,
-        /// A move of backups (FR-026): how many are still in `folder`.
+        /// A move of backups (003 FR-026): how many are still in `folder`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         left_behind_count: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         folder: Option<String>,
     },
-    /// A move of backups cut short by a crash or a forced quit (research.md
+    /// A move of backups cut short by a crash or a forced quit (003 research.md
     /// §22): `count` of them are still in `folder`.
     BackupsLeftBehind {
         database_path: String,
@@ -274,7 +273,7 @@ pub struct CollectionSettings {
 }
 
 /// The pending changes a database holds, as the prompt describes them
-/// (FR-039).
+/// (003 FR-039).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingSummary {
@@ -296,7 +295,7 @@ pub struct PendingSummary {
     pub app_version: String,
 }
 
-/// A form's unsaved input, mirrored from the frontend (research.md §16).
+/// A form's unsaved input, mirrored from the frontend (003 research.md §16).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Draft {
@@ -319,9 +318,9 @@ pub struct OpenedBackupNote {
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseNotes {
-    /// FR-008, until dismissed.
+    /// 003 FR-008, until dismissed.
     pub disk_encryption: bool,
-    /// research.md §9, once.
+    /// 003 research.md §9, once.
     pub opened_backup: Option<OpenedBackupNote>,
     /// ISO time of the backup, once after a restore.
     pub restored_with_passphrase_of: Option<String>,
@@ -338,12 +337,12 @@ pub struct DatabaseStatus {
     pub session_id: SessionId,
     pub path: String,
     pub name: String,
-    /// FR-017, on this computer.
+    /// 003 FR-017, on this computer.
     pub passphrase_saved: bool,
-    /// Passphrases can be saved on this computer (FR-019), for the
+    /// Passphrases can be saved on this computer (003 FR-019), for the
     /// settings' "This computer" section.
     pub keyring_available: bool,
-    /// This desktop reports a screen lock (FR-038), for the settings'
+    /// This desktop reports a screen lock (003 FR-038), for the settings'
     /// "Locking" section.
     pub screen_lock_supported: bool,
     pub settings: CollectionSettings,
@@ -377,7 +376,7 @@ pub struct BackupList {
     pub backups: Vec<BackupInfo>,
 }
 
-/// `delete_all_backups`'s answer (FR-029).
+/// `delete_all_backups`'s answer (003 FR-029).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupsDeleted {
@@ -386,7 +385,7 @@ pub struct BackupsDeleted {
     pub failed_paths: Vec<String>,
 }
 
-/// `change_passphrase`'s answer (FR-016, FR-018, US4-5).
+/// `change_passphrase`'s answer (003 FR-016, FR-018, US4-5).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PassphraseChanged {
@@ -412,7 +411,7 @@ pub enum BackupLocationInput {
     },
 }
 
-/// `update_lock_settings`'s input (FR-034, FR-038).
+/// `update_lock_settings`'s input (003 FR-034, FR-038).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockSettingsInput {
@@ -433,7 +432,7 @@ pub struct PendingResolved {
     pub pending: Option<PendingSummary>,
 }
 
-/// `update_backup_settings`'s input (FR-024, FR-026).
+/// `update_backup_settings`'s input (003 FR-024, FR-026).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupSettingsInput {
@@ -441,12 +440,12 @@ pub struct BackupSettingsInput {
     pub keep_count: i64,
     pub location: BackupLocationInput,
     /// For a changed location with backups at the old one: what to do with
-    /// them. Absent until the user has been asked (research.md §22).
+    /// them. Absent until the user has been asked (003 research.md §22).
     #[serde(default)]
     pub existing_backups: Option<ExistingBackupsChoice>,
 }
 
-/// Backups a move left at the old location, and why (FR-026).
+/// Backups a move left at the old location, and why (003 FR-026).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeftBehind {
@@ -455,7 +454,7 @@ pub struct LeftBehind {
     pub reason: LeftBehindReason,
 }
 
-/// What was done with the backups at the old location (FR-026).
+/// What was done with the backups at the old location (003 FR-026).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "action", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ExistingBackupsOutcome {
@@ -483,7 +482,7 @@ pub struct BackupInfo {
     pub size_bytes: u64,
 }
 
-/// Where the create dialog suggests putting a new database (FR-009,
+/// Where the create dialog suggests putting a new database (003 FR-009,
 /// research.md §19).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -498,11 +497,11 @@ pub struct SuggestedLocation {
 pub struct ChooserState {
     /// Most recent first.
     pub recent: Vec<RecentDatabase>,
-    /// The row selected when the chooser appears (FR-021, FR-033).
+    /// The row selected when the chooser appears (003 FR-021, FR-033).
     pub selected_path: Option<String>,
-    /// FR-019.
+    /// 003 FR-019.
     pub keyring_available: bool,
-    /// FR-038: whether this desktop reports a screen lock.
+    /// 003 FR-038: whether this desktop reports a screen lock.
     pub screen_lock_supported: bool,
     pub suggested: SuggestedLocation,
     /// Shown once, then gone.
@@ -513,7 +512,7 @@ pub struct ChooserState {
 const MAX_NAME_CHARS: usize = 120;
 /// The most bytes a database name may take. File names are limited to 255
 /// bytes, and the longest one made from a database name, a backup being
-/// written (`<name> YYYY-MM-DD HHMMSS <id8>.hoplodex.partial`, research.md
+/// written (`<name> YYYY-MM-DD HHMMSS <id8>.hoplodex.partial`, 003 research.md
 /// §7), adds 44, so a name of 120 accented or non-Latin characters could
 /// otherwise make files that can't be created.
 const MAX_NAME_BYTES: usize = 200;
@@ -555,7 +554,7 @@ fn folder_problem(folder: &Path) -> Option<&'static str> {
     }
 }
 
-/// Checks the create dialog's input (data-model.md "Validation rules") and
+/// Checks the create dialog's input (003 data-model.md "Validation rules") and
 /// returns the file to create, `<folder>/<name>.hoplodex`. Every field's
 /// problem is reported at once; `DATABASE_EXISTS` only once the fields are
 /// right.
@@ -576,7 +575,7 @@ pub fn validate_create_database_input(
     if let Some(problem) = new_passphrase_problem(passphrase) {
         errors.insert("passphrase".to_owned(), problem.to_owned());
     }
-    // FR-004: there is no recovery, and the user has said they know it.
+    // 003 FR-004: there is no recovery, and the user has said they know it.
     if !acknowledged_unrecoverable {
         errors.insert(
             "acknowledgedUnrecoverable".to_owned(),
@@ -594,10 +593,10 @@ pub fn validate_create_database_input(
     Ok(target)
 }
 
-/// The most backups a database may keep (data-model.md).
+/// The most backups a database may keep (003 data-model.md).
 const MAX_KEEP_COUNT: i64 = 100;
 
-/// Checks the backup settings (data-model.md "Validation rules") and
+/// Checks the backup settings (003 data-model.md "Validation rules") and
 /// returns the location as `collection_settings.backup_location` stores
 /// it: `default`, or the absolute path. A path that does not exist is
 /// accepted, so a location on another computer's drive can be kept; the
@@ -629,10 +628,10 @@ pub fn validate_backup_settings_input(input: &BackupSettingsInput) -> Result<Str
     Ok(location)
 }
 
-/// The longest idle duration, in minutes (data-model.md).
+/// The longest idle duration, in minutes (003 data-model.md).
 const MAX_IDLE_MINUTES: i64 = 240;
 
-/// Checks the lock settings (data-model.md "Validation rules"):
+/// Checks the lock settings (003 data-model.md "Validation rules"):
 /// `idle_lock_minutes` 1–240, whether or not the idle lock is on.
 pub fn validate_lock_settings_input(input: &LockSettingsInput) -> Result<(), CommandError> {
     if (1..=MAX_IDLE_MINUTES).contains(&input.idle_minutes) {

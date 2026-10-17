@@ -1,6 +1,6 @@
 //! The entry commands of specs/004-cartridges-action-types:
 //! `suggest_entries`, `settle_entry` and `list_action_types`
-//! (contracts/tauri-commands.md), and of specs/005-regulated-item-types:
+//! (004 contracts/tauri-commands.md), and of specs/005-regulated-item-types:
 //! `list_firearm_types` and `list_registration_classes`.
 
 use std::collections::BTreeMap;
@@ -27,7 +27,7 @@ pub struct SuggestEntriesInput {
     pub field: EntryField,
     /// May be empty; over 100 characters matches nothing.
     pub text: String,
-    /// Model only: the make on the form; only its models are offered (FR-012).
+    /// Model only: the make on the form; only its models are offered (004 FR-012).
     #[serde(default)]
     pub make: Option<String>,
 }
@@ -48,8 +48,8 @@ pub struct SettleEntryInput {
     pub text: String,
 }
 
-/// What the value becomes (FR-013) and, for a cartridge, the caliber it
-/// derives (FR-003, FR-005).
+/// What the value becomes (004 FR-013) and, for a cartridge, the caliber it
+/// derives (004 FR-003, FR-005).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettleEntryOutput {
@@ -68,7 +68,7 @@ pub mod ops {
     use super::*;
 
     /// The ranked suggestions for one field, from the values on record and
-    /// the catalog, computed now and kept nowhere (FR-011; research.md
+    /// the catalog, computed now and kept nowhere (004 FR-011; 004 research.md
     /// §4–§5).
     pub fn suggest_entries(
         conn: &Connection,
@@ -80,7 +80,7 @@ pub mod ops {
         Ok(SuggestEntriesOutput { suggestions })
     }
 
-    /// research.md §6–§7. A value that breaks FR-015 comes back trimmed and
+    /// 004 research.md §6–§7. A value that breaks 004 FR-015 comes back trimmed and
     /// unchanged: the form reports the rule, and saving enforces it.
     pub fn settle_entry(
         conn: &Connection,
@@ -104,7 +104,7 @@ pub mod ops {
     }
 
     /// The fixed action list and which actions each firearm type allows
-    /// (FR-017, FR-018). A type with no mapped actions is left out, which
+    /// (004 FR-017, FR-018). A type with no mapped actions is left out, which
     /// means every action is allowed.
     pub fn list_action_types(conn: &Connection) -> Result<ActionTypesOutput, CommandError> {
         let mut stmt = conn
@@ -135,8 +135,8 @@ pub mod ops {
         Ok(ActionTypesOutput { actions, allowed_by_firearm_type })
     }
 
-    /// The fixed firearm types, in list order (`sort_order`), with the fields each omits (FR-001,
-    /// FR-003; research.md §3): the frontend reads the list instead of
+    /// The fixed firearm types, in list order (`sort_order`), with the fields each omits
+    /// (005 FR-001, FR-003; 005 research.md §3): the frontend reads the list instead of
     /// copying it.
     pub fn list_firearm_types(conn: &Connection) -> Result<FirearmTypesOutput, CommandError> {
         let mut stmt = conn
@@ -165,7 +165,7 @@ pub mod ops {
     }
 
     /// The fixed registration classifications in list order, including any
-    /// no longer offered (FR-007; research.md §5): a record that holds one
+    /// no longer offered (005 FR-007; 005 research.md §5): a record that holds one
     /// still shows it.
     pub fn list_registration_classes(
         conn: &Connection,
@@ -184,7 +184,7 @@ pub mod ops {
     }
 
     /// The fixed accessory kinds in list order (`sort_order`), offered or
-    /// not (FR-002): a record that holds a kind no longer offered still shows
+    /// not (006 FR-002): a record that holds a kind no longer offered still shows
     /// it, and the frontend reads the list instead of copying it.
     pub fn list_accessory_kinds(conn: &Connection) -> Result<AccessoryKindsOutput, CommandError> {
         let mut stmt = conn

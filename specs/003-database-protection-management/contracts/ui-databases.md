@@ -116,7 +116,7 @@ collection data, top-bar tabs or counts are shown.
     locked."
   - backup failed: "<name> was not backed up: <the backup location is not
     available | there is not enough space there | the backup was
-    interrupted | its file could not be reached>. Its changes will be backed up at the next close." with a
+    interrupted | its file could not be reached>. Its changes will be backed up at the next close." (_Amended 2026-10-15 (#110): the full-disk reason reads "there isn't enough free space on the drive that holds the backups. Free some space on it, or change the backup location"._) with a
     **Change backup location…** action (for an unavailable or full
     location), which opens the database's backup settings (§7) right after
     the next successful open; once chosen, the notice reads "Its backup
@@ -181,6 +181,7 @@ collection data, top-bar tabs or counts are shown.
 | `DATABASE_DAMAGED` | "<name> is damaged and can't be opened." | **Restore from a backup…** when `backupsAvailable` |
 | `DATABASE_NOT_FOUND` | "<name> is no longer at this location." | **Locate…**, **Remove from list** |
 | `DATABASE_UNREADABLE` | "HoploDex can't read <name>: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed." | the row stays selected so **Open** can be tried again |
+| `DISK_FULL` | "The disk is full, so HoploDex couldn't open <name>. Free some space on the drive that holds it, then try again. The file has not been changed." _Amended 2026-10-15 (#110)._ | the row stays selected so **Open** can be tried again |
 | `DATABASE_OPEN_ELSEWHERE` | "<name> is marked as open on **<machineName>** since <local date and time>. It may still be open there, may not have been closed properly, or its latest changes may not have synced to this computer yet." | **Go back**, **Take over…** |
 
 **Take over…** opens a destructive `ConfirmDialog` (US2-10, FR-032):

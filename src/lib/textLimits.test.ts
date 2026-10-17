@@ -6,7 +6,7 @@ import {
   textLengthError,
 } from "./textLimits";
 
-// specs/008-hardening-batch research.md §10: the frontend mirrors the
+// 008 research.md §10: the frontend mirrors the
 // backend's two maximums and its check (`check_text_length`), so a field
 // shows its error at once. The backend stays the authority.
 

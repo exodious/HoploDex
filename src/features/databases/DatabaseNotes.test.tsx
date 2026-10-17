@@ -48,7 +48,7 @@ function renderNotes(notes: Partial<DatabaseStatus["notes"]>) {
   );
 }
 
-describe("DatabaseNotes (contracts/ui-databases.md §0 naming, §10)", () => {
+describe("DatabaseNotes (003 contracts/ui-databases.md §10, and §0 for naming)", () => {
   it("calls the open database the database, not by its name", () => {
     renderNotes({ restoredWithPassphraseOf: MADE_AT });
 

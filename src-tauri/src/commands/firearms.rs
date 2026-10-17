@@ -12,7 +12,7 @@ use crate::services::mounts::{self, MountGraph};
 use crate::session::scoped::ScopedSession;
 
 /// Input for the `dispose_firearm` and `dispose_accessory` commands, per
-/// contracts/tauri-commands.md. Without `with_mounted`, equivalent to
+/// 006 contracts/tauri-commands.md. Without `with_mounted`, equivalent to
 /// calling `update_firearm` with `status: "disposed"` and these four fields
 /// set.
 #[derive(Debug, Clone, Deserialize)]
@@ -21,20 +21,20 @@ pub struct DisposeInput {
     pub disposition_type: DispositionType,
     pub recipient: String,
     pub date: String,
-    /// The record's own price, required (research.md §9).
+    /// The record's own price, required (006 research.md §9).
     pub price: i64,
-    /// The records below it to dispose of with it (FR-014); everything else
+    /// The records below it to dispose of with it (006 FR-014); everything else
     /// below it is kept.
     #[serde(default)]
     pub with_mounted: Vec<DisposeWith>,
 }
 
 impl DisposeInput {
-    /// The recipient's maximum (specs/008-hardening-batch research.md §10),
+    /// The recipient's maximum (008 research.md §10),
     /// checked before anything is changed. The message is the error's own,
     /// because the dialog shows a command's message when it has no field to
     /// put it on; it is also on `recipient`, the dispose input's own name for
-    /// the field (contracts/tauri-commands.md; saving the record names it
+    /// the field (008 contracts/tauri-commands.md; saving the record names it
     /// `dispositionRecipient`).
     pub fn check_recipient(&self) -> Result<(), CommandError> {
         check_text_length("Transferred to", &self.recipient, MAX_SHORT_TEXT_CHARS).map_err(
@@ -54,7 +54,7 @@ impl DisposeInput {
     }
 }
 
-/// What every record disposed of in one step shares (FR-014): the type,
+/// What every record disposed of in one step shares (006 FR-014): the type,
 /// recipient and date. Each has its own price.
 #[derive(Debug, Clone, Copy)]
 pub struct Disposition<'a> {
@@ -63,7 +63,7 @@ pub struct Disposition<'a> {
     pub date: &'a str,
 }
 
-/// One record disposed of along with the one being disposed (FR-014): it
+/// One record disposed of along with the one being disposed (006 FR-014): it
 /// takes the host's type, recipient and date, and its own price, which may
 /// be absent.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -72,7 +72,7 @@ pub struct DisposeWith {
     pub price: Option<i64>,
 }
 
-/// What the user chose to do with the disposition being reversed (FR-033).
+/// What the user chose to do with the disposition being reversed (001 FR-033).
 /// Required: the frontend asks and the backend never picks for them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -82,9 +82,9 @@ pub enum HistoryChoice {
 }
 
 /// Input for `reverse_disposition`. `nickname` renames the firearm in the
-/// same step, to resolve a FR-031 clash; blank or absent keeps it.
-/// `confirmed_warnings` resends after an `ORIGINAL_MARKS_MATCH` (FR-009,
-/// specs/002-firearm-identification research.md §5).
+/// same step, to resolve a 001 FR-031 clash; blank or absent keeps it.
+/// `confirmed_warnings` resends after an `ORIGINAL_MARKS_MATCH` (002 FR-009,
+/// research.md §5).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReverseDispositionInput {
@@ -96,14 +96,14 @@ pub struct ReverseDispositionInput {
 }
 
 /// `get_firearm`'s output: the record plus its retained dispositions,
-/// newest first (FR-033).
+/// newest first (001 FR-033).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FirearmDetail {
     #[serde(flatten)]
     pub firearm: Firearm,
     pub disposition_history: Vec<DispositionHistoryEntry>,
-    /// specs/006-accessory-links FR-013: what the firearm is mounted on and
+    /// 006 FR-013: what the firearm is mounted on and
     /// what is mounted on it.
     pub mount: MountDetail,
 }
@@ -113,40 +113,40 @@ pub struct DeleteResult {
     pub deleted: bool,
 }
 
-/// Grouping key for `list_firearms`, per contracts/tauri-commands.md.
+/// Grouping key for `list_firearms`, per 001 contracts/tauri-commands.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GroupBy {
     Type,
     Caliber,
     Make,
-    /// specs/002-firearm-identification US4-1: groups are returned in the
+    /// 002 US4-1: groups are returned in the
     /// fixed order Domestic, Imported, Re-imported, Unspecified, not sorted
-    /// alphabetically like the other keys (research.md §10; the empty group
-    /// renamed by specs/004-cartridges-action-types research.md §11).
+    /// alphabetically like the other keys (002 research.md §10; the empty group
+    /// renamed by 004 research.md §11).
     Origin,
-    /// specs/004-cartridges-action-types FR-008: keyed by the stored
+    /// 004 FR-008: keyed by the stored
     /// cartridge text, so spellings already on record stay apart;
     /// alphabetical, with the firearms that have none last.
     Cartridge,
-    /// specs/004-cartridges-action-types FR-020: keyed by the action's name,
+    /// 004 FR-020: keyed by the action's name,
     /// in the action list's order, with the firearms that have none last.
     ActionType,
-    /// specs/005-regulated-item-types FR-016: keyed by the classification's
+    /// 005 FR-016: keyed by the classification's
     /// name, in the list's order, with the firearms that have none last.
     RegisteredAs,
-    /// specs/005-regulated-item-types FR-016: keyed by the stored "Registered
+    /// 005 FR-016: keyed by the stored "Registered
     /// to" text, alphabetical; every firearm with none, classified or not,
     /// is "Unspecified" and last.
     RegisteredTo,
 }
 
 /// The group of firearms with no value for the grouping field, always last
-/// (specs/004-cartridges-action-types research.md §11: one term throughout).
+/// (004 research.md §11: one term throughout).
 pub const UNSPECIFIED: &str = "Unspecified";
 
-/// Input for the `list_firearms` command (User Story 2), per
-/// contracts/tauri-commands.md.
+/// Input for the `list_firearms` command (001 US2), per
+/// 001 contracts/tauri-commands.md.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListFirearmsInput {
@@ -159,7 +159,7 @@ pub struct ListFirearmsInput {
 }
 
 /// Per-firearm insurance-warning flag surfaced in browse views, so
-/// uninsured/under-insured firearms are always visibly flagged (SC-004).
+/// uninsured/under-insured firearms are always visibly flagged (001 SC-004).
 /// The actual uninsured/under-insured/blanket-exceeded/expired-override
 /// decision lives in `services::insurance_status` (shared with
 /// `get_value_summary` so the browse view and value summary never
@@ -172,19 +172,19 @@ pub struct FirearmSummary {
     pub id: i64,
     pub make: String,
     pub model: String,
-    /// Shown alongside make and model wherever the firearm is named (FR-031).
+    /// Shown alongside make and model wherever the firearm is named (001 FR-031).
     pub nickname: Option<String>,
     /// Tells apart firearms sharing a make and model in browse views.
     pub serial_number: Option<String>,
     pub caliber: String,
-    /// specs/004-cartridges-action-types FR-027: shown with the caliber as
+    /// 004 FR-027: shown with the caliber as
     /// "cartridge (caliber)".
     pub cartridge: Option<String>,
     pub firearm_type_name: String,
-    /// specs/004-cartridges-action-types FR-020: the action's name, `None`
+    /// 004 FR-020: the action's name, `None`
     /// when not recorded.
     pub action_type_name: Option<String>,
-    /// specs/005-regulated-item-types FR-016: the classification's name,
+    /// 005 FR-016: the classification's name,
     /// `None` when there is none.
     pub registered_as: Option<String>,
     pub status: FirearmStatus,
@@ -197,9 +197,9 @@ pub struct FirearmSummary {
     /// policy's firearms without fetching every full record.
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
-    /// specs/006-accessory-links FR-013: what it is mounted on directly.
+    /// 006 FR-013: what it is mounted on directly.
     pub mounted_on: Option<RecordLabel>,
-    /// FR-016a: everything below it, at any depth, by kind (issue #56).
+    /// 006 FR-016a: everything below it, at any depth, by kind (issue #56).
     pub mounted_counts: RecordCounts,
 }
 
@@ -273,7 +273,7 @@ pub mod ops {
     /// being edited) whose nickname equals `:nickname` trimmed, ignoring
     /// case. It compares the column under `COLLATE NOCASE`, as
     /// `idx_firearms_active_nickname` is built, so that index serves it
-    /// (research.md §19). A stored nickname is already trimmed (`trimmed()`
+    /// (008 research.md §19). A stored nickname is already trimmed (`trimmed()`
     /// on every save and import), so only the argument needs trimming.
     pub const NICKNAME_CLASH_SQL: &str = "SELECT make, model, nickname, serial_number FROM firearms
          WHERE status = 'active' AND id IS NOT :exclude
@@ -297,7 +297,7 @@ pub mod ops {
     }
 
     /// The identity clash query. Its three `lower(trim(...))` terms are
-    /// those of `idx_firearms_identity_key` (research.md §19).
+    /// those of `idx_firearms_identity_key` (008 research.md §19).
     pub const IDENTITY_CLASH_SQL: &str = "SELECT id FROM firearms
          WHERE status = 'active' AND id IS NOT :exclude
            AND lower(trim(make)) = lower(trim(:make))
@@ -311,7 +311,7 @@ pub mod ops {
     /// The active firearm (other than `exclude_id`) with the same make,
     /// model and serial number, ignoring case and surrounding whitespace —
     /// unless both records carry a year of manufacture and the years differ
-    /// (specs/002-firearm-identification FR-007/FR-008, data-model.md's
+    /// (002 FR-007/FR-008, data-model.md's
     /// "Identity uniqueness"; amends 001 FR-032).
     pub(crate) fn find_identity_clash(
         conn: &Connection,
@@ -340,9 +340,9 @@ pub mod ops {
     /// maker, model and serial number all match this record's, ignoring
     /// case and surrounding whitespace. `None` when any of the three is
     /// absent here (a partial set never warns) or there is no match
-    /// (specs/002-firearm-identification FR-009, data-model.md's
+    /// (002 FR-009, data-model.md's
     /// "Original-marks warning"). Served by `idx_firearms_original_serial`
-    /// (research.md §5) so it stays cheap at 10,000 records.
+    /// (002 research.md §5) so it stays cheap at 10,000 records.
     pub(crate) fn original_marks_clash(
         conn: &Connection,
         exclude_id: Option<i64>,
@@ -373,13 +373,13 @@ pub mod ops {
         .map_err(CommandError::from_db)
     }
 
-    /// FR-009's non-blocking warning: stopped with `ORIGINAL_MARKS_MATCH`
+    /// 002 FR-009's non-blocking warning: stopped with `ORIGINAL_MARKS_MATCH`
     /// until the caller resends with `confirmed_warnings: true`. Never
     /// checked for a record that isn't active (a disposed save never
     /// matters here) or once confirmed. `dispose_firearm` and
     /// `assign_firearm_coverage` pass `confirmed_warnings: true` from their
     /// internal saves, since neither changes anything identifying
-    /// (research.md §5).
+    /// (002 research.md §5).
     fn check_original_marks_warning(
         conn: &Connection,
         exclude_id: Option<i64>,
@@ -404,9 +404,9 @@ pub mod ops {
         Ok(())
     }
 
-    /// The FR-009 warning's message, naming the other firearm — shared by
+    /// The 002 FR-009 warning's message, naming the other firearm — shared by
     /// `check_original_marks_warning` (create/update/restore) and import's
-    /// `warnings` report (T048), which never blocks the row.
+    /// `warnings` report (002 T048), which never blocks the row.
     pub(crate) fn original_marks_warning_message(
         conn: &Connection,
         other_id: i64,
@@ -415,7 +415,7 @@ pub mod ops {
         Ok(format!("{other} already has these original maker's marks."))
     }
 
-    /// FR-031 and FR-032, against the other active firearms. A disposed
+    /// 001 FR-031 and FR-032, against the other active firearms. A disposed
     /// record has released its nickname and never competes for an identity,
     /// so neither it nor a record with no serial number is compared. Every
     /// clash is reported at once, each on its own field.
@@ -468,7 +468,7 @@ pub mod ops {
         Err(CommandError::validation(messages.join(" "), errors))
     }
 
-    /// specs/005-regulated-item-types FR-003, FR-004, FR-022: an action, a
+    /// 005 FR-003, FR-004, FR-022: an action, a
     /// barrel length or a capacity may be set only when the firearm's type
     /// says the field applies. One field error per offending field, "<Field>
     /// doesn't apply to a <type>." The backend never clears a value itself.
@@ -519,10 +519,10 @@ pub mod ops {
         Err(CommandError::validation(messages.join(" "), errors))
     }
 
-    /// specs/005-regulated-item-types FR-007: a classification must name one
+    /// 005 FR-007: a classification must name one
     /// on the list. A row that is no longer offered is still accepted, so a
     /// record that holds it can be edited and a new one may still use it
-    /// (research.md §5). Import calls this for every row.
+    /// (005 research.md §5). Import calls this for every row.
     pub fn check_registration_class(
         conn: &Connection,
         input: &FirearmInput,
@@ -546,7 +546,7 @@ pub mod ops {
         Err(CommandError::validation(message, errors))
     }
 
-    /// specs/004-cartridges-action-types FR-017, FR-019, SC-008: the action
+    /// 004 FR-017, FR-019, SC-008: the action
     /// must name an action on the list and be allowed for the firearm's type.
     /// A type with no mapped actions (Other, or one added later) allows all
     /// of them, and no action is always allowed. The same rule is enforced by
@@ -606,9 +606,9 @@ pub mod ops {
         .map_err(CommandError::from_db)
     }
 
-    /// `uid` is the record's identifier, generated when `None` (FR-019).
+    /// `uid` is the record's identifier, generated when `None` (006 FR-019).
     /// Import passes the row's `record_id`, already parsed and checked unused
-    /// (specs/006-accessory-links research.md §17).
+    /// (006 research.md §17).
     pub fn create_firearm(
         conn: &Connection,
         input: &FirearmInput,
@@ -622,7 +622,7 @@ pub mod ops {
         check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, None, input)?;
         check_original_marks_warning(conn, None, input, confirmed_warnings)?;
-        // The row and its mount stand or fall together (research.md §8).
+        // The row and its mount stand or fall together (006 research.md §8).
         let id = mounts::atomically(conn, || {
             conn.execute(
                 "INSERT INTO firearms (
@@ -651,7 +651,7 @@ pub mod ops {
                     datetime('now'), datetime('now')
                 )",
                 named_params! {
-                    // FR-019: set here and never in an UPDATE.
+                    // 006 FR-019: set here and never in an UPDATE.
                     ":uid": uid.map_or_else(crate::services::record_id::generate, str::to_owned),
                     ":make": input.make,
                     ":model": input.model,
@@ -726,9 +726,9 @@ pub mod ops {
         check_action_allowed(conn, input.firearm_type_id, input.action_type_id)?;
         check_uniqueness(conn, Some(id), input)?;
         check_original_marks_warning(conn, Some(id), input, confirmed_warnings)?;
-        // The row and its mount stand or fall together (research.md §8).
+        // The row and its mount stand or fall together (006 research.md §8).
         mounts::atomically(conn, || {
-            // A disposed record is in no mount (FR-014), and the status
+            // A disposed record is in no mount (006 FR-014), and the status
             // triggers refuse the save while it is.
             if input.status == FirearmStatus::Disposed {
                 mounts::clear_mounts(conn, RecordRef::Firearm(id))?;
@@ -838,7 +838,7 @@ pub mod ops {
     }
 
     /// Disposes of the firearm, and of the listed records mounted below it,
-    /// in one step (research.md §9): see `mounts::ops::dispose_with_mounted`.
+    /// in one step (006 research.md §9): see `mounts::ops::dispose_with_mounted`.
     pub fn dispose_firearm(
         conn: &Connection,
         id: i64,
@@ -869,8 +869,8 @@ pub mod ops {
             ..FirearmInput::from(&current)
         };
 
-        // Leaving active status behind, so FR-009 never applies here
-        // (research.md §5); `confirmed_warnings: true` skips the check.
+        // Leaving active status behind, so 002 FR-009 never applies here
+        // (002 research.md §5); `confirmed_warnings: true` skips the check.
         update_firearm(conn, id, &updated_input, true)
     }
 
@@ -891,10 +891,10 @@ pub mod ops {
         Ok(FirearmDetail { firearm, disposition_history, mount })
     }
 
-    /// Restores a disposed firearm to active status (FR-033). With `keep`
+    /// Restores a disposed firearm to active status (001 FR-033). With `keep`
     /// the current disposition is copied to `disposition_history` first.
     /// Runs in one transaction, and the restored record goes through the
-    /// same save path as an edit, so FR-031/FR-032 are re-applied against
+    /// same save path as an edit, so 001 FR-031/FR-032 are re-applied against
     /// the firearms active now: a clash fails the whole reversal, naming
     /// the other record, with nothing changed.
     pub fn reverse_disposition(
@@ -987,7 +987,7 @@ pub mod ops {
         Ok(DeleteResult { deleted: true })
     }
 
-    /// Browse/search/group across the collection (User Story 2). Runs a
+    /// Browse/search/group across the collection (001 US2). Runs a
     /// single indexed query (FTS5 for `query`, indexed columns otherwise)
     /// so it stays within the 500ms/10k-record budget (Principle IV)
     /// rather than scanning and grouping in application code.
@@ -1039,7 +1039,7 @@ pub mod ops {
                  WHERE (:include_disposed = 1 OR f.status = 'active')
                    AND (:has_query = 0
                         OR (:short_query = 0 AND f.id IN (SELECT rowid FROM firearms_fts WHERE firearms_fts MATCH :query))
-                        -- The names of the firearm's own documents (FR-015,
+                        -- The names of the firearm's own documents (007 FR-015,
                         -- research.md §19), never those of a record mounted on it.
                         OR (:short_query = 0 AND f.id IN (SELECT d.firearm_id FROM document_attachments d WHERE d.id IN (SELECT rowid FROM document_names_fts WHERE document_names_fts MATCH :query)))
                         OR (:short_query = 1 AND EXISTS (SELECT 1 FROM document_attachments d WHERE d.firearm_id = f.id AND d.original_filename LIKE :like ESCAPE '\\'))
@@ -1114,8 +1114,8 @@ pub mod ops {
             )
             .map_err(CommandError::from_db)?;
 
-        // FR-013, FR-016a: the whole mount graph once, and one label query
-        // per table for every host named (research.md §5, §22).
+        // 006 FR-013, FR-016a: the whole mount graph once, and one label query
+        // per table for every host named (006 research.md §5, §22).
         let graph = MountGraph::load(conn)?;
         let mut rows_read = Vec::new();
         for row in rows {
@@ -1161,7 +1161,7 @@ pub mod ops {
         }
 
         // A map from key to group index, not a search of the groups for
-        // every row (research.md §12, §13).
+        // every row (006 research.md §12, §13).
         let mut groups: Vec<FirearmGroup> = Vec::new();
         let mut group_index: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
@@ -1176,7 +1176,7 @@ pub mod ops {
         }
         match input.group_by {
             Some(GroupBy::Origin) => {
-                // specs/002-firearm-identification US4-1/research.md §10: a
+                // 002 US4-1 and research.md §10: a
                 // fixed order, not alphabetical, so "Unspecified" is always
                 // last rather than sorting between "Imported" and
                 // "Re-imported".
@@ -1186,12 +1186,12 @@ pub mod ops {
                     ORIGIN_ORDER.iter().position(|o| *o == g.key).unwrap_or(ORIGIN_ORDER.len())
                 });
             }
-            // specs/004-cartridges-action-types research.md §11: firearms
+            // 004 research.md §11: firearms
             // with no cartridge last, the rest alphabetical.
             Some(GroupBy::Cartridge) => groups.sort_by(|a, b| {
                 (a.key == UNSPECIFIED, &a.key).cmp(&(b.key == UNSPECIFIED, &b.key))
             }),
-            // FR-020: the action list's order, not alphabetical; "Unspecified"
+            // 004 FR-020: the action list's order, not alphabetical; "Unspecified"
             // is not on the list, so it sorts last.
             Some(GroupBy::ActionType) => {
                 let mut stmt = conn
@@ -1206,7 +1206,7 @@ pub mod ops {
                     order.iter().position(|name| *name == g.key).unwrap_or(order.len())
                 });
             }
-            // FR-016: the classification list's order, "Unspecified" last.
+            // 005 FR-016: the classification list's order, "Unspecified" last.
             Some(GroupBy::RegisteredAs) => {
                 let mut stmt = conn
                     .prepare("SELECT name FROM registration_classes ORDER BY sort_order")
@@ -1220,7 +1220,7 @@ pub mod ops {
                     order.iter().position(|name| *name == g.key).unwrap_or(order.len())
                 });
             }
-            // FR-016: alphabetical by stored text, "Unspecified" last.
+            // 005 FR-016: alphabetical by stored text, "Unspecified" last.
             Some(GroupBy::RegisteredTo) => groups.sort_by(|a, b| {
                 (a.key == UNSPECIFIED, &a.key).cmp(&(b.key == UNSPECIFIED, &b.key))
             }),

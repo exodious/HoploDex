@@ -1,4 +1,4 @@
-//! Browser controls, native side (research.md §13, §14, §15): removing the web
+//! Browser controls, native side (008 research.md §13, §14, §15): removing the web
 //! view's default context menu and developer-tools commands, reload and
 //! navigation shortcuts, per OS, outside development builds. One module per
 //! OS, as `platform/` does.
@@ -13,14 +13,14 @@ mod windows;
 use tauri::{Runtime, WebviewWindow};
 
 /// Whether this build installs the filters: release and E2E builds do, a
-/// development build keeps Inspect Element and reload (FR-014, research.md
+/// development build keeps Inspect Element and reload (008 FR-014, research.md
 /// §15). `profile.e2e` inherits release, so it has no debug assertions.
 pub const INSTALLED: bool = cfg!(not(debug_assertions));
 
 /// Installs the native browser controls on the `main` web view's window, in
 /// builds that have them ([`INSTALLED`]); in others it does nothing.
 /// `log_items` logs each context menu item offered and whether it was kept
-/// (`log::info!`), which the window controls check (research.md §18) asks
+/// (`log::info!`), which the window controls check (008 research.md §18) asks
 /// for and the app does not. Called once from `setup()`, after the window
 /// exists.
 ///
@@ -45,7 +45,7 @@ pub fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> tauri::R
 
 #[cfg(test)]
 mod tests {
-    /// FR-014: an E2E build (`--profile e2e --features e2e`, which has no
+    /// 008 FR-014: an E2E build (`--profile e2e --features e2e`, which has no
     /// debug assertions) installs the filters, so the E2E suite and the
     /// screenshot walk run with the controls a user has. Run it with `cargo
     /// test --profile e2e --features e2e window_controls`.
@@ -55,7 +55,7 @@ mod tests {
         assert!(std::hint::black_box(super::INSTALLED));
     }
 
-    /// FR-014: a plain debug build (the default test profile) keeps Inspect
+    /// 008 FR-014: a plain debug build (the default test profile) keeps Inspect
     /// Element and reload for development.
     #[cfg(all(debug_assertions, not(feature = "e2e")))]
     #[test]

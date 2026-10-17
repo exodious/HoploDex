@@ -1,5 +1,5 @@
-//! Changing a database's passphrase by copy, verify and replace (FR-015,
-//! FR-016, SC-004; research.md §3, §4). Real SQLCipher files in temp
+//! Changing a database's passphrase by copy, verify and replace (003 FR-015,
+//! FR-016, SC-004; 003 research.md §3, §4). Real SQLCipher files in temp
 //! directories, a manual clock, and machine settings in a temp config
 //! directory.
 
@@ -190,7 +190,7 @@ fn row_counts(conn: &Connection) -> BTreeMap<String, i64> {
         .collect()
 }
 
-// --- A change that succeeds (FR-015, FR-016) --------------------------------
+// --- A change that succeeds (003 FR-015, FR-016) ----------------------------
 
 #[test]
 fn afterwards_it_opens_with_the_new_passphrase_and_refuses_the_old() {
@@ -213,7 +213,7 @@ fn every_table_and_every_blob_is_the_same_afterwards() {
 
     world.change_to_new().unwrap();
 
-    assert_eq!(world.row_counts(), counts, "SC-004");
+    assert_eq!(world.row_counts(), counts, "003 SC-004");
     assert_eq!(world.collection(), rows);
     assert!(rows.iter().any(|row| row.starts_with("photos: ")), "photo blobs included");
     assert!(rows.iter().any(|row| row.starts_with("document_attachments: ")), "documents too");
@@ -268,7 +268,7 @@ fn the_change_counts_as_a_change_so_the_next_close_backs_it_up() {
                 .map_err(CommandError::from_db)
         })
         .unwrap();
-    assert!(waiting, "US3-9");
+    assert!(waiting, "003 US3-9");
     // A day later, past the once-a-day limit.
     world.clock.advance(chrono::Duration::days(1));
     world.close();
@@ -420,11 +420,11 @@ fn unresolved_pending_changes_are_resolved_first() {
 
     let refused = world.change_to_new().unwrap_err();
 
-    assert_eq!(refused.code, "PENDING_CHANGES_UNRESOLVED", "the copy would drop them (FR-039)");
+    assert_eq!(refused.code, "PENDING_CHANGES_UNRESOLVED", "the copy would drop them (003 FR-039)");
     assert!(world.leftovers().is_empty());
 }
 
-// --- Interruptions (SC-004) --------------------------------------------------
+// --- Interruptions (003 SC-004) ----------------------------------------------
 
 /// Adds about 48 MiB of document to the open database, so the copy runs
 /// long enough to be stopped while it is under way.
@@ -581,7 +581,7 @@ fn a_refused_replacement_keeps_the_old_file_and_the_session_open() {
     world.open_with(support::TEST_PASSPHRASE).unwrap();
 }
 
-// --- The previous file (US4-5) -----------------------------------------------
+// --- The previous file (003 US4-5) -------------------------------------------
 
 #[test]
 fn an_old_file_that_cannot_be_deleted_is_reported_with_its_path() {

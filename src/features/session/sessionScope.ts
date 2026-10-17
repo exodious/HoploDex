@@ -4,7 +4,7 @@ import type { Draft, PendingSummary } from "../databases/types";
 import * as sessionService from "./sessionService";
 
 /**
- * What one open of a database owns on the frontend (specs/008-hardening-batch
+ * What one open of a database owns on the frontend (008
  * research.md §3, data-model.md "SessionScope"). `SessionProvider` creates one
  * per open from `DatabaseStatus.sessionId` and ends it, synchronously, before
  * anything of the next session can run. A component captures the scope when it
@@ -25,21 +25,21 @@ export interface SessionScope {
    * Calls a command with `HoploDex-Session: <id>`. Once the scope has ended
    * it rejects with `CommandFailure { code: "DATABASE_CLOSED" }` without
    * sending; so does a call whose response arrives after the scope ended, and
-   * the response is dropped (FR-002).
+   * the response is dropped (008 FR-002).
    */
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
   /**
    * Registers a clean-up to run when the scope ends (what the session keeps
-   * for reuse, research.md §4). If the scope has ended already it runs at
+   * for reuse, 008 research.md §4). If the scope has ended already it runs at
    * once. Returns a function that removes it.
    */
   onEnd(cleanUp: () => void): () => void;
   /** Photo id → data URL of the thumbnails loaded in this session. Emptied
-   * by {@link end}, so no image outlives its session (research.md §4). */
+   * by {@link end}, so no image outlives its session (008 research.md §4). */
   readonly thumbnails: Map<number, string>;
   /**
    * The pending changes the user chose to resume, until their form opens
-   * (FR-003, research.md §6). Set by `SessionProvider` when `resume` is
+   * (008 FR-003, research.md §6). Set by `SessionProvider` when `resume` is
    * answered; a form matches it only through this scope. {@link end} drops
    * it.
    */

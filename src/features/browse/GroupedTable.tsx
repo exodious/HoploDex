@@ -103,6 +103,7 @@ export function GroupedTable<Row>({
   className,
 }: GroupedTableProps<Row>) {
   const idPrefix = useId();
+  const hiddenCount = columns.filter((column) => column.narrowHidden).length;
   return (
     <div className="hd-browse">
       <table className={className ? `hd-table ${className}` : "hd-table"}>
@@ -134,12 +135,18 @@ export function GroupedTable<Row>({
             <tbody key={group.key} aria-labelledby={grouped ? titleId : undefined}>
               {grouped && (
                 <tr className="hd-group-row">
-                  <td colSpan={columns.length}>
+                  <td colSpan={columns.length - hiddenCount}>
                     <h2 className="hd-group__title">
                       <span id={titleId}>{group.title}</span>
                       <span className="hd-group__count hd-num">{group.total}</span>
                     </h2>
                   </td>
+                  {hiddenCount > 0 && (
+                    // Covers the narrow-hidden columns while they show; below
+                    // 900px it goes with them. A title cell spanning them all
+                    // would make the table grow a column of its own there.
+                    <td colSpan={hiddenCount} className="hd-col--narrow-hidden" aria-hidden />
+                  )}
                 </tr>
               )}
               {group.rows.map((row) => (

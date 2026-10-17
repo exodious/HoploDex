@@ -12,12 +12,12 @@ export interface TakeOverConfirmProps {
   target: TakeOverTarget | null;
   onCancel: () => void;
   /** Called with the passphrase typed here, which is read once and cleared
-   * (FR-007). */
+   * (003 FR-007). */
   onConfirm: (passphrase: string) => void;
 }
 
 /** The destructive confirmation before opening a database marked open on
- * another computer (FR-032, US2-10, contracts/ui-databases.md §1). Typing
+ * another computer (003 FR-032, US2-10, contracts/ui-databases.md §1). Typing
  * the passphrase again is the confirmation: the one that found the marker
  * was cleared when it was read, and none is kept in between. */
 export function TakeOverConfirm({ target, onCancel, onConfirm }: TakeOverConfirmProps) {

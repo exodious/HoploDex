@@ -88,8 +88,8 @@ export function AppShell() {
     refresh,
   } = useCollection();
   const notify = useToast();
-  // Resumed pending changes open where their form is (FR-039), in the session
-  // that resumed them (specs/008 research.md §6).
+  // Resumed pending changes open where their form is (003 FR-039), in the session
+  // that resumed them (008 research.md §6).
   const [route, setRoute] = useState<Route>(() => resumedRoute(scope.resumed?.draft ?? null));
   const [trail, setTrail] = useState<Visit[]>([]);
   const [browse, setBrowse] = useState<BrowseState>(initialBrowseState);
@@ -139,7 +139,7 @@ export function AppShell() {
         case "accessories":
           return "Accessories";
         case "accessory": {
-          // FR-005: "{make} {model} · {kind}".
+          // 006 FR-005: "{make} {model} · {kind}".
           const accessory = accessoriesById.get(target.id);
           return accessory
             ? accessoryNameText(accessory.make, accessory.model, accessory.kindName)
@@ -210,7 +210,7 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Escape goes back wherever a back link shows (FR-040), unless it's closing a
+  // Escape goes back wherever a back link shows (001 FR-040), unless it's closing a
   // dialog or popover or the user is typing in a field.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -286,7 +286,7 @@ export function AppShell() {
               aria-label="HoploDex — go to the collection"
             >
               <BrandMark />
-              <span className="hd-brand__name">HoploDex</span>
+              <span className="hd-brand__name hd-brand__name--wide">HoploDex</span>
             </button>
 
             <nav className="hd-tabs" aria-label="Sections">
@@ -327,11 +327,28 @@ export function AppShell() {
 
             <div className="hd-topbar__tools">
               <DatabaseMenu />
-              <Button variant="ghost" size="sm" icon="download" onClick={() => setDialog("import")}>
-                Import
+              {/* Below 900px the words hide and these are icons, so the bar
+                  stays in one row at the window's minimum width (#108); the
+                  title is the tooltip. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="download"
+                className="hd-topbar__tool"
+                title="Import"
+                onClick={() => setDialog("import")}
+              >
+                <span className="hd-topbar__tool-label">Import</span>
               </Button>
-              <Button variant="ghost" size="sm" icon="upload" onClick={() => setDialog("export")}>
-                Export
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="upload"
+                className="hd-topbar__tool"
+                title="Export"
+                onClick={() => setDialog("export")}
+              >
+                <span className="hd-topbar__tool-label">Export</span>
               </Button>
               <ThemeToggle />
             </div>

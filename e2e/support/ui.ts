@@ -130,6 +130,44 @@ export async function clickButton(text: string, { settles = true }: { settles?: 
   if (settles) await settle();
 }
 
+/** Runs `open`, which opens a dialog without waiting for the app to settle
+ * (`clickButton(…, { settles: false })`), and returns the dialog's layout
+ * height in the frame it first appeared and once the app is idle (#116). Dialogs are
+ * centred, so one that is a different height by then has moved, by half the
+ * difference. The first height is read in a mutation observer, before the
+ * data the dialog loads can arrive. */
+export async function dialogHeightWhenOpened(
+  open: () => Promise<unknown>,
+): Promise<{ first: number; settled: number }> {
+  const DIALOG = '[role="dialog"], [role="alertdialog"]';
+  await browser.execute((selector: string) => {
+    const w = window as unknown as { __firstDialogHeight?: number | null };
+    w.__firstDialogHeight = null;
+    const observer = new MutationObserver(() => {
+      const dialog = document.querySelector<HTMLElement>(selector);
+      if (!dialog) return;
+      w.__firstDialogHeight = dialog.offsetHeight;
+      observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }, DIALOG);
+  await open();
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        () =>
+          (window as unknown as { __firstDialogHeight?: number | null }).__firstDialogHeight !=
+          null,
+      ),
+    { timeoutMsg: "no dialog appeared" },
+  );
+  await settle();
+  return browser.execute((selector: string) => {
+    const first = (window as unknown as { __firstDialogHeight: number }).__firstDialogHeight;
+    return { first, settled: document.querySelector<HTMLElement>(selector)!.offsetHeight };
+  }, DIALOG);
+}
+
 /** Opens the firearm form's disclosure group with this title if it is
  * closed (each starts closed on a record with none of its fields recorded).
  * Its button's text also carries a summary, so match on the title. */
@@ -310,7 +348,7 @@ export async function followAddLink(emptyText: string) {
   await settle();
 }
 
-/** Whether a form section in the open dialog is currently highlighted (FR-038). */
+/** Whether a form section in the open dialog is currently highlighted (001 FR-038). */
 export async function hasHighlightedSection(): Promise<boolean> {
   return browser.execute(() => Boolean(document.querySelector('[role="dialog"] [data-highlight]')));
 }
@@ -356,7 +394,7 @@ export async function choose(text: string) {
   await settle();
 }
 
-/** Regroups the collection through the "Group by" menu (specs/005-regulated-item-types
+/** Regroups the collection through the "Group by" menu (005
  * contracts/ui-registration.md §6): opens it (it opens on pointer down, which a
  * plain click doesn't send) and picks the radio item named `label`, such as
  * "Cartridge", "Registered as" or "None". */
@@ -459,7 +497,7 @@ export async function openFirearm(name: string) {
 
 /** Leaves a record for the page it was opened from. */
 export async function back() {
-  // A scrolled record page also shows the link in its pinned strip (FR-041);
+  // A scrolled record page also shows the link in its pinned strip (001 FR-041);
   // either one goes back, so take the first.
   await $$(".hd-backlink")[0].waitForExist();
   await browser.execute(() => document.querySelector<HTMLElement>(".hd-backlink")!.click());
@@ -473,7 +511,7 @@ export async function pressEscape() {
 }
 
 /** Scrolls a long record or policy page to the bottom and waits for the
- * pinned strip that keeps its heading's controls in reach (FR-041). */
+ * pinned strip that keeps its heading's controls in reach (001 FR-041). */
 export async function scrollToPinnedStrip() {
   await browser.execute(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await $(".hd-runhead").waitForExist({ timeoutMsg: "the pinned strip never showed" });
@@ -529,7 +567,7 @@ export async function pinnedStrip(): Promise<{
 }
 
 /** The page's own back link (not the pinned strip's), as shown within reach:
- * its label and the key it shows (FR-040). */
+ * its label and the key it shows (001 FR-040). */
 export async function backLinkShown(): Promise<{ label: string; key: string }> {
   return browser.execute(
     new Function(
@@ -635,20 +673,20 @@ export interface NewFirearm {
   notes?: string;
   nickname?: string;
   acquisitionDate?: string;
-  /** FR-039: free text, searchable. */
+  /** 001 FR-039: free text, searchable. */
   finish?: string;
-  /** specs/002-firearm-identification FR-001. */
+  /** 002 FR-001. */
   origin?: "Domestic" | "Imported" | "Re-imported";
-  /** specs/002-firearm-identification FR-003. */
+  /** 002 FR-003. */
   yearOfManufacture?: string;
-  /** specs/002-firearm-identification FR-002 (Imported only). */
+  /** 002 FR-002 (Imported only). */
   countryOfManufacture?: string;
-  /** specs/002-firearm-identification FR-002 (Imported/Re-imported only). */
+  /** 002 FR-002 (Imported/Re-imported only). */
   importerName?: string;
 }
 
 /** A firearm's display name as the app shows it: "Make Model", plus its
- * nickname in curly quotes when it has one (FR-031). */
+ * nickname in curly quotes when it has one (001 FR-031). */
 export function displayName(firearm: { make: string; model: string; nickname?: string }) {
   const name = `${firearm.make} ${firearm.model}`;
   return firearm.nickname ? `${name} “${firearm.nickname}”` : name;
@@ -706,7 +744,7 @@ export async function addFirearm(firearm: NewFirearm) {
 /** The passphrase of every database a spec creates. */
 export const E2E_PASSPHRASE = "end to end test passphrase";
 
-/** The FR-004 acknowledgement in the create dialog. */
+/** The 003 FR-004 acknowledgement in the create dialog. */
 export const ACKNOWLEDGEMENT =
   "I have stored this passphrase somewhere safe. If it is forgotten, nobody, including HoploDex, can open this database or recover the collection.";
 
@@ -790,7 +828,7 @@ export async function submitPassphrase(passphrase: string) {
 
 /** Answers the chooser's "Take over" question for the selected database,
  * which another computer has open: asks to take it over, types the passphrase
- * again (the confirmation, FR-032) and confirms. */
+ * again (the confirmation, 003 FR-032) and confirms. */
 export async function confirmTakeOver(name: string, passphrase: string) {
   await clickEl("button=Take over…");
   await $('[role="alertdialog"]').waitForExist();

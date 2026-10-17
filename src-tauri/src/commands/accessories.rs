@@ -1,4 +1,4 @@
-//! specs/006-accessory-links contracts/tauri-commands.md "Accessories (new)":
+//! 006 contracts/tauri-commands.md "Accessories (new)":
 //! the accessory commands. Each `#[tauri::command]` is thin and calls the
 //! matching function in `ops`, which takes a `&Connection`.
 
@@ -20,7 +20,7 @@ use crate::services::mounts::{self, MountGraph};
 use crate::session::scoped::ScopedSession;
 
 /// Input for `reverse_accessory_disposition`. An accessory has no nickname
-/// and no identity, so there is nothing to re-check or rename (FR-006).
+/// and no identity, so there is nothing to re-check or rename (006 FR-006).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReverseAccessoryDispositionInput {
@@ -28,7 +28,7 @@ pub struct ReverseAccessoryDispositionInput {
 }
 
 /// `get_accessory`'s output: the record, its retained dispositions (newest
-/// first) and what it is mounted on and carries (FR-013).
+/// first) and what it is mounted on and carries (006 FR-013).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessoryDetail {
@@ -38,8 +38,8 @@ pub struct AccessoryDetail {
     pub mount: MountDetail,
 }
 
-/// Grouping key for `list_accessories`, per contracts/tauri-commands.md
-/// "Group order" (FR-017).
+/// Grouping key for `list_accessories`, per 006 contracts/tauri-commands.md
+/// "Group order" (006 FR-017).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AccessoryGroupBy {
@@ -55,14 +55,14 @@ pub enum AccessoryGroupBy {
     MountedOn,
 }
 
-/// The group of accessories that sit on no host, always last (FR-017).
+/// The group of accessories that sit on no host, always last (006 FR-017).
 pub const NOT_MOUNTED: &str = "Not mounted";
 
-/// Input for `list_accessories` (FR-016 to FR-018).
+/// Input for `list_accessories` (006 FR-016 to FR-018).
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAccessoriesInput {
-    /// Free text over every accessory text field (FR-018): three or more
+    /// Free text over every accessory text field (006 FR-018): three or more
     /// characters through `accessories_fts`, one or two through `LIKE`.
     pub query: Option<String>,
     pub group_by: Option<AccessoryGroupBy>,
@@ -88,10 +88,10 @@ pub struct AccessorySummary {
     pub insurance_warning: InsuranceWarning,
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
-    /// The direct host only (FR-013).
+    /// The direct host only (006 FR-013).
     pub mounted_on: Option<RecordLabel>,
-    /// FR-016: everything below it, at any depth, by kind, as a firearm's
-    /// `mounted_counts` on the collection page (FR-016a).
+    /// 006 FR-016: everything below it, at any depth, by kind, as a firearm's
+    /// `mounted_counts` on the collection page (006 FR-016a).
     pub mounted_counts: RecordCounts,
 }
 
@@ -135,7 +135,7 @@ pub mod ops {
     }
 
     /// The validation of `validate_accessory_input` plus the one rule that
-    /// needs the database: the kind must exist, offered or not (FR-002).
+    /// needs the database: the kind must exist, offered or not (006 FR-002).
     /// Both are reported together, so a form shows every field at once.
     fn validate(
         conn: &Connection,
@@ -161,9 +161,9 @@ pub mod ops {
         }
     }
 
-    /// `uid` is the record's identifier, generated when `None` (FR-019).
+    /// `uid` is the record's identifier, generated when `None` (006 FR-019).
     /// Import passes the row's `record_id`, already parsed and checked unused
-    /// (research.md §17).
+    /// (006 research.md §17).
     pub fn create_accessory(
         conn: &Connection,
         input: &AccessoryInput,
@@ -171,7 +171,7 @@ pub mod ops {
     ) -> Result<Accessory, CommandError> {
         let input = &input.normalized();
         validate(conn, input, None)?;
-        // The row and its mount stand or fall together (research.md §8).
+        // The row and its mount stand or fall together (006 research.md §8).
         let id = mounts::atomically(conn, || {
             conn.execute(
                 "INSERT INTO accessories (
@@ -186,7 +186,7 @@ pub mod ops {
                     :insurance_policy_id, :scheduled_coverage_amount, datetime('now'), datetime('now')
                 )",
                 named_params! {
-                    // FR-019: set here and never in an UPDATE.
+                    // 006 FR-019: set here and never in an UPDATE.
                     ":uid": uid.map_or_else(crate::services::record_id::generate, str::to_owned),
                     ":accessory_kind_id": input.accessory_kind_id,
                     ":make": input.make,
@@ -232,9 +232,9 @@ pub mod ops {
         // checks, as for a firearm.
         let stored = find_accessory(conn, id)?;
         validate(conn, input, stored.as_ref())?;
-        // The row and its mount stand or fall together (research.md §8).
+        // The row and its mount stand or fall together (006 research.md §8).
         mounts::atomically(conn, || {
-            // A disposed record is in no mount (FR-014), and the status
+            // A disposed record is in no mount (006 FR-014), and the status
             // triggers refuse the save while it is.
             if input.status == FirearmStatus::Disposed {
                 mounts::clear_mounts(conn, RecordRef::Accessory(id))?;
@@ -320,7 +320,7 @@ pub mod ops {
     }
 
     /// Disposes of the accessory, and of the listed records mounted below
-    /// it, in one step (research.md §9): see
+    /// it, in one step (006 research.md §9): see
     /// `mounts::ops::dispose_with_mounted`.
     pub fn dispose_accessory(
         conn: &Connection,
@@ -354,10 +354,10 @@ pub mod ops {
         update_accessory(conn, id, &updated_input)
     }
 
-    /// Restores a disposed accessory to active status (FR-006). With `keep`
+    /// Restores a disposed accessory to active status (006 FR-006). With `keep`
     /// the current disposition is copied to `disposition_history` first.
     /// Runs in one transaction. No nickname or identity is re-checked: an
-    /// accessory has neither (FR-004).
+    /// accessory has neither (006 FR-004).
     pub fn reverse_accessory_disposition(
         conn: &Connection,
         id: i64,
@@ -438,7 +438,7 @@ pub mod ops {
         Ok(DeleteResult { deleted: true })
     }
 
-    /// The list (FR-016 to FR-018): searched, then grouped as asked. Within a
+    /// The list (006 FR-016 to FR-018): searched, then grouped as asked. Within a
     /// group the order is make, model, then the kind's place in the kind
     /// list. Disposed accessories only on request.
     pub fn list_accessories(
@@ -483,7 +483,7 @@ pub mod ops {
                    AND (:has_query = 0
                         OR (:short_query = 0 AND a.id IN
                               (SELECT rowid FROM accessories_fts WHERE accessories_fts MATCH :query))
-                        -- The names of the accessory's own documents (FR-015,
+                        -- The names of the accessory's own documents (007 FR-015,
                         -- research.md §19), never those of a record mounted on it.
                         OR (:short_query = 0 AND a.id IN (SELECT d.accessory_id FROM document_attachments d WHERE d.id IN (SELECT rowid FROM document_names_fts WHERE document_names_fts MATCH :query)))
                         OR (:short_query = 1 AND EXISTS (SELECT 1 FROM document_attachments d WHERE d.accessory_id = a.id AND d.original_filename LIKE :like ESCAPE '\\'))
@@ -544,8 +544,8 @@ pub mod ops {
             .collect::<Result<Vec<_>, _>>()
             .map_err(CommandError::from_db)?;
 
-        // FR-013, FR-016: the direct host's label and the counts below, from
-        // the whole graph once and one label query per table (research.md
+        // 006 FR-013, FR-016: the direct host's label and the counts below, from
+        // the whole graph once and one label query per table (006 research.md
         // §5, §22).
         let graph = MountGraph::load(conn)?;
         let hosts: Vec<RecordRef> = rows
@@ -554,7 +554,7 @@ pub mod ops {
             .collect();
         let host_labels = mounts::labels(conn, &hosts)?;
 
-        // The group each accessory belongs to (research.md §12): a map from
+        // The group each accessory belongs to (006 research.md §12): a map from
         // key to group index, not a search of the groups for every row.
         // "Mounted on" is keyed by the host's `RecordRef`, never its name,
         // because two hosts can share one.
@@ -583,7 +583,7 @@ pub mod ops {
                     | AccessoryGroupBy::Caliber
                     | AccessoryGroupBy::Cartridge),
                 ) => {
-                    // A make is always there (FR-001); caliber and cartridge
+                    // A make is always there (006 FR-001); caliber and cartridge
                     // may be blank.
                     let value = match by {
                         AccessoryGroupBy::Make => Some(summary.make.clone()),
@@ -646,7 +646,7 @@ pub mod ops {
         NotMounted,
     }
 
-    /// Where a group goes in the output (contracts/tauri-commands.md "Group
+    /// Where a group goes in the output (006 contracts/tauri-commands.md "Group
     /// order"). Variants of one grouping never mix, so the derived order
     /// between variants only has to put `Last` after the rest.
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

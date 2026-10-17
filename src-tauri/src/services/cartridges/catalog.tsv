@@ -1,5 +1,4 @@
-# HoploDex's built-in cartridge catalog (specs/004-cartridges-action-types
-# FR-002; research.md §1 and §2).
+# HoploDex's built-in cartridge catalog (004 FR-002; 004 research.md §1 and §2).
 #
 # This list was written for HoploDex and is licensed GPL-3.0-only, like the
 # rest of the source. No third-party dataset was copied: cartridge names are
@@ -9,13 +8,13 @@
 # One cartridge per line: rank<TAB>name<TAB>caliber<TAB>aliases
 #   rank     commonness in U.S. private collections, 1 = most common
 #   name     the spelling the catalog offers and snaps to
-#   caliber  the bore class (FR-004a), one of research.md §2's classes
+#   caliber  the bore class (004 FR-004a), one of 004 research.md §2's classes
 #   aliases  other names collectors write, separated by |. They narrow the
 #            suggestion list and derive the caliber, but are never snapped to.
 #            An alias covers its same-notation variants (".22 LR" also covers
 #            "22LR"), and none is spelled like a class.
 #
-# tests/cartridge_catalog_test.rs checks research.md §2's invariants.
+# tests/cartridge_catalog_test.rs checks 004 research.md §2's invariants.
 1	9x19mm Parabellum	9mm	9mm Luger|9mm Para|9mm NATO|9x19|9mm Parabellum
 2	.22 Long Rifle	.22	.22 LR
 3	.223 Remington	.22	.223 Rem

@@ -88,7 +88,7 @@ describe("DisposeDialog", () => {
     expect(onDispose).toHaveBeenCalledWith(expect.objectContaining({ price: 99_999_999 }));
   });
 
-  // 001 US1 Scenario 14
+  // 001 US1-14
   it("blocks a disposition date before the acquisition date", async () => {
     const user = userEvent.setup();
     const onDispose = vi.fn().mockResolvedValue(undefined);
@@ -128,7 +128,7 @@ describe("DisposeDialog", () => {
   });
 });
 
-// specs/006-accessory-links FR-006, FR-009, FR-027, contracts/ui-accessories.md
+// 006 FR-006, FR-009, FR-027, contracts/ui-accessories.md
 // §7: the dialog serves a record of either kind. Given an accessory (in
 // place of the firearm) it names it by `RecordName`, hands the same input to
 // `onDispose`, which the accessory's page sends as `dispose_accessory`, and
@@ -222,7 +222,7 @@ describe("DisposeDialog for an accessory", () => {
     );
   });
 
-  it("keeps its unsaved input as a draft of the accessory (FR-027)", async () => {
+  it("keeps its unsaved input as a draft of the accessory (006 FR-027)", async () => {
     const user = userEvent.setup();
     renderDialog();
     expect(getDirtyForm()).toBeNull();
@@ -241,10 +241,10 @@ describe("DisposeDialog for an accessory", () => {
   });
 });
 
-// specs/006-accessory-links FR-014, US3, contracts/ui-accessories.md §7: the
+// 006 FR-014, US3, contracts/ui-accessories.md §7: the
 // dialog says what happens to the records mounted on the record, and to the
 // record itself if it is mounted.
-describe("DisposeDialog with mounted records (US3)", () => {
+describe("DisposeDialog with mounted records (006 US3)", () => {
   const label = (
     id: number,
     kind: "firearm" | "accessory",
@@ -320,7 +320,7 @@ describe("DisposeDialog with mounted records (US3)", () => {
     await user.type(screen.getByLabelText("Price received"), "1200");
   }
 
-  it("says the record will be unmounted from its host under the title (US3-3)", () => {
+  it("says the record will be unmounted from its host under the title (006 US3-3)", () => {
     renderDialog({ chain: [upper, rifle], mounted: [] });
 
     expect(screen.getByRole("dialog")).toHaveTextContent(
@@ -457,7 +457,7 @@ describe("DisposeDialog with mounted records (US3)", () => {
     expect(onDispose).toHaveBeenCalledWith(expect.objectContaining({ withMounted: [] }));
   });
 
-  describe("a record disposed with it acquired after the disposition date (FR-014, US3/AC2)", () => {
+  describe("a record disposed with it acquired after the disposition date (006 FR-014, US3-2; 001 FR-004)", () => {
     // Acquired long after any date the dialog accepts.
     const acquiredLater: MountDetail = {
       chain: [],
@@ -536,7 +536,7 @@ describe("DisposeDialog with mounted records (US3)", () => {
     expect(onMountChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the choices and prices in its draft, and resumes them (FR-027)", async () => {
+  it("keeps the choices and prices in its draft, and resumes them (006 FR-027)", async () => {
     const user = userEvent.setup();
     renderDialog(carrying);
 
@@ -589,7 +589,7 @@ describe("DisposeDialog with mounted records (US3)", () => {
   });
 });
 
-// specs/008-hardening-batch research.md §10, contracts/ui.md §3: the recipient
+// 008 research.md §10, contracts/ui.md §3: the recipient
 // has a maximum of 200 characters, for both kinds of record.
 describe("DisposeDialog recipient maximum", () => {
   const accessory = {

@@ -1,4 +1,4 @@
-//! How this computer opens a document (FR-011, data-model.md "Machine-local").
+//! How this computer opens a document (007 FR-011, data-model.md "Machine-local").
 //! It lives in `machine.json` and never travels with a database.
 
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,6 @@ pub enum DocumentOpening {
     /// The default: preview in HoploDex, which never writes a copy.
     #[default]
     Preview,
-    /// Open in another app, after the native confirmation (FR-012).
+    /// Open in another app, after the native confirmation (007 FR-012).
     External,
 }

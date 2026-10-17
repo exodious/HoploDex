@@ -11,14 +11,14 @@ import {
 } from "../support/ui";
 import { goTo, isButtonDisabled, openFirearm, policyCardText, selectOption } from "../support/ui";
 import { titleBlock } from "../support/ui";
-import { createDatabase } from "../support/ui";
+import { createDatabase, dialogHeightWhenOpened } from "../support/ui";
 
 /**
- * End-to-end coverage of User Story 3 (spec.md), driven against the real
+ * End-to-end coverage of 001 US3 (001 spec.md), driven against the real
  * built app through its embedded WebDriver server: one journey through
  * the story's scenarios, plus the policy form's field error. Coverage is
  * implicit: a firearm is scheduled on a policy with its own amount, or left
- * unscheduled and covered by the one blanket policy in force (FR-036). The
+ * unscheduled and covered by the one blanket policy in force (001 FR-036). The
  * rules each scenario states (the over-limit total, expiry warnings, the
  * deletion choices, notes, Escape) are tested in Rust and Vitest, citing
  * their scenario; this spec keeps what needs the real app. See
@@ -112,14 +112,14 @@ async function dialogFieldError(label: string): Promise<string | null> {
   }, label);
 }
 
-describe("User Story 3 - Track Value and Insurance Coverage", () => {
+describe("001 US3 - Track Value and Insurance Coverage (was us3-value-insurance)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();
   });
 
-  it("flags, covers and schedules firearms, keeps the total current, and moves them when their policy is deleted (Scenarios 1-3, 5, 9, 11, 13)", async () => {
-    // Scenarios 1, 13: no blanket policy in force, so an unscheduled firearm is uninsured.
+  it("flags, covers and schedules firearms, keeps the total current, and moves them when their policy is deleted (001 US3-1 to US3-3, US3-5, US3-9, US3-11 and US3-13)", async () => {
+    // 001 US3-1, US3-13: no blanket policy in force, so an unscheduled firearm is uninsured.
     await addFirearmWithValue({
       make: "InsE2EGlock",
       model: "19",
@@ -134,7 +134,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     const gaps = await $("section*=Not covered").getText();
     expect(gaps).toContain("InsE2EGlock 19");
 
-    // Scenarios 11, 13: a blanket policy covers it at once, without editing the firearm.
+    // 001 US3-11, US3-13: a blanket policy covers it at once, without editing the firearm.
     await addPolicy({
       name: "InsE2E Blanket A",
       policyNumber: "A-1",
@@ -157,7 +157,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     });
     expect(await titleBlock("Coverage")).toBe("Covered");
 
-    // Scenarios 2-3: scheduled below its value it is under-insured, then clears.
+    // 001 US3-2 to US3-3: scheduled below its value it is under-insured, then clears.
     await addPolicy({
       name: "InsE2E Rider",
       policyNumber: "R-1",
@@ -179,7 +179,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await goTo("Insurance");
     expect(await policyCardText("InsE2E Rider")).not.toContain("short");
 
-    // Scenario 5: the collection total follows an add, an edit and a disposal.
+    // 001 US3-5: the collection total follows an add, an edit and a disposal.
     const before = await collectionTotal();
 
     await addFirearmWithValue({
@@ -205,7 +205,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await clickButton("Mark as disposed");
     expect(await collectionTotal()).toBeCloseTo(before, 2);
 
-    // Scenario 9: deleting the Rider moves its firearm to another policy, which
+    // 001 US3-9: deleting the Rider moves its firearm to another policy, which
     // the Insurance page and the firearm's record both show afterwards.
     await addPolicy({
       name: "InsE2E Rider Two",
@@ -235,7 +235,7 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
 
   // InsurancePolicyForm's field error: the backend refuses an overlap and the
   // message lands on the Coverage starts field.
-  it("blocks a blanket policy overlapping another, naming it on the Coverage starts field (Scenario 12)", async () => {
+  it("blocks a blanket policy overlapping another, naming it on the Coverage starts field (001 US3-12)", async () => {
     // Years away from the journey's policies, so the two never overlap.
     await addPolicy({
       name: "InsE2E Overlap Base",
@@ -257,6 +257,42 @@ describe("User Story 3 - Track Value and Insurance Coverage", () => {
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
     await expect($("article.hd-policy*=InsE2E Overlap New")).not.toExist();
+  });
+});
+
+describe("Issue #116 - Dialogs that load their content open at the size they keep", () => {
+  before(async () => {
+    // The journey above leaves its database open when the whole file runs.
+    if (await $("button=Create a new database…").isExisting()) await createDatabase();
+  });
+
+  // The Delete policy question is centred and lists what is scheduled under
+  // the policy, which it reads after it appears: it moved by half of that.
+  it("opens the Delete policy question as tall as it stays once what is scheduled is read (#116)", async () => {
+    await goTo("Collection");
+    await addFirearmWithValue({
+      make: "InsE2EDialog",
+      model: "116",
+      serial: "INS-D-1",
+      valueDollars: "500",
+    });
+    await back();
+    await addPolicy({
+      name: "InsE2E Dialog Rider",
+      policyNumber: "D-1",
+      startDate: "2020-01-01",
+      endDate: isoDaysFromNow(365),
+    });
+    await openCoverage("InsE2EDialog 116");
+    await assignCoverage({ policyName: "InsE2E Dialog Rider", amountDollars: "500" });
+    await goTo("Insurance");
+
+    const { first, settled } = await dialogHeightWhenOpened(() =>
+      clickInPolicyCard("InsE2E Dialog Rider", "Delete InsE2E Dialog Rider"),
+    );
+
+    expect(first).toBe(settled);
+    await clickButton("Cancel");
   });
 });
 

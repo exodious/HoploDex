@@ -29,7 +29,7 @@ fn marker_blob() -> Vec<u8> {
 }
 
 /// The marker as a document: `add_document` keeps only what passes the
-/// content check (FR-016), and a PDF's signature may be followed by anything.
+/// content check (007 FR-016), and a PDF's signature may be followed by anything.
 fn marker_document() -> Vec<u8> {
     let mut bytes = b"%PDF-1.4\n".to_vec();
     bytes.extend(marker_blob());
@@ -180,7 +180,7 @@ fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
     assert_wiped(&db.conn, size_before, scratch.path());
 }
 
-/// specs/004-cartridges-action-types SC-005 / research.md §14: a custom
+/// 004 SC-005 / research.md §14: a custom
 /// cartridge used by one firearm is gone from the file, its index entry
 /// included, once that firearm is deleted.
 #[test]
@@ -224,7 +224,7 @@ fn deleting_a_firearm_wipes_its_custom_cartridge() {
     assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
 }
 
-/// specs/005-regulated-item-types SC-007, constitution V: a "Registered to"
+/// 005 SC-007, constitution V: a "Registered to"
 /// value and a form used by one firearm are gone from the file, the index
 /// included, once it is deleted.
 #[test]
@@ -308,7 +308,7 @@ fn an_unconfirmed_delete_changes_nothing() {
     assert!(document_ops::get_document(&db.conn, document.id).is_ok());
 }
 
-// --- Accessories (specs/006-accessory-links SC-006, constitution V) -----------
+// --- Accessories (006 SC-006, constitution V) ---------------------------------
 //
 // The database file is encrypted, so the bytes are looked for in its decrypted
 // contents (`decrypted_export`), exactly as for a firearm: a search of the
@@ -340,7 +340,7 @@ fn row_count(db: &TestDb, table: &str) -> i64 {
     db.conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0)).unwrap()
 }
 
-/// SC-006: a deleted accessory's serial number, notes, photo and document are
+/// 006 SC-006: a deleted accessory's serial number, notes, photo and document are
 /// gone from the file, the full-text index included, and the space comes back.
 #[test]
 fn deleting_an_accessory_wipes_its_serial_number_notes_photo_and_document() {
@@ -430,7 +430,7 @@ fn deleting_an_accessorys_photo_wipes_its_bytes_and_returns_the_space() {
     assert_wiped(&db.conn, size_before, scratch.path());
 }
 
-/// SC-006 with mounts (FR-015): a deleted accessory that carried records
+/// 006 SC-006 with mounts (006 FR-015): a deleted accessory that carried records
 /// leaves no `mounts` row, its unique values are gone from the file, and
 /// the records that were on it are still there, unmounted.
 #[test]
@@ -477,7 +477,7 @@ fn deleting_an_accessory_host_unmounts_what_was_on_it_and_wipes_its_values() {
     assert_eq!(freelist_count(&db.conn), 0, "freed pages were left in the file");
 }
 
-// --- Whole files: databases and backups (research.md §12) -------------------
+// --- Whole files: databases and backups (003 research.md §12) ---------------
 
 mod whole_files {
     use std::fs;
@@ -598,7 +598,7 @@ mod whole_files {
     }
 }
 
-// --- Document names (specs/007-document-preview T028, research.md §19) --------
+// --- Document names (007 T028, research.md §19) -------------------------------
 //
 // A document's filename is also kept in `document_names_fts`, a trigram index
 // (0002_fts5.sql): the whole name in `document_attachments`, its lowercased

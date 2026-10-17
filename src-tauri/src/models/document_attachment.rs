@@ -5,7 +5,7 @@ use crate::models::record::RecordRef;
 use crate::services::document_types::from_recorded;
 use crate::services::preview::availability::PdfAvailability;
 
-/// How a document can be previewed in HoploDex (FR-001), from its recorded
+/// How a document can be previewed in HoploDex (007 FR-001), from its recorded
 /// type alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -39,9 +39,9 @@ impl DocumentAttachment {
 }
 
 /// The frontend-facing DTO for listing a record's documents — omits
-/// `file_bytes` (read only to preview or reopen a document, FR-010) to keep
+/// `file_bytes` (read only to preview or reopen a document, 001 FR-010) to keep
 /// `list_documents` payloads small. The last three fields are derived on
-/// read (data-model.md "Derived on read"), never stored.
+/// read (007 data-model.md "Derived on read"), never stored.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentSummary {
@@ -54,11 +54,11 @@ pub struct DocumentSummary {
     /// preview opens.
     pub preview_kind: Option<PreviewKind>,
     /// `preview_kind` is set, except a PDF while PDF preview is off on this
-    /// computer (FR-003a).
+    /// computer (007 FR-003a).
     pub preview_available: bool,
     /// The recorded type is a document type. `false` only for a row stored
     /// before 007 with another type, which stays listed and deletable
-    /// (FR-017).
+    /// (007 FR-017).
     pub openable: bool,
 }
 

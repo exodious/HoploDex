@@ -16,10 +16,10 @@ function Wrapper({ part }: { part?: GuidePart }) {
   );
 }
 
-// specs/002-firearm-identification contracts/ui-identification.md §8, FR-015, SC-007;
-// specs/005-regulated-item-types contracts/ui-registration.md §7, FR-014
+// 002 contracts/ui-identification.md §8, FR-015, SC-007;
+// 005 contracts/ui-registration.md §7, FR-014
 describe("IdentificationGuide", () => {
-  // 002 SC-007, US1 Scenario 7 (the guide's title and disclaimer)
+  // 002 SC-007, US1-7 (the guide's title and disclaimer)
   it("shows the title and the disclaimer at the top", () => {
     render(<IdentificationGuide open onOpenChange={vi.fn()} />);
 
@@ -43,7 +43,7 @@ describe("IdentificationGuide", () => {
     );
   });
 
-  // 002 SC-007, US1 Scenario 7 (the guide's Re-imported M1 Carbine example)
+  // 002 SC-007, US1-7 (the guide's Re-imported M1 Carbine example)
   it("keeps the six origin examples under Where it came from", () => {
     render(<IdentificationGuide open onOpenChange={vi.fn()} />);
 
@@ -84,7 +84,7 @@ describe("IdentificationGuide", () => {
     expect(within(list).getAllByText("What you have:")).toHaveLength(2);
     expect(within(list).getAllByText("How to record it:")).toHaveLength(2);
     expect(within(list).getByText(/list them in Notes/)).toBeInTheDocument();
-    // FR-002, research.md §12, §15: a suppressor's caliber is its bore and
+    // 005 FR-002, research.md §12, §15: a suppressor's caliber is its bore and
     // its cartridge its rating.
     expect(
       within(list).getByText(
@@ -116,7 +116,7 @@ describe("IdentificationGuide", () => {
     expect(scrollIntoView).toHaveBeenCalled();
   });
 
-  // 002 SC-007, US1 Scenario 7 (Escape closes the guide)
+  // 002 SC-007, US1-7 (Escape closes the guide)
   it("closes with Escape and returns focus to the opening button", async () => {
     const user = userEvent.setup();
     render(<Wrapper />);

@@ -1,7 +1,7 @@
 /**
  * The free-text maximums the forms enforce, mirroring the backend's
  * `MAX_SHORT_TEXT_CHARS`, `MAX_LONG_TEXT_CHARS` and `check_text_length` in
- * `src-tauri/src/models/rules.rs` (specs/008-hardening-batch research.md
+ * `src-tauri/src/models/rules.rs` (008 research.md
  * §10). The entry fields (make, model, cartridge, caliber, registration form,
  * registered to) keep their own 100, in `features/firearms/entryText.ts`.
  *

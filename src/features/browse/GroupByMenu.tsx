@@ -21,8 +21,7 @@ export interface GroupByMenuProps<T extends string> {
 
 /** The "Group by" control of the collection and Accessories pages: a button
  * naming the current grouping that opens a menu of radio items
- * (specs/005-regulated-item-types contracts/ui-registration.md §6;
- * specs/006-accessory-links contracts/ui-accessories.md §2). */
+ * (005 contracts/ui-registration.md §6; 006 contracts/ui-accessories.md §2). */
 export function GroupByMenu<T extends string>({
   value,
   onChange,

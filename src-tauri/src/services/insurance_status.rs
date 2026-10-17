@@ -1,8 +1,8 @@
-//! Pure business logic behind FR-016/017/024/028/036's under/uninsured and
+//! Pure business logic behind 001 FR-016/017/024/028/036's under/uninsured and
 //! policy-expiry rules. Coverage is implicit: a firearm is either
 //! individually scheduled under a policy (with its own amount) or covered by
 //! the blanket policy in force on the day, which is computed from policy dates
-//! and never stored per firearm (research.md §9: no direct SQL beyond the
+//! and never stored per firearm (001 research.md §9: no direct SQL beyond the
 //! loads below; the warning decision is a plain function over the loaded
 //! [`InsuranceContext`], testable without the IPC layer).
 
@@ -23,9 +23,9 @@ pub enum InsuranceWarning {
     UnderInsured,
 }
 
-/// One policy's derived status as of a day (data-model.md, "Derived
+/// One policy's derived status as of a day (001 data-model.md, "Derived
 /// status"). `is_*` are facts about the dates; the `*_warning` flags are what
-/// the user is warned about, which FR-028 suppresses for a blanket policy
+/// the user is warned about, which 001 FR-028 suppresses for a blanket policy
 /// that has been renewed or replaced.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +45,7 @@ pub struct PolicyStatus {
 
 /// The blanket policy in force on the day, with the total value of the
 /// active records that fall under it (every active firearm and accessory that
-/// is not individually scheduled, FR-009), and how many of each.
+/// is not individually scheduled, 006 FR-009), and how many of each.
 #[derive(Debug, Clone)]
 pub struct BlanketInForce {
     pub policy_id: i64,
@@ -171,7 +171,7 @@ fn status_of(policy: &PolicyDates, all: &[PolicyDates], today: NaiveDate) -> Pol
     let is_expired = policy.end < today;
     let is_expiring_soon = !is_expired && (policy.end - today).num_days() <= 30;
 
-    // FR-028: a blanket policy's lapse doesn't warrant a warning when another
+    // 001 FR-028: a blanket policy's lapse doesn't warrant a warning when another
     // blanket policy takes over. An expiring warning is suppressed while a
     // successor starts no later than the day after this one ends (no gap); an
     // expired one once any later-starting blanket policy exists (history).
@@ -216,9 +216,9 @@ pub fn record_warning(
     };
 
     match insurance_policy_id {
-        // Individually scheduled (FR-024): its own amount against its value.
+        // Individually scheduled (001 FR-024): its own amount against its value.
         // An expired policy overrides otherwise-sufficient coverage
-        // (US3 Acceptance Scenario 8).
+        // (001 US3-8).
         Some(policy_id) => match ctx.policies.get(&policy_id) {
             None => InsuranceWarning::Uninsured,
             Some(policy) if policy.is_expired => InsuranceWarning::Uninsured,
@@ -227,9 +227,9 @@ pub fn record_warning(
             }
             Some(_) => InsuranceWarning::None,
         },
-        // Unscheduled: covered by the blanket policy in force (FR-036), whose
+        // Unscheduled: covered by the blanket policy in force (001 FR-036), whose
         // shared limit is compared with the combined value of all of them
-        // (FR-017); uninsured when none is in force.
+        // (001 FR-017); uninsured when none is in force.
         None => match &ctx.blanket {
             None => InsuranceWarning::Uninsured,
             Some(blanket) if blanket.total > blanket.limit => InsuranceWarning::UnderInsured,

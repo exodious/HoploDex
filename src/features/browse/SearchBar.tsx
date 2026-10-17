@@ -11,7 +11,7 @@ export interface SearchBarProps {
 }
 
 /** Free-text search across all recorded firearm information, including
- * free-form notes (FR-013, US2 Acceptance Scenarios 3-4). Escape clears. */
+ * free-form notes (001 FR-013, US2-3 and US2-4). Escape clears. */
 export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
   (
     {

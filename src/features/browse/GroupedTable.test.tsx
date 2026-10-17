@@ -77,8 +77,9 @@ describe("GroupedTable", () => {
     const [titleRow, ...rows] = within(alpha).getAllByRole("row");
     expect(titleRow).toHaveTextContent("Alpha3");
     expect(within(titleRow).getByRole("heading", { level: 2 })).toHaveTextContent("Alpha3");
-    // The title row spans every column.
-    expect(within(titleRow).getByRole("cell")).toHaveAttribute("colspan", "3");
+    // The title cell spans the columns that show below 900px; the spacer cell
+    // (hidden from assistive technology) takes the narrow-hidden one's place.
+    expect(within(titleRow).getByRole("cell")).toHaveAttribute("colspan", "2");
     // The count is the group's whole size; the rows are what is rendered so far.
     expect(rows).toHaveLength(2);
     expect(screen.getByRole("rowgroup", { name: "Beta" })).toBeInTheDocument();
@@ -120,11 +121,39 @@ describe("GroupedTable", () => {
   it("marks a narrow-hidden column in its heading, cells and <col>, and only that one", () => {
     const { container } = renderTable();
 
-    const hidden = [...container.querySelectorAll(".hd-col--narrow-hidden")];
+    const hidden = [...container.querySelectorAll(".hd-col--narrow-hidden")].filter(
+      (el) => !el.closest(".hd-group-row"),
+    );
     expect(hidden.map((el) => el.tagName).sort()).toEqual(["COL", "TD", "TD", "TD", "TD", "TH"]);
     expect(hidden.every((el) => el.classList.contains("hd-col--kind"))).toBe(true);
-    // The title row's one cell spans the columns, so it is never one of them.
+    // The title cell is never one of them.
     expect(container.querySelector(".hd-group-row td")).not.toHaveClass("hd-col--narrow-hidden");
+  });
+
+  // #108: a title cell spanning every column, hidden ones included, made the
+  // table add a column of its own below 900px, so the real columns shrank to
+  // part of the table's width. The title spans the columns that show, and an
+  // empty cell takes the hidden ones' place, hiding with them.
+  it("spans a title row over the columns that show, with a cell for the hidden ones", () => {
+    const { container } = renderTable();
+
+    for (const row of container.querySelectorAll(".hd-group-row")) {
+      const [title, spacer, ...rest] = row.querySelectorAll("td");
+      expect(rest).toHaveLength(0);
+      expect(title).toHaveAttribute("colspan", "2");
+      expect(title).not.toHaveClass("hd-col--narrow-hidden");
+      expect(spacer).toHaveAttribute("colspan", "1");
+      expect(spacer).toHaveClass("hd-col--narrow-hidden");
+      expect(spacer).toHaveAttribute("aria-hidden", "true");
+    }
+  });
+
+  it("gives a title row one cell when no column hides", () => {
+    const { container } = renderTable({ columns: COLUMNS.filter((c) => !c.narrowHidden) });
+
+    const cells = container.querySelectorAll(".hd-group-row")[0].querySelectorAll("td");
+    expect(cells).toHaveLength(1);
+    expect(cells[0]).toHaveAttribute("colspan", "2");
   });
 
   it("hides the narrow column in CSS by its class, not by its position", () => {

@@ -24,7 +24,7 @@ const getAccessory = vi.fn();
 const listAccessories = vi.fn();
 
 // The accessory form's make, model, cartridge and caliber use the shared
-// entry commands (specs/006-accessory-links FR-003).
+// entry commands (006 FR-003).
 vi.mock("../firearms/firearmsService", () => ({
   getFirearm: (_scope: unknown, id: number) => getFirearm(id),
   deleteFirearm: (_scope: unknown, id: number, confirmed: boolean) => deleteFirearm(id, confirmed),
@@ -276,7 +276,7 @@ const backLink = () => document.querySelector(".hd-backlink");
 const onCollection = () =>
   expect(screen.getByRole("heading", { level: 1, name: "Collection" })).toBeInTheDocument();
 
-// 001 US1 Scenario 18
+// 001 US1-18
 describe("Escape goes back wherever a back link shows", () => {
   beforeEach(() => {
     // jsdom has no scrolling; the shell scrolls on every page change.
@@ -291,7 +291,7 @@ describe("Escape goes back wherever a back link shows", () => {
     await openColt(user);
     expect(backLink()).toHaveTextContent("Collection");
     expect(backLink()).toHaveAttribute("aria-keyshortcuts", "Escape");
-    // The shortcut is shown on the control, not only announced (FR-040).
+    // The shortcut is shown on the control, not only announced (001 FR-040).
     expect(backLink()?.querySelector("kbd")).toHaveTextContent("Esc");
 
     await user.keyboard("{Escape}");
@@ -301,7 +301,7 @@ describe("Escape goes back wherever a back link shows", () => {
     onCollection();
   });
 
-  // 001 US3 Scenario 17
+  // 001 US3-17
   it("retraces firearm → policy one step at a time", async () => {
     const user = userEvent.setup();
     renderShell();
@@ -317,7 +317,7 @@ describe("Escape goes back wherever a back link shows", () => {
     onCollection();
   });
 
-  // 001 US3 Scenario 17
+  // 001 US3-17
   it("returns from the Insurance page when a link led there", async () => {
     const user = userEvent.setup();
     renderShell();
@@ -328,7 +328,7 @@ describe("Escape goes back wherever a back link shows", () => {
     onCollection();
   });
 
-  // 001 US3 Scenario 17
+  // 001 US3-17
   it("closes an open dialog without leaving the page", async () => {
     const user = userEvent.setup();
     renderShell();
@@ -342,8 +342,8 @@ describe("Escape goes back wherever a back link shows", () => {
   });
 });
 
-// 001 US1 Scenario 18
-describe("Escape stays on a record while something else wants it (FR-040, US1/AC18)", () => {
+// 001 US1-18
+describe("Escape stays on a record while something else wants it (001 FR-040, US1-18)", () => {
   beforeEach(() => {
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
     getFirearm.mockReset().mockResolvedValue(detail);
@@ -463,7 +463,7 @@ describe("Escape stays on a record while something else wants it (FR-040, US1/AC
   });
 });
 
-describe("Resumed pending changes open where their form is (FR-039)", () => {
+describe("Resumed pending changes open where their form is (003 FR-039)", () => {
   beforeEach(() => {
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
     getFirearm.mockReset().mockResolvedValue(detail);
@@ -518,7 +518,7 @@ describe("Resumed pending changes open where their form is (FR-039)", () => {
     setResumedDraft({ formVersion, label: "Colt Python", ...draft });
   }
 
-  // 003 US6 Scenario 6: resuming reopens the edit form with the kept input.
+  // 003 US6-6: resuming reopens the edit form with the kept input.
   it("an edit reopens the firearm's edit form with the changes", async () => {
     resume({ kind: "firearm", mode: "edit", targetId: 1, values: coltValues });
     renderShell();
@@ -585,8 +585,8 @@ describe("Resumed pending changes open where their form is (FR-039)", () => {
   });
 });
 
-// specs/006-accessory-links User Story 1, contracts/ui-accessories.md §1.
-describe("The Accessories tab (FR-016)", () => {
+// 006 US1, 006 contracts/ui-accessories.md §1.
+describe("The Accessories tab (006 FR-016)", () => {
   beforeEach(() => {
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
     getFirearm.mockReset().mockResolvedValue(detail);
@@ -664,7 +664,7 @@ describe("The Accessories tab (FR-016)", () => {
   });
 });
 
-describe("Resumed accessory pending changes open where their form is (FR-027, FR-039)", () => {
+describe("Resumed accessory pending changes open where their form is (006 FR-027; 003 FR-039)", () => {
   beforeEach(() => {
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
     getFirearm.mockReset().mockResolvedValue(detail);
@@ -783,7 +783,7 @@ describe("Resumed accessory pending changes open where their form is (FR-027, FR
   });
 });
 
-// #59, contracts/ui-databases.md §10: the database's notes head the three list
+// #59, 003 contracts/ui-databases.md §10: the database's notes head the three list
 // pages, not the record pages, and dismissing one hides it on all of them.
 describe("The database's notes (#59)", () => {
   const NOTES: DatabaseStatus["notes"] = {
@@ -1055,5 +1055,32 @@ describe("Following a link to a policy or a firearm, and Back", () => {
 
     await user.click(backLink() as HTMLElement);
     expect(await screen.findByRole("heading", { level: 1, name: "Insurance" })).toBeInTheDocument();
+  });
+});
+
+// #108: below 900px the top bar drops the wordmark and shows Import and
+// Export as icons, so it fits the window's 800px minimum. The CSS does the
+// hiding, so what the names rely on must stay in the markup.
+describe("The top bar's narrow form keeps its accessible names (#108)", () => {
+  beforeEach(() => {
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+  });
+
+  it("names the brand, Import and Export, with a tooltip on the two buttons", () => {
+    renderShell();
+    const bar = within(document.querySelector<HTMLElement>(".hd-topbar")!);
+
+    expect(
+      bar.getByRole("button", { name: "HoploDex — go to the collection" }),
+    ).toBeInTheDocument();
+    for (const name of ["Import", "Export"]) {
+      const button = bar.getByRole("button", { name });
+      expect(button).toHaveAttribute("title", name);
+      // The word stays in the page for assistive technology; CSS hides it.
+      expect(button.querySelector(".hd-topbar__tool-label")).toHaveTextContent(name);
+    }
+    // Only the wordmark is dropped when the bar narrows: the owl is not.
+    expect(document.querySelector(".hd-brand__name--wide")).toHaveTextContent("HoploDex");
+    expect(document.querySelector(".hd-brand .hd-brand__mark")).not.toBeNull();
   });
 });

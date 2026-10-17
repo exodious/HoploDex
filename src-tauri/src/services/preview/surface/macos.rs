@@ -1,8 +1,8 @@
 //! The surface on macOS: WKWebView's content rule list, switches, input
-//! monitor and the copy watch (research.md §6, §7, §10).
+//! monitor and the copy watch (007 research.md §6, §7, §10).
 //!
 //! `attach` runs once after `add_child`, from a thread other than the main
-//! one, and does what research.md asks of WKWebView before the document is
+//! one, and does what 007 research.md asks of WKWebView before the document is
 //! asked for:
 //!
 //! - the PDF HUD and WebRTC off through WebKit's SPI
@@ -14,7 +14,7 @@
 //! - a local `NSEvent` monitor for Escape, F6 and activity, which only
 //!   acts while the surface's view is, or holds, the first responder (keys)
 //!   or under the pointer (mouse and scroll);
-//! - the watch (research.md §7, FR-003a): a `kqueue` on `$TMPDIR`.
+//! - the watch (007 research.md §7, FR-003a): a `kqueue` on `$TMPDIR`.
 //!
 //! A surface that can't have all of that (an SPI that is gone, a rule list
 //! that won't compile, a watch that can't start) is refused: `attach`
@@ -71,7 +71,7 @@ use crate::services::{
 
 /// The proxy: `proxy_url` (Tauri's `macos-proxy` feature). Loopback bypasses
 /// it on macOS, so the content filter is the layer that matters there
-/// (research.md §6).
+/// (007 research.md §6).
 pub(super) fn customize<R: Runtime>(
     builder: WebviewBuilder<R>,
     proxy_url: &Url,
@@ -91,7 +91,7 @@ const FILTER_ID: &str = "preview-block-all";
 /// is refused. WebKit compiles it on its own thread, in a few milliseconds.
 const FILTER_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The content filter (research.md §6): the same rules as WebKitGTK's. Every
+/// The content filter (007 research.md §6): the same rules as WebKitGTK's. Every
 /// URL is blocked but the surface's own scheme; `blob:`, `data:` and
 /// `about:` name nothing outside the page.
 const BLOCK_RULES: &str = r#"[
@@ -107,7 +107,7 @@ const KEY_ESCAPE: u16 = 53;
 const KEY_F6: u16 = 97;
 
 /// The name WebKit gives the folder Open in Preview's copy is written into,
-/// in `$TMPDIR` (research.md §7).
+/// in `$TMPDIR` (007 research.md §7).
 const COPY_FOLDER_PREFIX: &str = "WebKitPDFs-";
 
 /// Configures the surface (switches, rule list, monitor, watch), and waits
@@ -268,7 +268,7 @@ fn classify_key(key_code: u16) -> Key {
     }
 }
 
-/// A local `NSEvent` monitor (research.md §10): Escape and F6 are consumed
+/// A local `NSEvent` monitor (007 research.md §10): Escape and F6 are consumed
 /// and told to the app while the surface's view is, or holds, the first
 /// responder; any key then, and a mouse or scroll event over the view, is
 /// activity. Events pass on to the page. Returns the monitor, to remove
@@ -411,7 +411,7 @@ fn remove_monitor(generation: u64) {
 /// closing already). The call with no paths and `false` is the last.
 type CaughtHandler = Box<dyn Fn(&[PathBuf], bool) + Send + 'static>;
 
-/// What the app does when a copy is caught (research.md §7): records each
+/// What the app does when a copy is caught (007 research.md §7): records each
 /// path in the hold's `leftovers` until a later sweep finds it gone, holds
 /// PDF preview off for this version, and closes the surface and tells the
 /// viewer (`preview:pdf-ended { copyCaught }`). The last sweep (`ending`)
@@ -498,7 +498,7 @@ fn kevent_zero() -> libc::kevent {
 /// The `kevent` identifier of the user event that stops the watch.
 const STOP: libc::uintptr_t = 1;
 
-/// The watch (research.md §7): a thread holding a `kqueue` on `$TMPDIR`
+/// The watch (007 research.md §7): a thread holding a `kqueue` on `$TMPDIR`
 /// (`EVFILT_VNODE`, `NOTE_WRITE`), and a user event to end it.
 struct Watch {
     queue: Arc<OwnedFd>,

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSessionScope } from "../session/sessionScope";
 import * as importExportService from "./importExportService";
 
-// specs/008-hardening-batch contracts/tauri-commands.md "Every request names
+// 008 contracts/tauri-commands.md "Every request names
 // its session": the import and export commands are scoped.
 
 const backend = vi.hoisted(() => ({ invoke: vi.fn() }));

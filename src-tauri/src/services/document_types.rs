@@ -1,5 +1,5 @@
 //! The one document type allowlist and `classify`, the one content check
-//! (research.md §2, FR-016, FR-017).
+//! (007 research.md §2, FR-016, FR-017).
 //!
 //! `add_document`, `add_document_from_path`, `open_preview` and
 //! `open_document` all go through [`classify`], so a row stored before this
@@ -56,7 +56,7 @@ enum Signature {
 const WORD_DOC_MAIN: &str = "wordprocessingml.document.main+xml";
 const SHEET_MAIN: &str = "spreadsheetml.sheet.main+xml";
 
-/// The list, in the table order of research.md §2.
+/// The list, in the table order of 007 research.md §2.
 static TYPES: [DocumentType; 11] = [
     DocumentType {
         label: "PDF",
@@ -160,7 +160,7 @@ pub fn from_recorded(mime_type: &str) -> Option<&'static DocumentType> {
     TYPES.iter().find(|t| t.mime_type == mime_type)
 }
 
-/// Why a file isn't a document HoploDex keeps (FR-016).
+/// Why a file isn't a document HoploDex keeps (007 FR-016).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
     /// The extension isn't on the list.
@@ -215,7 +215,7 @@ fn type_names() -> String {
     format!("{} or {last}", labels.join(", "))
 }
 
-/// Judges a file by its name and content (research.md §2). Returns the type
+/// Judges a file by its name and content (007 research.md §2). Returns the type
 /// to record for it, or why it isn't one.
 pub fn classify(filename: &str, bytes: &[u8]) -> Result<&'static DocumentType, Refusal> {
     let name = filename.rsplit(['/', '\\']).next().unwrap_or(filename);
@@ -313,7 +313,7 @@ const RELATIONSHIPS_LIMIT: u64 = 8 * 1024 * 1024;
 
 /// A ZIP whose `[Content_Types].xml` names `main_part` as the main part, with
 /// no `vbaProject.bin`, no macro-enabled type, and relationship parts that
-/// keep everything inside the package (research.md §2). The directory, the
+/// keep everything inside the package (007 research.md §2). The directory, the
 /// content types and the relationship parts are read.
 fn is_plain_ooxml(bytes: &[u8], main_part: &str) -> bool {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {

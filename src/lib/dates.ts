@@ -1,4 +1,4 @@
-// Dates are ISO `YYYY-MM-DD` calendar dates on the wire (data-model.md) —
+// Dates are ISO `YYYY-MM-DD` calendar dates on the wire (001 data-model.md) —
 // no time, no zone. Everything here treats them as UTC midnights so
 // formatting never shifts a date across a zone boundary.
 
@@ -71,7 +71,7 @@ export function formatRecentDay(moment: string, now: Date = new Date(), locale?:
 }
 
 /** A recent moment with its local time: "Today at 9:12 AM", "Yesterday at
- * 5:40 PM" or "September 12 at 8:05 PM" (FR-040). */
+ * 5:40 PM" or "September 12 at 8:05 PM" (003 FR-040). */
 export function formatRecentMoment(
   moment: string,
   now: Date = new Date(),
@@ -114,7 +114,7 @@ export function parseDateInput(input: string): ParsedDate {
   return { ok: true, iso: toIso(y, m, d) };
 }
 
-/** FR-003 / FR-004: an acquisition or disposition date can't be after
+/** 001 FR-003 / FR-004: an acquisition or disposition date can't be after
  * today (today itself is fine). Messages match the backend's, which
  * enforces the same rule. `undefined` means the date is acceptable. */
 export function futureDateError(
@@ -125,7 +125,7 @@ export function futureDateError(
   return iso && iso > today ? `${label} can't be in the future.` : undefined;
 }
 
-/** FR-004: a disposition can't predate the acquisition. Nothing to compare
+/** 001 FR-004: a disposition can't predate the acquisition. Nothing to compare
  * unless both dates are recorded. */
 export function dispositionOrderError(
   acquiredIso: string | null,

@@ -21,10 +21,10 @@ import { render as renderBase } from "../../test/sessionScope";
 
 beforeEach(resetServiceMocks);
 
-// specs/005-regulated-item-types US1 (contracts/ui-registration.md §1): the
+// 005 US1, contracts/ui-registration.md §1: the
 // Type cards come from the store, and a type that omits the action, barrel
 // length or capacity hides those fields.
-describe("FirearmForm suppressor (US1)", () => {
+describe("FirearmForm suppressor (005 US1)", () => {
   const collection = {
     firearmTypes: { types: FIREARM_TYPES },
     actionTypes: { actions: ACTION_TYPES, allowedByFirearmType: {} },
@@ -77,7 +77,7 @@ describe("FirearmForm suppressor (US1)", () => {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
     expect(screen.getByRole("combobox", { name: "Condition" })).toBeInTheDocument();
-    // FR-002, research.md §15: the caliber is the bore, the cartridge the
+    // 005 FR-002, research.md §15: the caliber is the bore, the cartridge the
     // rating.
     const caliber = screen.getByLabelText("Caliber");
     expect(caliber).toBeRequired();
@@ -101,7 +101,7 @@ describe("FirearmForm suppressor (US1)", () => {
     await waitFor(() => expect(settleEntry).toHaveBeenCalledWith("cartridge", text));
   }
 
-  it("fills no caliber from a new Suppressor's rated cartridge (US1-7)", async () => {
+  it("fills no caliber from a new Suppressor's rated cartridge (005 US1-7)", async () => {
     const user = userEvent.setup();
     renderForm();
     await chooseType(user, "Suppressor");
@@ -124,7 +124,7 @@ describe("FirearmForm suppressor (US1)", () => {
     expect(screen.getByLabelText("Caliber")).toHaveAccessibleDescription("The bore diameter.");
   });
 
-  it("suggests no caliber for a saved Suppressor's new rated cartridge (US1-7)", async () => {
+  it("suggests no caliber for a saved Suppressor's new rated cartridge (005 US1-7)", async () => {
     const user = userEvent.setup();
     renderForm(
       <FirearmForm
@@ -333,10 +333,10 @@ describe("FirearmForm suppressor (US1)", () => {
   });
 });
 
-// specs/005-regulated-item-types User Story 2 (contracts/ui-registration.md
-// §2, §3): an optional classification with a form, an approved date and
-// "Registered to", and nothing on the form that judges legal status.
-describe("FirearmForm registration (US2)", () => {
+// 005 US2, contracts/ui-registration.md §2, §3: an optional classification with
+// a form, an approved date and "Registered to", and nothing on the form that
+// judges legal status.
+describe("FirearmForm registration (005 US2)", () => {
   const offered = REGISTRATION_CLASSES;
   const collection = (classes = offered) =>
     ({
@@ -789,7 +789,7 @@ describe("FirearmForm registration (US2)", () => {
     expect(screen.getByText(/The list of classifications couldn't be loaded/)).toBeInTheDocument();
   });
 
-  // FR-014, SC-002, US2-8: nothing on the form judges legal status.
+  // 005 FR-014, SC-002, US2-8: nothing on the form judges legal status.
   describe.each([
     ["a Rifle with a 10.5 in barrel and no classification", plainRifle],
     [
@@ -839,12 +839,11 @@ describe("FirearmForm registration (US2)", () => {
   });
 });
 
-// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §4,
-// FR-010, FR-012): the Mounted on choice, after Type and Action. A saved
-// firearm's current host arrives with its detail (`mount.chain[0]`), which is
-// what the record page passes as `initialValues`; the form sends only the
-// host's `RecordRef` as `mountedOn`.
-describe("FirearmForm Mounted on (US2)", () => {
+// 006 US2, contracts/ui-accessories.md §4, FR-010, FR-012: the Mounted on
+// choice, after Type and Action. A saved firearm's current host arrives with its
+// detail (`mount.chain[0]`), which is what the record page passes as
+// `initialValues`; the form sends only the host's `RecordRef` as `mountedOn`.
+describe("FirearmForm Mounted on (006 US2)", () => {
   const HINT =
     "Only if this firearm is mounted on another firearm or an accessory, such as a suppressor on a rifle.";
 

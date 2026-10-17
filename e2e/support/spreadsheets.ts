@@ -64,7 +64,7 @@ function storedZip(parts: Record<string, string>): Buffer {
 /**
  * Writes a workbook of `sheetCount` sheets, each with `x` in A1, to `file`.
  * With more than 16 sheets it is over the import's limit
- * (data-model.md "Import limits").
+ * (008 data-model.md "Import limits").
  */
 export function writeSheetsWorkbook(file: string, sheetCount: number): void {
   const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";

@@ -1,11 +1,11 @@
-# FR-007 / SC-002 caliber-guess corpus (specs/004-cartridges-action-types
-# research.md §7). Each line is: name<TAB>expected caliber<TAB>catalog|guess,
+# 004 FR-007 / SC-002 caliber-guess corpus (004 research.md §7). Each line is:
+# name<TAB>expected caliber<TAB>catalog|guess,
 # or name<TAB>none when no caliber may be read. The expected results are
-# written by hand from the catalog and research.md §7's rules, not generated
+# written by hand from the catalog and 004 research.md §7's rules, not generated
 # by the code under test. A line whose name is empty or only spaces is a
 # blank cartridge.
 #
-# Catalog names and aliases (research.md §7 step 1).
+# Catalog names and aliases (004 research.md §7 step 1).
 .22 Long Rifle	.22	catalog
 .22 LR	.22	catalog
 22LR	.22	catalog
@@ -60,7 +60,7 @@
 .410	.410 bore	catalog
 410	.410 bore	catalog
 #
-# Guesses (research.md §7 steps 2 and 3): the leading designation, mapped to
+# Guesses (004 research.md §7 steps 2 and 3): the leading designation, mapped to
 # its class.
 .308 Improved	.30	guess
 .30 Custom Improved	.30	guess
@@ -92,12 +92,12 @@
 10 ga Magnum	10 gauge	guess
 16 Gauge Wildcat	16 gauge	guess
 .410 Bore Custom	.410 bore	guess
-# Read, but no class: the designation itself (research.md §7 step 3c).
+# Read, but no class: the designation itself (004 research.md §7 step 3c).
 .19 Calhoon	.19	guess
 14 gauge	14 gauge	guess
 .318 Westley Richards	.318	guess
 #
-# No readable bore: no guess, never a made-up value (SC-002).
+# No readable bore: no guess, never a made-up value (004 SC-002).
 Wildcat Special	none
 Hornet	none
 16 Special	none

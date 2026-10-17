@@ -26,7 +26,7 @@ export interface CollectionPageProps {
   onBrowseChange: (next: BrowseState) => void;
 }
 
-/** Browse, search, and group the collection (User Story 2). */
+/** Browse, search, and group the collection (001 US2). */
 export function CollectionPage({ browse, onBrowseChange }: CollectionPageProps) {
   const scope = useSessionScope();
   const { firearms, summary, loaded, revision } = useCollection();
@@ -278,7 +278,7 @@ function AttentionBanner() {
 
   const flagged = firearms.filter((f) => f.status === "active" && f.insuranceWarning !== "none");
   // The backend's warning flags, which already leave out a blanket policy
-  // that has been renewed or replaced (FR-028).
+  // that has been renewed or replaced (001 FR-028).
   const lapsing = policies.filter((policy) => policy.expiredWarning || policy.expiringWarning);
   if (flagged.length === 0 && lapsing.length === 0) return null;
 

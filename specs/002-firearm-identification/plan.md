@@ -192,7 +192,7 @@ src/
                                       #  ImportDialog
 
 e2e/specs/
-└── us6-identification.e2e.ts         # NEW: SC-007 re-imported M1 Carbine flow, warning confirm
+└── identification.e2e.ts         # NEW: SC-007 re-imported M1 Carbine flow, warning confirm
 ```
 
 **Structure Decision**: No new project, package, or layer. This is a

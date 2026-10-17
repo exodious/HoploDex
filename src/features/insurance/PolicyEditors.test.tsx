@@ -8,7 +8,7 @@ import { FORM_VERSION } from "./InsurancePolicyForm";
 import { usePolicyEditors } from "./PolicyEditors";
 import type { InsurancePolicy } from "./types";
 
-// specs/008-hardening-batch tasks.md T032 (US1-4), research.md §6: when a
+// 008 tasks.md T032 (008 US1-4), 008 research.md §6: when a
 // resumed draft for a policy is waiting for its form and the policy isn't in
 // the collection, the editors tell the scope (`scope.resumeFailed`), so the
 // pending changes dialog comes back. They tell it for nothing else.
@@ -93,7 +93,7 @@ function renderIn(scope: SessionScope, collection: CollectionState) {
   );
 }
 
-describe("usePolicyEditors: a resumed draft whose form can't open (US1-4)", () => {
+describe("usePolicyEditors: a resumed draft whose form can't open (008 US1-4)", () => {
   it("reports notOpened when the policy isn't in the collection while its draft is opening", async () => {
     const scope = scopeResuming(draft(7));
 

@@ -1,4 +1,4 @@
-//! Pending changes (FR-039, research.md §16): a form's unsaved input,
+//! Pending changes (003 FR-039, research.md §16): a form's unsaved input,
 //! staged in memory, kept inside the database by a lock or an OS shutdown,
 //! and offered at the next open. Real SQLCipher files in temp directories.
 
@@ -464,7 +464,7 @@ fn resuming_returns_the_exact_draft_and_opening_the_form_removes_it() {
     );
 }
 
-// 003 US6 Scenario 6: discarding.
+// 003 US6-6: discarding.
 #[test]
 fn discarding_removes_them() {
     let world = World::new();
@@ -588,7 +588,7 @@ fn a_take_over_found_while_finishing_on_waking_loses_the_draft_and_says_so() {
     assert_eq!(pending, 0, "nothing is written to a file taken over");
 }
 
-// --- Accessory drafts (specs/006-accessory-links FR-027, research.md §19) ------
+// --- Accessory drafts (006 FR-027, research.md §19) ----------------------------
 //
 // `Draft.kind` gains "accessory" with the modes a firearm has. Accessory
 // inputs are built from the IPC shape (`AccessoryInput`'s camelCase JSON), so
@@ -616,7 +616,7 @@ impl World {
     }
 }
 
-/// An accessory draft labelled with the accessory's name (FR-005, FR-027).
+/// An accessory draft labelled with the accessory's name (006 FR-005, FR-027).
 fn accessory_draft(mode: DraftMode, target_id: Option<i64>) -> Draft {
     Draft {
         label: format!("Leupold VX-5HD 3-15x44 · Optic — {}", mode.as_str()),

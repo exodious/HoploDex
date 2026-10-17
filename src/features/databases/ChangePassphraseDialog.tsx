@@ -33,7 +33,7 @@ export interface ChangePassphraseDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Changes the open database's passphrase (contracts/ui-databases.md §8,
+/** Changes the open database's passphrase (003 contracts/ui-databases.md §8,
  * FR-015, FR-016). A copy with the new passphrase is made, checked and put
  * in place of the database, which is untouched until then, and the previous
  * file is deleted securely. */
@@ -110,7 +110,7 @@ function ChangePassphraseForm({
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     // Each passphrase is read once and its field emptied at once, whatever
-    // happens next (FR-007).
+    // happens next (003 FR-007).
     const current = currentPassphrase.current?.read() ?? "";
     const next = newPassphrase.current?.read() ?? "";
     const confirmed = confirmation.current?.read() ?? "";

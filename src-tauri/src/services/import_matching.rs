@@ -1,12 +1,10 @@
-//! Import matching/conflict-resolution key (FR-026, FR-030,
-//! data-model.md's "Import row shape"): `(make, model, serial_number)`
+//! Import matching/conflict-resolution key (001 FR-026, FR-030,
+//! 001 data-model.md's "Import row shape"): `(make, model, serial_number)`
 //! when `no_serial_attested = false`; rows with `no_serial_attested = true`
 //! are always treated as new inserts, never matched. Amended by
-//! specs/002-firearm-identification FR-008/US4-5a: a row with identical main
-//! marks is not a match when both the row and the candidate have a year of
-//! manufacture and the years differ (research.md §4). Amended by
-//! specs/006-accessory-links FR-022: a row's record identifier is matched
-//! first, among the records of the row's own kind.
+//! 002 FR-008/US4-5a: a row with identical main marks is not a match when both the row and the
+//! candidate have a year of manufacture and the years differ (002 research.md §4). Amended by
+//! 006 FR-022: a row's record identifier is matched first, among the records of the row's own kind.
 
 use rusqlite::{Connection, OptionalExtension, named_params};
 
@@ -36,7 +34,7 @@ pub fn find_by_record_id(conn: &Connection, uid: &str) -> Result<Option<RecordRe
 
 /// The duplicate-match query. Its three `lower(trim(...))` terms are those of
 /// `idx_firearms_identity_key`, so a large import doesn't scan every firearm
-/// for every row (research.md §19).
+/// for every row (008 research.md §19).
 pub const FIND_MATCH_SQL: &str = "SELECT id FROM firearms
      WHERE lower(trim(make)) = lower(trim(:make))
        AND lower(trim(model)) = lower(trim(:model))
@@ -50,12 +48,12 @@ pub const FIND_MATCH_SQL: &str = "SELECT id FROM firearms
 
 /// Returns the id of an existing firearm matching `(make, model,
 /// serial_number)` ignoring letter case and surrounding whitespace (the same
-/// comparison as FR-032), or `None` if there is no match, `no_serial_attested`
+/// comparison as 001 FR-032), or `None` if there is no match, `no_serial_attested`
 /// is set (a no-serial row can never match an existing one, even if
 /// make/model coincide), or both records have a year of manufacture and the
-/// years differ (FR-008: the row is a new record, not this one's match).
+/// years differ (002 FR-008: the row is a new record, not this one's match).
 /// When both an active and a disposed record match, the active one is the
-/// match: it is the one FR-032 protects.
+/// match: it is the one 001 FR-032 protects.
 pub fn find_match(
     conn: &Connection,
     make: &str,

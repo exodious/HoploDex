@@ -202,7 +202,7 @@
   scroll-margin-top: calc(var(--hd-sticky-top) + var(--hd-thead-height) + 4.5rem);
 }
 
-/* specs/004-cartridges-action-types FR-027: a long cartridge is cut short
+/* 004 FR-027: a long cartridge is cut short
    with an ellipsis; the whole text stays in the row's name and the title. */
 .hd-cell-truncate {
   display: block;
@@ -323,7 +323,7 @@
 }
 
 /* The card is the tile's frame: its button, and under that the mount lines
-   when there are any (specs/006-accessory-links §9), which hold a link and so
+   when there are any (006 contracts/ui-accessories.md §9), which hold a link and so
    cannot sit inside the button. */
 .hd-tile-card {
   flex: 1;
@@ -445,9 +445,30 @@
   .hd-table .hd-col--narrow-hidden {
     display: none;
   }
+
+  /* The columns keep their percentages (`table-layout: fixed`), so at the
+     window's 800px minimum the Coverage cell is narrower than its pill, and
+     `contain: paint` cut the pill off at the table's edge (#108). Tighter
+     cell padding gives it room, and a pill that still doesn't fit wraps at
+     its hyphen rather than running out of the table. */
+  .hd-table th,
+  .hd-table td,
+  .hd-table .hd-group-row td {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  .hd-table .hd-badge {
+    height: auto;
+    min-height: 22px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    line-height: 1.25;
+    white-space: normal;
+  }
 }
 
-/* The nickname beside a firearm's make and model (FR-031): quieter than the
+/* The nickname beside a firearm's make and model (001 FR-031): quieter than the
    name itself, so it reads as a label rather than part of the model. */
 .hd-nickname {
   font-weight: 500;

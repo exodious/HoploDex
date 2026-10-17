@@ -1,5 +1,5 @@
-//! Open outcomes, switching and the normal close (research.md §2;
-//! data-model.md "Session states and transitions"). Real SQLCipher files in
+//! Open outcomes, switching and the normal close (003 research.md §2;
+//! 003 data-model.md "Session states and transitions"). Real SQLCipher files in
 //! temp directories; machine settings in a temp config directory.
 
 use crate::support;
@@ -156,7 +156,7 @@ impl Setup {
     }
 }
 
-// 003 US2 Scenario 3
+// 003 US2-3
 #[test]
 fn opening_installs_the_database_and_puts_it_first_in_the_recent_list() {
     let setup = Setup::new();
@@ -235,7 +235,7 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
 
     assert_eq!(outcome.backup, BackupOutcome::NotDue);
     assert!(!setup.session.is_open());
-    assert!(!copy.exists(), "decrypted document copies are deleted at close (FR-022)");
+    assert!(!copy.exists(), "decrypted document copies are deleted at close (003 FR-022)");
     let path = setup.db_path("Mine");
     assert_eq!(
         setup.events.recorded(),
@@ -274,7 +274,7 @@ fn closing_with_nothing_open_is_refused() {
     assert!(setup.events.recorded().is_empty());
 }
 
-// --- User Story 2 -----------------------------------------------------------
+// --- 003 US2 ----------------------------------------------------------------
 
 #[test]
 fn a_database_naming_an_unknown_migration_is_newer_and_left_untouched() {
@@ -294,7 +294,11 @@ fn a_database_naming_an_unknown_migration_is_newer_and_left_untouched() {
 
     assert!(matches!(result, Err(OpenError::NewerVersion)), "{result:?}");
     assert_eq!(CommandError::from(result.unwrap_err()).code, "DATABASE_NEWER_VERSION");
-    assert_eq!(fs::read(&path).unwrap(), before, "FR-014: a refused open never writes the file");
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "003 FR-014: a refused open never writes the file"
+    );
 }
 
 #[test]
@@ -404,7 +408,7 @@ fn the_chooser_marks_a_missing_file_unavailable() {
     assert_eq!(rows, [("Moved", false), ("Kept", true)]);
 }
 
-// 003 US6 Scenario 1: after a lock the chooser has that database selected.
+// 003 US6-1: after a lock the chooser has that database selected.
 #[test]
 fn the_chooser_selects_the_database_just_closed() {
     let setup = Setup::new();
@@ -448,7 +452,7 @@ fn a_new_run_selects_the_most_recent() {
     assert_eq!(state.recent[0].name, "First");
 }
 
-// 003 US2 Scenarios 3 and 5
+// 003 US2-3 and US2-5
 #[test]
 fn locate_and_remove_through_the_commands() {
     let setup = Setup::new();

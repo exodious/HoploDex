@@ -4,7 +4,7 @@ import "./components.css";
 
 export interface ProgressBarProps {
   /** Tauri event name, e.g. `"import_collection:progress"`
-   * (contracts/tauri-commands.md: `"{command}:progress"`). Leave it out and
+   * (001 contracts/tauri-commands.md: `"{command}:progress"`). Leave it out and
    * pass `value` for progress the caller already follows. */
   eventName?: string;
   /** The progress to show when there is no `eventName`; `null` or a zero

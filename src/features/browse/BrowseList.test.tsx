@@ -31,7 +31,7 @@ function summary(overrides: Partial<FirearmSummary>): FirearmSummary {
     insuranceWarning: "none",
     insurancePolicyId: null,
     scheduledCoverageAmount: null,
-    // specs/006-accessory-links US2: not mounted, nothing mounted on it.
+    // 006 US2: not mounted, nothing mounted on it.
     mountedOn: null,
     mountedCounts: { firearms: 0, accessories: 0 },
     ...overrides,
@@ -52,7 +52,7 @@ function renderList(groupBy: GroupBy | undefined) {
   render(<BrowseList groups={groups} groupBy={groupBy} onSelect={vi.fn()} />);
 }
 
-// specs/004-cartridges-action-types FR-027, US1-10, contracts/ui-entry.md §6.
+// 004 FR-027, US1-10, contracts/ui-entry.md §6.
 describe("BrowseList cartridge and caliber", () => {
   it("shows the cartridge with its caliber, or the caliber alone", () => {
     renderList(undefined);
@@ -89,7 +89,7 @@ describe("BrowseList cartridge and caliber", () => {
     expect(screen.getByRole("columnheader", { name: "Caliber" })).toBeInTheDocument();
   });
 
-  // 004 US1 Scenario 6
+  // 004 US1-6
   it("offers Cartridge in the Group by control, after Caliber", () => {
     const values = GROUP_BY_OPTIONS.map((option) => option.value);
     expect(values).toContain("cartridge");
@@ -161,7 +161,7 @@ describe("BrowseList as one table", () => {
   });
 });
 
-// specs/004-cartridges-action-types US3-8, contracts/ui-entry.md §6.
+// 004 US3-8, contracts/ui-entry.md §6.
 describe("BrowseList action", () => {
   const withActions = [
     summary({ id: 1, model: "17", actionTypeName: "Semi-automatic" }),
@@ -211,10 +211,10 @@ describe("BrowseList action", () => {
   });
 });
 
-// specs/006-accessory-links US2-11, FR-016a, contracts/ui-accessories.md §9:
+// 006 US2-11, FR-016a, contracts/ui-accessories.md §9:
 // a mounted firearm names its host under its name; a firearm with records
 // mounted on it counts them.
-describe("BrowseList mount details (US2-11)", () => {
+describe("BrowseList mount details (006 US2-11)", () => {
   const upper: RecordLabel = {
     record: { kind: "accessory", id: 11 },
     make: "BCM",

@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 // Issue #23 (the chooser's catalogue plate; no spec scenario). The real engine's
-// animations are smoke-checked in us7-databases.e2e.ts.
+// animations are smoke-checked in databases.e2e.ts.
 describe("CataloguePlate", () => {
   it("is decoration only, hidden from assistive technology", () => {
     expect(plate().getAttribute("aria-hidden")).toBe("true");

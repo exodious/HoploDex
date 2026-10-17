@@ -7,7 +7,7 @@ import { useSessionScope } from "../session/sessionScope";
 import { accessoryNameText } from "./recordNames";
 import type { RecordLabel } from "./types";
 
-// specs/006-accessory-links contracts/ui-accessories.md §3, §5: "Mount → New
+// 006 contracts/ui-accessories.md §3, §5: "Mount → New
 // accessory…" on a record's page. The title is still "Add accessory"; Mounted
 // on starts as the record whose page this is, and can be changed or cleared.
 // The user stays on that page, where the new accessory appears in its Mounted

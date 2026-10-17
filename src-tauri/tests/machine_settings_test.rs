@@ -1,5 +1,5 @@
-//! `machine.json`, the machine-local settings file (research.md §6, §11;
-//! data-model.md "Machine-local"). Every case uses a temp config directory,
+//! `machine.json`, the machine-local settings file (003 research.md §6, §11;
+//! 003 data-model.md "Machine-local"). Every case uses a temp config directory,
 //! never the real one.
 
 use std::fs;
@@ -61,7 +61,7 @@ fn the_identity_names_this_computer() {
     assert!(!identity.display_name.ends_with(".local"));
 }
 
-// 003 US2 Scenario 3
+// 003 US2-3
 #[test]
 fn touch_recent_keeps_the_most_recent_first_and_refreshes_the_name() {
     let config = TempDir::new().unwrap();
@@ -239,7 +239,7 @@ fn saving_a_backup_location_updates_only_the_cached_folder() {
     assert_eq!(after[0].last_opened_at, before.last_opened_at);
 }
 
-// --- User Story 2 -----------------------------------------------------------
+// --- 003 US2 ----------------------------------------------------------------
 
 #[test]
 fn locate_replaces_the_path_and_keeps_everything_else() {
@@ -300,7 +300,7 @@ fn locate_onto_a_path_already_listed_keeps_one_entry_for_it() {
     assert_eq!(recent[0].database_id.as_deref(), Some("b".repeat(32).as_str()));
 }
 
-// 003 US2 Scenario 5
+// 003 US2-5
 #[test]
 fn remove_drops_only_the_entry_and_never_the_file() {
     let config = TempDir::new().unwrap();
@@ -324,7 +324,7 @@ fn remove_drops_only_the_entry_and_never_the_file() {
 fn documents_open_in_the_preview_until_the_setting_is_changed() {
     let config = TempDir::new().unwrap();
 
-    // A fresh file reads the default (US3-1, FR-011).
+    // A fresh file reads the default (007 US3-1, FR-011).
     let settings = MachineSettings::load(config.path()).unwrap();
     assert_eq!(settings.document_opening(), DocumentOpening::Preview);
 
@@ -356,9 +356,9 @@ fn a_file_written_before_the_setting_existed_reads_preview_and_keeps_its_data() 
     assert!(!config.path().join("machine.json.bad").exists());
 }
 
-// --- The PDF preview hold (specs/007-document-preview T035, FR-003a) -------------------
+// --- The PDF preview hold (007 T035, FR-003a) ------------------------------------------
 //
-// Assumed API (services::machine_settings, T057): `pdf_preview_hold()` returns
+// Assumed API (services::machine_settings, 007 T057): `pdf_preview_hold()` returns
 // `None`, or `Some(hold)` with `hold.version: Option<String>` and
 // `hold.leftovers: Vec<PathBuf>`; `hold_pdf_preview(version: &str)` sets the
 // version; `add_hold_leftover(&Path)` and `drop_hold_leftover(&Path)` edit the

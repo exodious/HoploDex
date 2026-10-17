@@ -42,7 +42,7 @@ vi.mock("./firearmsService", () => ({
     suggestEntries(field, text, make),
 }));
 
-// specs/006-accessory-links US2: the Mounted on chooser searches the mount
+// 006 US2: the Mounted on chooser searches the mount
 // candidates through the mounts service.
 export const listMountCandidates = vi.fn();
 vi.mock("../mounts/mountsService", () => ({

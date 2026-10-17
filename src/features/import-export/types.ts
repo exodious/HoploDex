@@ -1,5 +1,5 @@
 // Mirrors src-tauri/src/commands/import_export.rs's wire shapes (camelCase),
-// User Story 5.
+// 001 US5.
 
 import type { ListFirearmsInput } from "../browse/types";
 import type { MountedEntry, RecordRef } from "../mounts/types";
@@ -13,20 +13,20 @@ export interface ExportCollectionInput {
   filter?: ListFirearmsInput;
 }
 
-/** `get_export_scope`'s input (specs/006-accessory-links FR-020). */
+/** `get_export_scope`'s input (006 FR-020). */
 export interface GetExportScopeInput {
   scope: "all" | "filtered";
   filter?: ListFirearmsInput;
 }
 
-/** What an export of a scope writes, and what it must disclose (FR-020,
- * FR-021). */
+/** What an export of a scope writes, and what it must disclose (005 FR-020,
+ * 006 FR-021). */
 export interface ExportScope {
   firearmCount: number;
   accessoryCount: number;
   /** 005 FR-020: a firearm in the scope has a classification. */
   includesRegistration: boolean;
-  /** FR-021: the scope holds an accessory. */
+  /** 006 FR-021: the scope holds an accessory. */
   includesAccessories: boolean;
 }
 
@@ -42,7 +42,7 @@ export interface ExportResult {
   exportedPhotoCount: number;
 }
 
-/** One file of an import: a CSV file or a workbook (FR-022). */
+/** One file of an import: a CSV file or a workbook (006 FR-022). */
 export interface ImportFile {
   filePath: string;
   format: SpreadsheetFormat;
@@ -77,7 +77,7 @@ export interface ImportConflict {
   table: ImportTable;
   row: number;
   existingRecord: RecordRef;
-  /** False where FR-032 would block a duplicate record (FR-026); always
+  /** False where 001 FR-032 would block a duplicate record (001 FR-026); always
    * true for an accessory. */
   duplicateAllowed: boolean;
   make: string;
@@ -91,7 +91,7 @@ export interface ImportConflict {
   mounted: MountedEntry[];
 }
 
-/** specs/004-cartridges-action-types FR-025: a blank caliber worked out from
+/** 004 FR-025: a blank caliber worked out from
  * the row's cartridge. */
 export interface DerivedCaliber {
   table: ImportTable;
@@ -103,7 +103,7 @@ export interface DerivedCaliber {
   source: "catalog" | "guess";
 }
 
-/** FR-026, SC-007: a value changed to the spelling already in use. */
+/** 004 FR-026, SC-007: a value changed to the spelling already in use. */
 export interface SnappedValue {
   table: ImportTable;
   row: number;
@@ -123,9 +123,9 @@ export interface ImportResult {
   skippedCount: number;
   rowErrors: RowError[];
   conflicts: ImportConflict[];
-  /** specs/002-firearm-identification FR-009: rows whose original marks
-   * match another active firearm's, imported anyway (US4-6); and
-   * specs/006-accessory-links FR-023: mounts that couldn't be made. */
+  /** 002 FR-009: rows whose original marks match another active firearm's,
+   * imported anyway (002 US4-6); and 006 FR-023: mounts that couldn't be
+   * made. */
   warnings: RowError[];
   /** Rows imported or awaiting a decision, never failed ones. */
   derivedCalibers: DerivedCaliber[];

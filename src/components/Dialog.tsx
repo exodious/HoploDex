@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Icon } from "./Icon";
 import { LOCK_SHORTCUT, useLock } from "./lock";
-import { placeFocus } from "./placeFocus";
+import { currentOpener, placeFocus } from "./placeFocus";
 import "./components.css";
 
 const FIRST_FIELD = [
@@ -36,8 +36,8 @@ export interface DialogProps {
  * Radix) — no screen builds its own modal. Header and footer stay put
  * while a long body scrolls, so a form's Save is always in reach. While a
  * database is open, the header also has a lock button beside the close
- * button, since the dialog covers the top bar's (contracts/ui-databases.md
- * §4); a lock keeps a form's unsaved input as pending changes (FR-039). */
+ * button, since the dialog covers the top bar's (003 contracts/ui-databases.md
+ * §4); a lock keeps a form's unsaved input as pending changes (003 FR-039). */
 export function Dialog({
   open,
   onOpenChange,
@@ -56,7 +56,7 @@ export function Dialog({
   // this captures and restores it here, once, for every dialog.
   const previouslyFocused = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
+    if (open) previouslyFocused.current = currentOpener();
   }, [open]);
   return (
     <RadixDialog.Root
@@ -73,7 +73,7 @@ export function Dialog({
           {...(description ? {} : { "aria-describedby": undefined })}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            previouslyFocused.current?.focus();
+            placeFocus(previouslyFocused.current);
           }}
           onOpenAutoFocus={(event) => {
             // Start in the first field rather than on the header's close

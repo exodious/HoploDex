@@ -1,5 +1,5 @@
 //! Linux: logind on the system bus for sleep, shutdown and the session's
-//! lock, and the ScreenSaver interfaces on the session bus (research.md
+//! lock, and the ScreenSaver interfaces on the session bus (003 research.md
 //! §14). Each signal stream is read on its own thread.
 
 use std::sync::Arc;
@@ -51,7 +51,7 @@ pub fn spawn(sender: Sender<SystemEvent>) -> bool {
 }
 
 /// A logind delay inhibitor for `what`: the OS waits, up to its limit, for
-/// it to be released before going ahead (research.md §14).
+/// it to be released before going ahead (003 research.md §14).
 fn inhibit(manager: &Proxy<'_>, what: &str) -> Option<OwnedFd> {
     manager
         .call("Inhibit", &(what, "HoploDex", "Locking the open database", "delay"))

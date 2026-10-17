@@ -1,4 +1,4 @@
-//! The open database, if any (research.md §13; data-model.md "In memory:
+//! The open database, if any (003 research.md §13; 003 data-model.md "In memory:
 //! the session"). Replaces feature 001's always-open `DbHandle`: every
 //! command reaches the database through [`Session::read`] or
 //! [`Session::write`], which refuse when nothing is open. There is still one
@@ -33,7 +33,7 @@ use operations::{Operations, StoppedOperation};
 
 /// An open database: its connection, holding the file's exclusive lock and
 /// (inside SQLCipher) the derived key, and what the session knows about it.
-/// The passphrase itself is not here: the backend never keeps one (FR-007).
+/// The passphrase itself is not here: the backend never keeps one (003 FR-007).
 pub struct OpenDatabase {
     pub conn: Connection,
     pub path: PathBuf,
@@ -43,34 +43,34 @@ pub struct OpenDatabase {
     /// Stops a long statement on `conn` from another thread.
     pub interrupt: InterruptHandle,
     /// The open form's unsaved input, mirrored from the frontend and written
-    /// only by a lock or an OS shutdown (research.md §16).
+    /// only by a lock or an OS shutdown (003 research.md §16).
     pub staged_draft: Option<Draft>,
-    /// Where the database's pending changes stand (FR-039; 008 FR-003,
+    /// Where the database's pending changes stand (003 FR-039; 008 FR-003,
     /// research.md §6): a row that waits to be resumed or discarded blocks
     /// collection commands (`Unresolved`); one resumed whose form hasn't
     /// opened yet stays and lets them through (`Resuming`).
     pub pending: PendingState,
     /// The file as this session last left it, to notice a take-over
-    /// (research.md §6).
+    /// (003 research.md §6).
     pub fingerprint: FileFingerprint,
     /// The file stopped being reachable while open. Every later write is
     /// refused with `DATABASE_UNAVAILABLE`, whatever the fingerprint says
-    /// once it is back, and the close writes nothing (research.md §6).
+    /// once it is back, and the close writes nothing (003 research.md §6).
     pub storage_lost: bool,
     /// The notes this open reports once: a backup opened directly, a
     /// restore. `disk_encryption` is not used here: it is kept in the file.
     pub notes: DatabaseNotes,
-    /// The lock settings kept in the file, for the idle clock (FR-034).
+    /// The lock settings kept in the file, for the idle clock (003 FR-034).
     pub lock_settings: LockSettings,
     /// The one open document preview, if any. It lives and dies with this
     /// value, so every path that drops the `OpenDatabase` (lock, close,
     /// switch, sleep, shutdown, quit) ends the preview too: its TIFF helper
-    /// is killed, its PDF bytes zeroized and its surface closed (research.md
+    /// is killed, its PDF bytes zeroized and its surface closed (007 research.md
     /// §20).
     pub preview: Option<Preview>,
     /// The id the last `open_preview` of this open took. Ids count up by one
     /// within a session, so a request for a replaced preview is refused
-    /// (data-model.md "Preview").
+    /// (007 data-model.md "Preview").
     pub preview_seq: u64,
     /// A TIFF's `Load` still under way, which `close_preview` can end
     /// without waiting for it.
@@ -84,7 +84,7 @@ pub struct OpenDatabase {
     pub session_id: SessionId,
     /// The user answered "Open in another app" in the native confirmation
     /// for a document during this open. It dies with this value, so a lock,
-    /// close or switch forgets it, and is never written anywhere (FR-012,
+    /// close or switch forgets it, and is never written anywhere (007 FR-012,
     /// research.md §17).
     pub external_open_confirmed: bool,
     /// The imports of this open whose conflicts wait to be decided (issue
@@ -151,7 +151,7 @@ impl OpenDatabase {
             .query_row("SELECT EXISTS (SELECT 1 FROM pending_changes)", [], |row| row.get(0))
             .map_err(CommandError::from_db)?;
         // Every open starts a row in `Unresolved`, even one a session ended
-        // while `Resuming` (research.md §6).
+        // while `Resuming` (008 research.md §6).
         let pending = if has_pending { PendingState::Unresolved } else { PendingState::None };
         let lock_settings = conn
             .query_row(
@@ -193,7 +193,7 @@ impl OpenDatabase {
 
     /// Ends the document preview now, whatever it is: a TIFF's load is
     /// stopped and its helper killed, a PDF's bytes are zeroized and its
-    /// surface closed (research.md §20). Returns the preview that was open,
+    /// surface closed (007 research.md §20). Returns the preview that was open,
     /// so a PDF can hand its surface to the next one before it is dropped;
     /// a caller that holds the session's lock drops it after letting go.
     pub fn end_preview(&mut self) -> Option<Preview> {
@@ -216,7 +216,7 @@ pub fn database_name(path: &Path) -> String {
 ///
 /// A handle to shared state, so it is cheap to clone: every clone is the same
 /// session. The preview commands need an `Arc<Session>` for the threads that
-/// outlive a call (research.md §8's hook timer), which a command gets from
+/// outlive a call (007 research.md §8's hook timer), which a command gets from
 /// [`Session::shared`].
 #[derive(Clone)]
 pub struct Session(Arc<SessionInner>);
@@ -239,22 +239,22 @@ pub struct SessionInner {
     current: AtomicU64,
     events: Arc<dyn SessionEvents>,
     /// Where `open_document` puts decrypted copies, deleted at every close
-    /// (FR-022). `None` where nothing makes them.
+    /// (003 FR-022). `None` where nothing makes them.
     opened_documents_dir: Option<PathBuf>,
     /// The database most recently closed in this run, which the chooser
-    /// selects (FR-033).
+    /// selects (003 FR-033).
     last_closed: Mutex<Option<PathBuf>>,
-    /// The long-running operation, if any (research.md §13).
+    /// The long-running operation, if any (003 research.md §13).
     operations: Arc<Operations>,
     clock: Arc<dyn Clock>,
-    /// The idle lock's clock (research.md §15).
+    /// The idle lock's clock (003 research.md §15).
     idle: IdleClock,
     /// The path of the database last installed, readable while a running
     /// operation holds the session, for the first step of an immediate
-    /// close (FR-037).
+    /// close (003 FR-037).
     open_path: Mutex<Option<PathBuf>>,
     /// A close under way, and whether a sleep or shutdown has turned it
-    /// immediate (data-model.md "Session states and transitions").
+    /// immediate (003 data-model.md "Session states and transitions").
     closing: Mutex<Closing>,
     /// Signalled when a close under way finishes.
     closing_changed: Condvar,
@@ -269,7 +269,7 @@ pub(crate) struct Closing {
     /// The id of the session that normal close is ending, for the events
     /// an immediate close announces meanwhile (`SessionId::NONE` with none).
     pub(crate) normal_id: SessionId,
-    /// An immediate close has begun (FR-037's step 1) and not finished.
+    /// An immediate close has begun (003 FR-037's step 1) and not finished.
     pub(crate) immediate: Option<ImmediateClose>,
 }
 
@@ -352,7 +352,7 @@ impl SessionInner {
     }
 
     /// The open database, unless an immediate close has begun: from its
-    /// first step no command reaches the database (FR-037).
+    /// first step no command reaches the database (003 FR-037).
     fn open_guard(&self) -> Result<MutexGuard<'_, Option<OpenDatabase>>, CommandError> {
         let guard = self.lock();
         if self.closing_immediately() {
@@ -447,7 +447,7 @@ impl SessionInner {
     ///
     /// Collection commands are refused with `PENDING_CHANGES_UNRESOLVED`
     /// while the database's pending changes wait to be resumed or discarded
-    /// (FR-039; `PendingState::Unresolved`, and not once they are being
+    /// (003 FR-039; `PendingState::Unresolved`, and not once they are being
     /// resumed), and this and [`write`](Self::write) are how they reach it.
     pub fn read<T>(
         &self,
@@ -482,7 +482,7 @@ impl SessionInner {
 
     /// Runs anything that changes the open database, after checking that
     /// the file at its path is still the one this session last wrote
-    /// (FR-032, research.md §6):
+    /// (003 FR-032, research.md §6):
     /// - replaced, or changed by someone else: another computer has taken
     ///   the database over. Nothing is written, and the session closes
     ///   without writing anything more (`DATABASE_TAKEN_OVER`).
@@ -558,7 +558,7 @@ impl SessionInner {
         let changes_before = open.conn.total_changes();
         let result = change(open);
         let result = storage_lost_if_unreachable(open, result);
-        // FR-015: a write that succeeded and changed rows (a trigger's
+        // 008 FR-015: a write that succeeded and changed rows (a trigger's
         // included) is a save by this version.
         if result.is_ok()
             && !open.storage_lost
@@ -642,7 +642,7 @@ impl SessionInner {
 
     /// Ends the open database's preview, if one is open, before anything else
     /// of a close is announced: the surface is gone from the screen and the
-    /// helper dead by then (FR-014, SC-006). For a close that has begun but
+    /// helper dead by then (007 FR-014, SC-006). For a close that has begun but
     /// has not yet taken the database (an immediate one). The preview is
     /// dropped outside the session's lock.
     pub(crate) fn end_preview(&self) {
@@ -666,7 +666,7 @@ impl SessionInner {
         *self.last_closed.lock().expect("session mutex poisoned") = Some(path.to_owned());
     }
 
-    /// Deletes this session's decrypted document copies (FR-022).
+    /// Deletes this session's decrypted document copies (003 FR-022).
     pub(crate) fn clear_opened_documents(&self) {
         let Some(dir) = &self.opened_documents_dir else { return };
         for leftover in crate::commands::documents::ops::clear_opened_documents(dir) {
@@ -678,6 +678,8 @@ impl SessionInner {
 /// SQLite reports an I/O error, or can't reopen a file, when the drive
 /// under an open database has gone (`CommandError::from_db` gives these
 /// `DATABASE_UNAVAILABLE`): the same as finding it unreachable beforehand.
+/// A full disk (`DISK_FULL`) leaves the session working, and names the
+/// database's file.
 fn storage_lost_if_unreachable<T>(
     open: &mut OpenDatabase,
     result: Result<T, CommandError>,
@@ -687,7 +689,8 @@ fn storage_lost_if_unreachable<T>(
             open.storage_lost = true;
             Err(CommandError::database_unavailable(&open.path))
         }
-        other => other,
+        Err(err) => Err(err.located_at(&open.path)),
+        Ok(value) => Ok(value),
     }
 }
 
@@ -698,7 +701,7 @@ pub const CHOOSER_NOTICES: &str = "chooser:notices";
 /// `machine.json` in the app, a recorder in the tests.
 pub trait SessionEvents: Send + Sync {
     fn emit(&self, event: &str, payload: serde_json::Value);
-    /// Emits to the main web view only (the preview events, contracts/
+    /// Emits to the main web view only (the preview events, 007 contracts/
     /// tauri-commands.md "Events"), where the app keeps them from the PDF
     /// surface's web view.
     fn emit_to_main(&self, event: &str, payload: serde_json::Value) {
@@ -728,7 +731,7 @@ impl<R: tauri::Runtime> SessionEvents for tauri::AppHandle<R> {
             None => return log::warn!("no machine settings to keep a notice in"),
         }
         // A chooser already showing picks up a notice that came after it,
-        // such as the operation a sleep stopped (FR-037).
+        // such as the operation a sleep stopped (003 FR-037).
         SessionEvents::emit(self, CHOOSER_NOTICES, serde_json::json!({}));
     }
 }

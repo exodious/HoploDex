@@ -1,6 +1,6 @@
 //! Integration test: `import_collection` creates new records and reports
-//! failing rows without discarding successful ones (spec.md US5 Acceptance
-//! Scenarios 2-3; FR-020), run against a real temporary SQLCipher database.
+//! failing rows without discarding successful ones (001 US5-2, US5-3 and
+//! FR-020), run against a real temporary SQLCipher database.
 
 use crate::support;
 
@@ -17,7 +17,7 @@ fn write_csv(dir: &TempDir, contents: &str) -> std::path::PathBuf {
     path
 }
 
-// 001 US5 Scenario 2
+// 001 US5-2
 #[test]
 fn scenario_2_imports_new_records_from_a_spreadsheet() {
     let db = TestDb::new();
@@ -49,7 +49,7 @@ fn scenario_2_imports_new_records_from_a_spreadsheet() {
     assert!(all.iter().any(|f| f.make == "Sig" && f.model == "P226"));
 }
 
-// 001 US5 Scenario 3
+// 001 US5-3
 #[test]
 fn scenario_3_reports_a_failing_row_without_discarding_successful_ones() {
     let db = TestDb::new();
@@ -103,7 +103,7 @@ fn rejects_an_unknown_firearm_type_with_a_row_error() {
     assert_eq!(result.row_errors.len(), 1);
 }
 
-// --- Date rules (FR-003 / FR-004): a violation is a row error ---
+// --- Date rules (001 FR-003 / FR-004): a violation is a row error ---
 
 fn import_one_row(row: String) -> hoplodex_lib::commands::import_export::ImportResult {
     let db = TestDb::new();
@@ -178,7 +178,7 @@ fn a_valid_disposition_on_or_after_the_acquisition_date_imports() {
     assert_eq!(result.imported_count, 1);
 }
 
-// --- A disposed row's price is optional (research.md §9, 006 FR-014) ---
+// --- A disposed row's price is optional (006 research.md §9, FR-014) ---
 
 /// A disposed Glock 19 row with the given cells replacing the usual ones.
 fn disposed_cells(overrides: &[(&str, &str)]) -> String {
@@ -199,7 +199,7 @@ fn disposed_cells(overrides: &[(&str, &str)]) -> String {
 #[test]
 fn a_disposed_row_with_a_blank_price_imports_with_no_price() {
     // 001 made this a row error; a disposed accessory's price is optional
-    // and its export must re-import (SC-002), so a firearm's is too.
+    // and its export must re-import (006 SC-002), so a firearm's is too.
     let db = TestDb::new();
 
     let result = import_into(&db, &[disposed_cells(&[("disposition_price", "")])]);
@@ -238,7 +238,7 @@ fn a_disposed_row_missing_its_type_recipient_or_date_is_still_a_row_error() {
     }
 }
 
-// --- Coverage columns (FR-014/FR-036, contracts/spreadsheet-format.md) ---
+// --- Coverage columns (001 FR-014/FR-036, contracts/spreadsheet-format.md) ---
 
 fn import_into(
     db: &TestDb,
@@ -406,7 +406,7 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
     assert_eq!(glock.insurance_policy_id, None);
 }
 
-// --- Whole-dollar amounts (FR-037, spreadsheet-format.md "Amounts") ---
+// --- Whole-dollar amounts (001 FR-037, contracts/spreadsheet-format.md "Amounts") ---
 
 fn imported_value(cell: &str) -> Option<i64> {
     let db = TestDb::new();
@@ -540,7 +540,7 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
     assert_eq!(listing.groups[0].firearms[0].estimated_value, Some(1250));
 }
 
-// --- Physical details (FR-039, spreadsheet-format.md "Physical details") ---
+// --- Physical details (001 FR-039, contracts/spreadsheet-format.md "Physical details") ---
 
 fn imported_detail(cells: &[(&str, &str)]) -> hoplodex_lib::models::firearm::Firearm {
     let db = TestDb::new();
@@ -649,7 +649,7 @@ fn import_rejects_bad_physical_details_as_row_errors_naming_the_column() {
     }
 }
 
-// 001 US1 Scenario 17 (FR-039)
+// 001 US1-17, FR-039
 #[test]
 fn an_export_re_imports_with_all_six_intact() {
     use hoplodex_lib::models::firearm::Condition;
@@ -698,7 +698,7 @@ fn an_export_re_imports_with_all_six_intact() {
     }
 }
 
-// --- specs/002-firearm-identification User Story 4: browse, export, import ---
+// --- 002 US4: browse, export, import ---
 
 mod identification_spreadsheet {
     use super::*;
@@ -813,7 +813,7 @@ mod identification_spreadsheet {
 
     #[test]
     fn an_export_followed_by_import_into_an_empty_collection_reproduces_every_new_field() {
-        // US4-2, SC-005
+        // 002 US4-2, SC-005
         let db = TestDb::new();
         let dest = TempDir::new().unwrap();
         let domestic = firearm_ops::create_firearm(
@@ -978,7 +978,7 @@ mod identification_spreadsheet {
 
     #[test]
     fn a_row_matching_main_marks_but_distinguished_by_year_is_a_new_record_with_no_conflict() {
-        // US4-5a
+        // 002 US4-5a
         let db = TestDb::new();
         firearm_ops::create_firearm(
             &db.conn,
@@ -1002,7 +1002,7 @@ mod identification_spreadsheet {
 
     #[test]
     fn a_row_whose_original_marks_match_an_existing_firearm_still_imports_and_warns() {
-        // US4-6, FR-009
+        // 002 US4-6, FR-009
         let db = TestDb::new();
         firearm_ops::create_firearm(
             &db.conn,
@@ -1039,7 +1039,7 @@ mod identification_spreadsheet {
 
         assert_eq!(
             result.imported_count, 1,
-            "the row still imports (US4-6): {:?}",
+            "the row still imports (002 US4-6): {:?}",
             result.row_errors
         );
         assert_eq!(result.row_errors.len(), 0, "a warning is never a row error");
@@ -1049,7 +1049,7 @@ mod identification_spreadsheet {
     }
 }
 
-// --- Stopped by a sleep (FR-037, research.md §13) ----------------------------
+// --- Stopped by a sleep (003 FR-037, research.md §13) ------------------------
 
 #[test]
 fn a_stopped_import_keeps_the_rows_imported_before_it() {
@@ -1151,8 +1151,8 @@ fn a_stopped_export_leaves_a_photos_folder_it_did_not_make() {
     assert!(existing.join("mine.jpg").exists());
 }
 
-// --- specs/004-cartridges-action-types User Story 4: cartridge and action
-// through export and import (contracts/spreadsheet-format.md) ---
+// --- 004 US4: cartridge and action
+// through export and import (004 contracts/spreadsheet-format.md) ---
 
 mod cartridge_spreadsheet {
     use super::*;
@@ -2004,7 +2004,7 @@ mod registration_spreadsheet {
 
     #[test]
     fn a_suppressor_rows_caliber_is_never_worked_out_from_its_cartridge() {
-        // US4-7, FR-022, research.md §15: a Suppressor's caliber is its bore,
+        // 005 US4-7, FR-022, research.md §15: a Suppressor's caliber is its bore,
         // so a blank one is a row error and nothing is listed as derived,
         // while a Rifle row in the same sheet still derives.
         let db = TestDb::new();
@@ -2059,7 +2059,7 @@ mod registration_spreadsheet {
 
     #[test]
     fn a_suppressor_row_keeps_its_bore_and_rated_cartridge_as_given() {
-        // US4-7: both values are imported as written, neither from the other.
+        // 005 US4-7: both values are imported as written, neither from the other.
         let db = TestDb::new();
         let result = import_rows(
             &db,

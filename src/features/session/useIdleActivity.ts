@@ -2,10 +2,10 @@ import { useEffect } from "react";
 import * as sessionService from "./sessionService";
 
 /** Input that counts for the idle lock: keyboard, pointer and touch to this
- * window (FR-034). */
+ * window (003 FR-034). */
 const ACTIVITY_EVENTS = ["keydown", "pointerdown", "pointermove", "wheel", "touchstart"] as const;
 
-/** At most one `note_activity` a second (research.md §15). */
+/** At most one `note_activity` a second (003 research.md §15). */
 const THROTTLE_MS = 1000;
 
 /** The idle clock is best-effort from here: a report that fails (nothing is
@@ -20,7 +20,7 @@ async function quietly(call: () => Promise<void>): Promise<void> {
 
 /** Reports input to the backend's idle clock while `active`, at most once a
  * second, on the leading and trailing edge, so the last input is always
- * reported within a second (research.md §15). */
+ * reported within a second (003 research.md §15). */
 export function useIdleActivity(active: boolean): void {
   useEffect(() => {
     if (!active) return;
@@ -59,7 +59,7 @@ export function useIdleActivity(active: boolean): void {
 }
 
 /** Runs `open`, a native file or folder dialog, with the idle clock paused:
- * the user gives the window no input while choosing (research.md §15). The
+ * the user gives the window no input while choosing (003 research.md §15). The
  * clock resumes, starting the idle time again, however `open` ends. */
 export async function withIdlePaused<T>(open: () => Promise<T>): Promise<T> {
   await quietly(() => sessionService.setIdlePaused(true));
@@ -73,7 +73,7 @@ export async function withIdlePaused<T>(open: () => Promise<T>): Promise<T> {
 /** Pauses the idle clock while `input`, an `<input type="file">`, has the
  * system's file chooser open. The chooser gives the page no promise, so the
  * pause starts on the input's `click` and ends on its `change` or `cancel`,
- * or, where neither fires, the window's next `focus` (research.md §15).
+ * or, where neither fires, the window's next `focus` (003 research.md §15).
  * Returns the function that detaches it. */
 export function pauseIdleForFileInput(input: HTMLInputElement): () => void {
   let paused = false;

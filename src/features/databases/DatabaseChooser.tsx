@@ -22,13 +22,13 @@ const WELCOME =
   "HoploDex keeps your collection in an encrypted database file that only your passphrase opens.";
 
 /** The native open dialog's filter: databases and backups, or any file for
- * one that was renamed (research.md §19). */
+ * one that was renamed (003 research.md §19). */
 const DATABASE_FILTERS = [
   { name: "HoploDex databases", extensions: ["hoplodex"] },
   { name: "All files", extensions: ["*"] },
 ];
 
-/** What a failed open says, in the selected row (contracts/ui-databases.md
+/** What a failed open says, in the selected row (003 contracts/ui-databases.md
  * §1 "Open failures"). `DATABASE_NOT_FOUND` and `DATABASE_OPEN_ELSEWHERE`
  * are shown by the row itself. A sentence names a database in quotes. */
 function openFailureText(databaseName: string, error: unknown): string {
@@ -45,6 +45,8 @@ function openFailureText(databaseName: string, error: unknown): string {
       return `${name} was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed.`;
     case "DATABASE_DAMAGED":
       return `${name} is damaged and can't be opened.`;
+    case "DISK_FULL":
+      return `The disk is full, so HoploDex couldn't open ${name}. Free some space on the drive that holds it, then try again. The file has not been changed.`;
     case "DATABASE_UNREADABLE":
       return `HoploDex can't read ${name}: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed.`;
     default:
@@ -54,13 +56,14 @@ function openFailureText(databaseName: string, error: unknown): string {
 
 const BACKUP_FAILURE: Record<Extract<ChooserNotice, { kind: "backupFailed" }>["reason"], string> = {
   locationUnavailable: "the backup location is not available",
-  insufficientSpace: "there is not enough space there",
+  insufficientSpace:
+    "there isn't enough free space on the drive that holds the backups. Free some space on it, or change the backup location",
   interrupted: "the backup was interrupted",
   io: "the backup was interrupted",
   databaseUnreachable: "its file could not be reached",
 };
 
-/** The passphrase saved on this computer didn't open the database (US5-5). */
+/** The passphrase saved on this computer didn't open the database (003 US5-5). */
 function savedPassphraseFailed(error: unknown): boolean {
   return (
     error instanceof CommandFailure &&
@@ -71,7 +74,7 @@ function savedPassphraseFailed(error: unknown): boolean {
 
 /** Whether a failed open offers restoring from a backup: the database is
  * damaged, or the passphrase didn't open it (at page 1 the two look the
- * same), and this computer knows of backups of it (FR-028, US3-6). */
+ * same), and this computer knows of backups of it (003 FR-028, US3-6). */
 function offersRestore(error: unknown): boolean {
   return (
     error instanceof CommandFailure &&
@@ -80,7 +83,7 @@ function offersRestore(error: unknown): boolean {
   );
 }
 
-/** What a sleep stopped, as the notice names it (FR-037). */
+/** What a sleep stopped, as the notice names it (003 FR-037). */
 const STOPPED_OPERATION: Record<OperationKind, string> = {
   backup: "a backup",
   passphraseChange: "the passphrase change",
@@ -112,7 +115,7 @@ function stoppedText(notice: Extract<ChooserNotice, { kind: "operationStopped" }
   return `${stopped} ${name} is as it was before it started.`;
 }
 
-/** A notice's sentence (contracts/ui-databases.md §1 "Notices"), or `null`
+/** A notice's sentence (003 contracts/ui-databases.md §1 "Notices"), or `null`
  * for one with nothing to say, such as an ordinary close. */
 function noticeText(notice: ChooserNotice): string | null {
   const name = `“${databaseNameOf(notice.databasePath)}”`;
@@ -165,11 +168,11 @@ type Failure =
 
 export interface DatabaseChooserProps {
   /** The database just closed, selected in place of the backend's choice
-   * (FR-033). */
+   * (003 FR-033). */
   selectPath?: string | null;
 }
 
-/** The full-window screen shown whenever no database is open (FR-020,
+/** The full-window screen shown whenever no database is open (003 FR-020,
  * FR-021): the known databases, the selected one's passphrase, and the ways
  * to create or find another. It never shows anything from a collection. */
 export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
@@ -210,7 +213,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   }, [selectPath]);
 
   // Notices that come once the chooser shows, such as what a sleep stopped
-  // (FR-037), are added to those already listed.
+  // (003 FR-037), are added to those already listed.
   useEffect(
     () =>
       databasesService.onChooserNotices(() => {

@@ -1,5 +1,5 @@
-//! specs/004-cartridges-action-types FR-005, FR-007 and SC-002: the caliber
-//! derived from a cartridge, from the catalog or by the guess of research.md
+//! 004 FR-005, FR-007 and SC-002: the caliber
+//! derived from a cartridge, from the catalog or by the guess of 004 research.md
 //! §7, is exactly what the hand-written corpus expects, and no guess is made
 //! where none is expected.
 

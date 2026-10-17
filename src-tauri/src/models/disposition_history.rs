@@ -5,11 +5,11 @@ use crate::models::firearm::DispositionType;
 use crate::models::record::RecordRef;
 
 /// A retained past disposition of a firearm or accessory that was later
-/// restored to active status (FR-033; specs/006-accessory-links FR-006).
+/// restored to active status (001 FR-033; 006 FR-006).
 /// Read-only: written only by `reverse_disposition` and
 /// `reverse_accessory_disposition` with `keep`. The record it belongs to is
 /// its `owner`, read from the `firearm_id` / `accessory_id` column pair
-/// (research.md §3).
+/// (006 research.md §3).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DispositionHistoryEntry {

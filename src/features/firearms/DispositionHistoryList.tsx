@@ -3,7 +3,7 @@ import { formatDollars } from "../../lib/money";
 import { dispositionLabel } from "./types";
 import type { DispositionHistoryEntry } from "./types";
 
-/** The dispositions a restored firearm kept as history (FR-033), newest
+/** The dispositions a restored firearm kept as history (001 FR-033), newest
  * first. Read-only; nothing renders when there are none. */
 export function DispositionHistoryList({ entries }: { entries: DispositionHistoryEntry[] }) {
   if (entries.length === 0) return null;

@@ -17,7 +17,7 @@ export interface InsurancePolicyFormProps {
   onCancel?: () => void;
 }
 
-/** The version of this form's kept drafts (research.md §16). Raise it when
+/** The version of this form's kept drafts (003 research.md §16). Raise it when
  * `FormState` changes shape, so older drafts are only discarded. */
 export const FORM_VERSION = 1;
 
@@ -56,7 +56,7 @@ function blankToNull(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-/** specs/008-hardening-batch research.md §10: the free-text fields with a
+/** 008 research.md §10: the free-text fields with a
  * maximum, by their label (the backend's, so the two messages match). */
 const TEXT_LIMITS: readonly (readonly [Field, string, number])[] = [
   ["name", "Policy name", MAX_SHORT_TEXT_CHARS],
@@ -113,7 +113,7 @@ const FIELD_ORDER: Field[] = [
   "notes",
 ];
 
-/** Create/edit form for an insurance policy (US3, FR-027). Renders its own
+/** Create/edit form for an insurance policy (001 US3, FR-027). Renders its own
  * dialog body and footer (use inside `<Dialog bare>`). */
 export function InsurancePolicyForm({
   initialValues,
@@ -127,7 +127,7 @@ export function InsurancePolicyForm({
     mode: initialValues ? "edit" : "add",
     targetId: initialValues?.id ?? null,
   };
-  // Pending changes the user resumed start as unsaved input (FR-039).
+  // Pending changes the user resumed start as unsaved input (003 FR-039).
   const [form, setForm] = useState<FormState>(() =>
     resumedValues(scope, target, toFormState(initialValues)),
   );
@@ -160,8 +160,8 @@ export function InsurancePolicyForm({
   });
   const set = (field: Field) => (text: string) => setForm((prev) => ({ ...prev, [field]: text }));
 
-  // Closing or quitting asks about unsaved input first (specs/003 FR-010),
-  // and a lock keeps it (FR-039).
+  // Closing or quitting asks about unsaved input first (003 FR-010),
+  // and a lock keeps it (003 FR-039).
   useDirtyForm({
     label: initialValues ? `${initialValues.name} (edit)` : "New insurance policy",
     isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
@@ -194,7 +194,7 @@ export function InsurancePolicyForm({
       agentName: blankToNull(form.agentName),
       agentContact: blankToNull(form.agentContact),
       notes: blankToNull(form.notes),
-      // Blank means no blanket limit: a schedule-only policy (FR-036).
+      // Blank means no blanket limit: a schedule-only policy (001 FR-036).
       blanketCoverageLimit: limit.ok ? limit.dollars : null,
       effectiveStartDate: (parseDateInput(form.effectiveStartDate) as { iso: string }).iso,
       effectiveEndDate: (parseDateInput(form.effectiveEndDate) as { iso: string }).iso,

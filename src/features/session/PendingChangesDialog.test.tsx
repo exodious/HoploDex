@@ -128,7 +128,7 @@ function renderOpen(pendingChanges: PendingSummary | null) {
 const prompt = () =>
   screen.findByRole("dialog", { name: "Unsaved changes to Collector Floater (edit)" });
 
-describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => {
+describe("PendingChangesDialog (003 FR-039, contracts/ui-databases.md §13)", () => {
   beforeEach(() => {
     vi.mocked(sessionService.getDatabaseStatus).mockReset();
     vi.mocked(sessionService.resolvePendingChanges).mockReset().mockResolvedValue({ draft });
@@ -158,7 +158,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     expect(within(dialog).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
   });
 
-  // 003 US6 Scenario 6: resuming reopens the form with the changes still unsaved.
+  // 003 US6-6: resuming reopens the form with the changes still unsaved.
   it("resumes: the form opens with the kept changes as unsaved input, then the dialog goes", async () => {
     const user = userEvent.setup();
     renderOpen(pending);
@@ -175,7 +175,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     expect(openScope?.resumed).toBeNull();
   });
 
-  // 003 US6 Scenario 6: discarding the pending changes (confirmed first) opens the collection with no form.
+  // 003 US6-6: discarding the pending changes (confirmed first) opens the collection with no form.
   it("asks before discarding, then discards", async () => {
     const user = userEvent.setup();
     vi.mocked(sessionService.resolvePendingChanges).mockResolvedValue({});
@@ -221,7 +221,7 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     expect(within(dialog).getByRole("button", { name: "Discard changes" })).toBeInTheDocument();
   });
 
-  describe("changes of a form this build doesn't know (US4, contracts/ui.md §1)", () => {
+  describe("changes of a form this build doesn't know (008 US4, contracts/ui.md §1)", () => {
     const unknownForm = { ...pending, formVersion: FORM_VERSION + 1 };
     const resumeButton = (dialog: HTMLElement) =>
       within(dialog).queryByRole("button", { name: "Resume editing" });
@@ -273,8 +273,8 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
     });
   });
 
-  // 008 US4 Scenarios 2 and 5: closing from the dialog (the buttons offered, the chooser shown, the changes kept).
-  describe("Close the database (US4, contracts/ui.md §1)", () => {
+  // 008 US4-2 and US4-5: closing from the dialog (the buttons offered, the chooser shown, the changes kept).
+  describe("Close the database (008 US4, contracts/ui.md §1)", () => {
     const cases: [string, PendingSummary, string[]][] = [
       ["a resumable change", pending, ["Discard changes", "Close the database", "Resume editing"]],
       [
@@ -375,10 +375,10 @@ describe("PendingChangesDialog (FR-039, contracts/ui-databases.md §13)", () => 
   });
 });
 
-// specs/006-accessory-links FR-027: an accessory draft kept at a lock can be
+// 006 FR-027: an accessory draft kept at a lock can be
 // resumed in each of its five modes. The accessory's dispose, restore and
 // coverage forms are the firearm's dialogs, so they carry those versions.
-describe("PendingChangesDialog for an accessory draft (FR-027)", () => {
+describe("PendingChangesDialog for an accessory draft (006 FR-027)", () => {
   const modes: [Draft["mode"], number, number | null][] = [
     ["add", ACCESSORY_FORM_VERSION, null],
     ["edit", ACCESSORY_FORM_VERSION, 4],

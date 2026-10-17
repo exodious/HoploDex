@@ -1,15 +1,15 @@
-// The window controls check (specs/008-hardening-batch/research.md §13, §14,
-// §18, quickstart.md "The window controls check", tasks T081 and T083 to T085):
+// The window controls check (008 research.md §13, §14, §18, 008 quickstart.md
+// "The window controls check", tasks 008 T081 and T083 to T085):
 // the app's own `window_controls::apply` on a main window opened the way the
 // E2E suite isolates one (scratch config, cache and data folders), showing a
-// test page, and driven with real input. It checks SC-005 on each OS.
+// test page, and driven with real input. It checks 008 SC-005 on each OS.
 //
 //   cargo run --profile e2e --example window_controls_check --features e2e -- \
 //       --input CMD [--input ARG]... [--scratch DIR] [--out DIR] [--timeout SECONDS] \
 //       [--unfiltered]
 //
 // It must be built without debug assertions (`--profile e2e` or `--release`):
-// a development build installs none of the filters (FR-014), and the check
+// a development build installs none of the filters (008 FR-014), and the check
 // says so and exits 3. `--input` is the command that posts real input, given
 // `click X Y`, `rclick X Y`, `move X Y`, `xbutton X Y back|forward` and `key
 // ...` after it, with screen coordinates: examples/real_input.py (Linux),
@@ -29,20 +29,20 @@
 //      true)`: "context menu item ..." on Linux, "menu item ..." on macOS,
 //      and on Windows lines naming `name=<item name>`; each ends in "kept" or
 //      "removed");
-//   2. types in the text field, then presses every FR-012 key and the mouse's
+//   2. types in the text field, then presses every 008 FR-012 key and the mouse's
 //      back and forward buttons, and after each types a letter and deletes it:
 //      the letter must reach the field (nothing took the keyboard). The page
 //      has two history entries (`pushState`), so a key or button that goes
 //      back or forward is seen; the mouse's buttons are pressed twice, with
 //      the filter alone (a move is only noted: WebView2 does move) and then
-//      with the page's guard, which must stop them (research.md §14);
+//      with the page's guard, which must stop them (008 research.md §14);
 //   2b. right-clicks a misspelled word typed into a field (the spelling
 //      items belong in the menu; a computer with no dictionary offers none);
 //   3. on macOS, selects the paragraph and presses control-command-D, and
 //      counts the app's windows before and after (a Look Up panel is one).
 // It fails (exit 4, one "CHECK FAIL" line each) if:
-//   - a menu kept an item outside FR-011's list (macOS's AutoFill, which
-//     AppKit adds outside the menu's items, is not in the log; spec.md
+//   - a menu kept an item outside 008 FR-011's list (macOS's AutoFill, which
+//     AppKit adds outside the menu's items, is not in the log; 008 spec.md
 //     Clarifications 2026-10-11);
 //   - a menu was offered where none belongs (a blank area, a row, a button
 //     or an image), or none on the text field or the selection;
@@ -202,7 +202,7 @@ fn items_since(from: usize) -> Vec<Item> {
         .collect()
 }
 
-/// FR-011's list, independent of the filters' own: whether a kept item is
+/// 008 FR-011's list, independent of the filters' own: whether a kept item is
 /// one of cut, copy, paste, delete, select all, undo, redo, the spelling
 /// items and emoji. `line` is the filter's log line.
 fn in_fr011_list(line: &str) -> bool {
@@ -245,11 +245,11 @@ fn in_fr011_list(line: &str) -> bool {
             return true;
         }
         // Items WebKit gives no identifier: Cut, the guesses, Ignore and Learn
-        // Spelling, found by tag (research.md §13).
+        // Spelling, found by tag (008 research.md §13).
         line.contains("forwardContextMenuAction:")
             && [13, 15, 17, 18].iter().any(|tag| line.contains(&format!("tag={tag} ")))
     } else {
-        // Windows names each item (`name=<name>` in the line, T079).
+        // Windows names each item (`name=<name>` in the line, 008 T079).
         const NAMES: &[&str] =
             &["cut", "copy", "paste", "selectAll", "undo", "redo", "emoji", "spellcheck"];
         line.split_whitespace()
@@ -397,7 +397,7 @@ const fn key(
     KeyCase { name, linux, mac, windows }
 }
 
-/// FR-012: the keys that reload or move through history, and the web view's
+/// 008 FR-012: the keys that reload or move through history, and the web view's
 /// shortcuts for printing, saving, source, find and developer tools.
 const KEYS: &[KeyCase] = &[
     key("F5", "key F5", "key 96", "key {F5}"),
@@ -483,7 +483,7 @@ struct Options {
 /// `window_controls::apply`, so the filter logs no menu and the menu checks
 /// fail. On macOS it also shows whether control-command-D opens a Look Up
 /// panel that the check counts when the hook is absent (it did not, in the macOS
-/// 26 VM: research.md §13).
+/// 26 VM: 008 research.md §13).
 static UNFILTERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn usage() -> ! {
@@ -599,7 +599,7 @@ impl Check {
         let outside: Vec<String> =
             kept.iter().filter(|item| !in_fr011_list(&item.text)).map(|i| i.text.clone()).collect();
         for item in outside {
-            self.fail(format!("the {target} menu kept an item outside FR-011's list: {item}"));
+            self.fail(format!("the {target} menu kept an item outside 008 FR-011's list: {item}"));
         }
         if !expect_menu && !kept.is_empty() {
             self.fail(format!("a menu was offered on the {target}, where none belongs"));
@@ -741,7 +741,7 @@ impl Check {
     /// needs a back first, by script). With `strict` neither may move the
     /// page through its history; without it, a move is noted, not failed:
     /// that is what the native layer alone does, and the page's guard is the
-    /// measure for it (research.md §14).
+    /// measure for it (008 research.md §14).
     fn side_buttons(&mut self, strict: bool) {
         let shared = self.shared.clone();
         let phase = if strict { "with the page's guard" } else { "natively" };
@@ -896,7 +896,7 @@ fn main() {
     }
     if !window_controls::INSTALLED {
         eprintln!(
-            "this build has debug assertions, so it installs no filters (FR-014): build with \
+            "this build has debug assertions, so it installs no filters (008 FR-014): build with \
              --profile e2e or --release"
         );
         std::process::exit(3);

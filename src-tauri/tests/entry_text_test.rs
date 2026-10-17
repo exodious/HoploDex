@@ -1,6 +1,6 @@
-//! specs/004-cartridges-action-types research.md §3 and §9: the entry key
-//! that decides which values are same-notation variants (FR-012, FR-013),
-//! and the entry rules for make, model, cartridge and caliber (FR-015).
+//! 004 research.md §3 and §9: the entry key
+//! that decides which values are same-notation variants (004 FR-012, FR-013),
+//! and the entry rules for make, model, cartridge and caliber (004 FR-015).
 
 use hoplodex_lib::services::entry_text::{
     EntryField, check_entry_text, entry_key, initialism, words,
@@ -158,7 +158,7 @@ fn fields_serialize_in_camel_case() {
 
 #[test]
 fn the_registration_fields_join_the_four() {
-    // specs/005-regulated-item-types research.md §7.
+    // 005 research.md §7.
     assert_eq!(EntryField::ALL.len(), 6);
     let names: Vec<&str> = EntryField::ALL.iter().map(|f| f.ipc_name()).collect();
     assert_eq!(

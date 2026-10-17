@@ -23,9 +23,10 @@ import {
 } from "../support/ui";
 import type { NewFirearm } from "../support/ui";
 import { createDatabase } from "../support/ui";
+import { relaunchApp } from "../support/app";
 
 /**
- * End-to-end coverage of User Story 1's acceptance scenarios (spec.md),
+ * End-to-end coverage of 001 US1's acceptance scenarios (001 spec.md),
  * driven against the real built app through its embedded WebDriver server —
  * no mocks, exercising the full stack (React UI -> Tauri IPC -> SQLCipher).
  * See e2e/support/ui.ts for why interactions go through page JS.
@@ -39,7 +40,7 @@ import { createDatabase } from "../support/ui";
  * Creating a firearm opens its record page, so scenarios assert against
  * the record right after creation.
  */
-describe("User Story 1 - Record a Firearm", () => {
+describe("001 US1 - Record a Firearm (was us1-record-firearm)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();
@@ -77,8 +78,8 @@ describe("User Story 1 - Record a Firearm", () => {
     return text!;
   }
 
-  it("records, edits, disposes and deletes a firearm (Scenarios 1-5)", async () => {
-    // Scenario 1: created, and shown with its values intact.
+  it("records, edits, disposes and deletes a firearm (001 US1-1 to US1-5)", async () => {
+    // 001 US1-1: created, and shown with its values intact.
     await addFirearm({
       make: "Glock",
       model: "19",
@@ -91,7 +92,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await expect($(".hd-plate__serial")).toHaveText("E2E-001");
     expect(await titleBlock("Caliber")).toBe("9mm");
 
-    // Scenario 2: an edited field persists on reopen.
+    // 001 US1-2: an edited field persists on reopen.
     await clickButton("Edit");
     await fill("Notes", "scratch on left side");
     await clickButton("Save changes");
@@ -104,7 +105,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await openFirearm("Glock 19");
     await expect($(".hd-textblock*=scratch on left side")).toExist();
 
-    // Scenario 3: acquisition details are saved and shown.
+    // 001 US1-3: acquisition details are saved and shown.
     await clickButton("Edit");
     await fill("Acquired from", "Local gun shop");
     await fill("Date acquired", "2025-03-01");
@@ -112,10 +113,10 @@ describe("User Story 1 - Record a Firearm", () => {
     await clickButton("Save changes");
 
     await expect($("dd*=Local gun shop")).toExist();
-    // Entered as plain digits, shown grouped and with no cents (FR-037).
+    // Entered as plain digits, shown grouped and with no cents (001 FR-037).
     await expect($("dd=$1,450")).toExist();
 
-    // Scenario 4: disposed, with its history retained.
+    // 001 US1-4: disposed, with its history retained.
     await clickButton("Mark disposed");
     await choose("Sold");
     await fill("Transferred to", "Jane Doe");
@@ -129,14 +130,14 @@ describe("User Story 1 - Record a Firearm", () => {
     await expect($("dd*=Jane Doe")).toExist();
     await expect($("dd*=Local gun shop")).toExist();
 
-    // FR-025: hidden from the collection by default, shown on request.
+    // 001 FR-025: hidden from the collection by default, shown on request.
     await back();
     expect(await listedNames()).not.toContain("Glock 19");
     await toggle("Show disposed");
     expect(await listedNames()).toContain("Glock 19");
     await toggle("Show disposed");
 
-    // Scenario 5: deleted after confirmation, and gone from the collection.
+    // 001 US1-5: deleted after confirmation, and gone from the collection.
     await addFirearm({
       make: "ToDelete",
       model: "X",
@@ -166,7 +167,7 @@ describe("User Story 1 - Record a Firearm", () => {
     nickname,
   });
 
-  it("refuses a duplicate nickname on the Nickname field (Scenario 9)", async () => {
+  it("refuses a duplicate nickname on the Nickname field (001 US1-9)", async () => {
     await addFirearm(twin("N-1", "Range gun"));
     await back();
 
@@ -181,7 +182,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await clickButton("Cancel");
   });
 
-  it("blocks a reversal while its nickname is taken, on the New nickname field, until it is renamed (Scenario 12)", async () => {
+  it("blocks a reversal while its nickname is taken, on the New nickname field, until it is renamed (001 US1-12)", async () => {
     // A disposed firearm, and an active one that holds its nickname.
     await addFirearm({
       make: "E2ERestore",
@@ -233,7 +234,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await toggle("Show disposed");
   });
 
-  it("keeps a long record's name and actions in reach as it scrolls (Scenario 18)", async () => {
+  it("keeps a long record's name and actions in reach as it scrolls (001 US1-18)", async () => {
     // Enough notes to make the record scroll well past its plate.
     const notes = Array.from({ length: 80 }, (_, i) => `Range note ${i + 1}.`).join("\n");
     await addFirearm({
@@ -294,7 +295,7 @@ describe("User Story 1 - Record a Firearm", () => {
     await browser.execute(() => window.scrollTo({ top: 0, behavior: "instant" }));
     await $(".hd-runhead").waitForExist({ reverse: true });
 
-    // FR-041: scrolled down, the strip keeps the way back, the name and the
+    // 001 FR-041: scrolled down, the strip keeps the way back, the name and the
     // heading's actions.
     await scrollToPinnedStrip();
     expect(await pinnedStrip()).toEqual({
@@ -318,5 +319,102 @@ describe("User Story 1 - Record a Firearm", () => {
     });
     await $(".hd-runhead").waitForExist({ reverse: true });
     await expect($("#record-name")).toBeFocused();
+  });
+});
+
+/** What a modal dialog's scroll lock must leave where it was: the top bar, the
+ * pinned strip with its actions, and the toasts' corner. */
+const PAGE_BARS = [
+  ".hd-topbar",
+  ".hd-topbar__inner",
+  ".hd-record__bar",
+  ".hd-runhead",
+  ".hd-runhead__inner",
+  ".hd-runhead__actions",
+  ".hd-toasts",
+];
+
+describe("Issue #117 - Nothing on the page moves when a modal opens", () => {
+  // The app's web view draws overlay scroll bars by default (they take no
+  // room, so there is nothing to lose); GTK_OVERLAY_SCROLLING=0 gives it the
+  // classic bars macOS shows with "Show scroll bars: Always" and Windows
+  // always shows, where a modal's scroll lock takes the bar away and the page
+  // widens. The setting is this block's alone.
+  before(async () => {
+    process.env.GTK_OVERLAY_SCROLLING = "0";
+    await relaunchApp();
+    await createDatabase({ name: "Scroll bars" });
+    // Enough notes for the record to scroll well past its plate.
+    const notes = Array.from({ length: 80 }, (_, i) => `Range note ${i + 1}.`).join("\n");
+    await addFirearm({
+      make: "E2EBars",
+      model: "Long",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "BAR-1",
+      notes,
+    });
+  });
+
+  after(() => {
+    delete process.env.GTK_OVERLAY_SCROLLING;
+  });
+
+  const snapshot = () =>
+    browser.execute((selectors: string[]) => {
+      const rects: Record<string, { left: number; right: number }> = {};
+      for (const selector of selectors) {
+        const box = document.querySelector(selector)?.getBoundingClientRect();
+        if (box) rects[selector] = { left: box.left, right: box.right };
+      }
+      return { scrollbar: window.innerWidth - document.documentElement.clientWidth, rects };
+    }, PAGE_BARS);
+
+  /** Opens something that locks scrolling with `open`, checks that every bar
+   * is where it was and that the lock took the scroll bar away, then `close`s it. */
+  async function expectBarsStay(open: () => Promise<void>, close: () => Promise<void>) {
+    const before = await snapshot();
+    // On Linux the bar is there to be taken away: without this a run with
+    // overlay bars would pass whatever the page did.
+    if (process.platform === "linux") expect(before.scrollbar).toBeGreaterThan(0);
+    await open();
+    await settle();
+    const during = await snapshot();
+    expect(await browser.execute(() => document.body.hasAttribute("data-scroll-locked"))).toBe(
+      true,
+    );
+    expect(during.scrollbar).toBe(0);
+    expect(during.rects).toEqual(before.rects);
+    await close();
+  }
+
+  const closeModal = async () => {
+    await browser.keys(["Escape"]);
+    await $('[role="dialog"], [role="alertdialog"], [role="menu"]').waitForExist({
+      reverse: true,
+    });
+    await settle();
+  };
+
+  it("keeps the top bar, the pinned strip and the toasts in place under a dialog, a confirmation and a menu (#117)", async () => {
+    // The page's top: the top bar and toasts are all there is to move.
+    await browser.execute(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    await settle();
+    await expectBarsStay(() => clickButton("Edit"), closeModal);
+
+    // Scrolled until the strip shows, which is fixed to the window's edges.
+    await scrollToPinnedStrip();
+    await expectBarsStay(() => clickPinned("Edit"), closeModal);
+    await expectBarsStay(() => clickPinned("Delete"), closeModal);
+    await expectBarsStay(async () => {
+      await browser.execute(() => {
+        document
+          .querySelector("button.hd-db-menu")!
+          .dispatchEvent(
+            new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+          );
+      });
+      await $('[role="menu"]').waitForExist();
+    }, closeModal);
   });
 });

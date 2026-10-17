@@ -1,4 +1,4 @@
-//! The render helper's process: its start and its main loop (research.md
+//! The render helper's process: its start and its main loop (007 research.md
 //! §11).
 //!
 //! The app starts itself again as `hoplodex --render-helper`. `main()` hands
@@ -19,7 +19,7 @@ use crate::services::helper::confine;
 pub const ARGUMENT: &str = "--render-helper";
 
 /// The most the TIFF helper may allocate: 2 GiB, as `RLIMIT_DATA` on Linux
-/// and the job object's limit on Windows (007's research.md §11).
+/// and the job object's limit on Windows (007 research.md §11).
 pub const MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 
 /// Runs the helper to its end and exits the process: `args` are the

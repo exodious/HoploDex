@@ -1,14 +1,14 @@
-//! Performance validation (constitution Principle IV, spec.md's tested
+//! Performance validation (constitution Principle IV, 001 spec.md's tested
 //! scale up to 10,000 firearm records): `list_firearms` and
 //! `get_value_summary` must return within the 500ms search/browse budget
 //! at that scale, backed by the FTS5 index and indexed columns from
-//! data-model.md — no mocks, a real temporary SQLCipher database.
+//! 001 data-model.md — no mocks, a real temporary SQLCipher database.
 //!
-//! Feature 006 adds every row of research.md §22 at 10,000 firearms and
-//! 10,000 accessories with 5,000 mounts (FR-026, SC-007).
+//! Feature 006 adds every row of 006 research.md §22 at 10,000 firearms and
+//! 10,000 accessories with 5,000 mounts (006 FR-026, SC-007).
 //!
-//! Feature 007 adds the rows of research.md §22 for the document preview
-//! (SC-001, SC-007), each on a database of 10,000 firearms and 10,000
+//! Feature 007 adds the rows of 007 research.md §22 for the document preview
+//! (007 SC-001, SC-007), each on a database of 10,000 firearms and 10,000
 //! accessories: `open_preview` of a 10 MB TIFF (with the real helper), of a
 //! 10 MB PDF (to the recording surface and the `hdpreview` handler serving
 //! it) and of a 10 MB text, the text's decode, and searching a document name
@@ -17,13 +17,13 @@
 //! The suggestions' warm-up is part of opening a database: the open row of
 //! 003 below includes it, and a last row holds the open, warm-up included,
 //! to the same 1s at 10,000 firearms, 10,000 accessories and 30,000
-//! documents, with the first suggestion after it within 50ms (SC-003,
-//! SC-004).
+//! documents, with the first suggestion after it within 50ms (003 SC-003;
+//! 004 research.md §5, for 004 SC-004).
 //!
 //! Feature 003 adds opening a database, key derivation included, to the 1s
-//! action budget (SC-003), the first progress event of a backup, a
+//! action budget (003 SC-003), the first progress event of a backup, a
 //! passphrase change, a restore and a move of backups to the 100ms feedback
-//! budget (SC-005), and the take-over check every save makes (research.md
+//! budget (003 SC-005), and the take-over check every save makes (003 research.md
 //! §6).
 
 #[path = "support/preview_support.rs"]
@@ -160,10 +160,10 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
     // and a year, and import-marked ones (half the table) carry a country
     // (Imported only), an importer, and original marks — so the widened
     // firearms_fts index and idx_firearms_original_serial carry the full
-    // load a real 10,000-record collection would (T052).
+    // load a real 10,000-record collection would (002 T052).
     let origins = [None, Some("domestic"), Some("imported"), Some("reimported")];
     // specs/004-cartridges-action-types: most records carry a cartridge, a
-    // few a unique custom one, and some none (SC-004).
+    // few a unique custom one, and some none (004 SC-004).
     let cartridges = [Some("9x19mm Parabellum"), Some(".45 ACP"), None, Some(".223 Remington")];
 
     // Semi-automatic and Bolt action are allowed for every seeded type; a
@@ -201,7 +201,7 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
             let import_marked = matches!(origin, Some("imported") | Some("reimported"));
             // A fifth of import-marked rows carry the heavier importer and
             // original-marks fields — enough to load the widened index and
-            // the FR-009 partial index realistically, without doubling the
+            // the 002 FR-009 partial index realistically, without doubling the
             // whole seed's bulk (every row already carries an origin/year).
             let full_marks = import_marked && i % 5 == 0;
             let country = (origin == Some("imported") && full_marks).then(|| "Belgium".to_string());
@@ -215,10 +215,10 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
                 firearm_type_id,
                 notes,
                 // Every record has a nickname, which is unique among active
-                // firearms (FR-031): the index and the FTS column both carry
+                // firearms (001 FR-031): the index and the FTS column both carry
                 // the full load.
                 format!("Nick {i}"),
-                // Every record carries all six physical details (FR-039), so
+                // Every record carries all six physical details (001 FR-039), so
                 // `finish` loads the FTS index like the other text columns.
                 1_000 + (i % 3_000) as i64,
                 2_000 + (i % 4_000) as i64,
@@ -353,8 +353,8 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
         elapsed.as_millis()
     );
 
-    // specs/002-firearm-identification T052: the widened firearms_fts index
-    // (origin, year, country, importer, original marks) and the FR-009
+    // 002 T052: the widened firearms_fts index
+    // (origin, year, country, importer, original marks) and the 002 FR-009
     // original_marks_clash lookup, checked on this test's already-seeded
     // database rather than building another 10,000-record one.
     let started = Instant::now();
@@ -402,12 +402,13 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
     let elapsed = started.elapsed();
     assert!(
         elapsed.as_millis() < BUDGET_MS,
-        "create_firearm with original marks (FR-009 lookup) took {}ms, over the {BUDGET_MS}ms budget",
+        "create_firearm with original marks (002 FR-009 lookup) took {}ms, over the \
+         {BUDGET_MS}ms budget",
         elapsed.as_millis()
     );
 }
 
-/// specs/004-cartridges-action-types SC-004 (research.md §11): grouping by
+/// 004 SC-004 (004 research.md §11): grouping by
 /// cartridge within the 1s action budget, and a search by a cartridge
 /// within the 500ms search budget.
 #[test]
@@ -424,7 +425,7 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
     .unwrap();
     let elapsed = started.elapsed();
     // Printed for the pull request's performance note (`--nocapture`).
-    eprintln!("SC-004: list_firearms grouped by cartridge took {elapsed:?}");
+    eprintln!("004 SC-004: list_firearms grouped by cartridge took {elapsed:?}");
     assert_eq!(grouped.groups.last().map(|g| g.key.as_str()), Some("Unspecified"));
     assert!(grouped.groups.len() > 100, "the custom cartridges are groups of their own");
     assert!(
@@ -440,7 +441,7 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
     )
     .unwrap();
     let elapsed = started.elapsed();
-    eprintln!("SC-004: list_firearms cartridge search took {elapsed:?}");
+    eprintln!("004 SC-004: list_firearms cartridge search took {elapsed:?}");
     assert!(searched.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 2_000);
     assert!(
         elapsed.as_millis() < BUDGET_MS,
@@ -449,7 +450,7 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
     );
 }
 
-/// specs/004-cartridges-action-types SC-004: grouping by action type within
+/// 004 SC-004: grouping by action type within
 /// the 1s action budget, and a search by an action's name within the 500ms
 /// search budget.
 #[test]
@@ -465,7 +466,7 @@ fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
     )
     .unwrap();
     let elapsed = started.elapsed();
-    eprintln!("SC-004: list_firearms grouped by action type took {elapsed:?}");
+    eprintln!("004 SC-004: list_firearms grouped by action type took {elapsed:?}");
     let keys: Vec<&str> = grouped.groups.iter().map(|g| g.key.as_str()).collect();
     assert_eq!(keys, vec!["Semi-automatic", "Bolt action", "Unspecified"]);
     assert!(
@@ -481,7 +482,7 @@ fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
     )
     .unwrap();
     let elapsed = started.elapsed();
-    eprintln!("SC-004: list_firearms action search took {elapsed:?}");
+    eprintln!("004 SC-004: list_firearms action search took {elapsed:?}");
     assert!(searched.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 2_000);
     assert!(
         elapsed.as_millis() < BUDGET_MS,
@@ -490,7 +491,7 @@ fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
     );
 }
 
-/// specs/004-cartridges-action-types SC-004 (research.md §5): the
+/// 004 SC-004 (004 research.md §5): the
 /// suggestion list for each field, computed per keystroke at 10,000
 /// firearms with 10,000 distinct models (the worst case), within 50ms: half
 /// of the 100ms budget, the rest being IPC and rendering. The first call is
@@ -517,7 +518,7 @@ fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models
             .read(opened.session.current_id(), |conn| entry_ops::suggest_entries(conn, &input))
             .unwrap();
         let elapsed = started.elapsed();
-        eprintln!("SC-004: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
+        eprintln!("004 SC-004: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
         assert!(!output.suggestions.is_empty());
         assert!(
             elapsed.as_millis() < 50,
@@ -715,10 +716,10 @@ impl LargeDatabase {
 
 fn assert_progress_in_time(event: &str, waited: Duration) {
     // Printed for the pull request's performance note (`--nocapture`).
-    eprintln!("SC-005: first {event} after {waited:?}");
+    eprintln!("003 SC-005: first {event} after {waited:?}");
     assert!(
         waited.as_millis() < 100,
-        "SC-005: the first {event} came {}ms after the operation started, at {RECORD_COUNT} \
+        "003 SC-005: the first {event} came {}ms after the operation started, at {RECORD_COUNT} \
          records; budget is 100ms",
         waited.as_millis()
     );
@@ -734,11 +735,11 @@ fn opening_a_database_of_10k_firearms_takes_at_most_a_second_including_key_deriv
     let started = Instant::now();
     large.open(TEST_PASSPHRASE);
     let elapsed = started.elapsed();
-    eprintln!("SC-003: opened {RECORD_COUNT} firearms in {elapsed:?}");
+    eprintln!("003 SC-003: opened {RECORD_COUNT} firearms in {elapsed:?}");
 
     assert!(
         elapsed.as_millis() < 1_000,
-        "SC-003: opening took {}ms at {RECORD_COUNT} records; budget is 1000ms",
+        "003 SC-003: opening took {}ms at {RECORD_COUNT} records; budget is 1000ms",
         elapsed.as_millis()
     );
 }
@@ -800,7 +801,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
     assert_progress_in_time("restore:progress", waited);
 
     // Moving the backups (the close's and the restore's) to a new location,
-    // by the slower copy-and-verify path, as between drives (FR-026).
+    // by the slower copy-and-verify path, as between drives (003 FR-026).
     let new_folder = large.dir.path().join("elsewhere");
     std::fs::create_dir(&new_folder).unwrap();
     let _copying = backups::testing::fail_hard_links();
@@ -831,7 +832,7 @@ fn the_take_over_check_on_every_save_costs_nothing_measurable_against_the_budget
     const WRITES: u32 = 10_000;
 
     // An empty write is only the checks: the fingerprint before, and its
-    // refresh after (research.md §6).
+    // refresh after (003 research.md §6).
     let started = Instant::now();
     for _ in 0..WRITES {
         large.session.write(large.session.current_id(), |_| Ok(())).unwrap();
@@ -847,7 +848,7 @@ fn the_take_over_check_on_every_save_costs_nothing_measurable_against_the_budget
     );
 }
 
-/// specs/005-regulated-item-types SC-006 (research.md §7, §8): with a share
+/// 005 SC-006 (005 research.md §7, §8): with a share
 /// of the collection registered, grouping by the classification and by
 /// "Registered to" stays within the 1s action budget, a search for a
 /// "Registered to" value within the 500ms search budget, and the form and
@@ -878,7 +879,7 @@ fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_re
         )
         .unwrap();
         let elapsed = started.elapsed();
-        eprintln!("SC-006: list_firearms grouped by {group_by:?} took {elapsed:?}");
+        eprintln!("005 SC-006: list_firearms grouped by {group_by:?} took {elapsed:?}");
         assert!(result.groups.len() > 1);
         assert!(
             elapsed.as_millis() < BUDGET_MS,
@@ -894,7 +895,7 @@ fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_re
     )
     .unwrap();
     let elapsed = started.elapsed();
-    eprintln!("SC-006: list_firearms registered to search took {elapsed:?}");
+    eprintln!("005 SC-006: list_firearms registered to search took {elapsed:?}");
     assert!(found.groups.iter().map(|g| g.firearms.len()).sum::<usize>() > 10);
     assert!(
         elapsed.as_millis() < BUDGET_MS,
@@ -912,7 +913,7 @@ fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_re
         let started = Instant::now();
         let output = entry_ops::suggest_entries(&db.conn, &input).unwrap();
         let elapsed = started.elapsed();
-        eprintln!("SC-006: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
+        eprintln!("005 SC-006: suggest_entries({field:?}, {text:?}) took {elapsed:?}");
         assert!(!output.suggestions.is_empty());
         assert!(
             elapsed.as_millis() < 50,
@@ -930,7 +931,7 @@ const ACCESSORY_COUNT: usize = 10_000;
 const CHAINS: usize = 996;
 const CHAIN_DEPTH: usize = 5;
 
-/// A seeded database for specs/006-accessory-links FR-026 and SC-007 (research.md
+/// A seeded database for 006 FR-026 and SC-007 (006 research.md
 /// §22): 10,000 firearms and 10,000 accessories with 5,000 mounts, including
 /// chains five deep.
 struct MountedScale {
@@ -1040,7 +1041,7 @@ fn within<T>(what: &str, budget_ms: u128, run: impl FnOnce() -> T) -> T {
     let started = Instant::now();
     let result = run();
     let elapsed = started.elapsed();
-    eprintln!("SC-007: {what} took {elapsed:?} (budget {budget_ms}ms)");
+    eprintln!("006 SC-007, 007 SC-007: {what} took {elapsed:?} (budget {budget_ms}ms)");
     assert!(
         elapsed.as_millis() < budget_ms,
         "{what} took {}ms at {RECORD_COUNT} firearms and {ACCESSORY_COUNT} accessories; budget \
@@ -1061,7 +1062,7 @@ fn accessory_input(kind: i64, make: &str, model: &str) -> AccessoryInput {
     .unwrap()
 }
 
-/// The actions of FR-026 (research.md §22): each within the 1s budget.
+/// The actions of 006 FR-026 (006 research.md §22): each within the 1s budget.
 #[test]
 #[ignore = "release only: see DEVELOPMENT.md"]
 fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_records() {
@@ -1153,7 +1154,7 @@ fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_re
     assert_eq!(disposed, 20);
 }
 
-/// The browse and search operations of FR-026 (research.md §22): each within
+/// The browse and search operations of 006 FR-026 (006 research.md §22): each within
 /// the 500ms budget.
 #[test]
 #[ignore = "release only: see DEVELOPMENT.md"]
@@ -1222,7 +1223,7 @@ fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_
     assert_eq!(rows.len(), RECORD_COUNT);
     let head = rows.iter().find(|f| f.id == scale.firearm(0).id()).unwrap();
     assert_eq!(head.mounted_counts.total(), CHAIN_DEPTH);
-    // Searched, with each hit's host and mounted count (FR-026, SC-007): FTS5
+    // Searched, with each hit's host and mounted count (006 FR-026, SC-007): FTS5
     // at three characters or more, LIKE at one or two.
     for (query, expected) in [("xyzzy", Some(1)), ("Nick 4242", Some(1)), ("gl", None)] {
         let found = within(&format!("list_firearms search {query:?}"), BUDGET_MS, || {
@@ -1276,8 +1277,8 @@ fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_
     }
 }
 
-/// research.md §22: the suggestion lists now read both tables, still within
-/// the 50ms of SC-004.
+/// 006 research.md §22: the suggestion lists now read both tables, still within
+/// 004 research.md §5's 50ms.
 #[test]
 #[ignore = "release only: see DEVELOPMENT.md"]
 fn suggest_entries_over_both_tables_completes_within_50ms_at_10k_plus_10k_records() {
@@ -1301,7 +1302,7 @@ fn suggest_entries_over_both_tables_completes_within_50ms_at_10k_plus_10k_record
     }
 }
 
-/// Where the time of a Model suggestion over both tables goes (T162): the
+/// Where the time of a Model suggestion over both tables goes (007 T162): the
 /// query alone, and the whole call, which reads the same rows and keeps only
 /// what matches the text; and, for the settle and import path, building the
 /// whole vocabulary and dropping it. Printed for the pull request's
@@ -1340,7 +1341,7 @@ fn suggest_entries_over_both_tables_breakdown() {
             let dropped = started.elapsed();
 
             eprintln!(
-                "T162 round {round} Model {text:?}: query alone {query:?} ({rows} rows), whole \
+                "007 T162 round {round} Model {text:?}: query alone {query:?} ({rows} rows), whole \
                  call {call:?} ({} found); the whole vocabulary: load {load:?}, drop {dropped:?}",
                 suggestions.len()
             );
@@ -1352,11 +1353,11 @@ fn suggest_entries_over_both_tables_breakdown() {
 
 const DOCUMENT_COUNT: usize = 30_000;
 const TEN_MB: usize = 10 * 1024 * 1024;
-/// SC-001's budget for showing a document.
+/// 007 SC-001's budget for showing a document.
 const PREVIEW_BUDGET_MS: u128 = 1_000;
 
 /// An open session over a database of 10,000 firearms and 10,000 accessories
-/// (SC-001's collection size), with the recording surface and the real
+/// (007 SC-001's collection size), with the recording surface and the real
 /// helper of the preview tests. Seeded through the session, as it is the
 /// preview's own.
 fn document_scale() -> Fixture {
@@ -1444,13 +1445,13 @@ fn seed_30k_documents(conn: &Connection) {
 
 /// Runs `run` and prints its time for the pull request's performance note,
 /// like [`within`], but gives the time back so that a row made of several
-/// steps is held to its budget as a whole. `SC-001`'s budgets are the
+/// steps is held to its budget as a whole. `007 SC-001`'s budgets are the
 /// release build's, with `within`'s three times for an unoptimised one.
 fn timed<T>(what: &str, run: impl FnOnce() -> T) -> (T, Duration) {
     let started = Instant::now();
     let result = run();
     let elapsed = started.elapsed();
-    eprintln!("SC-001: {what} took {elapsed:?} (budget {PREVIEW_BUDGET_MS}ms)");
+    eprintln!("007 SC-001: {what} took {elapsed:?} (budget {PREVIEW_BUDGET_MS}ms)");
     (result, elapsed)
 }
 
@@ -1466,7 +1467,7 @@ fn assert_within_preview_budget(what: &str, elapsed: Duration) {
 
 /// A one-page LZW-compressed 8-bit grayscale TIFF at 300 DPI of at least
 /// `min_bytes`: letter size (2550 × 3300) of noise, which LZW hardly shrinks,
-/// made taller only if it comes out smaller than asked (research.md §22's
+/// made taller only if it comes out smaller than asked (007 research.md §22's
 /// "decode page 1 (LZW or G4, 300 DPI letter)").
 fn lzw_letter_tiff(min_bytes: usize) -> Vec<u8> {
     use tiff::encoder::colortype::Gray8;
@@ -1571,7 +1572,7 @@ fn large_text(min_bytes: usize, utf8: bool) -> Vec<u8> {
     }
 }
 
-/// research.md §22 "open_preview -> page 1, 10 MB TIFF": the helper started,
+/// 007 research.md §22 "open_preview -> page 1, 10 MB TIFF": the helper started,
 /// the TIFF piped to it and its first page rendered, as the viewer asks for
 /// it, within 1 s. The real helper binary and a 300 DPI letter page in LZW.
 #[test]
@@ -1598,7 +1599,7 @@ fn open_preview_of_a_10_mb_tiff_shows_page_one_within_a_second_at_10k_plus_10k_r
         .unwrap()
     });
     assert_eq!(preview_support::png_size(&png).0, 1400);
-    eprintln!("SC-001: a 10 MB TIFF, open and page 1, took {:?} in all", opened + rendered);
+    eprintln!("007 SC-001: a 10 MB TIFF, open and page 1, took {:?} in all", opened + rendered);
     assert_within_preview_budget("open_preview and page 1 of a 10 MB TIFF", opened + rendered);
     world.close(preview_id);
 }
@@ -1609,10 +1610,10 @@ fn get(world: &Fixture, url: &str) -> tauri::http::Response<Vec<u8>> {
     protocol_handler::handle(&world.session, surface::LABEL, &request)
 }
 
-/// research.md §22 "open_preview -> PDF surface shown, 10 MB": what Rust does
+/// 007 research.md §22 "open_preview -> PDF surface shown, 10 MB": what Rust does
 /// up to the surface showing it, with the recording surface and the
 /// `hdpreview` handler serving the document to it. The web view's own
-/// creation and first paint are the surface check's and the us13 E2E's.
+/// creation and first paint are the surface check's and `document-preview.e2e.ts`'s.
 #[test]
 #[ignore = "release only: see DEVELOPMENT.md"]
 fn open_preview_of_a_10_mb_pdf_is_served_to_its_surface_within_a_second_at_10k_plus_10k_records() {
@@ -1643,7 +1644,7 @@ fn open_preview_of_a_10_mb_pdf_is_served_to_its_surface_within_a_second_at_10k_p
     assert_within_preview_budget("open_preview of a 10 MB PDF up to its surface", elapsed);
 }
 
-/// research.md §22 "10 MB text shown": the decode of a 10 MB text, by each of
+/// 007 research.md §22 "10 MB text shown": the decode of a 10 MB text, by each of
 /// the two encodings it can take (UTF-8, and the Windows-1252 fallback
 /// after a failed validation), and `open_preview` of a text of that size,
 /// whose answer is serialised as the viewer receives it.
@@ -1668,7 +1669,7 @@ fn a_10_mb_text_is_decoded_and_opened_within_a_second_at_10k_plus_10k_records() 
     assert_within_preview_budget("open_preview of a 10 MB text", opened);
 }
 
-/// SC-007, research.md §22: a search finds a record by the name of its own
+/// 007 SC-007, research.md §22: a search finds a record by the name of its own
 /// document within 500 ms at 10,000 firearms, 10,000 accessories and 30,000
 /// documents, for the trigram index (three characters or more) and for the
 /// `LIKE` of one or two. Two 10 MB documents sit on the first firearm, so
@@ -1732,9 +1733,9 @@ fn searching_a_document_name_completes_within_budget_at_10k_plus_10k_records_and
     assert!(accessories("ap") > 300);
 }
 
-/// SC-003 at 007's collection size: opening takes at most a second, the
+/// 003 SC-003 at 007's collection size: opening takes at most a second, the
 /// suggestions' warm-up and key derivation included, and the first
-/// suggestion of every field after it meets SC-004's 50ms as the later ones
+/// suggestion of every field after it meets 004 research.md §5's 50ms as the later ones
 /// do. The database is made through the session and opened again by the
 /// app's own open (`open_database`), so the warm-up runs as a user gets it.
 #[test]
@@ -1756,13 +1757,13 @@ fn opening_a_database_of_10k_plus_10k_records_and_30k_documents_is_within_a_seco
     large.open(TEST_PASSPHRASE);
     let elapsed = started.elapsed();
     eprintln!(
-        "SC-003: opened {RECORD_COUNT} firearms, {ACCESSORY_COUNT} accessories and \
+        "003 SC-003: opened {RECORD_COUNT} firearms, {ACCESSORY_COUNT} accessories and \
          {DOCUMENT_COUNT} documents, suggestions warmed, in {elapsed:?}"
     );
     assert!(
         elapsed.as_millis() < 1_000,
-        "SC-003: opening took {}ms at {RECORD_COUNT} firearms, {ACCESSORY_COUNT} accessories and \
-         {DOCUMENT_COUNT} documents; budget is 1000ms",
+        "003 SC-003: opening took {}ms at {RECORD_COUNT} firearms, {ACCESSORY_COUNT} \
+         accessories and {DOCUMENT_COUNT} documents; budget is 1000ms",
         elapsed.as_millis()
     );
 
@@ -1782,12 +1783,12 @@ fn opening_a_database_of_10k_plus_10k_records_and_30k_documents_is_within_a_seco
             .unwrap();
         let elapsed = started.elapsed();
         eprintln!(
-            "SC-004: first suggest_entries({field:?}, {text:?}) after opening took {elapsed:?}"
+            "004 SC-004: first suggest_entries({field:?}, {text:?}) after opening took {elapsed:?}"
         );
         assert!(
             elapsed.as_millis() < 50,
-            "SC-004: suggest_entries({field:?}, {text:?}) took {}ms right after opening, over the \
-             50ms budget",
+            "004 SC-004: suggest_entries({field:?}, {text:?}) took {}ms right after opening, \
+             over the 50ms budget",
             elapsed.as_millis()
         );
     }

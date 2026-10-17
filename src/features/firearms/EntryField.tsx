@@ -13,11 +13,11 @@ export interface EntryFieldProps extends Omit<
   make?: string;
   onValueChange: (text: string) => void;
   onPick: (value: string) => void;
-  /** The user left the field: the form settles it (contracts/ui-entry.md §2). */
+  /** The user left the field: the form settles it (004 contracts/ui-entry.md §2). */
   onLeave: () => void;
 }
 
-/** The row's marker (FR-016, contracts/ui-entry.md §1): "Built-in", with a
+/** The row's marker (004 FR-016, contracts/ui-entry.md §1): "Built-in", with a
  * cartridge's caliber, and/or how many firearms use the value. */
 function suggestionMarker(suggestion: Suggestion): string {
   const parts: string[] = [];
@@ -29,9 +29,8 @@ function suggestionMarker(suggestion: Suggestion): string {
 }
 
 /** Make, Model, Cartridge or Caliber on the firearm form: the shared
- * `Combobox` fed by `suggest_entries` (specs/004-cartridges-action-types
- * US2). Snapping and the derived caliber are the form's, because they touch
- * other fields and Save. */
+ * `Combobox` fed by `suggest_entries` (004 US2). Snapping and the derived caliber
+ * are the form's, because they touch other fields and Save. */
 export function EntryField({
   field,
   make,

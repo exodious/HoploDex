@@ -123,7 +123,7 @@
   font-weight: 700;
 }
 
-/* specs/002-firearm-identification FR-009: the import warnings list is
+/* 002 FR-009: the import warnings list is
    informational, never an error — a niter-blue rule instead of the plain
    neutral one, no danger/blaze coloring. */
 .hd-row-errors--info {
@@ -185,7 +185,7 @@
   color: var(--ink-2);
 }
 
-/* ── Files chosen for an import (specs/006-accessory-links FR-022) ───── */
+/* ── Files chosen for an import (006 FR-022) ───────────────────── */
 
 .hd-io-files {
   margin: calc(-1 * var(--space-3)) 0 0;

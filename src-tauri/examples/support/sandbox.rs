@@ -1,4 +1,4 @@
-//! Where the human-testing seed may write (constitution 1.2.0, research.md
+//! Where the human-testing seed may write (constitution 1.2.0, 003 research.md
 //! §21). The real databases may be anywhere the user chose, so the seed
 //! cannot refuse one known directory. It allows only a directory it made
 //! itself: one that does not exist yet (or is empty), or one holding the

@@ -14,7 +14,8 @@ import {
 
 /**
  * What the document preview E2E specs share (specs/007-document-preview; the
- * `us13-document-preview-*.e2e.ts` files, one per user story): finding the
+ * `document-preview`, `document-open-elsewhere` and `document-open-setting`
+ * E2E files, one per user story): finding the
  * seed's Glock and its documents, opening and closing the viewer, the preview
  * events the backend sends, the seams' logs and relaunching the app with the
  * consent seam answering. Each spec file is a fresh app and sandbox that the
@@ -190,7 +191,7 @@ export function logLines(
   variable: "HOPLODEX_E2E_CONSENT_LOG" | "HOPLODEX_E2E_OPENED_LOG",
 ): string[] {
   const file = process.env[variable];
-  if (!file) throw new Error(`${variable} is not set (wdio.conf.ts, T092)`);
+  if (!file) throw new Error(`${variable} is not set (wdio.conf.ts, 007 T092)`);
   return fs.existsSync(file)
     ? fs
         .readFileSync(file, "utf-8")

@@ -1,5 +1,5 @@
 //! A database file plus its passphrase opens on any supported computer
-//! (FR-011, SC-001, SC-002, research.md §20). The fixture was made on Linux
+//! (003 FR-011, SC-001, SC-002, research.md §20). The fixture was made on Linux
 //! by `examples/portable_fixture.rs`; opening it here compares every field
 //! and byte to the known values, so on macOS and Windows this is the
 //! cross-platform check, and anywhere it fails if the pinned cipher

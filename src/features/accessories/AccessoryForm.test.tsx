@@ -13,10 +13,10 @@ import type { Accessory, AccessoryDetail, AccessoryKind } from "./types";
 import type { RecordLabel } from "../mounts/types";
 import { render as renderBase, setResumedDraft } from "../../test/sessionScope";
 
-// specs/006-accessory-links User Story 1 (contracts/ui-accessories.md §3,
+// 006 US1 (006 contracts/ui-accessories.md §3,
 // FR-001 to FR-005, FR-027). The form is a bare form like `FirearmForm`: the
 // record page and the shell put it in a large `Dialog` titled "Add accessory"
-// or "Edit {name}" (tested with them). The Mounted on row is User Story 2's,
+// or "Edit {name}" (tested with them). The Mounted on row is 006 US2's,
 // tested at the end.
 
 // The kinds come from the collection store (`useAccessoryKinds`), as the
@@ -39,7 +39,7 @@ function render(ui: ReactElement, kinds: AccessoryKind[] = ACCESSORY_KINDS) {
 }
 
 // 004's make, model, cartridge and caliber fields settle and suggest through
-// the entries commands, which accessories share (FR-003): the same
+// the entries commands, which accessories share (006 FR-003): the same
 // stand-ins as firearmFormTestSupport.tsx.
 const settleEntry = vi.fn();
 const suggestEntries = vi.fn();
@@ -49,7 +49,7 @@ vi.mock("../firearms/firearmsService", () => ({
     suggestEntries(field, text, make),
 }));
 
-// specs/006-accessory-links US2: the Mounted on chooser searches the mount
+// 006 US2: the Mounted on chooser searches the mount
 // candidates through the mounts service.
 const listMountCandidates = vi.fn();
 vi.mock("../mounts/mountsService", () => ({
@@ -82,7 +82,7 @@ async function chooseKind(user: ReturnType<typeof userEvent.setup>, name: string
   await user.click(await screen.findByRole("option", { name }));
 }
 
-/** Types the required make and model (FR-001), for a test about the rest. */
+/** Types the required make and model (006 FR-001), for a test about the rest. */
 async function nameIt(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/^Make/), "Magpul");
   await user.type(screen.getByLabelText(/^Model/), "MS1");
@@ -114,7 +114,7 @@ const saved: Accessory = {
   updatedAt: "2025-01-01 00:00:00",
 };
 
-describe("AccessoryForm layout (contracts/ui-accessories.md §3)", () => {
+describe("AccessoryForm layout (006 contracts/ui-accessories.md §3)", () => {
   it("lays out Kind, Make and Model, Cartridge and Caliber, Serial number, Estimated value, Acquired, Notes", () => {
     render(<AccessoryForm onSubmit={vi.fn()} />);
 
@@ -161,7 +161,7 @@ describe("AccessoryForm layout (contracts/ui-accessories.md §3)", () => {
     );
   });
 
-  it("has no quantity field, and no 'no serial number' box (US1-4, FR-004)", () => {
+  it("has no quantity field, and no 'no serial number' box (006 US1-4, FR-004)", () => {
     render(<AccessoryForm onSubmit={vi.fn()} />);
 
     expect(screen.queryByLabelText(/quantity|count|how many/i)).not.toBeInTheDocument();
@@ -182,7 +182,7 @@ describe("AccessoryForm layout (contracts/ui-accessories.md §3)", () => {
   });
 });
 
-describe("AccessoryForm hints (FR-002, FR-005)", () => {
+describe("AccessoryForm hints (006 FR-002, FR-005)", () => {
   it("says under Kind that a suppressor is recorded as a firearm", () => {
     render(<AccessoryForm onSubmit={vi.fn()} />);
     expect(kindField()).toHaveAccessibleDescription(
@@ -200,7 +200,7 @@ describe("AccessoryForm hints (FR-002, FR-005)", () => {
   });
 });
 
-describe("AccessoryForm kind (US1, FR-001, FR-002)", () => {
+describe("AccessoryForm kind (006 US1, FR-001, FR-002)", () => {
   it("is a required choice, with nothing chosen on a new record", () => {
     render(<AccessoryForm onSubmit={vi.fn()} />);
 
@@ -296,7 +296,7 @@ describe("AccessoryForm kind (US1, FR-001, FR-002)", () => {
   });
 });
 
-describe("AccessoryForm saving (US1-1, US1-2)", () => {
+describe("AccessoryForm saving (006 US1-1, US1-5)", () => {
   it("saves with only a kind, make and model: every other field is optional", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -326,7 +326,7 @@ describe("AccessoryForm saving (US1-1, US1-2)", () => {
     });
   });
 
-  it("requires a make and a model, as a firearm's form does (FR-001)", async () => {
+  it("requires a make and a model, as a firearm's form does (006 FR-001)", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<AccessoryForm onSubmit={onSubmit} />);
@@ -453,7 +453,7 @@ describe("AccessoryForm saving (US1-1, US1-2)", () => {
 
 // specs/004-cartridges-action-types, reused by specs/006 US1-6: a blank
 // caliber is filled from the cartridge, with 004's hints.
-describe("AccessoryForm cartridge and caliber (US1-6)", () => {
+describe("AccessoryForm cartridge and caliber (006 US1-6)", () => {
   const cartridgeField = () => screen.getByLabelText(/^Cartridge/);
   const caliberField = () => screen.getByLabelText(/^Caliber/);
 
@@ -482,7 +482,7 @@ describe("AccessoryForm cartridge and caliber (US1-6)", () => {
     expect(screen.queryByText("From the cartridge.")).not.toBeInTheDocument();
   });
 
-  it("suggests make, model, cartridge and caliber through the shared entry commands (FR-003)", async () => {
+  it("suggests make, model, cartridge and caliber through the shared entry commands (006 FR-003)", async () => {
     const user = userEvent.setup();
     render(<AccessoryForm onSubmit={vi.fn()} />);
 
@@ -513,8 +513,8 @@ describe("AccessoryForm cartridge and caliber (US1-6)", () => {
 // specs/003 FR-010 and FR-039 through the shared pending-draft hook: closing
 // with changes asks save, discard or cancel (the session layer asks, using
 // the label and submit the form registers), and a lock keeps the input as
-// pending changes labelled with the accessory's name (FR-027).
-describe("AccessoryForm unsaved changes (FR-027)", () => {
+// pending changes labelled with the accessory's name (006 FR-027).
+describe("AccessoryForm unsaved changes (006 FR-027)", () => {
   it("is not dirty until something changes", () => {
     render(<AccessoryForm initialValues={saved} onSubmit={vi.fn()} />);
     expect(getDirtyForm()).toBeNull();
@@ -638,7 +638,7 @@ describe("AccessoryForm structure", () => {
   });
 });
 
-// specs/008-hardening-batch research.md §10, contracts/ui.md §3: the free-text
+// 008 research.md §10, 008 contracts/ui.md §3: the free-text
 // maximums, shown at once and never cut off.
 describe("AccessoryForm free-text maximums", () => {
   it.each([
@@ -689,13 +689,13 @@ describe("AccessoryForm free-text maximums", () => {
   });
 });
 
-// specs/006-accessory-links User Story 2 (contracts/ui-accessories.md §3
-// row 5, §4; FR-010, FR-012, US2-4). A saved accessory's current host arrives
+// 006 US2 (006 contracts/ui-accessories.md §4, §3 row 5; 006 FR-010, FR-012,
+// US2-4). A saved accessory's current host arrives
 // with its detail (`mount.chain[0]`), which is what the record page passes as
 // `initialValues`; `presetMountedOn` (a `RecordLabel`) is the record whose
 // "Mount > New accessory…" opened the form. The form sends only the host's
 // `RecordRef` as `mountedOn`.
-describe("AccessoryForm Mounted on (US2)", () => {
+describe("AccessoryForm Mounted on (006 US2)", () => {
   const HINT = "The firearm or accessory it is on now, if any.";
 
   const rifle: RecordLabel = {
@@ -803,7 +803,7 @@ describe("AccessoryForm Mounted on (US2)", () => {
     expect(onSubmit.mock.calls[0][0].mountedOn).toBeNull();
   });
 
-  it("presets Mounted on to the record it was opened from, and sends it (US2-4)", async () => {
+  it("presets Mounted on to the record it was opened from, and sends it (006 US2-4)", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<AccessoryForm presetMountedOn={rifle} onSubmit={onSubmit} />);

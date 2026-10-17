@@ -1,9 +1,9 @@
-//! Document preview (feature 007, research.md §20): the `hdpreview`
+//! Document preview (007 research.md §20): the `hdpreview`
 //! protocol, the PDF surface, the TIFF render helper, text, and the
 //! availability rules that decide which of them a document gets.
 //!
 //! This file holds what the session keeps of an open preview ([`Preview`]
-//! and [`PreviewContent`], data-model.md "Preview"), and the traits the
+//! and [`PreviewContent`], 007 data-model.md "Preview"), and the traits the
 //! preview commands reach the web view through ([`PreviewSurface`],
 //! [`SurfaceFactory`]), so the session's tests run with a recorder where the
 //! app has a child web view.
@@ -64,13 +64,13 @@ impl From<SurfaceBounds> for Rect {
     }
 }
 
-/// Why Rust closed the PDF surface (`preview:pdf-ended`, contracts/tauri-commands.md
+/// Why Rust closed the PDF surface (`preview:pdf-ended`, 007 contracts/tauri-commands.md
 /// "Shapes").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PdfEndReason {
     /// macOS: a copy was written and deleted; PDF preview is off on this
-    /// computer until HoploDex is updated (FR-003a).
+    /// computer until HoploDex is updated (007 FR-003a).
     CopyCaught,
     /// The web view has no PDF viewer: it turned the PDF into a download.
     NoViewer,
@@ -78,7 +78,7 @@ pub enum PdfEndReason {
     Failed,
 }
 
-/// What `open_preview` answers (contracts/tauri-commands.md "Shapes").
+/// What `open_preview` answers (007 contracts/tauri-commands.md "Shapes").
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
 pub enum PreviewInfo {
@@ -100,7 +100,7 @@ pub enum PreviewInfo {
 }
 
 /// The PDF surface, a child web view of the main window, as the preview
-/// commands use it (research.md §20). The app's implementation wraps the
+/// commands use it (007 research.md §20). The app's implementation wraps the
 /// `tauri::Webview`; session tests use a recorder. `close` is also what its
 /// `Drop` does.
 pub trait PreviewSurface: Send + Sync {
@@ -119,7 +119,7 @@ pub struct SurfaceSpec {
     /// The first document's URL, the only one it may show.
     pub url: String,
     /// The fresh 128-bit secret written into the frame script
-    /// (`GET /hooked/<secret>`, research.md §8).
+    /// (`GET /hooked/<secret>`, 007 research.md §8).
     pub secret: String,
     /// Where it is, until the frontend says otherwise.
     pub bounds: SurfaceBounds,
@@ -131,7 +131,7 @@ pub trait SurfaceFactory: Send + Sync {
 }
 
 /// The one open preview of an open database. Gone with it at lock, close,
-/// switch, sleep, shutdown or quit (research.md §20).
+/// switch, sleep, shutdown or quit (007 research.md §20).
 pub struct Preview {
     /// Counts up through the session, so a request for a replaced preview is
     /// told so.
@@ -142,7 +142,7 @@ pub struct Preview {
 
 /// A preview whose helper is still loading the document, kept apart from
 /// [`Preview`] so that `close_preview` and the next `open_preview` can end it
-/// while the load runs without the session's lock (research.md §11, §20).
+/// while the load runs without the session's lock (007 research.md §11, §20).
 pub struct PreviewLoading {
     pub id: u64,
     /// Never reused, so a load that outlives its database can't install
@@ -166,10 +166,10 @@ pub enum PreviewContent {
         secret: String,
         /// The surface has been given the document.
         served: bool,
-        /// Linux: PDF.js's `webviewerloaded` hook reported (research.md §8).
+        /// Linux: PDF.js's `webviewerloaded` hook reported (007 research.md §8).
         hooked: bool,
         /// Linux: how long the hook has from the document first being
-        /// served; the protocol handler starts the timer then (§8).
+        /// served; the protocol handler starts the timer then (007 research.md §8).
         hook_timeout: Duration,
     },
     Tiff {

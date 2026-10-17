@@ -36,7 +36,7 @@ export interface ComboboxProps extends Omit<
    * row is picked. */
   onBlurSettle?: () => void;
   /** A note about an automatic change, shown in place of the hint and
-   * announced politely (contracts/ui-entry.md §2). */
+   * announced politely (004 contracts/ui-entry.md §2). */
   note?: string;
 }
 
@@ -57,9 +57,9 @@ export const COMBOBOX_ANNOUNCE_MS = 500;
 /**
  * Text input with a list of suggestions: the WAI-ARIA "combobox with
  * listbox popup" pattern, list autocomplete with no automatic selection
- * (specs/004-cartridges-action-types research.md §13, contracts/
- * ui-entry.md §1). Focus never leaves the input. The list is a Radix
- * `Popover` anchored to the input, so a dialog's scrolling never clips it;
+ * (004 research.md §13, 004 contracts/ui-entry.md §1). Focus never leaves the
+ * input. The list is a Radix `Popover` anchored to the input, so a dialog's
+ * scrolling never clips it;
  * there is no "Add …" row, since typing on is how a new value is entered.
  */
 export function Combobox({

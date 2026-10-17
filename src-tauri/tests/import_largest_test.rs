@@ -1,11 +1,11 @@
-//! The largest export the app can write, imported back (feature 008, T053;
-//! research.md §9, §10; SC-003): 10,000 firearms and 10,000 accessories, every
+//! The largest export the app can write, imported back (008 T053, research.md
+//! §9, §10 and SC-003): 10,000 firearms and 10,000 accessories, every
 //! text field at its maximum, in ASCII. It is exported through the app's own
 //! export as one workbook and as two CSV files; each is read through
 //! `import_reader::read_files` (the real import helper) and imported into a
 //! fresh database through `import_collection_stoppable`. Nothing may be refused
 //! and every row must import. The reading time, the import time and this
-//! process's peak resident memory are printed for the pull request (T098-T100
+//! process's peak resident memory are printed for the pull request (008 T098-T100
 //! record them).
 //!
 //! It takes minutes and a few hundred MB of disk, and its timings mean
@@ -46,7 +46,7 @@ use tempfile::TempDir;
 
 const HELPER: &str = env!("CARGO_BIN_EXE_hoplodex");
 
-/// research.md §10's maximums, written out here (`models::rules` is private)
+/// 008 research.md §10's maximums, written out here (`models::rules` is private)
 /// so that a change to them has to change this test too.
 const MAX_SHORT_TEXT_CHARS: usize = 200;
 const MAX_LONG_TEXT_CHARS: usize = 4_000;
@@ -60,7 +60,7 @@ fn rows() -> usize {
 /// Exactly `len` ASCII characters: `prefix` (which makes the value unique when
 /// it names the row), then letters from a generator seeded by `seed`, with a
 /// space after every eighth and none at either end, so trimming keeps them all.
-/// Random letters compress to about half, as research.md §9 assumes.
+/// Random letters compress to about half, as 008 research.md §9 assumes.
 fn text(prefix: &str, seed: u64, len: usize) -> String {
     assert!(prefix.len() <= len);
     let mut out = String::with_capacity(len);
@@ -293,7 +293,7 @@ fn size_of(path: &Path) -> u64 {
 }
 
 /// Reads `files` and imports them into a fresh database, asserting that
-/// nothing is refused and every row imports, and printing what SC-003 asks.
+/// nothing is refused and every row imports, and printing what 008 SC-003 asks.
 fn read_and_import(label: &str, files: &[ImportFile], count: usize) {
     let db = TestDb::new();
     // An import finds the policy by name.
@@ -344,7 +344,7 @@ fn read_and_import(label: &str, files: &[ImportFile], count: usize) {
 }
 
 #[test]
-#[ignore = "release only: minutes, and hundreds of MB of disk (T053; run by T098-T100)"]
+#[ignore = "release only: minutes, and hundreds of MB of disk (008 T053; run by 008 T098-T100)"]
 fn import_largest_export_as_a_workbook_and_as_two_csv_files() {
     let count = rows();
     let dir = TempDir::new().unwrap();

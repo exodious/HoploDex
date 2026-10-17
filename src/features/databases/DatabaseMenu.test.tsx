@@ -89,7 +89,7 @@ function renderMenu(withDirtyForm = false) {
   );
 }
 
-describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
+describe("DatabaseMenu (003 contracts/ui-databases.md §4)", () => {
   beforeEach(() => {
     vi.mocked(sessionService.getDatabaseStatus).mockReset().mockResolvedValue(status);
     vi.mocked(sessionService.closeDatabase)
@@ -117,7 +117,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     expect(screen.queryByText("Main collection")).not.toBeInTheDocument();
   });
 
-  it("opens the database settings (§7)", async () => {
+  it("opens the database settings (003 contracts/ui-databases.md §7)", async () => {
     const user = userEvent.setup();
     renderMenu();
 
@@ -143,7 +143,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     ]);
   });
 
-  it("opens the guide (§11)", async () => {
+  it("opens the guide (003 contracts/ui-databases.md §11)", async () => {
     const user = userEvent.setup();
     renderMenu();
 
@@ -155,7 +155,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens the passphrase change (§8)", async () => {
+  it("opens the passphrase change (003 contracts/ui-databases.md §8)", async () => {
     const user = userEvent.setup();
     renderMenu();
 
@@ -168,7 +168,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
     expect(within(dialog).getByLabelText("Current passphrase")).toBeInTheDocument();
   });
 
-  it("opens the restore dialog (§9)", async () => {
+  it("opens the restore dialog (003 contracts/ui-databases.md §9)", async () => {
     const user = userEvent.setup();
     renderMenu();
 
@@ -240,7 +240,7 @@ describe("DatabaseMenu (contracts/ui-databases.md §4)", () => {
   });
 });
 
-describe("Lock now (FR-033, FR-035)", () => {
+describe("Lock now (003 FR-033, FR-035)", () => {
   const draft = {
     formVersion: 1,
     kind: "firearm" as const,

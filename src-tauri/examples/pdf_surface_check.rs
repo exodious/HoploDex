@@ -1,4 +1,4 @@
-// The PDF surface check (research.md §23, tasks T005-T008 and T069-T074 of
+// The PDF surface check (007 research.md §23, tasks 007 T005-T008 and T069-T074 of
 // specs/007-document-preview/tasks.md): the app's own PDF surface
 // (`services::preview::surface`, not a copy) in a window under the same
 // isolation as the E2E suite, shown hostile documents, probed from inside and
@@ -10,19 +10,19 @@
 //   cargo run --example pdf_surface_check -- shows [--scratch DIR]
 //       [--screenshot PNG] [--timeout SECONDS] [--no-probe]
 //
-// `shows` (T005) opens the window (1000x800 logical), adds the surface over
+// `shows` (007 T005) opens the window (1000x800 logical), adds the surface over
 // the rectangle the page draws (x=40, y=100, 920x660), loads a 3-page PDF,
 // waits 4 s for the viewer to draw, saves a screenshot of the whole screen and
 // exits.
 //
-// `check` (T069) serves, one after the other through one surface:
+// `check` (007 T069) serves, one after the other through one surface:
 //   1. a hostile PDF: a unique marker, a link, a JavaScript open action, a
 //      remote image, a remote font, a form that submits to a remote address,
 //      an embedded file and a launch action;
-//   2. T004's truncated and bit-flipped PDFs (the viewer may fail on them; the
+//   2. 007 T004's truncated and bit-flipped PDFs (the viewer may fail on them; the
 //      process must stay up);
 //   3. a PDF of about 10 MB (pages carrying a large incompressible image),
-//      whose time to first paint it prints (SC-001).
+//      whose time to first paint it prints (007 SC-001).
 // While the hostile PDF is shown it runs the reach probe in every frame a
 // script reaches (fetch, image, beacon, WebSocket and WebRTC to a local test
 // service and to unresolvable names, a raw IPC request and a command call; on
@@ -42,8 +42,8 @@
 //     marker (on macOS also a new `WebKitPDFs-*` folder in the temp folder);
 //   - the launch action ran.
 // `--hud-on` (macOS only) leaves WebKit's PDF HUD on and passes only if the
-// watch (T065) deletes Open in Preview's copy, closes the surface and sets the
-// hold (FR-003a).
+// watch (007 T065) deletes Open in Preview's copy, closes the surface and sets the
+// hold (007 FR-003a).
 //
 // Real input: `--input ARG` (repeated) is the command that posts it, given
 // `click X Y`, `rclick X Y`, `scroll X Y N` (negative: up) and `key ...`
@@ -101,7 +101,7 @@ const BIT_FLIPPED: &[u8] = include_bytes!("../tests/fixtures/documents/three-pag
 /// Where the surface goes, in logical pixels, and the page's placeholder for
 /// it (a red outline), so a wrong place is visible in the screenshot.
 const BOUNDS: Rect = Rect { x: 40.0, y: 100.0, width: 920.0, height: 660.0 };
-/// SC-001's budget for a first page.
+/// 007 SC-001's budget for a first page.
 const FIRST_PAINT_BUDGET: Duration = Duration::from_secs(1);
 /// Names the reach probe uses for "the outside", which nothing may look up.
 const PROBE_NAME_SUFFIXES: &[&str] = &[".invalid", "example.com"];
@@ -556,7 +556,7 @@ fn get_chooser_state(webview: tauri::Webview, shared: tauri::State<'_, Arc<Share
 }
 
 /// The document's address: custom protocols are `<scheme>://localhost/` on
-/// Linux and macOS, `http://<scheme>.localhost/` on Windows (research.md §4).
+/// Linux and macOS, `http://<scheme>.localhost/` on Windows (007 research.md §4).
 fn protocol_base(scheme: &str) -> String {
     if cfg!(windows) {
         format!("http://{scheme}.localhost/")
@@ -1005,7 +1005,7 @@ impl Run {
                 ));
             })),
             // The one place the HUD is left on: this variant's config field
-            // (FR-003a). The app's surface never sets it.
+            // (007 FR-003a). The app's surface never sets it.
             hud_on: self.options.hud_on,
         };
         let window = self.app.get_window("main").unwrap();
@@ -1074,7 +1074,7 @@ mod pixels {
     /// The run is copied from the screen once, with one `BitBlt` and one
     /// `GetDIBits`, and read from memory: `GetPixel` takes 17-55 ms a call on
     /// the Windows test machine, so 24 of them made the first poll alone take
-    /// 1.3 s and the time it ended at was reported as the first paint (T074,
+    /// 1.3 s and the time it ended at was reported as the first paint (007 T074,
     /// T152); a copy takes well under a millisecond.
     pub fn noisy(x: i32, y: i32) -> bool {
         // SAFETY: the screen's device context and a memory device context and
@@ -1376,7 +1376,7 @@ fn stage(name: &'static str) {
 /// `GET http://host/...`) and closes the connection unanswered, as the
 /// tripwire does, and notes what it read with the run's stage and the seconds
 /// since the run began, so what reached it can be told apart: WebView2's own
-/// hosts (research.md §6), the probe's attempts from the frames the content
+/// hosts (007 research.md §6), the probe's attempts from the frames the content
 /// filter can't see (Edge's viewer, WebSockets), or anything else.
 #[cfg(windows)]
 fn start_reading_proxy(shared: &Arc<Shared>) -> std::net::SocketAddr {
@@ -1411,10 +1411,10 @@ fn start_reading_proxy(shared: &Arc<Shared>) -> std::net::SocketAddr {
 /// Windows: judges what reached the surface's proxy (the app's tripwire does
 /// the same job elsewhere, where any hit is a failure). On Windows the proxy is
 /// the layer that covers Edge's viewer frames and WebSockets, which the
-/// content filter can't see (research.md §6), so the probe's attempts from
+/// content filter can't see (007 research.md §6), so the probe's attempts from
 /// those frames *must* arrive here, and are expected:
 /// - a request line that names none of the probe's targets and is not a
-///   WebView2 host of its own (research.md §6: `config.edge.skype.com`,
+///   WebView2 host of its own (007 research.md §6: `config.edge.skype.com`,
 ///   `edge.microsoft.com`) fails: it is the document's doing (its link, remote
 ///   image, font, form, JavaScript) or something unexplained;
 /// - in the stage where only the top frame's probe runs, a request (not a
@@ -1511,7 +1511,7 @@ fn run_check(run: Run) {
 
     #[cfg(target_os = "macos")]
     let pdf_dirs_before = webkit_pdf_dirs();
-    // The tripwire may see WebView2's own traffic on Windows (research.md
+    // The tripwire may see WebView2's own traffic on Windows (007 research.md
     // §6): what it sees while nothing is shown is the baseline.
 
     stage("the first seconds");
@@ -1735,7 +1735,7 @@ fn run_check(run: Run) {
     let verdict = if paint <= FIRST_PAINT_BUDGET { "within" } else { "OVER" };
     eprintln!(
         "CHECK first paint of the 10 MB PDF: {paint:?} ({how}); asked for -> served {served:?}, \
-         -> load finished {load:?}; {verdict} SC-001's {FIRST_PAINT_BUDGET:?}"
+         -> load finished {load:?}; {verdict} 007 SC-001's {FIRST_PAINT_BUDGET:?}"
     );
     thread::sleep(Duration::from_secs(2));
     if screenshot(&options.shot) {
@@ -2110,7 +2110,7 @@ fn hud_on_check(
         .map(|settings| settings.pdf_preview_hold())
         .or_else(|| MachineSettings::load(&config).ok().map(|s| s.pdf_preview_hold()));
     eprintln!("CHECK hold: {hold:?}");
-    // A restart reads the hold from `machine.json` again (FR-003a): the same
+    // A restart reads the hold from `machine.json` again (007 FR-003a): the same
     // version finds PDF preview held off, another version clears the hold and
     // finds it available (the OS check is taken as passed: it needs the main
     // thread).
@@ -2138,7 +2138,7 @@ fn hud_on_check(
         && cleared
 }
 
-/// `shows` (T005): the 3-page PDF in the surface, a screenshot, and out.
+/// `shows` (007 T005): the 3-page PDF in the surface, a screenshot, and out.
 fn run_shows(run: Run) {
     let Run { app, shared, options, .. } = &run;
     let wire = tripwire::shared().expect("the tripwire binds");
@@ -2292,7 +2292,7 @@ fn main() {
                 && options.hud_on
                 && let Ok(settings) = MachineSettings::load(&options.scratch.join("config"))
             {
-                // Where the watch (T065) records the hold, as the app's own
+                // Where the watch (007 T065) records the hold, as the app's own
                 // state has it.
                 app.manage(settings);
             }

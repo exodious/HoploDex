@@ -1,5 +1,5 @@
-//! Integration tests for the optional firearm nickname (FR-031, spec.md
-//! US1 Acceptance Scenarios 8-9), run against a real temporary SQLCipher
+//! Integration tests for the optional firearm nickname (001 FR-031,
+//! US1-8 and US1-9), run against a real temporary SQLCipher
 //! database. Reversal clashes are covered in `disposition_reversal_test.rs`.
 
 use crate::support;
@@ -62,7 +62,7 @@ fn scenario_8_two_identical_firearms_are_told_apart_by_nickname() {
     assert_eq!(nicknames, vec![None, Some("Carry gun".into()), Some("Range gun".into())]);
 }
 
-// 001 US1 Scenario 8
+// 001 US1-8
 #[test]
 fn a_blank_nickname_is_stored_as_null_and_others_are_trimmed() {
     let db = TestDb::new();
@@ -208,7 +208,7 @@ fn the_database_itself_refuses_a_second_active_firearm_with_the_same_nickname() 
     assert!(db.conn.execute(rename, [other.id]).is_ok());
 }
 
-// --- Export / import (FR-031) ---
+// --- Export / import (001 FR-031) ---
 
 fn import(db: &TestDb, rows: &[String]) -> hoplodex_lib::commands::import_export::ImportResult {
     let dir = TempDir::new().unwrap();
@@ -306,7 +306,7 @@ fn nickname_plays_no_part_in_import_matching() {
             .unwrap();
 
     // Same make/model/serial, different nickname: still a conflict on the
-    // identifying key (FR-030), not a new record.
+    // identifying key (001 FR-030), not a new record.
     let result = import(&db, &[csv_firearm("Glock", "19", "A1", &[("nickname", "Other")])]);
 
     assert_eq!(result.imported_count, 0);

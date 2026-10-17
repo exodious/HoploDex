@@ -8,7 +8,7 @@ import {
   weightToInputs,
 } from "./measure";
 
-describe("parseInches (FR-039)", () => {
+describe("parseInches (001 FR-039)", () => {
   it("reads decimal inches as hundredths", () => {
     expect(parseInches("16.25")).toEqual({ ok: true, value: 1625 });
     expect(parseInches("18")).toEqual({ ok: true, value: 1800 });
@@ -26,7 +26,7 @@ describe("parseInches (FR-039)", () => {
     expect(parseInches("16.250")).toEqual({ ok: true, value: 1625 });
   });
 
-  // 001 US1 Scenario 17: extra decimal places are rounded, not rejected.
+  // 001 US1-17: extra decimal places are rounded, not rejected.
   it("rounds extra precision half up to the nearest hundredth", () => {
     expect(parseInches("16.255")).toEqual({ ok: true, value: 1626 });
     expect(parseInches("16.254")).toEqual({ ok: true, value: 1625 });
@@ -46,7 +46,7 @@ describe("parseInches (FR-039)", () => {
   });
 });
 
-describe("parseWeight (FR-039)", () => {
+describe("parseWeight (001 FR-039)", () => {
   it("reads ounces alone as tenths", () => {
     expect(parseWeight("", "40.5")).toEqual({ ok: true, value: 405 });
     expect(parseWeight("", "32")).toEqual({ ok: true, value: 320 });
@@ -64,7 +64,7 @@ describe("parseWeight (FR-039)", () => {
     expect(parseWeight("1", "40")).toEqual({ ok: true, value: 560 });
   });
 
-  // 001 US1 Scenario 17
+  // 001 US1-17
   it("converts to the nearest tenth of an ounce", () => {
     expect(parseWeight("2.53", "")).toEqual({ ok: true, value: 405 }); // 40.48 oz
     expect(parseWeight("", "40.55")).toEqual({ ok: true, value: 406 });
@@ -105,7 +105,7 @@ describe("parseWeight (FR-039)", () => {
   });
 });
 
-describe("formatting (FR-039)", () => {
+describe("formatting (001 FR-039)", () => {
   it("shows inches without trailing zeros", () => {
     expect(formatInches(1625)).toBe("16.25");
     expect(formatInches(1800)).toBe("18");

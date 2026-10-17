@@ -23,16 +23,16 @@ export interface RecentDatabase {
   name: string;
   /** ISO-8601 UTC. */
   lastOpenedAt: string;
-  /** The file exists at `path` (FR-012). */
+  /** The file exists at `path` (003 FR-012). */
   available: boolean;
-  /** FR-017, on this computer. */
+  /** 003 FR-017, on this computer. */
   passphraseSaved: boolean;
-  /** Its backups, by file name (FR-040); `null` when this computer doesn't
+  /** Its backups, by file name (003 FR-040); `null` when this computer doesn't
    * know where they are, can't read the folder, or a chosen folder isn't
    * there (a missing default folder means none yet). */
   backups: BackupSummary | null;
   /** ISO-8601 UTC: the file changed at this time, after this computer last
-   * closed it (FR-040). */
+   * closed it (003 FR-040). */
   changedSinceLeftAt: string | null;
 }
 
@@ -56,7 +56,7 @@ export type ChooserNotice =
       leftBehindCount?: number;
       folder?: string;
     }
-  /** A move of backups cut short by a crash (research.md §22). */
+  /** A move of backups cut short by a crash (003 research.md §22). */
   | { kind: "backupsLeftBehind"; databasePath: string; folder: string; count: number }
   | { kind: "pendingChangesLost"; databasePath: string }
   | {
@@ -90,7 +90,7 @@ export interface PendingSummary {
   /** False when the target no longer exists or `formVersion` is unknown. */
   resumable: boolean;
   /** The HoploDex version that last saved the database; null when none is
-   * recorded (specs/008 FR-015). */
+   * recorded (008 FR-015). */
   savedByVersion: string | null;
   /** This build's version, so the dialog words the message without guessing
    * which is newer. */
@@ -108,23 +108,23 @@ export interface Draft {
 }
 
 export interface DatabaseStatus {
-  /** This open's session id (specs/008 research.md §1): never 0, and every
-   * scoped command names it (research.md §2, §3). */
+  /** This open's session id (008 research.md §1): never 0, and every
+   * scoped command names it (008 research.md §2, §3). */
   sessionId: number;
   path: string;
   name: string;
-  /** FR-017, on this computer. */
+  /** 003 FR-017, on this computer. */
   passphraseSaved: boolean;
-  /** Passphrases can be saved on this computer (FR-019). */
+  /** Passphrases can be saved on this computer (003 FR-019). */
   keyringAvailable: boolean;
-  /** This desktop reports a screen lock (FR-038). */
+  /** This desktop reports a screen lock (003 FR-038). */
   screenLockSupported: boolean;
   settings: CollectionSettings;
   pendingChanges: PendingSummary | null;
   notes: {
-    /** FR-008, until dismissed. */
+    /** 003 FR-008, until dismissed. */
     diskEncryption: boolean;
-    /** research.md §9, shown once. */
+    /** 003 research.md §9, shown once. */
     openedBackup: { backupOfName: string; madeAt: string } | null;
     /** ISO time of the backup, once after a restore. */
     restoredWithPassphraseOf: string | null;
@@ -145,7 +145,7 @@ export interface BackupInfo {
   sizeBytes: number;
 }
 
-/** Where the create dialog suggests putting a new database (FR-009). */
+/** Where the create dialog suggests putting a new database (003 FR-009). */
 export interface SuggestedLocation {
   folder: string;
   name: string;
@@ -156,11 +156,11 @@ export interface SuggestedLocation {
 export interface ChooserState {
   /** Most recent first. */
   recent: RecentDatabase[];
-  /** The row selected when the chooser appears (FR-021, FR-033). */
+  /** The row selected when the chooser appears (003 FR-021, FR-033). */
   selectedPath: string | null;
-  /** FR-019. */
+  /** 003 FR-019. */
   keyringAvailable: boolean;
-  /** FR-038. */
+  /** 003 FR-038. */
   screenLockSupported: boolean;
   suggested: SuggestedLocation;
   /** Shown once, then gone. */
@@ -172,15 +172,15 @@ export interface CreateDatabaseInput {
   folder: string;
   name: string;
   passphrase: string;
-  /** FR-004: the user has stored the passphrase and knows it can't be
+  /** 003 FR-004: the user has stored the passphrase and knows it can't be
    * recovered. */
   acknowledgedUnrecoverable: boolean;
 }
 
-/** A note shown once in the collection (contracts/ui-databases.md §10). */
+/** A note shown once in the collection (003 contracts/ui-databases.md §10). */
 export type NoteKind = "diskEncryption" | "openedBackup" | "restored";
 
-/** `list_backups`: a database's backup folder and what is in it (FR-028). */
+/** `list_backups`: a database's backup folder and what is in it (003 FR-028). */
 export interface BackupList {
   folder: string;
   /** The folder exists on this computer. */
@@ -189,7 +189,7 @@ export interface BackupList {
   backups: BackupInfo[];
 }
 
-/** `delete_all_backups`'s answer (FR-029). */
+/** `delete_all_backups`'s answer (003 FR-029). */
 export interface BackupsDeleted {
   deletedCount: number;
   /** Backups that could not be deleted, left in place. */
@@ -200,10 +200,10 @@ export interface BackupsDeleted {
 export type BackupLocationInput = { kind: "default" } | { kind: "custom"; path: string };
 
 /** What to do with the backups at the old location when it changes
- * (FR-026). */
+ * (003 FR-026). */
 export type ExistingBackupsChoice = "move" | "leave" | "delete";
 
-/** `update_backup_settings`'s input (FR-024, FR-026). */
+/** `update_backup_settings`'s input (003 FR-024, FR-026). */
 export interface BackupSettingsInput {
   enabled: boolean;
   /** 1–100. */
@@ -214,7 +214,7 @@ export interface BackupSettingsInput {
   existingBackups?: ExistingBackupsChoice;
 }
 
-/** What was done with the backups at the old location (FR-026). */
+/** What was done with the backups at the old location (003 FR-026). */
 export type ExistingBackupsOutcome =
   | { action: "leave" }
   | { action: "delete"; deletedCount: number }
@@ -246,7 +246,7 @@ export interface OldLocationBackups {
 
 /** `backup:progress`: bytes copied by the backup a close is making; also
  * `backups_move:progress`, bytes copied and read back by a move of backups
- * (FR-026). */
+ * (003 FR-026). */
 export interface BackupProgress {
   processed: number;
   total: number;
@@ -254,7 +254,7 @@ export interface BackupProgress {
   showNow: boolean;
 }
 
-/** `restore:progress` (contracts/tauri-commands.md). `checking` and
+/** `restore:progress` (003 contracts/tauri-commands.md). `checking` and
  * `replacing` are indeterminate, with `total: 0`. */
 export interface RestoreProgress {
   phase: "copying" | "checking" | "savingCurrent" | "replacing";
@@ -270,7 +270,7 @@ export interface PassphraseChangeProgress {
   total: number;
 }
 
-/** `change_passphrase`'s answer (FR-016, FR-018). */
+/** `change_passphrase`'s answer (003 FR-016, FR-018). */
 export interface PassphraseChanged {
   /** The previous file was securely deleted. */
   oldFileRemoved: boolean;
@@ -291,5 +291,5 @@ export interface CountProgress {
   total: number;
 }
 
-/** `update_lock_settings`'s input (FR-034, FR-038). */
+/** `update_lock_settings`'s input (003 FR-034, FR-038). */
 export type LockSettingsInput = CollectionSettings["lock"];

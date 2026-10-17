@@ -101,7 +101,7 @@ pub fn safe_basename(name: &str, fallback: &str) -> String {
 /// The type to record for a photo, going by its extension. Anything else is
 /// generic binary data, which the photo rules refuse. Documents don't use
 /// this: their type comes from `services::document_types::classify`, which
-/// looks at the content (research.md §2).
+/// looks at the content (007 research.md §2).
 pub fn mime_type_for(filename: &str) -> &'static str {
     let extension = filename.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase());
     match extension.as_deref() {

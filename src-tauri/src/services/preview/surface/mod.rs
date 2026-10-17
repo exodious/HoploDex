@@ -1,5 +1,5 @@
 //! The PDF surface: a child web view in the main window and every per-OS
-//! measure on it (research.md §4-§10). One file per OS, as `platform/` does.
+//! measure on it (007 research.md §4-§10). One file per OS, as `platform/` does.
 //!
 //! [`Surface`] is the web view itself, with the settings every OS shares (its
 //! label, no capability naming it, `incognito`, a proxy to a loopback port the
@@ -7,7 +7,7 @@
 //! downloads refused, developer tools off in a release build, the frame script
 //! with the surface's secret in it), its own browser process on Windows, and
 //! its bounds. [`AppSurface`] wraps it as the app's [`PreviewSurface`]. The
-//! filters, settings, signals and input monitors that research.md §6-§10 add
+//! filters, settings, signals and input monitors that 007 research.md §6-§10 add
 //! per OS go in `linux.rs`, `macos.rs` and `windows.rs`; they reach the app
 //! through [`Hooks`].
 //!
@@ -47,7 +47,7 @@ use tauri::{
 
 use super::{PdfEndReason, PreviewSurface, SurfaceSpec};
 
-/// Script run in every frame of the surface (research.md §8, §10), with
+/// Script run in every frame of the surface (007 research.md §8, §10), with
 /// [`SECRET_PLACEHOLDER`] replaced by the surface's secret.
 const FRAME_SCRIPT: &str = include_str!("frame_script.js");
 
@@ -55,10 +55,10 @@ const FRAME_SCRIPT: &str = include_str!("frame_script.js");
 const SECRET_PLACEHOLDER: &str = "__HOPLODEX_SURFACE_SECRET__";
 
 /// The most often the surface's input counts as activity for the idle lock
-/// (research.md §10).
+/// (007 research.md §10).
 const ACTIVITY_INTERVAL: Duration = Duration::from_secs(1);
 
-/// The surface's label (research.md §4). No capability names it (§5).
+/// The surface's label (007 research.md §4). No capability names it (007 research.md §5).
 pub const LABEL: &str = "preview";
 
 /// The surface's place in the main window, in logical pixels from the
@@ -77,7 +77,7 @@ pub type PageLoadHook = Box<dyn Fn(PageLoadEvent, &Url) + Send + Sync + 'static>
 
 type Action = Box<dyn Fn() + Send + Sync + 'static>;
 
-/// What the surface tells the app, which the per-OS code calls (research.md
+/// What the surface tells the app, which the per-OS code calls (007 research.md
 /// §7, §10). The calls may come from the main thread or any other, so each
 /// must return at once.
 pub struct Hooks {
@@ -158,7 +158,7 @@ pub struct SurfaceConfig {
     /// The first document's URL. The only URL the surface may show.
     pub url: Url,
     /// Where the surface's network goes: `http://127.0.0.1:<port>`, a port the
-    /// caller holds (research.md §6, the tripwire).
+    /// caller holds (007 research.md §6, the tripwire).
     pub proxy_url: Url,
     /// Windows: the surface's own user data folder, so it has a browser
     /// process of its own (`app_dirs::preview_webview_data_dir`). Other OS
@@ -166,12 +166,12 @@ pub struct SurfaceConfig {
     pub data_directory: PathBuf,
     pub bounds: Rect,
     /// The 128-bit secret, as hex, written into the frame script
-    /// (`GET /hooked/<secret>`, research.md §8).
+    /// (`GET /hooked/<secret>`, 007 research.md §8).
     pub secret: String,
     pub hooks: Arc<Hooks>,
     pub on_page_load: Option<PageLoadHook>,
     /// macOS: leave WebKit's PDF HUD on, for the surface check's `--hud-on`
-    /// variant (FR-003a). The app always sets it `false`; nothing reads it
+    /// variant (007 FR-003a). The app always sets it `false`; nothing reads it
     /// from the environment.
     pub hud_on: bool,
 }
@@ -226,7 +226,7 @@ fn bounds_from_tauri<R: Runtime>(webview: &Webview<R>) -> tauri::Result<Rect> {
 }
 
 /// Whether a navigation of the surface is allowed: its current document,
-/// `about:blank`, and on Linux the PDF.js viewer's own scheme (research.md
+/// `about:blank`, and on Linux the PDF.js viewer's own scheme (007 research.md
 /// §6).
 fn navigation_allowed(allowed: &Url, target: &Url) -> bool {
     target == allowed
@@ -251,7 +251,7 @@ impl<R: Runtime> Surface<R> {
                 })
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 // Never a download: of the surface's own URL it is the sign
-                // that the web view has no PDF viewer (research.md §4).
+                // that the web view has no PDF viewer (007 research.md §4).
                 .on_download({
                     let hooks = config.hooks.clone();
                     move |_, event| {
@@ -264,7 +264,7 @@ impl<R: Runtime> Surface<R> {
                 .initialization_script_for_all_frames(
                     FRAME_SCRIPT.replace(SECRET_PLACEHOLDER, &config.secret),
                 )
-                // Off in a release build (research.md §8).
+                // Off in a release build (007 research.md §8).
                 .devtools(cfg!(debug_assertions));
         if let Some(hook) = config.on_page_load {
             builder = builder.on_page_load(move |_, payload| hook(payload.event(), payload.url()));
@@ -297,7 +297,7 @@ impl<R: Runtime> Surface<R> {
     }
 
     /// Shows another document in the surface (the viewer moving from one PDF
-    /// straight to another, research.md §4).
+    /// straight to another, 007 research.md §4).
     pub fn navigate(&self, url: Url) {
         *self.allowed.lock().unwrap_or_else(|e| e.into_inner()) = url.clone();
         let webview = self.webview.clone();
@@ -355,7 +355,7 @@ static OPEN_SURFACES: AtomicUsize = AtomicUsize::new(0);
 
 /// Deletes the surface's user data folder, which holds no document content
 /// (spike) but is the browser process's own on Windows: at startup, and after
-/// the surface's browser process has exited (research.md §6). Not while a
+/// the surface's browser process has exited (007 research.md §6). Not while a
 /// surface is open: the next one uses the same folder.
 pub fn clear_data_directory(folder: &Path) {
     if OPEN_SURFACES.load(Ordering::SeqCst) == 0 {
@@ -364,7 +364,7 @@ pub fn clear_data_directory(folder: &Path) {
 }
 
 /// The app's [`PreviewSurface`]: a [`Surface`] that closes with its last
-/// holder (research.md §20).
+/// holder (007 research.md §20).
 pub struct AppSurface<R: Runtime> {
     surface: Mutex<Option<Surface<R>>>,
     data_directory: PathBuf,

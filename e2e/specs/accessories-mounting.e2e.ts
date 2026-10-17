@@ -17,23 +17,23 @@ import {
 import { realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of specs/006-accessory-links' User Story 2 (SC-001,
- * US2-1, US2-3a, US2-4): from the keyboard alone, as real key events through
- * the X server, an accessory is added and mounted on a firearm from that
- * firearm's page, an existing firearm is mounted on it, and that firearm is
- * moved to another from the other's page after the move is confirmed. The
- * suggestion list's, menu's and dialogs' focus behaviour is WebKitGTK's to get
- * right, and WebDriver's own keys don't pass through GTK. See "Real keyboard
- * and mouse input" in DEVELOPMENT.md.
+ * End-to-end coverage of 006 SC-001, US2-1, US2-3a and US2-4: from the
+ * keyboard alone, as real key events through the X server, an accessory is
+ * added and mounted on a firearm from that firearm's page, an existing
+ * firearm is mounted on it, and that firearm is moved to another from the
+ * other's page after the move is confirmed. The suggestion list's, menu's and
+ * dialogs' focus behaviour is WebKitGTK's to get right, and WebDriver's own
+ * keys don't pass through GTK. See "Real keyboard and mouse input" in
+ * DEVELOPMENT.md.
  *
  * The records are made first, through the Add firearm dialog (not timed); a
  * real click on a page's heading then puts real focus on the page, and from
  * there the keys alone do the work. The other stories are in
- * `us12-accessories-record`, `-browse` and `-dispose`; the helpers and the
+ * `accessories-record`, `-browse` and `-dispose`; the helpers and the
  * seeds are in `support/accessories.ts`.
  */
 
-describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
+describe("006 US2 - Mount an Item on a Firearm (was us12-accessories-mounting)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });
@@ -41,7 +41,7 @@ describe("User Story 2 - Mounting (specs/006-accessory-links)", () => {
     await seedFirearms();
   });
 
-  it("adds an Optic from a Rifle's page, mounts a Suppressor on it, then moves the Suppressor to an AR, from the keyboard alone (SC-001, US2-1, US2-3a, US2-4)", async () => {
+  it("adds an Optic from a Rifle's page, mounts a Suppressor on it, then moves the Suppressor to an AR, from the keyboard alone (006 SC-001, US2-1, US2-3a, US2-4)", async () => {
     const started = Date.now();
 
     // Open the seeded Rifle and add an Optic mounted on it.

@@ -11,7 +11,7 @@ import { MountedSection } from "./MountedSection";
 import type { MountedEntry, RecordLabel, RecordRef } from "./types";
 import { render } from "../../test/sessionScope";
 
-// specs/006-accessory-links contracts/ui-accessories.md §5 (FR-012, FR-013,
+// 006 contracts/ui-accessories.md §5 (006 FR-012, FR-013,
 // US2-3a, US2-10): the Mounted section. Its props, as these tests assume
 // them: `record: RecordLabel` (the record whose page it is on), `mounted:
 // MountedEntry[]` (`MountDetail.mounted`, depth-first) and `onNewAccessory()`
@@ -47,8 +47,8 @@ function label(
   };
 }
 
-// The record whose page this is, and what is mounted on it, as in §5's
-// picture: a nested outline.
+// The record whose page this is, and what is mounted on it, as in
+// 006 contracts/ui-accessories.md §5's picture: a nested outline.
 const rifle = label({ kind: "firearm", id: 1 }, "LaRue", "PredatAR", "Rifle");
 const upper = label({ kind: "accessory", id: 11 }, "BCM", "upper", "Upper receiver");
 const scope = label({ kind: "accessory", id: 12 }, "Leupold", "Mark 5HD 5-25x56", "Optic");
@@ -123,7 +123,7 @@ beforeEach(() => {
   onNewAccessory.mockReset();
 });
 
-describe("MountedSection list (§5)", () => {
+describe("MountedSection list (006 contracts/ui-accessories.md §5)", () => {
   it("is a ul with one li per entry, depth-first", () => {
     renderSection();
 
@@ -135,7 +135,7 @@ describe("MountedSection list (§5)", () => {
     order.forEach((name, index) => expect(items[index]).toHaveTextContent(name));
   });
 
-  it("names a firearm's entry with its nickname and type, as an accessory's reads by FR-005", () => {
+  it("names a firearm's entry with its nickname and type, as an accessory's reads by 006 FR-005", () => {
     renderSection();
 
     const items = within(screen.getByRole("list")).getAllByRole("listitem");
@@ -196,7 +196,7 @@ describe("MountedSection list (§5)", () => {
     expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ page: "firearm", id: 20 }));
   });
 
-  it("says 'Nothing mounted.' beside the Mount control when empty (US2-10)", () => {
+  it("says 'Nothing mounted.' beside the Mount control when empty (006 US2-10)", () => {
     renderSection([]);
 
     expect(screen.getByText("Nothing mounted.")).toBeInTheDocument();
@@ -210,7 +210,7 @@ describe("MountedSection list (§5)", () => {
   });
 });
 
-describe("MountedSection Mount menu (§5, FR-012)", () => {
+describe("MountedSection Mount menu (006 contracts/ui-accessories.md §5, FR-012)", () => {
   it("offers New accessory… and Existing accessory or firearm…", async () => {
     const user = userEvent.setup();
     renderSection();
@@ -257,7 +257,7 @@ describe("MountedSection Mount menu (§5, FR-012)", () => {
   });
 });
 
-describe("MountedSection mounting an existing record (FR-012, US2-3a)", () => {
+describe("MountedSection mounting an existing record (006 FR-012, US2-3a)", () => {
   const aimpoint = label({ kind: "accessory", id: 30 }, "Aimpoint", "T-2", "Optic");
   const belongsToAr = label({ kind: "accessory", id: 31 }, "Warne", "rail", "Mount or rail");
   const AIMPOINT = "Aimpoint T-2 · Optic";
@@ -338,7 +338,7 @@ describe("MountedSection mounting an existing record (FR-012, US2-3a)", () => {
       expect(refresh).toHaveBeenCalled();
     });
 
-    it("mounts nothing on Cancel, leaving it where it is (US2-3a)", async () => {
+    it("mounts nothing on Cancel, leaving it where it is (006 US2-3a)", async () => {
       const user = userEvent.setup();
       renderSection();
 
@@ -353,7 +353,7 @@ describe("MountedSection mounting an existing record (FR-012, US2-3a)", () => {
   });
 });
 
-describe("MountedSection Unmount (§5)", () => {
+describe("MountedSection Unmount (006 contracts/ui-accessories.md §5)", () => {
   it("first asks 'Unmount {name}?', saying what stays mounted on it, and unmounts nothing yet", async () => {
     const user = userEvent.setup();
     renderSection();
@@ -423,7 +423,7 @@ describe("MountedSection Unmount (§5)", () => {
   });
 });
 
-describe("MountedSection wording (FR-012, constitution III)", () => {
+describe("MountedSection wording (006 FR-012, constitution III)", () => {
   it("never says 'item' or 'host', in the section, the menu or the dialog", async () => {
     const user = userEvent.setup();
     listMountCandidates.mockResolvedValue({
@@ -453,7 +453,7 @@ describe("MountedSection wording (FR-012, constitution III)", () => {
   });
 });
 
-// specs/006-accessory-links FR-012, FR-013, the refusals of `mount_record`
+// 006 FR-012, FR-013, the refusals of `mount_record`
 // (mount_test.rs holds the rules): the dialog shows the backend's `host` message
 // and nothing changes.
 describe("MountedSection when the mount is refused (006 FR-012, FR-013)", () => {

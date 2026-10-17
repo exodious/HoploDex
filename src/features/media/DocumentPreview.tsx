@@ -1,9 +1,9 @@
 // The document viewer: a dialog over the record, with its header, the page area
 // for the document's kind, and a footer, laid out like PhotoViewer
-// (PhotoGallery.tsx). Contract: specs/007-document-preview/contracts/
-// ui-document-preview.md §2 (The viewer), §3 (States in the page area), §7
-// (Keyboard) and §8 (Accessibility); research.md §12 (text) and §14 (TIFF).
-// "Open in another app…" (user story 2, §1-§3) sits in the footer, and is the
+// (PhotoGallery.tsx). Contract: 007 contracts/ui-document-preview.md §2, §3, §7 and §8
+// (the viewer, the states in the page area, keyboard and accessibility); 007
+// research.md §12 (text) and 007 research.md §14 (TIFF). "Open in another app…"
+// (007 US2, 007 contracts/ui-document-preview.md §1-§3) sits in the footer, and is the
 // primary action of each state that can't show the document.
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, UIEvent } from "react";
@@ -38,7 +38,8 @@ import type { TiffZoom } from "./useTiffPages";
 import "./media.css";
 
 /** A message the viewer caused that the list says: shown in the footer's status line
- * while a PDF is shown, where a toast would hide the surface (ui contract §2). */
+ * while a PDF is shown, where a toast would hide the surface
+ * (007 contracts/ui-document-preview.md §2). */
 export interface ViewerMessage {
   text: string;
   error: boolean;
@@ -46,7 +47,7 @@ export interface ViewerMessage {
 
 export interface DocumentPreviewProps {
   /** The record's own documents, in list order: previous and next move only
-   * through these (FR-007). */
+   * through these (007 FR-007). */
   documents: DocumentSummary[];
   /** The one shown. */
   index: number;
@@ -63,7 +64,8 @@ export interface DocumentPreviewProps {
   message?: ViewerMessage | null;
 }
 
-/** What the page area shows when there is no document to show (ui contract §3). */
+/** What the page area shows when there is no document to show
+ * (007 contracts/ui-document-preview.md §3). */
 interface Problem {
   code: string;
   message: string;
@@ -87,7 +89,7 @@ function withArticle(kind: string): string {
   return /^(?:[AEIOUaeiou]|RTF)/.test(kind) ? `an ${kind}` : `a ${kind}`;
 }
 
-/** The sentence for a state, ui contract §3. */
+/** The sentence for a state, 007 contracts/ui-document-preview.md §3. */
 function problemSentence(problem: Problem, name: string, kind: string): string {
   switch (problem.code) {
     case "PREVIEW_UNSUPPORTED":
@@ -148,7 +150,7 @@ export function DocumentPreview({
 
   // The preview open now, to close when the viewer goes. Moving to another
   // document closes nothing: `open_preview` replaces the one before it, and a
-  // PDF followed by a PDF keeps its surface (research.md §4).
+  // PDF followed by a PDF keeps its surface (007 research.md §4).
   const openPreviewId = useRef<number | null>(null);
   const unmounted = useRef(false);
   useEffect(() => {
@@ -213,7 +215,7 @@ export function DocumentPreview({
   }, [pdfId, focusFirstControl]);
 
   // ← and → move between documents, and F6 moves into a PDF, wherever the
-  // focus is in HoploDex's own controls (ui contract §7).
+  // focus is in HoploDex's own controls (007 contracts/ui-document-preview.md §7).
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -242,7 +244,8 @@ export function DocumentPreview({
     setOpenStatus(null);
     const say = (text: string, error: boolean) => {
       if (unmounted.current) return;
-      // A toast can't be drawn over the PDF surface, so the footer says it (ui contract §2).
+      // A toast can't be drawn over the PDF surface, so the footer says it
+      // (007 contracts/ui-document-preview.md §2).
       if (latest.current.view.phase === "ready" && latest.current.view.info.kind === "pdf") {
         setOpenStatus({ text, error });
       } else {
@@ -263,7 +266,7 @@ export function DocumentPreview({
     }
   }
 
-  // FR-017: a document whose content isn't its type is never handed on.
+  // 007 FR-017: a document whose content isn't its type is never handed on.
   const canOpenElsewhere = !(
     view.phase === "problem" && view.problem.code === "DOCUMENT_CONTENT_MISMATCH"
   );
@@ -356,7 +359,7 @@ export function DocumentPreview({
             />
             {pdfId !== null && (
               // What a toast would say over the PDF surface, which a toast can't
-              // be drawn over (ui contract §2).
+              // be drawn over (007 contracts/ui-document-preview.md §2).
               <span
                 className={`hd-preview__footer-status${openStatus?.error ? " hd-preview__footer-status--error" : ""}`}
                 role="status"
@@ -392,7 +395,7 @@ export function DocumentPreview({
 // --- Text ---------------------------------------------------------------------
 
 /** A text document over this is shown in chunks of it, appended as the user
- * scrolls, so the first screen is within budget (research.md §12). */
+ * scrolls, so the first screen is within budget (007 research.md §12). */
 const TEXT_CHUNK = 1 << 20;
 
 function chunkText(text: string): string[] {
@@ -411,7 +414,7 @@ function chunkText(text: string): string[] {
 }
 
 /** Text and CSV, as a text child of a `<pre>`: never HTML, never linked, and
- * CSV is not laid out (FR-005, research.md §12). */
+ * CSV is not laid out (007 FR-005, 007 research.md §12). */
 function TextView({ text, name }: { text: string; name: string }) {
   const chunks = useMemo(() => chunkText(text), [text]);
   const [shown, setShown] = useState(1);
@@ -445,7 +448,7 @@ function zoomValue(zoom: TiffZoom): string {
   return typeof zoom === "number" ? String(zoom) : zoom;
 }
 
-/** The TIFF's toolbar and its scroll area of pages (research.md §14). */
+/** The TIFF's toolbar and its scroll area of pages (007 research.md §14). */
 function TiffView({
   previewId,
   pages,

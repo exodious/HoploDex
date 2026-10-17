@@ -24,7 +24,14 @@ import {
   waitForChooser,
   waitForCollection,
 } from "../support/ui";
-import { relaunchApp, waitForAppToQuit } from "../support/app";
+import { appPid, relaunchApp, waitForAppToQuit } from "../support/app";
+import {
+  chooseMenuBarItem,
+  pressCommandQ,
+  quitMenuItemTitle,
+  sendQuitEvent,
+  skipWithoutMacInput,
+} from "../support/macInput";
 import { realClick, skipWithoutRealInput } from "../support/realInput";
 
 /**
@@ -66,7 +73,7 @@ async function dialogFieldError(label: string): Promise<string | null> {
   }, label);
 }
 
-describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", () => {
+describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databases)", () => {
   const folder = `${scratchDocuments()}/Typed folder`;
 
   it("fits the first-run chooser in the window, with no scrollbar, and its plate animates", async () => {
@@ -206,7 +213,7 @@ describe("User Story 1 (003) - Protect My Collection With My Own Passphrase", ()
   // name field) and the relaunch that shows nothing before the passphrase.
   // The dialog's own rules (Saved as, 12 characters, matching, the
   // acknowledgement) are in CreateDatabaseDialog.test.tsx.
-  it("creates a database, keeps a firearm that only the right passphrase shows again (FR-003, FR-005, FR-006)", async () => {
+  it("creates a database, keeps a firearm that only the right passphrase shows again (003 FR-003, FR-005, FR-006)", async () => {
     // A file already at the name asked for; the backend refuses the create.
     fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(`${folder}/Taken.hoplodex`, "");
@@ -297,8 +304,8 @@ async function asksForPassphrase(): Promise<boolean> {
   return $(".hd-db-row--selected input").isExisting();
 }
 
-describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
-  it("keeps two databases with their own passphrases in two folders, and switches between them (US2-1, US2-4)", async () => {
+describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another Computer (was us7-databases)", () => {
+  it("keeps two databases with their own passphrases in two folders, and switches between them (003 US2-1, US2-4)", async () => {
     await switchDatabase();
     await createDatabase(club);
     await addFirearm({
@@ -330,7 +337,54 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
     expect(await showsFirearm("HomeGun")).toBe(false);
   });
 
-  it("asks save, discard or cancel when quitting with an unsaved firearm form, and Discard quits (FR-010)", async () => {
+  it("asks the same question for ⌘Q, the macOS menu's Quit and the Dock's Quit, and Cancel keeps the form as it was (003 FR-010, #107)", async function () {
+    skipWithoutMacInput(this);
+    // macOS's own Quit (`terminate:`: ⌘Q, the menu, the Dock, an Apple
+    // Event) used to end the process without a request, so unsaved input
+    // was lost. "Club" is open from the switch above.
+    await clickButton("Add firearm");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Make", "Unsaved make");
+
+    const prompt = '[role="alertdialog"]';
+    for (const quit of [
+      () => pressCommandQ(appPid()),
+      () => chooseMenuBarItem(appPid(), quitMenuItemTitle(appPid())),
+      () => sendQuitEvent(appPid()),
+    ]) {
+      quit();
+      await $(prompt).waitForExist();
+      await expect($(prompt)).toHaveText(expect.stringContaining("Save changes to New firearm?"));
+      await clickButton("Cancel");
+      await $(prompt).waitForExist({ reverse: true });
+      // Still running, with the form and what was typed in it.
+      await expect($('[role="dialog"]')).toExist();
+      expect(
+        await browser.execute(
+          () => (document.querySelector('[role="dialog"] input') as HTMLInputElement).value,
+        ),
+      ).toBe("Unsaved make");
+    }
+
+    // Quitting for real, through the Dock's route and the question's Discard
+    // (`quit_application` must still end the process), so the next test starts
+    // from a clean open of "Club".
+    sendQuitEvent(appPid());
+    await $(prompt).waitForExist();
+    await browser.execute(() => {
+      const discard = [...document.querySelectorAll('[role="alertdialog"] button')].find(
+        (button) => button.textContent?.trim() === "Discard changes",
+      ) as HTMLElement | undefined;
+      setTimeout(() => discard?.click(), 100);
+    });
+    await waitForAppToQuit(15000);
+    await relaunch();
+    expect(await selectedChooserRow()).toBe("Club");
+    await unlock(club.passphrase);
+    expect(await showsFirearm("Unsaved make")).toBe(false);
+  });
+
+  it("asks save, discard or cancel when quitting with an unsaved firearm form, and Discard quits (003 FR-010)", async () => {
     // "Club" is open from the switch above. The prompt's buttons, Cancel and a
     // Save that fails validation are in SessionProvider.test.tsx; here the
     // real quit request, the process ending and the relaunch.
@@ -361,10 +415,10 @@ describe("User Story 2 (003) - Keep Several Databases, Anywhere", () => {
   });
 });
 
-describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphrase", () => {
+describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7-databases)", () => {
   const SAVED_NOTE = "Opens without a passphrase on this computer";
 
-  it("remembers a passphrase at open, after the confirmation (FR-017)", async () => {
+  it("remembers a passphrase at open, after the confirmation (003 FR-017)", async () => {
     await switchDatabase();
     await selectChooserRow("Home");
     expect(await asksForPassphrase()).toBe(true);
@@ -397,7 +451,7 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     expect(await showsFirearm("HomeGun")).toBe(true);
   });
 
-  it("only stages forgetting it in the database settings: Cancel leaves it saved (FR-018, #34)", async () => {
+  it("only stages forgetting it in the database settings: Cancel leaves it saved (003 FR-018, #34)", async () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await expect($("fieldset*=This computer")).toHaveText(
@@ -421,7 +475,7 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     await waitForCollection();
   });
 
-  it("forgets it with Save, and the prompt returns (FR-018, #34)", async () => {
+  it("forgets it with Save, and the prompt returns (003 FR-018, #34)", async () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await toggle("Remember the passphrase on this computer");
@@ -435,7 +489,7 @@ describe("User Story 5 (003) - Optionally Let This Computer Remember My Passphra
     await unlock(home.passphrase);
   });
 
-  it("remembers it again from the database settings, asking for the passphrase only at Save (FR-017, #34)", async () => {
+  it("remembers it again from the database settings, asking for the passphrase only at Save (003 FR-017, #34)", async () => {
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
     await toggle("Remember the passphrase on this computer");

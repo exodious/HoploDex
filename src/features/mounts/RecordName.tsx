@@ -4,11 +4,11 @@ import type { Route } from "../app/navigation";
 import { accessoryNameText } from "./recordNames";
 import type { RecordLabel } from "./types";
 
-// specs/006-accessory-links FR-005, contracts/ui-accessories.md (rules): a
+// 006 FR-005, 006 contracts/ui-accessories.md (rules): a
 // record of either kind is named by `RecordName`. A firearm is named as
 // `FirearmName` names it (make, model and “nickname”, 001 FR-031), with its
 // type after a dot where asked. An accessory is "{make} {model} · {kind}"
-// (both required, FR-001).
+// (both required, 006 FR-001).
 
 /** The pages a link can be followed from (the route's `from`). */
 const FROM_PAGES = ["accessories", "collection", "insurance", "firearm", "accessory"] as const;
@@ -20,7 +20,7 @@ export interface RecordNameProps {
   /** Adds the firearm's type after a dot; an accessory always shows its kind. */
   withType?: boolean;
   /** The id of text that describes the link (the Mounted section's "on …"
-   * line, contracts/ui-accessories.md §5). Only a link takes it. */
+   * line, 006 contracts/ui-accessories.md §5). Only a link takes it. */
   describedBy?: string;
 }
 

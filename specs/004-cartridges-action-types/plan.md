@@ -211,7 +211,7 @@ src/
                                       #  label), ImportDialog
 
 e2e/
-├── specs/us10-cartridges-actions.e2e.ts   # NEW: keyboard-only pick, caliber fill, group
+├── specs/cartridges-actions.e2e.ts   # NEW: keyboard-only pick, caliber fill, group
 └── screenshots/screens.e2e.ts             # + the screens in ui-entry.md §9
 ```
 

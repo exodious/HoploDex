@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSessionScope } from "../session/sessionScope";
 import * as mediaService from "./mediaService";
 
-// specs/008-hardening-batch research.md §3, contracts/tauri-commands.md "Every
+// 008 research.md §3, 008 contracts/tauri-commands.md "Every
 // request names its session": every photo, document and preview command goes
 // through the scope (`{ session: id }`); the per-computer document-opening
 // setting does not.

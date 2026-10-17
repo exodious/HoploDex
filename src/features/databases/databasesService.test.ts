@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSessionScope } from "../session/sessionScope";
 import * as databasesService from "./databasesService";
 
-// specs/008-hardening-batch contracts/tauri-commands.md "Every request names
+// 008 contracts/tauri-commands.md "Every request names
 // its session": the open database's settings, saved-passphrase, backup and
 // passphrase-change commands carry its session; choosing, creating and
 // opening a database, and the backups of one that isn't open, do not.

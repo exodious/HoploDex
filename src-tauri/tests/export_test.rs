@@ -1,7 +1,6 @@
 //! Integration test: `export_collection` produces a spreadsheet + photos
-//! folder matching contracts/spreadsheet-format.md (spec.md US5 Acceptance
-//! Scenario 1), run against a real temporary SQLCipher database and a real
-//! temporary destination folder — no mocks.
+//! folder matching 001 contracts/spreadsheet-format.md (001 US5-1), run against
+//! a real temporary SQLCipher database and a real temporary destination folder — no mocks.
 
 use crate::sheets;
 use crate::support;
@@ -137,10 +136,10 @@ fn exports_as_xlsx_when_requested() {
     assert!(result.spreadsheet_path.exists());
 }
 
-/// FR-039 / spreadsheet-format.md "Physical details": plain numbers with no
+/// 001 FR-039 / contracts/spreadsheet-format.md "Physical details": plain numbers with no
 /// unit text and no trailing zeros, and the condition's display name,
 /// between `scheduled_coverage_amount` and `photo_filenames`.
-// 001 US1 Scenario 17
+// 001 US1-17
 #[test]
 fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() {
     use hoplodex_lib::models::firearm::Condition;
@@ -267,7 +266,7 @@ fn the_export_header_is_the_42_columns_with_cartridge_and_action_type_after_cali
     assert_eq!(headers[caliber_at + 3], "firearm_type");
 }
 
-/// specs/005-regulated-item-types US4-1: the four registration columns hold
+/// 005 US4-1: the four registration columns hold
 /// the classification's name, the form, the approved date and "Registered
 /// to"; a Suppressor exports its type with blank action, barrel length and
 /// capacity; a firearm with no classification has all four blank.
@@ -319,10 +318,10 @@ fn export_writes_the_registration_columns_and_blanks_what_a_suppressor_lacks() {
     }
 }
 
-// --- specs/006-accessory-links US5: two tables (tasks.md T099) ------------------------------
+// --- 006 US5: two tables (006 tasks.md T099) ------------------------------------------------
 //
-// contracts/spreadsheet-format.md "Two tables", "Firearm table: new columns",
-// "Accessory table: columns" and "Record ID"; contracts/tauri-commands.md
+// 006 contracts/spreadsheet-format.md "Two tables", "Firearm table: new columns",
+// "Accessory table: columns" and "Record ID"; 006 contracts/tauri-commands.md
 // `get_export_scope` and `export_collection`. The record set an export writes
 // is `ops::export_records(conn, scope, filter)` (`"all"` or `"filtered"`, the
 // collection page's filter), which `ops::get_export_scope` counts.
@@ -695,7 +694,7 @@ fn an_accessory_row_holds_its_kind_policy_and_scheduled_amount() {
     assert_eq!(sheets::cell(&table, 0, "scheduled_coverage_amount"), "900");
 }
 
-/// FR-007: the free-text `accessories` column of a firearm is exported as it
+/// 006 FR-007: the free-text `accessories` column of a firearm is exported as it
 /// always was, whatever accessory records exist.
 #[test]
 fn the_free_text_accessories_column_is_unchanged() {
@@ -735,7 +734,7 @@ fn the_whole_collection_export_holds_every_record_active_and_disposed() {
     assert_eq!((result.exported_firearm_count, result.exported_accessory_count), (1, 2));
 }
 
-// --- US5-9: the filtered export includes everything mounted on the matches --------------
+// --- 006 US5-9: the filtered export includes everything mounted on the matches ----------
 
 /// The `make` of every data row of a table.
 fn makes(table: &sheets::Table) -> Vec<String> {

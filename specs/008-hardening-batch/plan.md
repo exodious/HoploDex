@@ -276,10 +276,10 @@ src/
 │   └── */*Service.ts                # scope as the first parameter
 
 e2e/
-├── specs/us14-session-isolation.e2e.ts  # NEW
-├── specs/us15-browser-controls.e2e.ts   # NEW (real input on Linux)
-├── specs/us9-locking.e2e.ts             # + pending from another version
-├── specs/us5-export-import.e2e.ts       # + refused file, Stop reading
+├── specs/session-isolation.e2e.ts  # NEW
+├── specs/browser-controls.e2e.ts   # NEW (real input on Linux)
+├── specs/locking.e2e.ts             # + pending from another version
+├── specs/export-import.e2e.ts       # + refused file, Stop reading
 └── screenshots/screens.e2e.ts           # contracts/ui.md §5
 
 scripts/

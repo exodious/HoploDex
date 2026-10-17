@@ -41,10 +41,10 @@ text_enum!(Origin {
 });
 
 impl Origin {
-    /// specs/002-firearm-identification FR-001/FR-012: how the origin is
+    /// 002 FR-001/FR-012: how the origin is
     /// shown to the user, exported, and indexed for search. Kept in step
     /// with the `CASE` in `0002_fts5.sql` and `ORIGIN_OPTIONS` in
-    /// `src/features/firearms/types.ts` (research.md §6).
+    /// `src/features/firearms/types.ts` (002 research.md §6).
     pub fn label(&self) -> &'static str {
         match self {
             Self::Domestic => "Domestic",
@@ -59,7 +59,7 @@ impl Condition {
     pub const ALL: [Condition; 6] =
         [Self::NewInBox, Self::LikeNew, Self::Excellent, Self::Good, Self::Fair, Self::Poor];
 
-    /// How the grade is shown to the user, and exported (FR-039).
+    /// How the grade is shown to the user, and exported (001 FR-039).
     pub fn label(&self) -> &'static str {
         match self {
             Self::NewInBox => "New in box",
@@ -76,7 +76,7 @@ impl Condition {
 #[serde(rename_all = "camelCase")]
 pub struct Firearm {
     pub id: i64,
-    /// specs/006-accessory-links FR-019: the record identifier. Set once at
+    /// 006 FR-019: the record identifier. Set once at
     /// creation and never sent over IPC; only the spreadsheet carries it.
     #[serde(skip)]
     pub uid: String,
@@ -85,23 +85,23 @@ pub struct Firearm {
     pub serial_number: Option<String>,
     pub no_serial_attested: bool,
     pub caliber: String,
-    /// specs/004-cartridges-action-types FR-001: the exact round; `None` =
+    /// 004 FR-001: the exact round; `None` =
     /// none recorded.
     pub cartridge: Option<String>,
     pub firearm_type_id: i64,
-    /// specs/004-cartridges-action-types FR-017: an `action_types` id; `None`
+    /// 004 FR-017: an `action_types` id; `None`
     /// = not specified.
     pub action_type_id: Option<i64>,
     pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
-    /// FR-039: hundredths of an inch.
+    /// 001 FR-039: hundredths of an inch.
     pub barrel_length_hundredths: Option<i64>,
-    /// FR-039: hundredths of an inch.
+    /// 001 FR-039: hundredths of an inch.
     pub overall_length_hundredths: Option<i64>,
-    /// FR-039: tenths of an ounce.
+    /// 001 FR-039: tenths of an ounce.
     pub weight_tenths_oz: Option<i64>,
-    /// FR-039: rounds the magazine, cylinder or tube holds.
+    /// 001 FR-039: rounds the magazine, cylinder or tube holds.
     pub capacity: Option<i64>,
     pub finish: Option<String>,
     pub condition: Option<Condition>,
@@ -117,28 +117,28 @@ pub struct Firearm {
     pub thumbnail_photo_id: Option<i64>,
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
-    /// specs/002-firearm-identification FR-001: `None` means not specified.
+    /// 002 FR-001: `None` means not specified.
     pub origin: Option<Origin>,
-    /// specs/002-firearm-identification FR-003.
+    /// 002 FR-003.
     pub year_of_manufacture: Option<i64>,
-    /// specs/002-firearm-identification FR-002: only for `Origin::Imported`.
+    /// 002 FR-002: only for `Origin::Imported`.
     pub country_of_manufacture: Option<String>,
-    /// specs/002-firearm-identification FR-002: import-marked origins only.
+    /// 002 FR-002: import-marked origins only.
     pub importer_name: Option<String>,
-    /// specs/002-firearm-identification FR-004: import-marked origins only.
+    /// 002 FR-004: import-marked origins only.
     pub original_make: Option<String>,
     pub original_model: Option<String>,
     pub original_serial_number: Option<String>,
-    /// specs/005-regulated-item-types FR-007: a `registration_classes` id;
+    /// 005 FR-007: a `registration_classes` id;
     /// `None` = no classification.
     pub registration_class_id: Option<i64>,
-    /// FR-009: e.g. "Form 4". Only with a classification.
+    /// 005 FR-009: e.g. "Form 4". Only with a classification.
     pub registration_form: Option<String>,
-    /// FR-009, FR-010: `YYYY-MM-DD`. Only with a classification.
+    /// 005 FR-009, FR-010: `YYYY-MM-DD`. Only with a classification.
     pub registration_approved: Option<String>,
-    /// FR-009: e.g. "Smith Family Trust". Only with a classification.
+    /// 005 FR-009: e.g. "Smith Family Trust". Only with a classification.
     pub registered_to: Option<String>,
-    /// specs/006-accessory-links research.md §8: the direct host. Not a
+    /// 006 research.md §8: the direct host. Not a
     /// column: `from_row` leaves it `None` and the loaders fill it from
     /// `mounts`.
     pub mounted_on: Option<RecordRef>,
@@ -199,7 +199,7 @@ impl Firearm {
 }
 
 /// All `Firearm` fields except `id`, `createdAt`, `updatedAt`, and
-/// `thumbnailPhotoId`, per contracts/tauri-commands.md's `FirearmInput`.
+/// `thumbnailPhotoId`, per 001 contracts/tauri-commands.md's `FirearmInput`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FirearmInput {
@@ -208,25 +208,25 @@ pub struct FirearmInput {
     pub serial_number: Option<String>,
     pub no_serial_attested: bool,
     pub caliber: String,
-    /// specs/004-cartridges-action-types FR-001: the exact round; `None` =
+    /// 004 FR-001: the exact round; `None` =
     /// none recorded.
     #[serde(default)]
     pub cartridge: Option<String>,
     pub firearm_type_id: i64,
-    /// specs/004-cartridges-action-types FR-017: an `action_types` id; `None`
+    /// 004 FR-017: an `action_types` id; `None`
     /// = not specified.
     #[serde(default)]
     pub action_type_id: Option<i64>,
     pub nickname: Option<String>,
     pub notes: Option<String>,
     pub accessories: Option<String>,
-    /// FR-039: hundredths of an inch.
+    /// 001 FR-039: hundredths of an inch.
     pub barrel_length_hundredths: Option<i64>,
-    /// FR-039: hundredths of an inch.
+    /// 001 FR-039: hundredths of an inch.
     pub overall_length_hundredths: Option<i64>,
-    /// FR-039: tenths of an ounce.
+    /// 001 FR-039: tenths of an ounce.
     pub weight_tenths_oz: Option<i64>,
-    /// FR-039: rounds the magazine, cylinder or tube holds.
+    /// 001 FR-039: rounds the magazine, cylinder or tube holds.
     pub capacity: Option<i64>,
     pub finish: Option<String>,
     pub condition: Option<Condition>,
@@ -241,32 +241,32 @@ pub struct FirearmInput {
     pub disposition_price: Option<i64>,
     pub insurance_policy_id: Option<i64>,
     pub scheduled_coverage_amount: Option<i64>,
-    /// specs/002-firearm-identification FR-001: `None` means not specified.
+    /// 002 FR-001: `None` means not specified.
     pub origin: Option<Origin>,
-    /// specs/002-firearm-identification FR-003.
+    /// 002 FR-003.
     pub year_of_manufacture: Option<i64>,
-    /// specs/002-firearm-identification FR-002: only for `Origin::Imported`.
+    /// 002 FR-002: only for `Origin::Imported`.
     pub country_of_manufacture: Option<String>,
-    /// specs/002-firearm-identification FR-002: import-marked origins only.
+    /// 002 FR-002: import-marked origins only.
     pub importer_name: Option<String>,
-    /// specs/002-firearm-identification FR-004: import-marked origins only.
+    /// 002 FR-004: import-marked origins only.
     pub original_make: Option<String>,
     pub original_model: Option<String>,
     pub original_serial_number: Option<String>,
-    /// specs/005-regulated-item-types FR-007: a `registration_classes` id;
+    /// 005 FR-007: a `registration_classes` id;
     /// `None` = no classification.
     #[serde(default)]
     pub registration_class_id: Option<i64>,
-    /// FR-009: e.g. "Form 4". Only with a classification.
+    /// 005 FR-009: e.g. "Form 4". Only with a classification.
     #[serde(default)]
     pub registration_form: Option<String>,
-    /// FR-009, FR-010: `YYYY-MM-DD`. Only with a classification.
+    /// 005 FR-009, FR-010: `YYYY-MM-DD`. Only with a classification.
     #[serde(default)]
     pub registration_approved: Option<String>,
-    /// FR-009: e.g. "Smith Family Trust". Only with a classification.
+    /// 005 FR-009: e.g. "Smith Family Trust". Only with a classification.
     #[serde(default)]
     pub registered_to: Option<String>,
-    /// specs/006-accessory-links research.md §8: the direct host (FR-010);
+    /// 006 research.md §8: the direct host (006 FR-010);
     /// checked and saved by the command, in the save's savepoint. The form
     /// always sends it.
     #[serde(default)]
@@ -325,12 +325,12 @@ impl From<&Firearm> for FirearmInput {
 
 impl FirearmInput {
     /// The input as it is stored: a blank nickname, serial number or finish
-    /// becomes `None` and any other is trimmed (FR-031, FR-032, FR-039: blank
+    /// becomes `None` and any other is trimmed (001 FR-031, FR-032, FR-039: blank
     /// is not a value, and comparison ignores surrounding whitespace). Make,
     /// model and caliber are trimmed and a blank cartridge becomes `None`
-    /// (specs/004-cartridges-action-types FR-015, research.md §9). The two
+    /// (004 FR-015, research.md §9). The two
     /// registration text details are treated as the cartridge is
-    /// (specs/005-regulated-item-types research.md §6).
+    /// (005 research.md §6).
     pub fn normalized(&self) -> Self {
         let trimmed = |value: &Option<String>| {
             value.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned)
@@ -356,7 +356,7 @@ impl FirearmInput {
     }
 }
 
-/// FR-039: a length, weight or capacity, once it has decoded as a whole
+/// 001 FR-039: a length, weight or capacity, once it has decoded as a whole
 /// number (a fractional one never does), must be at least `min`.
 fn checked_measure(
     field: &str,
@@ -370,13 +370,13 @@ fn checked_measure(
     }
 }
 
-/// Validation rules from data-model.md's "Validation rules" section,
-/// enforced here (not just at the DB level) so import validation (FR-020)
+/// Validation rules from 001 data-model.md's "Validation rules" section,
+/// enforced here (not just at the DB level) so import validation (001 FR-020)
 /// can produce per-row human-readable errors too. `stored` is the record an
-/// update replaces: specs/004-cartridges-action-types FR-015's entry rules
+/// update replaces: 004 FR-015's entry rules
 /// then apply only to a make, model, cartridge or caliber whose trimmed value
 /// differs from the stored one, so an existing value over the cap stays
-/// valid until that field is edited (spec Assumptions). Create and import
+/// valid until that field is edited (004 spec.md Assumptions). Create and import
 /// pass `None` and check all four.
 pub fn validate_firearm_input(
     input: &FirearmInput,
@@ -410,7 +410,7 @@ pub fn validate_firearm_input(
         }
     }
 
-    // specs/008-hardening-batch research.md §10: the free-text maximums.
+    // 008 research.md §10: the free-text maximums.
     // Unlike the entry fields, an existing value over its maximum isn't
     // exempt: it can't be saved until it is shortened.
     for (field, label, value, max) in [
@@ -471,7 +471,7 @@ pub fn validate_firearm_input(
     checked_measure("weightTenthsOz", &positive("Weight"), input.weight_tenths_oz, 1, &mut errors);
     checked_measure("capacity", "Capacity must be at least 1.", input.capacity, 1, &mut errors);
 
-    // Acceptance Scenarios 6-7 and FR-029: a serial number or the attestation
+    // 001 US1-6, US1-7 and FR-029: a serial number or the attestation
     // that there is none, never both and never neither.
     if is_blank(&input.serial_number) && !input.no_serial_attested {
         errors.insert(
@@ -487,7 +487,7 @@ pub fn validate_firearm_input(
         );
     }
 
-    // FR-003/FR-004: judged against the user's local date, not UTC.
+    // 001 FR-003/FR-004: judged against the user's local date, not UTC.
     let today = chrono::Local::now().date_naive();
     check_dates_and_disposition(
         &DispositionFields {
@@ -503,7 +503,7 @@ pub fn validate_firearm_input(
         &mut errors,
     );
 
-    // specs/002-firearm-identification FR-003: a whole four-digit year, no
+    // 002 FR-003: a whole four-digit year, no
     // later than the user's local current year. `checked_measure`'s `>= min`
     // shape doesn't fit an upper bound too, so this is spelled out.
     if let Some(year) = input.year_of_manufacture {
@@ -523,7 +523,7 @@ pub fn validate_firearm_input(
         }
     }
 
-    // specs/002-firearm-identification FR-002: the importer's name and
+    // 002 FR-002: the importer's name and
     // country of manufacture only apply to import-marked origins.
     let import_marked = matches!(input.origin, Some(Origin::Imported) | Some(Origin::Reimported));
     if !is_blank(&input.importer_name) && !import_marked {
@@ -542,7 +542,7 @@ pub fn validate_firearm_input(
         errors.insert("countryOfManufacture".into(), message.into());
     }
 
-    // specs/002-firearm-identification FR-004: the original manufacturer's
+    // 002 FR-004: the original manufacturer's
     // marks only apply to import-marked origins, same gating as importer_name.
     for (field, label, value) in [
         ("originalMake", "Original maker", &input.original_make),
@@ -557,7 +557,7 @@ pub fn validate_firearm_input(
         }
     }
 
-    // specs/005-regulated-item-types FR-009, FR-010: registration details
+    // 005 FR-009, FR-010: registration details
     // need a classification, and the approved date is not in the future.
     // Only the classification's existence is checked by the command.
     checked_date(

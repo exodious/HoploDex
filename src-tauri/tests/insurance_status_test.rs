@@ -1,5 +1,5 @@
 //! Integration tests for `services::insurance_status` under implicit
-//! blanket coverage (spec.md US3 Acceptance Scenarios 1-4, 7-8, 11, 13-14;
+//! blanket coverage (001 US3-1 to US3-4, US3-7, US3-8, US3-11, US3-13, US3-14,
 //! FR-016/017/024/028/036), run against a real temporary SQLCipher
 //! database. "Today" is passed in, so boundary days and expiry are exact.
 
@@ -358,7 +358,7 @@ fn no_estimated_value_is_never_flagged() {
     assert_eq!(warning_for(&db, f.id, TODAY), InsuranceWarning::None);
 }
 
-// --- Accessories (specs/006-accessory-links US1-7, US1-8, FR-008, FR-009) -------
+// --- Accessories (006 US1-7, US1-8, FR-008, FR-009) -----------------------------
 //
 // `record_warning` is `firearm_warning` renamed, its logic unchanged. Accessory
 // inputs are built from the IPC shape (`AccessoryInput`'s camelCase JSON), so

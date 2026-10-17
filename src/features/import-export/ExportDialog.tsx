@@ -3,7 +3,15 @@ import type { FormEvent } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionScope } from "../session/sessionScope";
 import { withIdlePaused } from "../session/useIdleActivity";
-import { Button, ChoiceCards, Dialog, Icon, ProgressBar, TextField } from "../../components";
+import {
+  Button,
+  ChoiceCards,
+  Dialog,
+  Icon,
+  ProgressBar,
+  TextField,
+  useShownOnceLoaded,
+} from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import type { BrowseState } from "../browse/types";
@@ -19,7 +27,7 @@ export interface ExportDialogProps {
   browse: BrowseState;
 }
 
-/** "3 firearms and 2 accessories" (specs/006-accessory-links FR-020). */
+/** "3 firearms and 2 accessories" (006 FR-020). */
 function scopeCounts(scope: ExportScope): string {
   const firearms = `${scope.firearmCount} ${scope.firearmCount === 1 ? "firearm" : "firearms"}`;
   const accessories = `${scope.accessoryCount} ${
@@ -33,12 +41,68 @@ function scopeCounts(scope: ExportScope): string {
  * `null` while they load. */
 type ScopeState = ExportScope | "unknown" | null;
 
+/** The page's search and filters as the export takes them, and whether they
+ * narrow the collection, which is what offers "Current results". */
+function exportFilter(browse: BrowseState, firearms: { status: string }[]) {
+  const query = browse.query.trim();
+  const filter = { query: query || undefined, includeDisposed: browse.includeDisposed };
+  const disposedCount = firearms.filter((f) => f.status === "disposed").length;
+  const filterActive = query !== "" || (!browse.includeDisposed && disposedCount > 0);
+  return { query, filter, filterActive };
+}
+
 /** Export to a spreadsheet plus a sibling folder of original photos in a
- * single action (US5, FR-018, SC-005). */
+ * single action (001 US5, FR-018, SC-005). It opens once the counts and the
+ * disclosure are read, so the note that names them is in its first frame and
+ * the centred dialog doesn't move when they arrive (#116). */
 export function ExportDialog({ open, onOpenChange, browse }: ExportDialogProps) {
+  const sessionScope = useSessionScope();
+  const { firearms } = useCollection();
+  const [allScope, setAllScope] = useState<ScopeState>(null);
+  const [filteredScope, setFilteredScope] = useState<ScopeState>(null);
+  const { query, filter, filterActive } = exportFilter(browse, firearms);
+
+  // The counts and the disclosure come from the backend (get_export_scope),
+  // which also follows what is mounted on the filtered firearms. Each opening
+  // reads them afresh.
+  useEffect(() => {
+    if (!open) {
+      setAllScope(null);
+      return;
+    }
+    let current = true;
+    importExportService
+      .getExportScope(sessionScope, { scope: "all" })
+      .then((r) => current && setAllScope(r))
+      .catch(() => current && setAllScope("unknown"));
+    return () => {
+      current = false;
+    };
+  }, [sessionScope, open]);
+  useEffect(() => {
+    if (!open || !filterActive) {
+      setFilteredScope(null);
+      return;
+    }
+    let current = true;
+    importExportService
+      .getExportScope(sessionScope, { scope: "filtered", filter })
+      .then((r) => current && setFilteredScope(r))
+      .catch(() => current && setFilteredScope("unknown"));
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionScope, open, filterActive, query, browse.includeDisposed]);
+
+  const shown = useShownOnceLoaded(
+    open,
+    allScope !== null && (!filterActive || filteredScope !== null),
+  );
+
   return (
     <Dialog
-      open={open}
+      open={shown}
       onOpenChange={onOpenChange}
       title="Export collection"
       description={
@@ -50,56 +114,40 @@ export function ExportDialog({ open, onOpenChange, browse }: ExportDialogProps) 
       }
       bare
     >
-      <ExportForm browse={browse} onClose={() => onOpenChange(false)} />
+      <ExportForm
+        browse={browse}
+        allScope={allScope}
+        filteredScope={filteredScope}
+        onClose={() => onOpenChange(false)}
+      />
     </Dialog>
   );
 }
 
-function ExportForm({ browse, onClose }: { browse: BrowseState; onClose: () => void }) {
+function ExportForm({
+  browse,
+  allScope,
+  filteredScope,
+  onClose,
+}: {
+  browse: BrowseState;
+  allScope: ScopeState;
+  filteredScope: ScopeState;
+  onClose: () => void;
+}) {
   const sessionScope = useSessionScope();
   const { firearms } = useCollection();
   const [format, setFormat] = useState<SpreadsheetFormat>("csv");
   const [scope, setScope] = useState<"all" | "filtered">("all");
   const [folder, setFolder] = useState("");
-  const [allScope, setAllScope] = useState<ScopeState>(null);
-  const [filteredScope, setFilteredScope] = useState<ScopeState>(null);
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<ExportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | undefined>();
-
-  const query = browse.query.trim();
-  const filter = { query: query || undefined, includeDisposed: browse.includeDisposed };
-  const disposedCount = firearms.filter((f) => f.status === "disposed").length;
-  const filterActive = query !== "" || (!browse.includeDisposed && disposedCount > 0);
-
-  // The counts and the disclosure come from the backend (get_export_scope),
-  // which also follows what is mounted on the filtered firearms.
-  useEffect(() => {
-    let current = true;
-    importExportService
-      .getExportScope(sessionScope, { scope: "all" })
-      .then((r) => current && setAllScope(r))
-      .catch(() => current && setAllScope("unknown"));
-    return () => {
-      current = false;
-    };
-  }, [sessionScope]);
-  useEffect(() => {
-    if (!filterActive) return;
-    let current = true;
-    importExportService
-      .getExportScope(sessionScope, { scope: "filtered", filter })
-      .then((r) => current && setFilteredScope(r))
-      .catch(() => current && setFilteredScope("unknown"));
-    return () => {
-      current = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionScope, filterActive, query, browse.includeDisposed]);
+  const { query, filter, filterActive } = exportFilter(browse, firearms);
 
   const chosen = filterActive && scope === "filtered" ? filteredScope : allScope;
-  // FR-020, FR-021: registration details and accessories leave the database
+  // 005 FR-020 and 006 FR-021: registration details and accessories leave the database
   // too, so the note names them whenever the chosen scope holds either.
   const includesRegistration = chosen === "unknown" || (chosen?.includesRegistration ?? false);
   const includesAccessories = chosen === "unknown" || (chosen?.includesAccessories ?? false);

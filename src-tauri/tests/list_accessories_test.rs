@@ -1,8 +1,8 @@
-//! specs/006-accessory-links User Story 1's plain Accessories list through
-//! `ops` (tasks.md T017, FR-016), against a real temporary SQLCipher
+//! 006 US1's plain Accessories list through
+//! `ops` (006 tasks.md T017, FR-016), against a real temporary SQLCipher
 //! database: one group "All" ordered by make, model, then kind, disposed
 //! accessories only on request, and each summary's kind, thumbnail, value
-//! and insurance flag; then User Story 4's grouping and search (T092,
+//! and insurance flag; then 006 US4's grouping and search (006 T092,
 //! FR-017, FR-018).
 //!
 //! Input and output are the contract's JSON (`ListAccessoriesInput`,
@@ -73,7 +73,7 @@ fn dispose(db: &TestDb, id: i64) {
     .unwrap();
 }
 
-// --- Order and groups (FR-016) -----------------------------------------------------------
+// --- Order and groups (006 FR-016) -------------------------------------------------------
 
 #[test]
 fn with_no_grouping_there_is_one_group_all_ordered_by_make_model_then_kind() {
@@ -185,7 +185,7 @@ fn a_summary_carries_the_thumbnail_photo_id() {
     assert_eq!(all(&output)[0]["thumbnailPhotoId"], photo_id);
 }
 
-// --- The insurance flag (FR-016, 001 FR-017 as for a firearm) ---------------------------------
+// --- The insurance flag (006 FR-009, 001 FR-017 as for a firearm) -----------------------------
 
 fn warning(output: &Value, id: i64) -> String {
     let summaries = all(output);
@@ -284,7 +284,7 @@ fn unscheduling_returns_an_accessory_to_the_blanket_rules() {
     assert_eq!(all(&output)[0]["scheduledCoverageAmount"], Value::Null);
 }
 
-// --- Mounted on (specs/006-accessory-links US2, FR-013) -----------------------------------
+// --- Mounted on (006 US2, FR-013) ---------------------------------------------------------
 
 fn mount(db: &TestDb, item: RecordRef, host: RecordRef) {
     let input = serde_json::from_value(json!({ "item": item, "host": host })).unwrap();
@@ -330,7 +330,7 @@ fn an_accessory_names_its_direct_host_only_and_an_unmounted_one_has_none() {
     assert_eq!(find(loose)["mountedOn"], Value::Null);
 }
 
-// --- Grouping (specs/006-accessory-links US4, FR-017, "Group order") ----------------------
+// --- Grouping (006 US4, FR-017, "Group order") --------------------------------------------
 
 fn keys(output: &Value) -> Vec<String> {
     groups(output).iter().map(|g| g["key"].as_str().unwrap().to_owned()).collect()
@@ -513,7 +513,7 @@ fn grouping_and_search_leave_out_disposed_accessories_until_asked() {
     assert_eq!(group_ids(&with), [vec![sold, active]], "Mark 4 before VX");
 }
 
-// --- Search (US4-4, FR-018) ----------------------------------------------------------------
+// --- Search (006 US4-4, FR-018) ------------------------------------------------------------
 
 /// An accessory with a different distinctive word in each searchable field.
 fn searchable(db: &TestDb) -> i64 {
@@ -629,7 +629,7 @@ fn search_and_grouping_combine() {
     assert_eq!(group_ids(&output), [vec![optic], vec![sling]]);
 }
 
-// --- Document names (specs/007-document-preview T027, US1-9, FR-015) -----------------------
+// --- Document names (007 T027, US1-9, FR-015) ----------------------------------------------
 
 mod document_names {
     use super::*;

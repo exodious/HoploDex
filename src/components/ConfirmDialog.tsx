@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Button } from "./Button";
-import { placeFocus } from "./placeFocus";
+import { currentOpener, placeFocus } from "./placeFocus";
 import "./components.css";
 
 /** What a question's body can hold that takes focus or input. */
@@ -43,8 +43,8 @@ export interface ConfirmDialogProps {
  * import) per constitution Principle III — no screen invents its own. With
  * an alternative action it is also the save / discard / cancel question.
  *
- * It follows the app's Enter rule (issue #44, specs/003 contracts/
- * ui-databases.md §8): the body and footer are one `<form>` and the confirm
+ * It follows the app's Enter rule (issue #44, 003 contracts/ui-databases.md
+ * §0): the body and footer are one `<form>` and the confirm
  * button is its submit button, so Enter in a single-line field in `children`
  * confirms, unless `confirmDisabled` or an action is pending. Enter on a
  * button activates that button (Cancel cancels), and on a radio, checkbox or
@@ -79,7 +79,7 @@ export function ConfirmDialog({
   const contentRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (open) previouslyFocused.current = document.activeElement as HTMLElement | null;
+    if (open) previouslyFocused.current = currentOpener();
   }, [open]);
 
   function run(action: () => void | Promise<unknown>, which: "confirm" | "alternative") {
@@ -145,7 +145,7 @@ export function ConfirmDialog({
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            previouslyFocused.current?.focus();
+            placeFocus(previouslyFocused.current);
           }}
         >
           <header className="hd-dialog__header">

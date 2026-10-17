@@ -1,5 +1,5 @@
 //! The amount, date, disposition and insurance-pair rules a firearm and an
-//! accessory share (specs/006-accessory-links tasks.md T034, data-model.md
+//! accessory share (006 tasks.md T034, data-model.md
 //! "Validation rules"), so the two records can never judge them differently.
 //! Each check records its message under the IPC field name in `errors`; the
 //! callers turn a non-empty map into the `VALIDATION_ERROR`.
@@ -18,8 +18,8 @@ pub(crate) fn is_blank(value: &Option<String>) -> bool {
 
 /// The most characters a short free-text field may hold: a nickname, a
 /// serial number, a finish, a source or recipient, a firearm's origin
-/// details, and a policy's names, number and contacts (specs/008-hardening-batch
-/// research.md §10). The entry fields keep their own 100
+/// details, and a policy's names, number and contacts (008 research.md §10).
+/// The entry fields keep their own 100
 /// (`services::entry_text::MAX_ENTRY_CHARS`). The frontend repeats it as
 /// `MAX_SHORT_TEXT_CHARS` in `src/lib/textLimits.ts`; the two must agree.
 pub const MAX_SHORT_TEXT_CHARS: usize = 200;
@@ -77,7 +77,7 @@ pub(crate) fn check_optional_text_length(
 }
 
 /// Parses an optional `YYYY-MM-DD` date that must not be later than
-/// `today` (FR-003/FR-004: today is allowed). A blank date is fine — both
+/// `today` (001 FR-003/FR-004: today is allowed). A blank date is fine — both
 /// dates are optional — and yields `None`; a bad one records an error under
 /// `field` and also yields `None`.
 pub(crate) fn checked_date(
@@ -131,7 +131,7 @@ pub fn saturating_add(a: i64, b: i64) -> i64 {
     saturating_total([a, b])
 }
 
-/// FR-037: an amount is a whole number of dollars, so once it has decoded
+/// 001 FR-037: an amount is a whole number of dollars, so once it has decoded
 /// (a fractional number never does) the only things left to refuse are a
 /// negative one and one above [`MAX_AMOUNT_DOLLARS`] (#67).
 pub(crate) fn checked_amount(
@@ -182,10 +182,10 @@ pub(crate) struct DispositionFields<'a> {
     pub disposition_price: Option<i64>,
 }
 
-/// FR-003/FR-004: both dates are judged against the user's local date, and
+/// 001 FR-003/FR-004: both dates are judged against the user's local date, and
 /// the disposition date is not before the acquisition date. A disposed
 /// record needs its type, recipient and date, and an active one none of
-/// them. The price is optional (research.md §9): a record disposed of along
+/// them. The price is optional (006 research.md §9): a record disposed of along
 /// with its host may have none.
 pub(crate) fn check_dates_and_disposition(
     fields: &DispositionFields<'_>,
@@ -236,7 +236,7 @@ pub(crate) fn check_dates_and_disposition(
     }
 }
 
-/// FR-014/FR-036: scheduled under a policy with its own amount, or not at
+/// 001 FR-014/FR-036: scheduled under a policy with its own amount, or not at
 /// all. There is no per-record blanket assignment.
 pub(crate) fn check_coverage_pair(
     insurance_policy_id: Option<i64>,

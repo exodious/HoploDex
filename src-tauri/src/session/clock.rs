@@ -1,5 +1,5 @@
 //! The time as the session sees it: now, with the computer's time zone,
-//! which decides what "today" is for the once-a-day backup (research.md §7).
+//! which decides what "today" is for the once-a-day backup (003 research.md §7).
 //! The tests put a clock of their own in its place.
 
 use chrono::{DateTime, FixedOffset, Local};

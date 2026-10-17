@@ -11,14 +11,16 @@ import {
   listedNames,
 } from "../support/ui";
 import { createDatabase, invokeCommand, search } from "../support/ui";
+import { resizeWindow } from "../support/screenshots";
+import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of User Story 2's acceptance scenarios (spec.md),
+ * End-to-end coverage of 001 US2's acceptance scenarios (001 spec.md),
  * driven against the real built app through its embedded WebDriver server.
  * Seeds its own uniquely-named records rather than assuming an empty
  * collection. See e2e/support/ui.ts for why interactions go through page JS.
  */
-describe("User Story 2 - Browse, Search, and Group", () => {
+describe("001 US2 - Browse, Search, and Group the Collection (was us2-browse-search)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();
@@ -52,7 +54,7 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     await back();
   });
 
-  it("shows the same firearms in both list and tile view, groups them by type and searches notes (Scenarios 1-3, 5)", async () => {
+  it("shows the same firearms in both list and tile view, groups them by type and searches notes (001 US2-1 to US2-3 and US2-5)", async () => {
     await search("Browse");
     const inList = await listedNames();
     expect(inList).toEqual(
@@ -70,7 +72,7 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     await choose("List");
     await expect($(".hd-table")).toExist();
 
-    // Scenario 2: the type headings render (the grouping itself is a backend rule).
+    // 001 US2-2: the type headings render (the grouping itself is a backend rule).
     await groupBy("Type");
     await expect($("h2.hd-group__title*=Handgun")).toExist();
     await expect($("h2.hd-group__title*=Rifle")).toExist();
@@ -78,11 +80,11 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     await groupBy("None");
     await expect($$("h2.hd-group__title")).toBeElementsArrayOfSize(0);
 
-    // Scenario 3: a notes search narrows the list to the matching firearm.
+    // 001 US2-3: a notes search narrows the list to the matching firearm.
     await search("distinctivenotecrackedhandle");
     expect(await listedNames()).toEqual(["BrowseRuger 10-22-Browse"]);
 
-    // Scenario 5: clearing the search shows the full collection again.
+    // 001 US2-5: clearing the search shows the full collection again.
     await search("");
     expect(await listedNames()).toEqual(expect.arrayContaining(inList));
   });
@@ -187,5 +189,127 @@ describe("User Story 2 - Browse, Search, and Group", () => {
     expect(Math.abs(stuck.headTop - stuck.topbar)).toBeLessThanOrEqual(1);
     expect(stuck.headCovered).toBe(false);
     expect(stuck.groupAtTop).toBe(stuck.secondTitle);
+  });
+
+  // #114: Radix gave focus back to a menu's button with a plain focus(), and
+  // WebKitGTK rang it after a mouse choice. Only real input shows it: the
+  // walk's synthetic pointerdown and WebDriver's clicks don't.
+  it("returns focus to the Group by and Database buttons with the ring only after a key (#114)", async function () {
+    skipWithoutRealInput(this);
+    const trigger = 'button[aria-haspopup="menu"][aria-label^="Group by"]';
+    const focusOn = (selector: string) =>
+      browser.execute((css: string) => {
+        const active = document.activeElement;
+        return {
+          onButton: active === document.querySelector(css),
+          ring: active?.matches(":focus-visible") ?? false,
+        };
+      }, selector);
+    const menuClosed = () => $('[role="menu"]').waitForExist({ reverse: true, timeout: 5000 });
+
+    await realClick(trigger);
+    await realClick('[role="menuitemradio"]*=Type');
+    await menuClosed();
+    expect(await focusOn(trigger)).toEqual({ onButton: true, ring: false });
+
+    // A key choice: the ring shows, so a keyboard user sees where they are.
+    await realKey("Return");
+    await $('[role="menu"]').waitForDisplayed({ timeout: 5000 });
+    await realKey("Down");
+    await realKey("Return");
+    await menuClosed();
+    expect(await focusOn(trigger)).toEqual({ onButton: true, ring: true });
+
+    await realClick(trigger);
+    await $('[role="menu"]').waitForDisplayed({ timeout: 5000 });
+    await realKey("Escape");
+    await menuClosed();
+    expect(await focusOn(trigger)).toEqual({ onButton: true, ring: true });
+
+    // A click elsewhere closes the Database menu without ringing its button.
+    await realClick("button.hd-db-menu");
+    await $('[role="menu"]').waitForDisplayed({ timeout: 5000 });
+    await realClick("h1");
+    await menuClosed();
+    expect(await focusOn("button.hd-db-menu")).toEqual({ onButton: true, ring: false });
+
+    // A dialog closed with the mouse gives focus back to its button the same way.
+    await realClick("button=Add firearm");
+    await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
+    await realClick("button=Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 5000 });
+    const afterDialog = await browser.execute(() => ({
+      name: document.activeElement?.textContent?.trim(),
+      ring: document.activeElement?.matches(":focus-visible") ?? false,
+    }));
+    expect(afterDialog).toEqual({ name: "Add firearm", ring: false });
+
+    await groupBy("None");
+  });
+
+  // #108: the window's minimum width is 800px (main.rs); the top bar used to
+  // run past it, so the page scrolled sideways. Last in the file because it
+  // rewrites the tab counts in place to the widest ones a person could see.
+  it("keeps the top bar and the page inside the window at its minimum width (#108)", async () => {
+    // getWindowSize reports no height without screenshots' window manager
+    // setup, so the size to restore is the page's own.
+    const [width, height] = await browser.execute(() => [window.innerWidth, window.innerHeight]);
+    const original = { width, height };
+    await resizeWindow(800, original.height);
+    try {
+      const fit = await browser.execute(() => {
+        for (const count of document.querySelectorAll(".hd-tab__count")) count.textContent = "9999";
+        const insurance = [...document.querySelectorAll(".hd-tab")].find((tab) =>
+          tab.textContent?.startsWith("Insurance"),
+        )!;
+        if (!insurance.querySelector(".hd-tab__alert")) {
+          const alert = document.createElement("span");
+          alert.className = "hd-tab__alert hd-num";
+          alert.textContent = "9999";
+          insurance.append(alert);
+        }
+        // The widest Coverage pill, in the first row: the table used to cut
+        // it off at its right edge.
+        const coverage = document.querySelector(".hd-table td.hd-col--coverage");
+        coverage?.replaceChildren();
+        const pill = document.createElement("span");
+        pill.className = "hd-badge hd-badge--warn";
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("width", "16");
+        icon.setAttribute("height", "16");
+        pill.append(icon, "Under-insured");
+        coverage?.append(pill);
+        const table = document.querySelector(".hd-table")!.getBoundingClientRect();
+        const clipped = [...document.querySelectorAll<HTMLElement>(".hd-table td, .hd-table th")]
+          .filter((cell) => cell.scrollWidth > cell.clientWidth)
+          .map((cell) => `${cell.className}: ${cell.textContent?.slice(0, 30)}`);
+        const inner = document.querySelector<HTMLElement>(".hd-topbar__inner")!;
+        return {
+          clipped,
+          // The columns together fill the table (a group title that spanned
+          // the hidden columns made the table add one of its own).
+          headRight: [...document.querySelectorAll(".hd-table th")]
+            .filter((th) => getComputedStyle(th).display !== "none")
+            .reduce((right, th) => Math.max(right, th.getBoundingClientRect().right), 0),
+          pillRight: pill.getBoundingClientRect().right,
+          tableRight: table.right,
+          innerWidth: window.innerWidth,
+          pageWidth: document.documentElement.scrollWidth,
+          barWidth: inner.scrollWidth,
+          barClient: inner.clientWidth,
+          wordmark: getComputedStyle(document.querySelector(".hd-brand__name")!).display,
+        };
+      });
+      expect(fit.innerWidth).toBeLessThan(900);
+      expect(fit.pageWidth).toBeLessThanOrEqual(fit.innerWidth);
+      expect(fit.barWidth).toBeLessThanOrEqual(fit.barClient);
+      expect(fit.wordmark).toBe("none");
+      // And nothing in the collection table is cut off at that width.
+      expect(fit.clipped).toEqual([]);
+      expect(fit.pillRight).toBeLessThanOrEqual(fit.tableRight);
+      expect(fit.headRight).toBeGreaterThanOrEqual(fit.tableRight - 2);
+    } finally {
+      await resizeWindow(original.width, original.height);
+    }
   });
 });

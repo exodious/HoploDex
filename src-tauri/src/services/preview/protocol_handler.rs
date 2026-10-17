@@ -1,5 +1,5 @@
 //! The `hdpreview` custom protocol: one-time URLs that serve a PDF from
-//! memory to the surface (research.md §4, contracts/tauri-commands.md "The
+//! memory to the surface (007 research.md §4, 007 contracts/tauri-commands.md "The
 //! `hdpreview` protocol").
 //!
 //! It answers three requests, from the PDF surface's web view (`webview_label`
@@ -7,14 +7,14 @@
 //! - `GET /<token>/document.pdf`, the current PDF preview's token: `200` with
 //!   the whole document;
 //! - `GET /hooked/<surface secret>`: `204`, PDF.js's hook has run (Linux,
-//!   research.md §8);
+//!   007 research.md §8);
 //! - anything else, a request from another web view, or a token no longer
 //!   shown: `404`, empty.
 //!
 //! The session's lock is held only to copy out the bytes or set a flag. When
 //! both the document has been served (and on Linux hooked), `preview:pdf-ready`
 //! goes to the main web view, once. On Linux the first serve of a document
-//! also starts its hook timer (research.md §8).
+//! also starts its hook timer (007 research.md §8).
 
 use std::time::Duration;
 
@@ -142,7 +142,7 @@ fn serve(session: &Session, path: &str) -> Response<Vec<u8>> {
 
 /// Linux: PDF.js's hook must report within `timeout` of the document being
 /// served, or the surface is closed rather than shown with a PDF's scripting
-/// on (research.md §8). Started at the first serve, so a slow surface start
+/// on (007 research.md §8). Started at the first serve, so a slow surface start
 /// doesn't spend the time.
 fn watch_for_the_hook(
     session: &Session,

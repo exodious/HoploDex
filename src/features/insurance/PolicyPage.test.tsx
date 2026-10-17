@@ -102,8 +102,8 @@ function scrolledPastHeader() {
   expect(strip()).not.toBeNull();
 }
 
-// 001 US3 Scenario 17
-describe("PolicyPage pinned strip (FR-041, US3/AC17)", () => {
+// 001 US3-17
+describe("PolicyPage pinned strip (001 FR-041, US3-17)", () => {
   beforeEach(() => {
     stubIntersectionObserver();
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;

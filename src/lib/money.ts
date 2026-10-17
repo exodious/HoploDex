@@ -1,4 +1,4 @@
-// Amounts are whole U.S. dollars everywhere (FR-037): they are entered,
+// Amounts are whole U.S. dollars everywhere (001 FR-037): they are entered,
 // stored, sent over IPC and exported as whole dollars, never cents. Currency
 // is USD, matching the app's U.S. federal-law scope. Thousands separators
 // exist only in `formatDollars`; they are never typed, stored or exported.

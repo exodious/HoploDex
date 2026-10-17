@@ -1,5 +1,5 @@
 //! The length-prefixed frames between the app and a confined helper, shared
-//! by both ends and by both modes (007's research.md §11; 008's research.md §8).
+//! by both ends and by both modes (007 research.md §11; 008 research.md §8).
 //!
 //! A frame is a big-endian `u32` length, then that many bytes: a one-byte tag
 //! and the payload. What the tags and payloads mean is the mode's

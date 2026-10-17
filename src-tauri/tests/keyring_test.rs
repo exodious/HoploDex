@@ -1,5 +1,5 @@
-//! Remembering a database's passphrase on this computer (FR-017–FR-019,
-//! SC-008; research.md §10). Real SQLCipher files in temp directories and
+//! Remembering a database's passphrase on this computer (003 FR-017–FR-019,
+//! SC-008; 003 research.md §10). Real SQLCipher files in temp directories and
 //! keyring-core's in-memory store, never the OS keyring: run with
 //! `--features mock-keyring`.
 #![cfg(feature = "mock-keyring")]
@@ -183,7 +183,7 @@ fn saving_a_checked_passphrase_makes_one_entry_holding_it_normalized() {
     )
     .unwrap();
     let id = world.database_id();
-    assert_eq!(stored(&id), None, "nothing is saved until asked (SC-002)");
+    assert_eq!(stored(&id), None, "nothing is saved until asked (003 SC-002)");
 
     world.save(decomposed).unwrap();
 
@@ -272,7 +272,7 @@ fn forgetting_removes_the_entry_for_the_open_database_or_a_listed_one() {
     assert!(saved_failed(&world.open("Main", Unlock::Saved).unwrap_err()));
 }
 
-// 003 US2 Scenario 5
+// 003 US2-5
 #[test]
 fn removing_a_database_from_the_list_forgets_its_passphrase() {
     let world = World::new();
@@ -394,7 +394,7 @@ fn a_backup_opened_directly_does_not_inherit_the_saved_passphrase() {
     let backup = PathBuf::from(&listed.backups[0].path);
     world.close();
 
-    // It opens like any database, with its own new identity (research.md §9).
+    // It opens like any database, with its own new identity (003 research.md §9).
     ops::open_database(
         &world.session,
         &world.machine,
@@ -437,7 +437,7 @@ fn saving_a_wrong_passphrase_is_refused_by_the_first_page_check() {
     world.add_firearm("A1");
 }
 
-// 003 US5 Scenario 4
+// 003 US5-4
 #[test]
 fn without_a_keyring_nothing_is_saved_and_everything_else_works() {
     // The in-memory store is installed anyway, so `stored` can look in it.
@@ -465,7 +465,7 @@ fn without_a_keyring_nothing_is_saved_and_everything_else_works() {
     world.open_typed("Main", TEST_PASSPHRASE).unwrap();
 }
 
-/// The pre-feature entry keys the developer's real database (research.md
+/// The pre-feature entry keys the developer's real database (003 research.md
 /// §10). A mock error is put on it: any read, write or delete would consume
 /// the error, so finding it still there proves nothing touched the entry.
 #[test]

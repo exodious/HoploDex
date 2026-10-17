@@ -1,5 +1,5 @@
-//! Confirms the FTS5 index (data-model.md's "Virtual table: firearms_fts")
-//! actually matches both free-form notes and structured fields, per FR-013.
+//! Confirms the FTS5 index (001 data-model.md's "Virtual table: firearms_fts")
+//! actually matches both free-form notes and structured fields, per 001 FR-013.
 
 use crate::support;
 
@@ -72,7 +72,7 @@ fn matches_structured_fields() {
     assert_eq!(search(&db.conn, "45 ACP"), 1, "should match caliber");
 }
 
-// 001 US2 Scenario 3: a search matches free-form notes.
+// 001 US2-3: a search matches free-form notes.
 #[test]
 fn matches_free_form_notes_and_accessories() {
     let db = TestDb::new();
@@ -155,7 +155,7 @@ fn matches_text_from_the_middle_of_a_value() {
     assert_eq!(search(&db.conn, "_"), 0, "a LIKE wildcard is literal");
 }
 
-/// FR-039 / US1 Acceptance Scenario 17: a word in a firearm's finish is found.
+/// 001 FR-039 / US1-17: a word in a firearm's finish is found.
 #[test]
 fn matches_a_word_in_the_finish_including_after_an_edit_and_a_delete() {
     let db = TestDb::new();
@@ -177,7 +177,7 @@ fn matches_a_word_in_the_finish_including_after_an_edit_and_a_delete() {
     assert_eq!(search(&db.conn, "Parkerized"), 0, "a deleted firearm is not found");
 }
 
-// specs/002-firearm-identification US1-4 / FR-012: origin, year, importer
+// 002 US1-4 / FR-012: origin, year, importer
 // name and country of manufacture are searchable, and origin searches as
 // its display label.
 
@@ -282,7 +282,7 @@ fn searching_country_for_a_reimported_firearm_finds_united_states() {
     );
 }
 
-// specs/002-firearm-identification US2-5: the original manufacturer's marks
+// 002 US2-5: the original manufacturer's marks
 // are searchable too.
 
 #[test]
@@ -313,7 +313,7 @@ fn searching_the_original_serial_number_or_maker_finds_the_firearm() {
     assert_eq!(search(&db.conn, "Fabrique Nationale"), 1, "should match the original maker");
 }
 
-// specs/002-firearm-identification research.md §6: the origin label exists
+// 002 research.md §6: the origin label exists
 // in three places (the SQL CASE in 0002_fts5.sql, Origin::label(), and
 // ORIGIN_OPTIONS in src/features/firearms/types.ts, checked by a separate
 // Vitest test). This walks every Origin variant, searching by its exact
@@ -351,7 +351,7 @@ fn every_origin_is_found_by_searching_its_own_label() {
     }
 }
 
-// specs/002-firearm-identification SC-006: at collection scale, a search on
+// 002 SC-006: at collection scale, a search on
 // any of the seven new fields still finds exactly the one firearm carrying
 // it, not a false positive from the rest of the collection.
 #[test]
@@ -420,7 +420,7 @@ fn a_search_on_any_new_field_finds_exactly_the_one_firearm_carrying_it_among_500
     }
 }
 
-/// specs/004-cartridges-action-types FR-008 / US1-9: the cartridge is
+/// 004 FR-008 / US1-9: the cartridge is
 /// searchable, a partly typed designation included.
 #[test]
 fn matches_the_cartridge_including_a_partial_designation_and_a_custom_word() {
@@ -449,7 +449,7 @@ fn matches_the_cartridge_including_a_partial_designation_and_a_custom_word() {
     assert_eq!(search(&db.conn, "Wildcat"), 1, "a word of a custom cartridge");
 }
 
-/// specs/004-cartridges-action-types FR-020 / US3-5: the action's name is
+/// 004 FR-020 / US3-5: the action's name is
 /// searchable, and follows the record when the action changes.
 #[test]
 fn matches_the_action_name_and_follows_a_change_of_action() {
@@ -494,7 +494,7 @@ fn matches_the_action_name_and_follows_a_change_of_action() {
     assert_eq!(search(&db.conn, "lever"), 1, "the new one does");
 }
 
-/// specs/005-regulated-item-types US3: the new action's name is searchable.
+/// 005 US3: the new action's name is searchable.
 #[test]
 fn matches_the_automatic_or_select_fire_action() {
     let db = TestDb::new();
@@ -514,7 +514,7 @@ fn matches_the_automatic_or_select_fire_action() {
     assert_eq!(search(&db.conn, "automatic"), 1);
 }
 
-/// specs/005-regulated-item-types US2-11, FR-017: the classification, form
+/// 005 US2-11, FR-017: the classification, form
 /// and "Registered to" are searched; the approved date is not.
 #[test]
 fn registration_is_found_by_classification_form_and_registered_to() {
@@ -581,10 +581,10 @@ fn registration_is_found_by_classification_form_and_registered_to() {
     assert_eq!(search(&db.conn, "form 4"), 0);
 }
 
-/// specs/006-accessory-links US4-6, FR-018: the collection page's search is
+/// 006 US4-6, FR-018: the collection page's search is
 /// unchanged. A mounted accessory's text is not part of its host's index; the
 /// firearm's own free-text `accessories` field still is, and the two are
-/// separate (FR-007).
+/// separate (006 FR-007).
 #[test]
 fn a_firearm_is_not_found_by_the_model_of_an_accessory_mounted_on_it_but_by_its_own_free_text() {
     use hoplodex_lib::commands::accessories::ops as accessory_ops;
@@ -629,7 +629,7 @@ fn a_firearm_is_not_found_by_the_model_of_an_accessory_mounted_on_it_but_by_its_
     assert_eq!(search(&db.conn, "Mini-14"), 1);
 }
 
-// --- Document names (specs/007-document-preview T026, FR-015, research.md §19) ---
+// --- Document names (007 T026, FR-015, research.md §19) ---
 
 mod document_names {
     use super::*;
@@ -724,7 +724,7 @@ mod document_names {
         ops::delete_firearm(&db.conn, id, true).unwrap();
 
         // The cascade through the foreign key fires the document delete
-        // trigger: no entry is left in the index (data-model.md).
+        // trigger: no entry is left in the index (007 data-model.md).
         let entries: i64 = db
             .conn
             .query_row(

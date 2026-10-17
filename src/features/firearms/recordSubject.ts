@@ -4,7 +4,7 @@ import { accessoryNameText } from "../mounts/recordNames";
 import type { RecordKind } from "../mounts/types";
 import type { Firearm } from "./types";
 
-// specs/006-accessory-links FR-009, contracts/ui-accessories.md §7, §10: the
+// 006 FR-009, contracts/ui-accessories.md §7, §10: the
 // dispose, restore and coverage dialogs serve a record of either kind. A
 // caller gives exactly one of `firearm` and `accessory`.
 
@@ -15,7 +15,7 @@ export type RecordSubjectProps =
 export interface RecordSubject {
   kind: RecordKind;
   id: number;
-  /** The record's name in plain text, as `RecordName` shows it (FR-005). */
+  /** The record's name in plain text, as `RecordName` shows it (006 FR-005). */
   name: string;
   /** What to call it in a sentence: "firearm" or "accessory". */
   noun: "firearm" | "accessory";
@@ -31,7 +31,7 @@ export interface RecordSubject {
   dispositionPrice: number | null;
 }
 
-/** "{make} {model} · {kind}" (FR-005). */
+/** "{make} {model} · {kind}" (006 FR-005). */
 export function accessoryName(
   accessory: Pick<Accessory, "make" | "model" | "accessoryKindId">,
   kinds: AccessoryKind[],

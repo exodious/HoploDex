@@ -13,7 +13,7 @@ async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/Coverage ends/), "2026-12-31");
 }
 
-describe("InsurancePolicyForm (FR-027, FR-036)", () => {
+describe("InsurancePolicyForm (001 FR-027, FR-036)", () => {
   it("makes the blanket limit optional: blank submits null, a schedule-only policy", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -65,7 +65,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     ).toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 12
+  // 001 US3-12
   it("shows the backend's overlap message, naming the other policy, on the start date", async () => {
     const user = userEvent.setup();
     const message = "These dates overlap the blanket policy Old policy (2025-01-01 to 2026-01-01).";
@@ -115,7 +115,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(screen.getByLabelText("Blanket coverage limit")).toHaveValue("");
   });
 
-  // 001 US3 Scenario 16
+  // 001 US3-16
   it("submits blank notes as null", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -128,7 +128,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(onSubmit.mock.calls[0][0].notes).toBeNull();
   });
 
-  // 001 US3 Scenario 16
+  // 001 US3-16
   it("submits entered notes, keeping line breaks", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -144,7 +144,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(onSubmit.mock.calls[0][0].notes).toBe("Renews in January.\nAsk about the rider.");
   });
 
-  // 001 US3 Scenario 16
+  // 001 US3-16
   it("prefills the notes from an existing policy", () => {
     render(
       <InsurancePolicyForm
@@ -175,7 +175,7 @@ describe("InsurancePolicyForm (FR-027, FR-036)", () => {
     expect(screen.getByLabelText("Notes")).toHaveValue("Keep the appraisal with this policy.");
   });
 
-  // specs/008-hardening-batch research.md §10, contracts/ui.md §3.
+  // 008 research.md §10, contracts/ui.md §3.
   it.each([
     ["Policy name", 200],
     ["Policy number", 200],

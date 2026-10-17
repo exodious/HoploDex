@@ -24,7 +24,7 @@ import "../browse/collection.css";
 import "./accessories.css";
 
 /** What the Accessories page remembers for the session, held by the app
- * shell as the collection page's is (contracts/ui-accessories.md §2). */
+ * shell as the collection page's is (006 contracts/ui-accessories.md §2). */
 export interface AccessoryBrowseState {
   query: string;
   groupBy: AccessoryGroupBy | undefined;
@@ -39,7 +39,7 @@ export interface AccessoriesPageProps {
 
 /** Rows rendered per step; more mount as the end of the list nears, so
  * 10,000 accessories stay responsive as the collection page's firearms do
- * (constitution Principle IV; research.md §22). */
+ * (constitution Principle IV; 006 research.md §22). */
 const RENDER_STEP = 150;
 
 /** A group as rendered: possibly only its first rows (progressive
@@ -64,7 +64,7 @@ function truncateGroups(groups: AccessoryGroup[], limit: number): VisibleGroup[]
   return out;
 }
 
-/** The grouping menu's choices (FR-017), in order. */
+/** The grouping menu's choices (006 FR-017), in order. */
 const GROUP_BY_OPTIONS: GroupByOption<AccessoryGroupBy>[] = [
   { value: "kind", label: "Kind" },
   { value: "make", label: "Make" },
@@ -73,14 +73,14 @@ const GROUP_BY_OPTIONS: GroupByOption<AccessoryGroupBy>[] = [
   { value: "mounted_on", label: "Mounted on" },
 ];
 
-/** An accessory's name (FR-005) as one string. */
+/** An accessory's name (006 FR-005) as one string. */
 function nameOf(accessory: AccessorySummary): string {
   return accessoryNameText(accessory.make, accessory.model, accessory.kindName);
 }
 
 /** Browse, search and group the accessories, as a list or tiles
- * (specs/006-accessory-links US1 and US4, FR-016 to FR-018;
- * contracts/ui-accessories.md §2), laid out as the collection page. */
+ * (006 US1 and US4, FR-016 to FR-018;
+ * 006 contracts/ui-accessories.md §2), laid out as the collection page. */
 export function AccessoriesPage({ browse, onBrowseChange }: AccessoriesPageProps) {
   const scope = useSessionScope();
   const { accessories, loaded, revision } = useCollection();
@@ -314,7 +314,7 @@ function groupKey(group: AccessoryGroup): string {
 }
 
 /** The names that more than one group's host carries, so those groups say
- * which host they mean by its serial number (contracts/ui-accessories.md §2). */
+ * which host they mean by its serial number (006 contracts/ui-accessories.md §2). */
 function sharedHostNames(groups: AccessoryGroup[]): Set<string> {
   const seen = new Set<string>();
   const shared = new Set<string>();
@@ -424,7 +424,7 @@ function accessoryColumns(
                 <span className="hd-serial">{accessory.serialNumber}</span>
               </span>
             )}
-            {/* FR-016: what is mounted on it, counted as the collection's rows
+            {/* 006 FR-016: what is mounted on it, counted as the collection's rows
                 count it; its own host has the Mounted on column. */}
             <MountLines mountedOn={null} mountedCounts={accessory.mountedCounts} />
           </div>
@@ -436,7 +436,7 @@ function accessoryColumns(
       header: "Mounted on",
       width: "28%",
       cell: (accessory) =>
-        // FR-013: the direct host only.
+        // 006 FR-013: the direct host only.
         accessory.mountedOn ? (
           <RecordName label={accessory.mountedOn} link />
         ) : (

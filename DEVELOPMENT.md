@@ -180,8 +180,9 @@ It runs on the host, with the app's window on the real desktop. It needs an
 unlocked, logged-in session: while the screen is locked, WKWebView reports
 every page as hidden and gives it no animation frames, so every step times
 out with "The app never settled". The tests that use real input
-(`e2e/support/realInput.ts`, X11 only: us7's owl beak, us8's restore-dialog
-regressions, all of us10, us11 and us12) are skipped, and reported as
+(`e2e/support/realInput.ts`, X11 only: `databases`' owl beak, `backups`' restore-dialog
+regressions, all of `cartridges-actions`, `regulated-items` and the
+`accessories-*` files) are skipped, and reported as
 pending. `quit-cleanup.py` runs there too (see below), and so does the
 screenshot walk, but macOS keeps a window within the screen, so the
 full-page shots are cut off at the screen's height unless the display is
@@ -198,7 +199,7 @@ scripts/tart-vm.sh setup                   # clone, create hoplotest, install th
 scripts/tart-vm.sh start                   # start it with a 1920×1080 screen, for the tests and manual testing
 scripts/tart-vm.sh test                    # copy the checkout in, lint and test over SSH, E2E in its desktop
 scripts/tart-vm.sh ssh npx vitest run src/features/firearms/FirearmForm.fields.test.tsx   # one command
-scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts
+scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/record-firearm.e2e.ts
 scripts/tart-vm.sh start --tall            # restart it with a 1920×4200 screen, for the screenshot walk
 scripts/tart-vm.sh gui bash -c 'npm run build && npm run screenshots'
 scripts/tart-vm.sh fetch e2e/screenshots-out   # copy results back
@@ -343,7 +344,7 @@ What they install, to set it up by hand instead:
   inactivity limit, and the user's screen saver is off by policy. The
   user's "Show animations in Windows" is turned on (a bit of
   `UserPreferencesMask`): Windows Server starts with it off, and WebView2
-  then reports reduced motion, so us7's catalogue-plate test fails. Both
+  then reports reduced motion, so `databases`' catalogue-plate test fails. Both
   live in the user's own registry, so if they've never signed in, restart (auto-logon signs them in) and run the script again.
   Avoid connecting with Remote Desktop as that user before a test run: it
   takes over the console session, which stops drawing once you
@@ -407,10 +408,10 @@ frame takes some of the 1200×800, so the shots are 1184×761. Full-page shots
 grow the window past the bottom of the screen, which Windows allows. So take
 before/after pairs on one platform.
 With Windows' "Show animations in Windows" off (Settings › Accessibility ›
-Visual effects), WebView2 reports reduced motion and us7's catalogue-plate
+Visual effects), WebView2 reports reduced motion and `databases`' catalogue-plate
 test fails; `setup-system.ps1 -AutoLogon` turns it on.
 A WebDriver screenshot leaves out the PDF surface (a child web view), so where
-Linux takes the X display with `import -window root`, us13's pixel checks and
+Linux takes the X display with `import -window root`, `document-preview`'s pixel checks and
 the walk's viewer shots (`shotDisplay`) run `e2e/scripts/window-shot.ps1` on
 Windows. It saves the client area of this worker's app window (by its process,
 `appPid()`), so a point in the page is the same point in the picture. It asks
@@ -490,7 +491,7 @@ cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf -E 't
 cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf -E 'test(/^firearm_lifecycle_test::/) & test(<name>)'  # tests in it whose name contains <name>
 cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf <name>                                   # tests anywhere whose name contains <name>
 npx vitest run src/features/firearms/FirearmForm.fields.test.tsx                                                    # one Vitest file
-npm run test:e2e -- --spec e2e/specs/us1-record-firearm.e2e.ts                                                      # one E2E spec
+npm run test:e2e -- --spec e2e/specs/record-firearm.e2e.ts                                                      # one E2E spec
 
 cargo test --manifest-path src-tauri/Cargo.toml --features test-kdf --test integration firearm_lifecycle_test::  # the same without nextest
 ```
@@ -552,7 +553,7 @@ for the tests with unwinding and for the binary with the profile's
 `panic = "abort"`, and the two then fail to link.
 
 The import has a release-only test of its own, `import_largest_test.rs`
-(specs/008-hardening-batch research.md §9, SC-003). It writes the largest
+(008 research.md §9, SC-003). It writes the largest
 export the app can make, 10,000 firearms and 10,000 accessories with every
 text field at its maximum, as one workbook and as two CSV files, then reads
 each through `import_reader::read_files` and imports it into a fresh database.
@@ -589,8 +590,9 @@ Spec files run in parallel, each in a WebdriverIO worker of its own: up to
 `HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 8. Each
 worker runs its own app (a few hundred MB for WebKitGTK) and several hundred
 threads, which is why `scripts/dev-container.sh` raises the container's
-process limit. A run takes at least as long as its longest spec file, so keep
-each file to one user story or so. WebdriverIO hands spec files to workers in
+process limit. A run takes at least as long as its longest spec file, and
+each file has a start-up cost of its own; "E2E files" below says how tests are
+grouped into files. WebdriverIO hands spec files to workers in
 the order `specs` lists them, so `wdio.conf.ts` names the longest files first
 (`LONGEST_FIRST`) and then globs the rest; otherwise file name order can leave
 a long file to start last and run alone. When a spec file is split, renamed or
@@ -641,7 +643,7 @@ release binary in `scripts/build-appimage.sh`. The feature also implies
 `mock-keyring`, and lets
 `HOPLODEX_E2E_IDLE_MINUTE_SECONDS` set how many seconds the idle lock counts
 as one minute (default 60). The harness sets it to 3 for
-`us9-locking.e2e.ts`, so its idle-lock test waits seconds, not a real minute;
+`locking.e2e.ts`, so its idle-lock test waits seconds, not a real minute;
 the notice and the settings still say "1 minute". The scaling's unit tests
 (`session/idle.rs`) run in the default Rust test run.
 
@@ -690,7 +692,7 @@ built E2E binary:
 None needs the real directories: each launch gets a scratch sandbox. An
 E2E build never hands an opened document to the OS either, so no real
 viewer starts: `open_document` writes the copy's path to
-`HOPLODEX_E2E_OPENED_LOG` instead, which us4 checks.
+`HOPLODEX_E2E_OPENED_LOG` instead, which `photos-documents` checks.
 
 Feature 007 adds two more E2E-only seams, both read only by a build with the
 `e2e` feature. `HOPLODEX_E2E_CONSENT` answers the native confirmation before a
@@ -702,13 +704,73 @@ every spec, and a spec that tests the dialog sets its own and calls
 `relaunchApp()`, since the app reads it at start-up.
 `HOPLODEX_E2E_PDF_PREVIEW=off` makes the start-up check say the computer's PDF
 viewer can't be used, so PDFs aren't previewable while TIFF and text still
-are (a spec file named `*-pdf-off.e2e.ts` gets it for its whole session). Both
+are (a spec sets it and calls `relaunchApp()`, as `document-preview.e2e.ts`
+does). Both
 variable names are among the markers `scripts/check-no-webdriver.mjs` looks
 for, so a shipped binary that carries either one fails `build-appimage.sh`'s
 check, just as one with the WebDriver server does.
 
 WebDriver drives only the main web view. What goes on inside the PDF surface,
 a child web view, is the PDF surface check's.
+
+### E2E files
+
+An E2E file is named for the area of the app whose setup its tests share
+(`locking.e2e.ts`, `accessories-mounting.e2e.ts`), with no spec or story
+number in it: one file can hold journeys from several stories, and from
+several specs. Each story's tests are one top-level `describe()` titled
+`"<spec> US<n> - <the story's heading in spec.md>"`, such as
+`describe("006 US2 - Mount an Item on a Firearm", …)`, and a regression test
+that belongs to no story is `describe("Issue #<n> - …")`. The citation check
+below fails when a title names a story its spec doesn't have, or doesn't quote
+the story's heading exactly. To find a story's tests,
+`grep -rl '"006 US2 -' e2e/specs`. A title that ends in `(was us9-locking)`
+gives the file's name before #121, when a `usN` number, unrelated to the
+specs' story numbers, began every name.
+
+A new journey goes into a new `describe()` in the existing file whose setup
+it shares (the same seed, the same databases, the same relaunch or idle-lock
+setting in `wdio.conf.ts`), whatever spec it belongs to. Each file costs
+about 2.2 s to start and 2.5 s to set up its database or seed (#77), and at
+2 workers, the macOS and Windows VMs, a split costs more than it saves. Start
+a new file only when a journey shares setup with no existing file, or when
+the per-spec times (issue #77's "Measuring") show that one file has grown long
+enough to hold the run up. Then split it along its `describe()` blocks, name
+each part for what it shares, move shared helpers into `e2e/support/` (as
+`accessories.ts` and `documentPreview.ts` hold the `accessories-*` and
+`document-*` files' helpers), and update `LONGEST_FIRST`.
+
+### Spec citations
+
+Spec Kit numbers requirement, success-criterion, story, scenario and task IDs
+within each spec, and each spec has its own `research.md`, `plan.md`,
+`data-model.md`, `quickstart.md`, `tasks.md` and contracts. So outside a
+spec's own folder a citation names its spec first (#121):
+
+| Cites | Form |
+|---|---|
+| A requirement or success criterion | `003 FR-040`, `006 SC-002` |
+| A user story | `001 US2` |
+| An acceptance scenario (story 3, scenario 2) | `007 US3-2`, `003 US3-4a` |
+| A task | `008 T050` |
+| A document, or one of its sections | `007 research.md §5`, `006 contracts/ui-accessories.md §3`, `003 data-model.md` |
+
+One spec number covers the list that follows it, joined by commas, "and",
+"or", "to" or a dash: `(006 FR-001, FR-002 and SC-003)`,
+`003 research.md §1, §11`, `008 T005-T008`. A citation of another spec within
+the list takes its own number: `(006 FR-006; 001 FR-004)`. A path into a spec
+folder (`specs/007-document-preview/research.md`) names its spec already.
+"User Story 2" and "Scenario 3" are always written `001 US2` and `001 US1-3`.
+Inside `specs/NNN-name/`, bare IDs mean that spec, as Spec Kit writes them.
+
+`scripts/citations.mjs` checks this in `src/`, `src-tauri/`, `e2e/`,
+`scripts/` and `tools/` (not `src-tauri/vendor/`), and that each cited
+requirement, story, scenario, task, document and section exists in the spec
+it names. It also checks the E2E `describe()` titles above. `npm test` runs it
+(`scripts/citations.test.ts`); to check a few files while writing, run
+`node scripts/citations.mjs <file> …`. Passing it means a citation names a
+spec that has that ID, not that it is the right spec: FR-001 to FR-017 exist
+in every one, so check what the cited text says.
 
 ### PDF surface check
 
@@ -754,9 +816,9 @@ PDF surface check uses too). The example opens a main window with the app's own
 so it judges the native layer alone. It right-clicks a blank area, a row, a
 button, an image, a text field and a selection and logs every item each native
 menu offered (the filter's own log, `apply(.., log_items: true)`), presses every
-key FR-012 names and the mouse's back and forward buttons with text typed in a
+key 008 FR-012 names and the mouse's back and forward buttons with text typed in a
 field, and on macOS presses ⌃⌘D on a selection. It fails (exit 4) if a menu
-offered an item outside FR-011's list or appeared where none belongs, a Look Up
+offered an item outside 008 FR-011's list or appeared where none belongs, a Look Up
 panel opened, or the page reloaded or navigated or lost the typed text. Run it
 on every OS before a pull request that touches `window_controls/` or the
 browser controls, and whenever the web view engine is updated:
@@ -831,7 +893,7 @@ Each call returns when the page has seen the input end (a `keyup`, a
 `pointerup` or `mouseup`, or the pointer's arrival, counted by listeners
 `realInput.ts` installs on the window) and the app has settled, as `settle()`
 does for any step, except that it doesn't wait for animations: a test may look
-at one the input started (us7's owl blinking). There is no fixed pause after
+at one the input started (`databases`' owl blinking). There is no fixed pause after
 an event. Where the page can't see the input, it waits 150 ms as before: keys
 sent while the page has no focus (F6 into the PDF surface), and an event the
 page never reports within a second. The script runs as `x11-input.py serve`,
@@ -851,13 +913,27 @@ if a test reaches them without it.
 Real input stays on Linux only, by decision (#27): Windows and macOS skip
 these tests rather than port the helper. Two kinds need it. WebKitGTK
 regressions (a focus ring, a first layout) only matter on Linux. The
-keyboard-only flows (us10, us11, us12) need it on every platform, because
+keyboard-only flows (`cartridges-actions`, `regulated-items`, the `accessories-*`
+files) need it on every platform, because
 the embedded WebDriver's key presses are synthetic: they don't move focus on
 Tab or type text. So use real input only for what needs it, and keep it out
 of anything else's way. A check that needs it goes in a test of its own,
 which leaves the database as it found it, and the other tests don't depend
-on it. us8's restore-dialog regressions are an example. The screenshot walk
+on it. `backups`' restore-dialog regressions are an example. The screenshot walk
 uses no real input, so it runs everywhere.
+
+One exception runs on macOS only: `databases`' quit test (#107) presses ⌘Q, chooses
+the app menu's Quit and sends the quit Apple Event the Dock's Quit sends (to
+the sandboxed app's process only) with `e2e/support/macInput.ts`, which
+compiles `src-tauri/examples/real_input.swift`. Every one of its functions is addressed to
+the test's own process (⌘Q by `key-to`, which posts the key with
+`CGEvent.postToPid`; the others through Accessibility and Apple Events), because
+the suite's workers run apps side by side and a new one takes the front: a
+global `key` goes to whichever app is frontmost when it arrives (#122). `locking` sends the quit event with
+a log out's reason (`kAEReallyLogOut`), which must end the app at once with
+its unsaved input kept as pending changes. It needs Accessibility for
+whatever runs the suite (as `quit-cleanup.py` does) and is skipped on the
+other platforms.
 
 The PDF surface and window controls checks do not use that helper. They are
 Rust examples run outside WebDriver, and each OS gives them its own input
@@ -945,7 +1021,7 @@ override that:
   on Linux: use `screenshot`.
 - The sandbox starts with the harness's defaults: the in-memory keyring, the
   native "open in another app" confirmation answered "Open", PDF preview on,
-  the real idle minute. A spec's own settings (`-pdf-off`, the
+  the real idle minute. A spec's own settings (PDF preview off, the
   locking spec's shortened minute) aren't offered; `exec` can't set the app's
   environment.
 - In the macOS VM, `scripts/tart-vm.sh ssh` splits its arguments again on
@@ -962,8 +1038,8 @@ before `npm run test:e2e -- --spec <file>` runs it:
    `waitForCollection()`, or `unlock(passphrase)` for a seeded collection,
    from `e2e/support/ui.ts`, instead of the typed-in paths and passphrase.
    A spec that needs the seeded collection must be named in `beforeSession`
-   in `wdio.conf.ts` (only the screenshot walk, the `us13-document-preview-*`
-   files and `us14-session-isolation` are), and reads the passphrase from `HOPLODEX_E2E_SEED_PASSPHRASE`.
+   in `wdio.conf.ts` (only the screenshot walk, `document-preview`,
+   `document-open-elsewhere`, `document-open-setting` and `session-isolation` are), and reads the passphrase from `HOPLODEX_E2E_SEED_PASSPHRASE`.
 2. Import `$`, `browser` and `expect` from `../support/ui`, like the other
    specs, not from `@wdio/globals`.
 3. Replace the recorded selectors where a helper exists (`clickButton`,
@@ -1026,6 +1102,19 @@ of it:
   passphrase survives a relaunch. A computer without a keyring is tested in
   Rust and Vitest, not in E2E (`tests/keyring_test.rs`,
   `DatabaseChooser.test.tsx`, `DatabaseSettingsDialog.test.tsx`).
+- A sandbox is a `hoplodex-e2e-XXXXXX` directory in the system's temp
+  folder with an owner file (`.hoplodex-e2e-owner`, the creating process's
+  id) written at creation (#111). When a session ends, `removeSandbox()`
+  retries for up to 30 s, because on Windows WebView2's processes keep the
+  folder open for a moment after the app is killed, and logs a folder it could
+  not remove. A run that is interrupted (Ctrl+C, a crash) never gets there, so
+  `onPrepare` and `onComplete` in `wdio.conf.ts` and the `npm run session`
+  launcher sweep first (`sweepStaleSandboxes`): a directory directly in the
+  temp folder, with that name and an owner file, whose owner process is no
+  longer running. Anything else there is left alone (the screenshots' plain
+  `hoplodex-e2e-screen-<pid>.png` files, a folder from before the owner file
+  existed, a sandbox another run is using), so several runs can be live at
+  once. Delete old unmarked ones by hand.
 - E2E steps don't sleep. The frontend counts its backend calls and pending
   search debounces (`src/lib/busy.ts`, `window.__hoplodexBusy`), and the
   helpers in `e2e/support/ui.ts` call `settle()` after each action, which
@@ -1085,7 +1174,7 @@ saves only when the run was started with `--screenshots`, so a normal
 `test:e2e` is unaffected:
 
 ```bash
-npm run test:e2e -- --screenshots --spec e2e/specs/us1-record-firearm.e2e.ts
+npm run test:e2e -- --screenshots --spec e2e/specs/record-firearm.e2e.ts
 ```
 
 The seed writes into a new `seed` folder in the sandbox, and the harness
@@ -1169,7 +1258,7 @@ scripts/human-testing.sh --reset --pending-from 1.2.0   # reseed, with pending c
 ```
 
 `--release` is for trying what a development build doesn't have: the browser
-controls (no reload, no Inspect Element, a trimmed right-click menu; specs/008
+controls (no reload, no Inspect Element, a trimmed right-click menu; 008
 research.md §12-§15) are installed only in release and E2E builds. It runs
 `npm run build` and `cargo build --profile e2e --features custom-protocol,e2e`,
 as `npm run test:e2e` does, and launches that binary with the
@@ -1187,7 +1276,7 @@ are then recorded as kept by that version of HoploDex, in a form this build
 can't resume (a draft form version it doesn't know, and `last_saved_version`
 set to the version you gave). Open "Shared collection" to see the dialog that
 names that version and offers only **Close the database** and **Discard
-changes** (specs/008-hardening-batch quickstart.md, US4). Without it, the
+changes** (008 quickstart.md, US4). Without it, the
 pending changes are this build's and resume.
 
 The seed (`src-tauri/examples/human_seed.rs`) goes through the app's own

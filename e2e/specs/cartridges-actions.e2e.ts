@@ -12,17 +12,16 @@ import {
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of specs/004-cartridges-action-types' User Story 2
- * (US2-3, US2-10): the Cartridge suggestion list is driven with the
- * keyboard alone, as real key events through the X server, since the
- * list's focus and highlight behaviour is WebKitGTK's to get right and
- * WebDriver's own keys don't pass through GTK. See "Real keyboard and mouse
- * input" in DEVELOPMENT.md.
+ * End-to-end coverage of 004 US2-3 and US2-10: the Cartridge suggestion list
+ * is driven with the keyboard alone, as real key events through the X server,
+ * since the list's focus and highlight behaviour is WebKitGTK's to get right
+ * and WebDriver's own keys don't pass through GTK. See "Real keyboard and
+ * mouse input" in DEVELOPMENT.md.
  *
- * The list's contents and markers (US2-4) and grouping by Cartridge (US1-6)
- * are tested in Rust and Vitest (see the citations in those tests).
+ * The list's contents and markers (004 US2-4) and grouping by Cartridge
+ * (004 US1-6) are tested in Rust and Vitest (see the citations in those tests).
  */
-describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-types)", () => {
+describe("004 US2 - Pick From a Narrowing List While Typing (was us10-cartridges-actions)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });
@@ -40,7 +39,7 @@ describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-t
     });
   }
 
-  it("picks a cartridge from the list with the keyboard alone and fills the caliber (US2-3, US2-10)", async () => {
+  it("picks a cartridge from the list with the keyboard alone and fills the caliber (004 US2-3, US2-10)", async () => {
     await clickButton("Add firearm");
     await $('[role="dialog"]').waitForExist();
     await fill("Make", "Glock");
@@ -58,7 +57,7 @@ describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-t
     for (const key of ["9", "x", "1"]) await realKey(key);
     await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
 
-    // Escape closes the list, not the dialog, and keeps the typed text (US2-10).
+    // Escape closes the list, not the dialog, and keeps the typed text (004 US2-10).
     await realKey("Escape");
     await $('[role="listbox"]').waitForExist({ reverse: true });
     await expect($('[role="dialog"]')).toExist();
@@ -70,7 +69,7 @@ describe("User Story 2 - Suggestions while typing (specs/004-cartridges-action-t
       if ((await highlightedOption())?.startsWith("9x19mm Parabellum")) break;
     }
     expect(await highlightedOption()).toMatch(/^9x19mm Parabellum/);
-    // The row says where it comes from (FR-016).
+    // The row says where it comes from (004 FR-016).
     expect(await highlightedOption()).toContain("Built-in · 9mm");
 
     await realKey("Return");

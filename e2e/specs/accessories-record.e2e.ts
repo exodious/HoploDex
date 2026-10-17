@@ -20,13 +20,12 @@ import {
 import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of specs/006-accessory-links' User Story 1 (SC-001,
- * US1-1, US1/AC8): on the Accessories page, an Optic is added from the
- * keyboard, scheduled under a policy for less than its value (the
- * under-insured warning shows), given a photo and edited. These go through the
- * real IPC paths the unit tests mock. It needs no firearm, so it starts from a
- * new database. Real keys, as in the other stories of this feature
- * (`us12-accessories-mounting`, `-browse` and `-dispose`).
+ * End-to-end coverage of 006 SC-001, US1-1 and US1-8: on the Accessories page,
+ * an Optic is added from the keyboard, scheduled under a policy for less than
+ * its value (the under-insured warning shows), given a photo and edited. These
+ * go through the real IPC paths the unit tests mock. It needs no firearm, so it
+ * starts from a new database. Real keys, as in the other stories of this
+ * feature (`accessories-mounting`, `-browse` and `-dispose`).
  */
 
 /** Opens the focused select's list and chooses the option whose text starts
@@ -54,11 +53,11 @@ function isoDaysFromNow(days: number): string {
 }
 
 // A tiny but genuinely valid PNG, so the backend's real image decoding and
-// thumbnail generation run (as in us4-photos-documents.e2e.ts).
+// thumbnail generation run (as in photos-documents.e2e.ts).
 const SAMPLE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAAGUlEQVR42mNgaPhPPhrVPKp5VPOo5oHVDADApFaPDOtbFgAAAABJRU5ErkJggg==";
 
-describe("User Story 1 - Recording accessories (specs/006-accessory-links)", () => {
+describe("006 US1 - Record an Accessory (was us12-accessories-record)", () => {
   before(function () {
     skipWithoutRealInput(this);
   });
@@ -66,7 +65,7 @@ describe("User Story 1 - Recording accessories (specs/006-accessory-links)", () 
     await createDatabase();
   });
 
-  it("adds an Optic, schedules it under a policy below its value, adds a photo and edits it, from the keyboard (SC-001, US1-1, US1/AC8)", async () => {
+  it("adds an Optic, schedules it under a policy below its value, adds a photo and edits it, from the keyboard (006 SC-001, US1-1, US1-8)", async () => {
     // Setup, not timed: a schedule-only policy, from the Insurance page.
     await goTo("Insurance");
     await clickButton("Add policy");
@@ -110,7 +109,7 @@ describe("User Story 1 - Recording accessories (specs/006-accessory-links)", () 
     expect(await titleBlock("Replacement value")).toBe("$800");
 
     // Schedule it under the policy for $300, below its $800 value. This is
-    // the real assign_accessory_coverage call (T125).
+    // the real assign_accessory_coverage call (006 T125).
     await realClick("#record-name");
     await tabToControl("Assign");
     await realKey("Return");

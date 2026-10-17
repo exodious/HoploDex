@@ -11,8 +11,8 @@ import { recordNameText } from "./recordNames";
 import type { MountedEntry, RecordLabel } from "./types";
 import "./mounts.css";
 
-// specs/006-accessory-links contracts/ui-accessories.md §5 (FR-012, FR-013):
-// the Mounted section of an active record's page. The list (research.md §14),
+// 006 contracts/ui-accessories.md §5 (006 FR-012, FR-013):
+// the Mounted section of an active record's page. The list (006 research.md §14),
 // the Mount menu, the "Mount on {name}" dialog, the move question and the
 // unmount question. The wording is "mount" and "Mounted", never "item" or
 // "host".

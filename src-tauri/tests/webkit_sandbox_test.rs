@@ -1,7 +1,7 @@
 #![cfg(target_os = "linux")]
-//! specs/007-document-preview FR-004, research.md §9: WebKitGTK's sandbox is
+//! 007 FR-004, research.md §9: WebKitGTK's sandbox is
 //! turned on only where a probe shows it works. This is the probe's decision
-//! logic (tasks.md T034), without a web view: what the probe child did (exit
+//! logic (007 tasks.md T034), without a web view: what the probe child did (exit
 //! code, crash, time-out) and whether the computer is a container or Flatpak
 //! decide whether `WEBKIT_FORCE_SANDBOX=1` is set.
 //!

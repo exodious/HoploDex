@@ -41,8 +41,8 @@ import type {
 } from "./types";
 import "./importExport.css";
 
-/** One of the import report's lists of what the import changed (contracts/
- * ui-entry.md §8): a folded section, shown only when it has rows, in row
+/** One of the import report's lists of what the import changed (004
+ * contracts/ui-entry.md §8): a folded section, shown only when it has rows, in row
  * order. */
 function ReportDisclosure({
   title,
@@ -94,13 +94,13 @@ const TABLE_NAMES: Record<ImportTable, string> = {
   accessories: "Accessories",
 };
 
-/** "Accessories, row 4": every report entry names its table (FR-022). */
+/** "Accessories, row 4": every report entry names its table (006 FR-022). */
 function place(entry: { table: ImportTable; row: number }): string {
   return `${TABLE_NAMES[entry.table]}, row ${entry.row}`;
 }
 
 /** A conflict's record as the report names it: an accessory by its name
- * (FR-005), a firearm by make and model. */
+ * (006 FR-005), a firearm by make and model. */
 function conflictName(conflict: ImportConflict): string {
   if (conflict.table === "accessories") {
     return accessoryNameText(conflict.make, conflict.model, conflict.kindName ?? "Accessory");
@@ -136,7 +136,7 @@ function baseName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || filePath;
 }
 
-/** What the reading bar says (contracts/ui.md §2): the file being read, with
+/** What the reading bar says (008 contracts/ui.md §2): the file being read, with
  * the share of the files' bytes read so far. The backend names the file in
  * each event; until the first one, it is the first file chosen (they are
  * read in order). */
@@ -149,23 +149,23 @@ function readingCaption(files: string[], progress: ImportProgress | null): strin
   return `Reading ${name}…${percent}`;
 }
 
-/** The message of the banner after "Stop reading" (contracts/ui.md §2). */
+/** The message of the banner after "Stop reading" (008 contracts/ui.md §2). */
 const IMPORT_CANCELLED = "The import was cancelled. Nothing was imported.";
 
 function count(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** Import firearm records, without photos, from a spreadsheet (US5,
- * FR-019). Failed rows are reported individually without discarding the
- * rest (FR-020); rows matching an existing record are resolved one by one
- * or all at once (FR-026). */
-/** Fields the report names by label rather than by column (contracts/ui-registration.md §9). */
+/** Fields the report names by label rather than by column (005 contracts/ui-registration.md §9). */
 const SNAPPED_FIELD_LABELS: Partial<Record<SnappedValue["field"], string>> = {
   registrationForm: "Form",
   registeredTo: "Registered to",
 };
 
+/** Import firearm records, without photos, from a spreadsheet (001 US5,
+ * FR-019). Failed rows are reported individually without discarding the
+ * rest (001 FR-020); rows matching an existing record are resolved one by one
+ * or all at once (001 FR-026). */
 export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   return (
     <Dialog
@@ -181,7 +181,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
   );
 }
 
-/** One firearm table and one accessory table (FR-022): the backend stops on
+/** One firearm table and one accessory table (006 FR-022): the backend stops on
  * a third file, so the picker never offers one. */
 const MAX_IMPORT_FILES = 2;
 const TOO_MANY_FILES =
@@ -207,7 +207,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const [confirmingReplace, setConfirmingReplace] = useState(false);
   // Issue #56: for each conflict whose row disposes of a record with records
   // mounted on it, the ones to dispose of with it, by `recordKey`. The rest
-  // are kept (FR-014).
+  // are kept (006 FR-014).
   const [disposeWith, setDisposeWith] = useState<Record<string, Record<string, string>>>({});
   const [resolvedCount, setResolvedCount] = useState<number | null>(null);
   const [unresolved, setUnresolved] = useState<RowError[]>([]);
@@ -233,8 +233,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
     );
     if (picked.length === 0) return;
     // A second pick adds to the first. A pick that would take the import
-    // past its two files adds nothing and says so (ui-accessories.md §11,
-    // issue #56).
+    // past its two files adds nothing and says so (006 contracts/ui-accessories.md
+    // §11, issue #56).
     const added = picked.filter((path) => !files.includes(path));
     if (chosenFiles.length + added.length > MAX_IMPORT_FILES) {
       setFileError(TOO_MANY_FILES);
@@ -306,9 +306,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       setResult({
         ...result,
         conflicts: result.conflicts.filter((c) => stillOpen.has(conflictKey(c))),
-        // specs/002-firearm-identification FR-009: a resolved overwrite or
-        // duplicate can add its own original-marks warning, and
-        // specs/006-accessory-links FR-023 a mount it couldn't make.
+        // 002 FR-009: a resolved overwrite or duplicate can add its own
+        // original-marks warning, and 006 FR-023 a mount it couldn't make.
         warnings: [...result.warnings, ...resolved.warnings],
       });
       setUnresolved(resolved.unresolved);
@@ -554,7 +553,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
                   onClick={() =>
                     setChoices((prev) => ({
                       ...prev,
-                      // "Add as new" skips rows where FR-032 forbids it; those
+                      // "Add as new" skips rows where 001 FR-032 forbids it; those
                       // stay undecided for the user to choose keep or replace.
                       ...Object.fromEntries(
                         undecided

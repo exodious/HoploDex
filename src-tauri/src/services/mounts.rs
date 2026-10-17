@@ -1,11 +1,11 @@
-//! specs/006-accessory-links research.md §5: every mount rule, as plain
+//! 006 research.md §5: every mount rule, as plain
 //! functions over one loaded graph. `MountGraph::load` reads the whole
 //! `mounts` table once (a narrow scan of four integers per row), and the
 //! walks are iterative, so a deep chain can't overflow the stack and a
-//! listing never asks the database a question per row (SC-007).
+//! listing never asks the database a question per row (006 SC-007).
 //!
 //! No rule here reads a kind, type, caliber or cartridge: no mount is ever
-//! judged by what the two records are (FR-011). `labels` reads the type or
+//! judged by what the two records are (006 FR-011). `labels` reads the type or
 //! kind name only to show it in a record's label.
 
 use std::collections::{HashMap, HashSet};
@@ -16,9 +16,9 @@ use crate::commands::CommandError;
 use crate::models::firearm::FirearmStatus;
 use crate::models::record::{MountDetail, MountedEntry, RecordCounts, RecordLabel, RecordRef};
 
-/// FR-010: a host that is missing or disposed, or an item that is disposed.
+/// 006 FR-010: a host that is missing or disposed, or an item that is disposed.
 pub const CHOOSE_ACTIVE: &str = "Choose an active firearm or accessory.";
-/// FR-010: a record on itself, or on something that is mounted on it,
+/// 006 FR-010: a record on itself, or on something that is mounted on it,
 /// worded by the kind of the record being mounted.
 pub fn self_or_below(item: RecordRef) -> String {
     let what = match item {
@@ -182,7 +182,7 @@ impl MountGraph {
         memo.get(&host).copied().unwrap_or_default()
     }
 
-    /// FR-010: mounting `item` on `host` would make a record carry itself.
+    /// 006 FR-010: mounting `item` on `host` would make a record carry itself.
     /// True when `host` is `item` or is below it, which is when `item` is
     /// on `host`'s chain.
     pub fn would_loop(&self, item: RecordRef, host: RecordRef) -> bool {
@@ -271,8 +271,8 @@ pub fn set_mount(
     Ok(())
 }
 
-/// The mount a record's form saves (research.md §8). A disposed record is
-/// never mounted and carries nothing (FR-014), so saving one clears every
+/// The mount a record's form saves (006 research.md §8). A disposed record is
+/// never mounted and carries nothing (006 FR-014), so saving one clears every
 /// mount it is in; otherwise `mounted_on` is set as `set_mount` does, with
 /// the graph loaded only when there is a host to check.
 pub fn save_form_mount(
@@ -292,7 +292,7 @@ pub fn save_form_mount(
 }
 
 /// Before a record is saved as disposed: deletes every mount whose item or
-/// host it is. The status triggers refuse the save otherwise (data-model.md
+/// host it is. The status triggers refuse the save otherwise (006 data-model.md
 /// "Rules").
 pub fn clear_mounts(conn: &Connection, record: RecordRef) -> Result<(), CommandError> {
     let (item_column, host_column) = match record {
@@ -447,7 +447,7 @@ fn acquisition_dates(
     Ok(found)
 }
 
-/// A record's name as a message gives it (FR-005): a firearm "{make} {model}
+/// A record's name as a message gives it (006 FR-005): a firearm "{make} {model}
 /// “{nickname}”", an accessory "{make} {model} · {kind}".
 pub fn record_name(label: &RecordLabel) -> String {
     let make_model = format!("{} {}", label.make, label.model);
@@ -465,7 +465,7 @@ pub fn label(conn: &Connection, record: RecordRef) -> Result<Option<RecordLabel>
     Ok(labels(conn, &[record])?.remove(&record))
 }
 
-/// What a record page needs about mounts (FR-013): the chain above the
+/// What a record page needs about mounts (006 FR-013): the chain above the
 /// record, direct host first, and everything below it, depth-first. Both
 /// are empty for a record that is in no mount, which is every disposed one.
 pub fn detail(conn: &Connection, record: RecordRef) -> Result<MountDetail, CommandError> {

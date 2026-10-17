@@ -1,5 +1,5 @@
 /** A firearm's name as rich content: make and model, with its nickname
- * (FR-031) set apart in quotes. Reads as the same text as `firearmName`. */
+ * (001 FR-031) set apart in quotes. Reads as the same text as `firearmName`. */
 export function FirearmName({
   firearm,
 }: {

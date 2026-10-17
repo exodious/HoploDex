@@ -470,6 +470,11 @@ for (const theme of ["Light", "Dark"] as const) {
       await $$(".hd-row__name")[0].waitForExist();
       await shot(`01-collection-list-${suffix}`);
 
+      // The window's minimum width: the top bar fits in one row (#108).
+      await resizeWindow(800, SCREENSHOT_WINDOW.height);
+      await shot(`88-collection-list-minimum-width-${suffix}`);
+      await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
+
       await choose("Tiles");
       await $$(".hd-tile__name")[0].waitForExist();
       await shot(`02-collection-tiles-${suffix}`);
@@ -517,7 +522,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await closeDialog();
     });
 
-    // specs/004-cartridges-action-types contracts/ui-entry.md §9.
+    // 004 contracts/ui-entry.md §9.
     it("suggestions, guesses and notes in the firearm form", async () => {
       await groupBy("Cartridge");
       await $$("h2.hd-group__title")[0].waitForExist();
@@ -589,7 +594,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await back();
     });
 
-    // specs/005-regulated-item-types contracts/ui-registration.md §10. The
+    // 005 contracts/ui-registration.md §10. The
     // export dialog's registration note is in 13-export below: the seeded
     // collection has registered firearms, so its note names them.
     it("a suppressor and a registration in the firearm form", async () => {
@@ -681,6 +686,10 @@ for (const theme of ["Light", "Dark"] as const) {
       await groupBy("Type");
       // #51: one table, its heading and the current group's title sticky.
       await shotStuckRows(`86-grouped-list-sticky-rows-${suffix}`);
+      // The same list at the minimum width: nothing in the table is cut off (#108).
+      await resizeWindow(800, SCREENSHOT_WINDOW.height);
+      await shot(`89-grouped-list-minimum-width-${suffix}`);
+      await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
 
       await choose("Tiles");
       await $$(".hd-tile__name")[0].waitForExist();
@@ -693,7 +702,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await choose("List");
     });
 
-    // specs/006-accessory-links contracts/ui-accessories.md §13. The
+    // 006 contracts/ui-accessories.md §13. The
     // collection's mount lines, the Mount menu and the export disclosure are
     // below; the import report with a mount warning is its own walk at the end.
     it("the Accessories page", async () => {
@@ -715,6 +724,9 @@ for (const theme of ["Light", "Dark"] as const) {
       await groupBy("Kind");
       await $$("h2.hd-group__title")[0].waitForExist();
       await shotStuckRows(`87-accessories-grouped-list-sticky-rows-${suffix}`);
+      await resizeWindow(800, SCREENSHOT_WINDOW.height);
+      await shot(`90-accessories-list-minimum-width-${suffix}`);
+      await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
     });
 
     it("the accessory form", async () => {
@@ -887,7 +899,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await $('[role="dialog"]').waitForExist();
       await shot(`19-database-settings-${suffix}`, { fullPage: true });
       // The seeded backups are at a custom location, so going back to the
-      // default asks what to do with them (FR-026). Cancelled: nothing is
+      // default asks what to do with them (003 FR-026). Cancelled: nothing is
       // saved.
       await clickButton("Use the default");
       await clickButton("Save");
@@ -918,7 +930,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await closeDialog();
     });
 
-    // specs/007-document-preview contracts/ui-document-preview.md §10: the
+    // 007 contracts/ui-document-preview.md §10: the
     // Glock's document list, and the viewer on each kind of document.
     it("the document list and the viewer", async () => {
       await recordPdfReady();
@@ -1121,7 +1133,7 @@ describe("Screenshots: replacing a record with a disposed row", () => {
   });
 });
 
-// specs/008-hardening-batch contracts/ui.md §5. These need states the seeded
+// 008 contracts/ui.md §5. These need states the seeded
 // collection doesn't start in, so they come after the main walk and before the
 // last block, which relaunches the app on whichever seed is there.
 
@@ -1219,7 +1231,7 @@ describe("Screenshots: pending changes whose form couldn't be opened", () => {
   });
 });
 
-// FR-006 to FR-008: the import dialog while a large file is read, and after a
+// 008 FR-006 to FR-008: the import dialog while a large file is read, and after a
 // file is refused. The sandbox's open collection serves for both.
 describe("Screenshots: the import dialog's reading phase", () => {
   it("reading a large file, with Stop reading", async () => {
@@ -1229,7 +1241,7 @@ describe("Screenshots: the import dialog's reading phase", () => {
     // request is held, the backend's progress events are sent, and Stop
     // reading ends the held request the way `cancel_import` does
     // (OPERATION_STOPPED). The request is a `fetch` the page can replace; its
-    // `invoke` can't be (us5-export-import.e2e.ts reads a real 180 MB file).
+    // `invoke` can't be (export-import.e2e.ts reads a real 180 MB file).
     await goTo("Collection");
     await chooseTheme("Light");
     await openDialog("Import");
@@ -1317,7 +1329,7 @@ describe("Screenshots: the import dialog's reading phase", () => {
   });
 });
 
-// research.md §10: a long text area counts from 90% of its maximum and shows
+// 008 research.md §10: a long text area counts from 90% of its maximum and shows
 // the error past it.
 describe("Screenshots: a note near and over its maximum", () => {
   it("shows the counter, then the error", async () => {
@@ -1340,7 +1352,7 @@ describe("Screenshots: a note near and over its maximum", () => {
   });
 });
 
-// specs/007-document-preview FR-003a: a computer whose PDF viewer can't be
+// 007 FR-003a: a computer whose PDF viewer can't be
 // used safely. HOPLODEX_E2E_PDF_PREVIEW=off is an E2E-only switch the app reads
 // when it starts, so this one relaunches it (last in the walk: nothing after it
 // wants the default back, and it is put back anyway).

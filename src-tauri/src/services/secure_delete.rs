@@ -1,4 +1,4 @@
-//! Best-effort secure deletion (FR-035, FR-016; research.md §12): overwrite
+//! Best-effort secure deletion (001 FR-035; 003 FR-016, research.md §12): overwrite
 //! a file's contents, flush, ask the storage to discard the blocks, then
 //! unlink it, so a decrypted copy of an attachment, or an old database file
 //! or backup, doesn't linger in freed disk blocks. One zero-fill pass is all
@@ -67,7 +67,7 @@ pub struct WipeControl<'a> {
 pub enum Wiped {
     Deleted,
     /// Stopped part way through the overwrite. The file is removed anyway,
-    /// so nothing half overwritten is left to look like a backup (FR-037).
+    /// so nothing half overwritten is left to look like a backup (003 FR-037).
     Stopped,
 }
 
@@ -109,7 +109,7 @@ fn overwrite_with_zeros(file: &File, control: &mut WipeControl) -> io::Result<Wi
     Ok(Wiped::Deleted)
 }
 
-/// Asks the storage to deallocate the file's blocks (research.md §12), so
+/// Asks the storage to deallocate the file's blocks (003 research.md §12), so
 /// on a filesystem mounted with discard, or trimmed periodically, the freed
 /// blocks reach an SSD sooner. Best effort: callers ignore a failure.
 fn discard_blocks(file: &File, len: u64) -> io::Result<()> {

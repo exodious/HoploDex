@@ -16,3 +16,15 @@ if (typeof window !== "undefined") {
 export function placeFocus(element: HTMLElement | null | undefined) {
   element?.focus({ focusVisible: keyboardLast } as FocusOptions);
 }
+
+/**
+ * What a dialog opened from the focused element gives focus back to when it
+ * closes. A dialog chosen from a menu opens while a menu item has focus; the
+ * item is gone by the time the dialog closes, so the opener is the menu's
+ * button (Radix labels a menu by it) (#114).
+ */
+export function currentOpener(): HTMLElement | null {
+  const active = document.activeElement as HTMLElement | null;
+  const trigger = active?.closest('[role="menu"]')?.getAttribute("aria-labelledby");
+  return (trigger && document.getElementById(trigger)) || active;
+}

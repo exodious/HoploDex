@@ -1,5 +1,5 @@
 //! Reading an open database's file, ciphertext and all, through SQLite's own
-//! file handle (research.md §3, "Reading the open file").
+//! file handle (003 research.md §3, "Reading the open file").
 //!
 //! On Linux and macOS, closing any file descriptor on a file drops every
 //! POSIX lock the process holds on it, SQLite's exclusive lock included.

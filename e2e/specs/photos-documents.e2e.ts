@@ -18,7 +18,7 @@ import { createDatabase } from "../support/ui";
 import { relaunchApp } from "../support/app";
 
 /**
- * End-to-end coverage of User Story 4's acceptance scenarios (spec.md),
+ * End-to-end coverage of 001 US4's acceptance scenarios (001 spec.md),
  * driven against the real built app through its embedded WebDriver server.
  * See e2e/support/ui.ts for why interactions go through page JS.
  */
@@ -49,17 +49,17 @@ function filesUnder(dir: string): string[] {
     );
 }
 
-describe("User Story 4 - Attach Photos and Documents", () => {
+describe("001 US4 - Attach Photos and Documents (was us4-photos-documents)", () => {
   // Each spec's session starts at the chooser with no databases (wdio.conf.ts).
   before(async () => {
     await createDatabase();
   });
 
-  // Scenarios 1 and 4 as one journey: the document is attached to the record the
-  // photo was added to, and Scenario 5's test needs the copy this leaves.
-  // Scenarios 2 and 3 are Rust and Vitest (see the citations in photo_test.rs,
+  // 001 US4-1 and US4-4 as one journey: the document is attached to the record
+  // the photo was added to, and 001 US4-5's test needs the copy this leaves.
+  // 001 US4-2 and US4-3 are Rust and Vitest (see the citations in photo_test.rs,
   // PhotoGallery.test.tsx and FirearmThumbnail.test.tsx).
-  it("adds a photo that becomes the thumbnail, attaches a document and reopens it (Scenarios 1, 4)", async () => {
+  it("adds a photo that becomes the thumbnail, attaches a document and reopens it (001 US4-1, US4-4)", async () => {
     await addFirearm({
       make: "InsE2EMediaGlock",
       model: "43",
@@ -68,7 +68,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       serial: "MEDIA-1",
     });
     // With no photo yet, the plate shows the type's drawing and the gallery
-    // offers the first drop (Scenario 3's strip; the drawing itself is Vitest).
+    // offers the first drop (001 US4-3's strip; the drawing itself is Vitest).
     await expect($(".hd-plate__figure svg.hd-drawing")).toExist();
     await expect($("button*=Drop photos here")).toExist();
 
@@ -132,18 +132,18 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     }
   });
 
-  // Scenario 5: no decrypted copy outlives the session (FR-035, SC-010).
+  // 001 US4-5: no decrypted copy outlives the session (001 FR-035, SC-010).
   // relaunchApp() kills the app with SIGKILL, without letting it run its exit
-  // handler, which makes it a faithful crash: whatever Scenario 4's "Open"
+  // handler, which makes it a faithful crash: whatever 001 US4-4's "Open"
   // left behind must be swept at the next launch. Clean exit (window closed, or
   // SIGTERM/SIGHUP/SIGINT) is checked against the real binary by
   // e2e/scripts/quit-cleanup.py.
-  it("deletes the opened copy at the next launch after an abrupt termination (Scenario 5)", async function () {
+  it("deletes the opened copy at the next launch after an abrupt termination (001 US4-5)", async function () {
     if (!openedRoot) return this.skip();
     expect(filesUnder(openedRoot).length).toBe(1);
 
     // The relaunch opens no database: the sweep runs at startup, before the
-    // chooser (FR-035).
+    // chooser (001 FR-035).
     await relaunchApp();
 
     await browser.waitUntil(async () => filesUnder(openedRoot).length === 0, {
@@ -151,7 +151,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
       timeoutMsg: "a decrypted document copy survived a relaunch",
     });
   });
-  it("refuses every request that would leave the device (FR-021, SC-008)", async () => {
+  it("refuses every request that would leave the device (001 FR-021, SC-008)", async () => {
     // A restrictive Content-Security-Policy is what stops the webview, and so
     // anything the UI is ever made to run, from sending records anywhere.
     const violations: string[] = await browser.execute(async () => {
@@ -256,7 +256,7 @@ describe("User Story 4 - Attach Photos and Documents", () => {
     }
   });
 
-  // #73, research.md §2 (Windows, T008): on Windows the main web view's request
+  // #73, 008 research.md §2 (Windows, 008 T008): on Windows the main web view's request
   // filter (refuse_foreign_documents) is run by WebView2 for every request that
   // matches any filter, including wry's own for the IPC custom protocol, and it
   // answered that protocol's CORS preflight with a header-less 403. Every call

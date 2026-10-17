@@ -145,7 +145,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 - [X] T032 [P] [US1] Write `src/features/databases/CreateDatabaseDialog.test.tsx`: the defaults come from `suggested`; the help reads "Saved as <folder>/<name>.hoplodex"; a short passphrase shows "Use at least 12 characters." and a mismatched confirmation shows "The passphrases don't match."; the backup disclosure panel names `<folder>/HoploDex backups`, "at most once a day" and "keeping the latest 5" (FR-024); **Create database** stays disabled until the acknowledgement checkbox is ticked (FR-004); server `fieldErrors` land on the right fields; success calls `create_database` with the passphrase read from the field; pressing **Create database** puts it in the `Button`'s `pending` state ("Creating…") at once, before the command resolves, with the fields and **Cancel** disabled until it does (constitution IV, contracts/ui-databases.md §2)
 - [X] T033 [P] [US1] Write `src/features/databases/DatabaseChooser.test.tsx` (US1 cases): with no known databases it shows the welcome text and the two large page actions; with a recent entry the most recent row is selected with its focused "Passphrase for <name>" field and **Open**; a `PASSPHRASE_INCORRECT` failure shows "That passphrase didn't open <name>. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged." and keeps the field for another try (FR-006); pressing **Open** puts it in the `pending` state ("Opening…") at once, before the command resolves, disables the other rows and announces "Opening <name>…" in the live region (SC-003, constitution IV); no collection data is rendered (contracts/ui-databases.md §1)
 - [X] T034 [P] [US1] Write `src/features/session/SessionProvider.test.tsx` (US1 cases): with no open database only the chooser renders, and no `CollectionProvider` or `AppShell`; after a successful open or create the app shell renders; the disk-encryption note renders once while `status.notes.diskEncryption` is true and is dismissed through `dismiss_note` (FR-008)
-- [X] T035 [P] [US1] Write the US1 flow in `e2e/specs/us7-databases.e2e.ts`: first run shows the welcome; create "Test" in a typed scratch folder (a short passphrase is blocked, and Create is disabled until the acknowledgement); the disk-encryption note appears and stays away after dismissal; add a firearm; relaunch the session; a wrong passphrase shows the FR-006 message; the right one shows the firearm
+- [X] T035 [P] [US1] Write the US1 flow in `e2e/specs/databases.e2e.ts`: first run shows the welcome; create "Test" in a typed scratch folder (a short passphrase is blocked, and Create is disabled until the acknowledgement); the disk-encryption note appears and stays away after dismissal; add a firearm; relaunch the session; a wrong passphrase shows the FR-006 message; the right one shows the firearm
 
 ### Implementation for User Story 1
 
@@ -188,7 +188,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - write a scratch `user-dirs.dirs` into the scratch `XDG_CONFIG_HOME`, setting `XDG_DOCUMENTS_DIR` to a scratch folder
   - run `human_seed` with `--dir` inside the sandbox and read its fixed passphrase
   - add `createDatabase({ folder, name, passphrase })` and `unlock(passphrase)` helpers that type locations rather than using native pickers
-- [X] T047 [US1] Update the existing E2E specs to start by creating or unlocking a database: `e2e/specs/us1-record-firearm.e2e.ts`, `us2-browse-search.e2e.ts`, `us3-value-insurance.e2e.ts`, `us4-photos-documents.e2e.ts`, `us5-export-import.e2e.ts`, `us6-identification.e2e.ts`, `ui-review.e2e.ts`, and `e2e/screenshots/screens.e2e.ts` (unlock the seeded "Main collection"). Run each spec one at a time after `npm run build` (depends on T046)
+- [X] T047 [US1] Update the existing E2E specs to start by creating or unlocking a database: `e2e/specs/record-firearm.e2e.ts`, `browse-search.e2e.ts`, `value-insurance.e2e.ts`, `photos-documents.e2e.ts`, `export-import.e2e.ts`, `identification.e2e.ts`, `ui-review.e2e.ts`, and `e2e/screenshots/screens.e2e.ts` (unlock the seeded "Main collection"). Run each spec one at a time after `npm run build` (depends on T046)
 - [X] T048 [US1] Add the screens `14-chooser`, `15-chooser-first-run`, `16-create-database` and `24-disk-encryption-note` (light and dark) to `e2e/screenshots/screens.e2e.ts` (contracts/ui-databases.md §15). `15-chooser-first-run` and `24-disk-encryption-note` need a sandbox with no databases, so they are in `e2e/screenshots/first-run.e2e.ts`, which `npm run screenshots` also runs (depends on T047)
 
 **Checkpoint**: User Story 1 is fully functional. A database is created with a passphrase and opens only with it. This is the MVP.
@@ -244,7 +244,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `session:closed` unmounts the collection tree and selects `databasePath` in the chooser
   - a save that fails with `DATABASE_UNAVAILABLE` shows contracts/ui-databases.md §1's "can't reach" text in the form, keeps its input and keeps the collection open
   - quit calls `quit_application`
-- [X] T058 [P] [US2] Write the US2 flows in `e2e/specs/us7-databases.e2e.ts`: create two databases in two scratch folders with different passphrases and a distinct firearm each; switch through the database menu; the chooser lists both, most recent first; closing with an unsaved firearm form asks save, discard or cancel; remove one from the list and check its file still exists
+- [X] T058 [P] [US2] Write the US2 flows in `e2e/specs/databases.e2e.ts`: create two databases in two scratch folders with different passphrases and a distinct firearm each; switch through the database menu; the chooser lists both, most recent first; closing with an unsaved firearm form asks save, discard or cancel; remove one from the list and check its file still exists
 
 ### Implementation for User Story 2
 
@@ -273,7 +273,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `DATABASE_UNAVAILABLE` from any save shows §1's "can't reach" text in the saving form's error slot, keeping the input, and does not close the session
   
   Add `close_database`, `quit_application`, `remove_recent_database` and `locate_database` wrappers to the services (depends on T067)
-- [X] T070 [US2] Add the screens `17-open-elsewhere` (the seeded "Shared collection") and `25-unsaved-changes` (the save / discard / cancel prompt over an edited firearm form, contracts/ui-databases.md §6) to `e2e/screenshots/screens.e2e.ts`, and re-run the E2E spec `us7-databases.e2e.ts` (depends on T069)
+- [X] T070 [US2] Add the screens `17-open-elsewhere` (the seeded "Shared collection") and `25-unsaved-changes` (the save / discard / cancel prompt over an edited firearm form, contracts/ui-databases.md §6) to `e2e/screenshots/screens.e2e.ts`, and re-run the E2E spec `databases.e2e.ts` (depends on T069)
 
 **Checkpoint**: User Stories 1 and 2 work: several databases, switching, the recent list, the unsaved-changes question, and refusals with take-over.
 
@@ -365,7 +365,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   
   Also extend `src/features/databases/DatabaseChooser.test.tsx` (US3 cases, US3-6, FR-028): `DATABASE_DAMAGED` shows "<name> is damaged and can't be opened." with **Restore from a backup…** when `backupsAvailable` and without it otherwise; `PASSPHRASE_INCORRECT` with `backupsAvailable` also offers it; choosing it opens `RestoreBackupDialog` in damaged-database mode with the row's `databasePath`
 - [X] T078 [P] [US3] Extend `src/features/import-export/ExportDialog.test.tsx` for the FR-031 wording: "Exports the collection to a spreadsheet. The file is **not encrypted**: anyone who can open it can read it. For encrypted backups of the whole database, see Database settings." (contracts/ui-databases.md §12)
-- [X] T079 [P] [US3] Write `e2e/specs/us8-backups.e2e.ts`: change a firearm and close; a `HoploDex backups` folder appears next to the file with one backup; change and close again: still one; restore that backup with its passphrase; a "before restoring" backup appears and the change is gone
+- [X] T079 [P] [US3] Write `e2e/specs/backups.e2e.ts`: change a firearm and close; a `HoploDex backups` folder appears next to the file with one backup; change and close again: still one; restore that backup with its passphrase; a "before restoring" backup appears and the change is gone
 
 ### Implementation for User Story 3
 
@@ -412,7 +412,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
 - [X] T093 [US3] Add the chooser's `backupFailed` notice ("<name> was not backed up: <reason>. Its changes will be backed up at the next close.", including the reason "its file could not be reached") with **Change backup location…**, which opens the settings after the next successful open. Add the opened-backup and restored banners to `src/features/databases/DatabaseNotes.tsx` (contracts/ui-databases.md §1, §10), and handle the unfinished-backup notice. Files: `src/features/databases/DatabaseChooser.tsx`, `src/features/databases/DatabaseNotes.tsx`
 - [X] T094 [P] [US3] Change the export wording in `src/features/import-export/ExportDialog.tsx` to the FR-031 text (contracts/ui-databases.md §12)
 - [X] T095 [US3] Seed backups in `src-tauri/examples/human_seed.rs`: two backups of "Main collection" through `services::backups` into its custom location (so `backup_made_at` and `backup_of_name` are populated in a seeded backup), the newer one matching the `last_backup_at` T027 set. Extend `src-tauri/tests/human_seed_coverage_test.rs` to check the backup-only columns in the seeded backup file (plan.md) (depends on T080, T084)
-- [X] T096 [US3] Add the screens `18-closing-backup`, `19-database-settings` and `21-restore-backup` to `e2e/screenshots/screens.e2e.ts`, and run the E2E spec `us8-backups.e2e.ts` (depends on T090–T093)
+- [X] T096 [US3] Add the screens `18-closing-backup`, `19-database-settings` and `21-restore-backup` to `e2e/screenshots/screens.e2e.ts`, and run the E2E spec `backups.e2e.ts` (depends on T090–T093)
 
 **Checkpoint**: User Stories 1–3 work. Backups are made at close and can be restored.
 
@@ -495,7 +495,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `savedPassphraseFailed` shows "The saved passphrase no longer opens <name>. Enter its passphrase; the saved copy will be updated." with the prompt
   - with `keyringAvailable: false` the box is disabled with "Not available: this computer has no keyring service."
 - [X] T105 [P] [US5] Extend `src/features/databases/DatabaseSettingsDialog.test.tsx` (This computer section): the saved state is shown; turning it on shows the confirmation and then a `PassphraseField`; **Forget saved passphrase** calls `forget_saved_passphrase`; the unavailable text is shown
-- [X] T106 [P] [US5] Add the US5 flows to `e2e/specs/us7-databases.e2e.ts` (the E2E build uses `mock-keyring`): remember on open, relaunch, and the database opens with **Open** alone; the second database still asks; forget in settings, relaunch, and the prompt returns. Add a variant launched with `HOPLODEX_E2E_KEYRING=unavailable` in which the option is disabled
+- [X] T106 [P] [US5] Add the US5 flows to `e2e/specs/databases.e2e.ts` (the E2E build uses `mock-keyring`): remember on open, relaunch, and the database opens with **Open** alone; the second database still asks; forget in settings, relaunch, and the prompt returns. Add a variant launched with `HOPLODEX_E2E_KEYRING=unavailable` in which the option is disabled
 
 ### Implementation for User Story 5
 
@@ -590,7 +590,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - `src/features/databases/DatabaseMenu.test.tsx`: **Lock now** in the menu, the lock icon button (`aria-label` "Lock now") and Ctrl/⌘+L from any focus, including inside a dialog, call `lock_database` with the current draft and no confirmation (FR-035)
   - `src/features/databases/DatabaseSettingsDialog.test.tsx`, Locking section: **Lock after a period without use**, and the minutes `Select` (1, 2, 5, 10, 15, 30, 60, 120, 240; `hd-field--third`) enabled only when checked, with the help "Also locks when the computer goes to sleep. Turning this off stops both."; **Lock when the computer's screen locks**, disabled with "Not available: this computer doesn't tell applications when the screen locks." when unsupported; the lock statement; the FR-036 sentence when the passphrase is saved
   - `src/features/databases/DatabaseChooser.test.tsx`: the notices "HoploDex locked <name>." (with " after <n> minutes without use" for idle), the stopped-operation text (the import variant with the row count, and the deletion-of-backups variant with the number deleted), and "Unsaved changes could not be kept when <name> locked."; after a lock, focus is on the passphrase field, or on **Open** when the passphrase is saved
-- [X] T120 [P] [US6] Write `e2e/specs/us9-locking.e2e.ts`, covering:
+- [X] T120 [P] [US6] Write `e2e/specs/locking.e2e.ts`, covering:
   - Ctrl+L while editing a firearm locks, with no collection DOM left
   - the chooser shows the database selected with the locked notice
   - unlock, and the pending-changes dialog names the firearm; Resume brings back the exact input
@@ -671,7 +671,7 @@ This is the existing Tauri desktop app: Rust backend in `src-tauri/`, React/Type
   - the chooser notices for locks, stopped operations and lost pending changes in `DatabaseChooser.tsx`
   - focus moves to the passphrase field or **Open** after a lock
   - add the wrappers to `sessionService.ts`
-- [X] T136 [US6] Add the screen `22-pending-changes` (the seeded "Shared collection" after take-over, or a lock during an edit) to `e2e/screenshots/screens.e2e.ts`, and run the E2E spec `us9-locking.e2e.ts` (depends on T134, T135)
+- [X] T136 [US6] Add the screen `22-pending-changes` (the seeded "Shared collection" after take-over, or a lock during an edit) to `e2e/screenshots/screens.e2e.ts`, and run the E2E spec `locking.e2e.ts` (depends on T134, T135)
 
 **Checkpoint**: All six user stories work on their own.
 
@@ -771,7 +771,7 @@ Task: "T031 PassphraseField.test.tsx in src/components/"
 Task: "T032 CreateDatabaseDialog.test.tsx in src/features/databases/"
 Task: "T033 DatabaseChooser.test.tsx in src/features/databases/"
 Task: "T034 SessionProvider.test.tsx in src/features/session/"
-Task: "T035 us7-databases.e2e.ts US1 flow in e2e/specs/"
+Task: "T035 databases.e2e.ts US1 flow in e2e/specs/"
 
 # Then independent new files, together:
 Task: "T039 StrengthHint.tsx in src/components/"
@@ -875,8 +875,8 @@ Each story adds value without breaking the ones before it. Re-run the whole back
 - [X] T157 [US3] Add `unfinishedBackupMove { databasePath, databaseId, fromFolder, partialPath }` to `src-tauri/src/services/machine_settings.rs`, with set, update and clear, per plan: research §22 (missing):
   - extend `backups::sweep_unfinished`, called from `src-tauri/src/main.rs` setup: remove the partial file, count this database's backups still in `fromFolder` by the cached id, and push `backupsLeftBehind` when there are any
   - add the `machine_settings_test.rs` round-trip case
-- [X] T158 [US3] Add the move flows to `e2e/specs/us8-backups.e2e.ts`: change the location to a scratch folder and **Move** (the backups are listed from the new folder and gone from the old one); change it back and **Leave** (the restore list is empty until that folder is chosen again). Add the screen `27-backup-location-change` (light and dark) to `e2e/screenshots/screens.e2e.ts`. Per FR-026, contracts/ui-databases.md §15, Constitution III (missing)
-- [X] T159 Re-run T143's gates in the dev container for the convergence work (cargo test, including the `mock-keyring` keyring test; clippy; fmt; `npm run test`, lint and format; `npm run audit`; `npm run build`, then `us8-backups.e2e.ts` and `us9-locking.e2e.ts` one at a time), then reconcile contracts/tauri-commands.md and contracts/ui-databases.md with any shape or text that changed, per Constitution (quality gates) (missing)
+- [X] T158 [US3] Add the move flows to `e2e/specs/backups.e2e.ts`: change the location to a scratch folder and **Move** (the backups are listed from the new folder and gone from the old one); change it back and **Leave** (the restore list is empty until that folder is chosen again). Add the screen `27-backup-location-change` (light and dark) to `e2e/screenshots/screens.e2e.ts`. Per FR-026, contracts/ui-databases.md §15, Constitution III (missing)
+- [X] T159 Re-run T143's gates in the dev container for the convergence work (cargo test, including the `mock-keyring` keyring test; clippy; fmt; `npm run test`, lint and format; `npm run audit`; `npm run build`, then `backups.e2e.ts` and `locking.e2e.ts` one at a time), then reconcile contracts/tauri-commands.md and contracts/ui-databases.md with any shape or text that changed, per Constitution (quality gates) (missing)
 
 ---
 
@@ -911,9 +911,9 @@ FR-040 (the selected database's last open, backups and outside changes in the ch
   - `backups::list` returns an empty list for a folder that doesn't exist (`src-tauri/src/services/backups.rs`), so `backup_summary` in `src-tauri/src/commands/databases.rs` reports `count: 0`, shown as "Last backup: None", for a custom location on an unplugged drive or one that doesn't exist on this computer. FR-040 says to leave that part out rather than guess
   - read a missing folder as "none" only when it is the default `HoploDex backups` folder next to the database file; for any other missing folder, `backups` is `null`
   - write the regression test first in `src-tauri/tests/chooser_details_test.rs`: a cached custom backup folder that doesn't exist gives `backups: None`, and a default folder not yet made gives `count: 0`
-- [X] T168 [P] [US3] In `e2e/specs/us8-backups.e2e.ts`, after a close that made a backup, check that the chooser's selected row shows "Last opened here" with "Today at …" and "Last backup" with "Today at …" and "1 kept", and that a row that isn't selected shows neither, per FR-040, Constitution II (partial)
+- [X] T168 [P] [US3] In `e2e/specs/backups.e2e.ts`, after a close that made a backup, check that the chooser's selected row shows "Last opened here" with "Today at …" and "Last backup" with "Today at …" and "1 kept", and that a row that isn't selected shows neither, per FR-040, Constitution II (partial)
 - [X] T169 [P] Add FR-040 to `specs/003-database-protection-management/quickstart.md` per FR-040 (partial):
   - a row in the automated test map naming `tests/chooser_details_test.rs`, `DatabaseChooser.test.tsx`, `src/lib/dates.test.ts` and T168's e2e check
   - a numbered walkthrough step: close a database, change its file from outside (another computer, or a scratch copy opened and saved), and see "Changed …, after it was last closed here." on the selected row
 - [X] T170 [P] Record the chooser's catalogue plate (`src/features/databases/plate/`, #23) in `specs/003-database-protection-management/contracts/ui-databases.md` §1: the plate on the right of the list, decorative (`aria-hidden`), drawn in and then cycling, still under `prefers-reduced-motion`, and gone once a database opens. Also record the header's owl brand mark and the program icon (#22). Or, if the user keeps them outside 003, say so in the contract with the issue numbers, per contracts/ui-databases.md §1 (unrequested)
-- [X] T171 Re-run the gates in the dev container for this phase's work: cargo test (including `chooser_details_test`), clippy and fmt; `npm run test`, lint and format; `npm run audit`; then `npm run build` and `us7-databases.e2e.ts` and `us8-backups.e2e.ts` one at a time. Reconcile contracts/tauri-commands.md (`BackupSummary`) with anything that changed, per Constitution (quality gates) (missing)
+- [X] T171 Re-run the gates in the dev container for this phase's work: cargo test (including `chooser_details_test`), clippy and fmt; `npm run test`, lint and format; `npm run audit`; then `npm run build` and `databases.e2e.ts` and `backups.e2e.ts` one at a time. Reconcile contracts/tauri-commands.md (`BackupSummary`) with anything that changed, per Constitution (quality gates) (missing)

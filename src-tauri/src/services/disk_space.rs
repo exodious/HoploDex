@@ -1,4 +1,4 @@
-//! Free space before a copy (FR-016, research.md §4): a copy of a database
+//! Free space before a copy (003 FR-016, research.md §4): a copy of a database
 //! file is only started when its folder has room for the file plus 5%, so
 //! it does not fill the disk halfway through.
 
@@ -20,6 +20,28 @@ impl From<InsufficientSpace> for CommandError {
     fn from(short: InsufficientSpace) -> Self {
         CommandError::insufficient_space(short.bytes_needed, short.bytes_available, &short.path)
     }
+}
+
+/// Whether `err` is the OS saying the disk is full or the user's quota is
+/// used up: `ENOSPC` and `EDQUOT` on Linux and macOS, `ERROR_DISK_FULL` (112),
+/// `ERROR_HANDLE_DISK_FULL` (39) and `ERROR_DISK_QUOTA_EXCEEDED` on Windows
+/// (issue #110). The pre-check above can't see a disk that fills while a
+/// file is being written, nor a quota.
+pub fn is_disk_full(err: &io::Error) -> bool {
+    matches!(err.kind(), io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded)
+}
+
+/// [`is_disk_full`] for `err` or any error it wraps, for a writer that
+/// reports its I/O errors inside its own type.
+pub fn chain_is_disk_full(err: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(err);
+    while let Some(err) = current {
+        if err.downcast_ref::<io::Error>().is_some_and(is_disk_full) {
+            return true;
+        }
+        current = err.source();
+    }
+    false
 }
 
 /// The bytes a copy of a `len`-byte file needs: its size plus 5%, rounded
@@ -52,7 +74,7 @@ pub fn check_room_for_copy(file_len: u64, dir: &Path) -> Result<(), Insufficient
 
 /// Checks there is room for several copies at once, each `(folder, file
 /// length)`. Copies to folders on the same volume need their room summed
-/// (research.md §8). The first volume short of room is reported.
+/// (003 research.md §8). The first volume short of room is reported.
 pub fn check_room(copies: &[(&Path, u64)]) -> Result<(), InsufficientSpace> {
     let mut volumes: Vec<(Option<Volume>, &Path, u64)> = Vec::new();
     for &(dir, len) in copies {

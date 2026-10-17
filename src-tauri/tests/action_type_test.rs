@@ -1,7 +1,7 @@
-//! specs/004-cartridges-action-types User Story 3 through `ops`, against a
+//! 004 US3 through `ops`, against a
 //! real temporary SQLCipher database: the fixed action list and its mapping
-//! to firearm types (FR-017, FR-018), the rule that an action must be
-//! allowed for the firearm's type (FR-019, SC-008) in the command layer and
+//! to firearm types (004 FR-017, FR-018), the rule that an action must be
+//! allowed for the firearm's type (004 FR-019, SC-008) in the command layer and
 //! in the trigger backstop.
 
 use crate::support;
@@ -37,7 +37,7 @@ fn field_error(err: &CommandError, field: &str) -> Option<String> {
 
 #[test]
 fn the_action_list_is_in_fr_018_order() {
-    // US3-1.
+    // 004 US3-1.
     let db = TestDb::new();
     let output = entry_ops::list_action_types(&db.conn).unwrap();
     let names: Vec<&str> = output.actions.iter().map(|a| a.name.as_str()).collect();
@@ -66,7 +66,7 @@ fn the_action_list_is_in_fr_018_order() {
 
 #[test]
 fn the_seeded_types_map_to_their_allowed_actions_in_list_order() {
-    // US3-1, US3-2, FR-018.
+    // 004 US3-1, US3-2, FR-018.
     let db = TestDb::new();
     let output = entry_ops::list_action_types(&db.conn).unwrap();
     let allowed = &output.allowed_by_firearm_type;
@@ -126,7 +126,7 @@ fn a_type_added_later_allows_every_action_and_a_renamed_type_keeps_its_mapping()
 
 #[test]
 fn the_action_round_trips_and_none_saves_normally() {
-    // US3-6, FR-021.
+    // 004 US3-6, FR-021.
     let db = TestDb::new();
     let created =
         ops::create_firearm(&db.conn, &with_action(RIFLE, Some(LEVER_ACTION), "A-1"), false, None)
@@ -219,7 +219,7 @@ fn an_unknown_action_id_is_choose_an_action_from_the_list() {
 
 #[test]
 fn changing_the_type_to_one_that_disallows_the_action_is_rejected() {
-    // US3-3 at the command layer: the form clears the action, and the
+    // 004 US3-3 at the command layer: the form clears the action, and the
     // backend refuses a save that doesn't.
     let db = TestDb::new();
     let rifle =
@@ -260,7 +260,7 @@ fn changing_the_type_to_one_that_disallows_the_action_is_rejected() {
 
 #[test]
 fn the_trigger_backstop_refuses_raw_writes_that_break_the_rule() {
-    // SC-008: even a bug that bypasses the command layer cannot store a
+    // 004 SC-008: even a bug that bypasses the command layer cannot store a
     // disallowed action.
     let db = TestDb::new();
     let message = |result: rusqlite::Result<usize>| result.unwrap_err().to_string();

@@ -6,7 +6,7 @@ import { Combobox } from "./Combobox";
 import type { ComboboxOption } from "./Combobox";
 import { Dialog } from "./Dialog";
 
-// specs/004-cartridges-action-types contracts/ui-entry.md §1: the shared
+// 004 contracts/ui-entry.md §1: the shared
 // list-autocomplete combobox behind Make, Model, Cartridge and Caliber.
 
 const OPTIONS: ComboboxOption[] = [
@@ -84,7 +84,7 @@ describe("Combobox", () => {
     expect(input().getAttribute("aria-controls")).toBe(list.id);
   });
 
-  // 004 US2 Scenario 4
+  // 004 US2-4
   it("opens on focus with the list for the current text, and names each row with its marker", async () => {
     const user = userEvent.setup();
     render(<Harness load={load} />);
@@ -254,7 +254,7 @@ describe("Combobox", () => {
     },
   );
 
-  // 004 US2 Scenario 10
+  // 004 US2-10
   it("closes an open list on Escape keeping the text, and lets Escape through once closed", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();

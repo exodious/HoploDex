@@ -21,10 +21,10 @@ interface Example {
   howToRecordIt: string;
 }
 
-/** specs/002-firearm-identification contracts/ui-identification.md §8: the
- * six worked examples required by FR-015/SC-007. Static reference text with
+/** 002 contracts/ui-identification.md §8: the
+ * six worked examples required by 002 FR-015/SC-007. Static reference text with
  * no data behind it — it never blocks, rejects or second-guesses a choice
- * of origin, and states the FR-006 disclaimer once at the top. */
+ * of origin, and states the 002 FR-006 disclaimer once at the top. */
 const EXAMPLES: Example[] = [
   {
     title: "Re-imported M1 Carbine",
@@ -67,7 +67,7 @@ const EXAMPLES: Example[] = [
   },
 ];
 
-/** specs/005-regulated-item-types research.md §12: the two registered-item
+/** 005 research.md §12: the two registered-item
  * examples, in the same pairs. Paperwork is what the owner has, so the first
  * label is "What you have". Like the origin examples they are illustrations,
  * not rules. */
@@ -129,7 +129,7 @@ function PartHeading({ focus, children }: { focus: boolean; children: string }) 
   );
 }
 
-/** The "How do I record this?" guide (FR-015, SC-007; specs/005-regulated-item-types
+/** The "How do I record this?" guide (002 FR-015, SC-007; 005
  * FR-014): a shared `Dialog` opened from beside the origin control or from the
  * Registration section. Static text with worked examples, introduced as
  * examples so no one reads Austria or Inland as a rule; nothing in it

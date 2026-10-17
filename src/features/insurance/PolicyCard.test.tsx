@@ -42,7 +42,7 @@ const blanketInForce: BlanketSummary = {
   underInsured: false,
 };
 
-// specs/006-accessory-links FR-009: an accessory is scheduled on a policy as
+// 006 FR-009: an accessory is scheduled on a policy as
 // a firearm is, and is listed with the scheduled firearms by `RecordName`.
 function accessorySummary(id: number, overrides: Partial<AccessorySummary> = {}): AccessorySummary {
   return {
@@ -116,8 +116,8 @@ function renderCard(
   );
 }
 
-describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
-  // 001 US3 Scenarios 4 and 6, and the Edge Case: renewal (a policy in force shows no warning)
+describe("PolicyCard (001 FR-015, FR-027, FR-028, FR-036)", () => {
+  // 001 US3-4 and US3-6, and the Edge Case: renewal (a policy in force shows no warning)
   it("shows the blanket policy in force with its total against its limit", () => {
     renderCard(base, { blanket: blanketInForce });
 
@@ -131,7 +131,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     ).toBeInTheDocument();
   });
 
-  it("counts the accessories the blanket policy covers beside its firearms (FR-009)", () => {
+  it("counts the accessories the blanket policy covers beside its firearms (006 FR-009)", () => {
     renderCard(base, { blanket: blanketInForce });
 
     expect(screen.getByText("3 firearms and 2 accessories")).toBeInTheDocument();
@@ -251,7 +251,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(rows[1]).toHaveTextContent("$900");
   });
 
-  // 001 US3 Scenario 4
+  // 001 US3-4
   it("flags a blanket total over its limit", () => {
     renderCard(base, {
       blanket: { ...blanketInForce, total: 12_500, underInsured: true },
@@ -279,7 +279,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.queryByText(/not in force/i)).not.toBeInTheDocument();
   });
 
-  // 001 US3 Scenarios 2 and 6
+  // 001 US3-2 and US3-6
   it("lists the firearms scheduled under the policy with their amounts", () => {
     const scheduled = firearmSummary(5, {
       insurancePolicyId: 1,
@@ -312,7 +312,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.getByText("$500 short")).toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 7
+  // 001 US3-7
   it("warns when the policy is about to expire", () => {
     renderCard({
       ...base,
@@ -324,15 +324,15 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.getByText(/Expires in/)).toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 14
-  it("stays quiet about an expiry that FR-028 suppresses, since a successor takes over", () => {
+  // 001 US3-14
+  it("stays quiet about an expiry that 001 FR-028 suppresses, since a successor takes over", () => {
     renderCard({ ...base, isExpiringSoon: true, expiringWarning: false });
 
     expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument();
     expect(screen.queryByText(/expired/i)).not.toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 8
+  // 001 US3-8
   it("warns about an expired policy, and says its scheduled firearms are uninsured", () => {
     const scheduled = firearmSummary(5, { insurancePolicyId: 1, insuranceWarning: "uninsured" });
     renderCard(
@@ -366,7 +366,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(screen.queryByText(/Expired/)).not.toBeInTheDocument();
   });
 
-  // 001 US3 Scenario 16
+  // 001 US3-16
   it("shows the notes, keeping line breaks, when the policy has any", () => {
     renderCard({ ...base, notes: "Renews in January.\nAsk about the rider." });
 
@@ -376,7 +376,7 @@ describe("PolicyCard (FR-015, FR-027, FR-028, FR-036)", () => {
     expect(notes.textContent).toBe("Renews in January.\nAsk about the rider.");
   });
 
-  // 001 US3 Scenario 16
+  // 001 US3-16
   it("shows no notes row when the policy has none", () => {
     renderCard(base);
 

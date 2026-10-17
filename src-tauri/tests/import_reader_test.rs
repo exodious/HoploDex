@@ -1,9 +1,9 @@
-//! The import's reader against the real import helper (feature 008, T050;
-//! research.md §8, §9, §11): `import_reader::read_files` starts
+//! The import's reader against the real import helper (008 T050, research.md
+//! §8, §9, §11): `import_reader::read_files` starts
 //! `CARGO_BIN_EXE_hoplodex --import-helper` for each file and returns the
 //! tables it read, or refuses the whole import.
 //!
-//! - Each file of T049's hostile corpus (`support/hostile_spreadsheets.rs`) is
+//! - Each file of 008 T049's hostile corpus (`support/hostile_spreadsheets.rs`) is
 //!   refused within 5 s, with `IMPORT_LIMIT_EXCEEDED` naming the limit, the
 //!   file and a workbook's sheet, or with `VALIDATION_ERROR` "<file>: could not
 //!   read the file."; this process's resident memory rises by no more than
@@ -12,7 +12,7 @@
 //! - A stop by the user ends the reading within 1 s at several points in a
 //!   large valid file (`OPERATION_STOPPED`); a lock, a sleep or a quit, seen as
 //!   the session no longer being the current one, ends it within 1 s too, with
-//!   `DATABASE_CLOSED` whether or not the user also stopped it (research.md
+//!   `DATABASE_CLOSED` whether or not the user also stopped it (008 research.md
 //!   §11). Nothing is returned, so nothing is imported.
 //! - What the app's own export writes (a workbook, and two CSV files) reads
 //!   back as the tables `read_table` expects.
@@ -48,20 +48,20 @@ use tempfile::TempDir;
 const HELPER: &str = env!("CARGO_BIN_EXE_hoplodex");
 const IMPORT_HELPER: &str = "--import-helper";
 
-/// The most a file may cost this process while it is read (SC-002).
+/// The most a file may cost this process while it is read (008 SC-002).
 const MEMORY_BUDGET: u64 = 512 * 1024 * 1024;
-/// How long a refusal may take (SC-003).
+/// How long a refusal may take (008 SC-003).
 const REFUSAL_BUDGET: Duration = Duration::from_secs(5);
 /// The corpus cases whose refusal comes only after five million cells have
 /// been parsed (a workbook of sixteen sheets past the cell limit in its
 /// thirteenth). In a debug build the generic parsing code of `calamine` and
 /// `quick-xml` is compiled with this crate, unoptimized, and the case takes
 /// 10–17 s (Linux, Windows, the macOS VM; more on a loaded machine) against
-/// about 2–3 s in release. SC-003's 5 s is a release budget, measured there
-/// (research.md §19), so a debug build allows `DEBUG_FACTOR` times as long.
+/// about 2–3 s in release. 008 SC-003's 5 s is a release budget, measured there
+/// (008 research.md §19), so a debug build allows `DEBUG_FACTOR` times as long.
 const SLOW_IN_DEBUG: &[&str] = &["cells-16-sheets"];
 const DEBUG_FACTOR: u32 = 12;
-/// How long a stop, a lock or a sleep may take to end the reading (SC-004).
+/// How long a stop, a lock or a sleep may take to end the reading (008 SC-004).
 const STOP_BUDGET: Duration = Duration::from_secs(1);
 
 fn serial() -> MutexGuard<'static, ()> {
@@ -337,7 +337,7 @@ fn progress_counts_the_bytes_of_the_files_up_to_their_total() {
     )
     .unwrap();
 
-    // Each report names the file being read (contracts/ui.md §2): a.csv
+    // Each report names the file being read (008 contracts/ui.md §2): a.csv
     // first, then b.xlsx.
     assert_eq!(names, ["a.csv", "b.xlsx"]);
 
@@ -347,7 +347,7 @@ fn progress_counts_the_bytes_of_the_files_up_to_their_total() {
 }
 
 /// A workbook reports how far its reading has got while it arrives, while the
-/// archive is checked and while the sheets are parsed (research.md §11), not
+/// archive is checked and while the sheets are parsed (008 research.md §11), not
 /// only at its end.
 #[test]
 fn a_workbook_reports_progress_between_nothing_and_everything() {
@@ -592,7 +592,7 @@ fn a_helper_that_dies_or_says_nonsense_makes_the_file_unreadable() {
     }
 }
 
-/// The job object's memory limit on Windows (research.md §8: the job's
+/// The job object's memory limit on Windows (008 research.md §8: the job's
 /// `JobMemoryLimit` is `RLIMIT_DATA` there): a helper that holds more than its
 /// job allows dies, without an answer, and nothing else does. The helper is
 /// lied to, as a crafted file would: it is told the workbook is empty, then

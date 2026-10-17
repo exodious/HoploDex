@@ -1,9 +1,9 @@
 //! The built-in cartridge catalog and caliber derivation
-//! (specs/004-cartridges-action-types research.md §1, §2 and §7).
+//! (004 research.md §1, §2 and §7).
 //!
 //! The catalog is `catalog.tsv`, compiled into the binary and parsed once on
 //! first use. It is never written to a database and no firearm refers to it
-//! (FR-002, FR-004): picking an entry copies its name and caliber onto the
+//! (004 FR-002, FR-004): picking an entry copies its name and caliber onto the
 //! record. [`derive_caliber`] gives a cartridge's caliber from the catalog, or
 //! failing that by reading the bore designation at the start of its name.
 
@@ -16,17 +16,17 @@ use crate::services::entry_text::{entry_key, fold};
 
 const CATALOG_TSV: &str = include_str!("catalog.tsv");
 
-/// One built-in cartridge (data-model.md, "Catalog Cartridge").
+/// One built-in cartridge (004 data-model.md, "Catalog Cartridge").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogEntry {
     /// Commonness, 1 = most common.
     pub rank: u32,
     /// The spelling the catalog offers and snaps to.
     pub name: String,
-    /// The bore class (FR-004a).
+    /// The bore class (004 FR-004a).
     pub caliber: String,
     /// Other names that narrow the list and derive the caliber, but are never
-    /// snap targets (FR-013).
+    /// snap targets (004 FR-013).
     pub aliases: Vec<String>,
 }
 
@@ -38,7 +38,7 @@ pub struct CatalogClass {
     pub best_rank: u32,
 }
 
-/// The parsed catalog with its lookups by entry key (research.md §3).
+/// The parsed catalog with its lookups by entry key (004 research.md §3).
 #[derive(Debug)]
 pub struct Catalog {
     /// In rank order.
@@ -51,7 +51,7 @@ pub struct Catalog {
     classes: Vec<CatalogClass>,
     class_by_key: HashMap<String, usize>,
     /// The key of a name's or alias's leading designation → the index of the
-    /// best-ranked entry that has it (research.md §7 step 3b).
+    /// best-ranked entry that has it (004 research.md §7 step 3b).
     by_designation: HashMap<String, usize>,
 }
 
@@ -130,7 +130,7 @@ impl Catalog {
     }
 
     /// The entry whose name (not an alias) has this entry key: the snap
-    /// target for a cartridge (research.md §6).
+    /// target for a cartridge (004 research.md §6).
     pub fn entry_by_name_key(&self, key: &str) -> Option<&CatalogEntry> {
         self.by_name_key.get(key).map(|&index| &self.entries[index])
     }
@@ -153,7 +153,7 @@ pub fn catalog() -> &'static Catalog {
     CATALOG.get_or_init(|| Catalog::parse(CATALOG_TSV))
 }
 
-/// Where a derived caliber came from (FR-005: a guess is marked as one).
+/// Where a derived caliber came from (004 FR-005: a guess is marked as one).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CaliberSource {
@@ -161,7 +161,7 @@ pub enum CaliberSource {
     Guess,
 }
 
-/// The caliber a cartridge derives (contracts/tauri-commands.md,
+/// The caliber a cartridge derives (004 contracts/tauri-commands.md,
 /// `settle_entry`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -170,12 +170,12 @@ pub struct DerivedCaliber {
     pub source: CaliberSource,
 }
 
-/// A bore designation read from the start of a name (research.md §7's
+/// A bore designation read from the start of a name (004 research.md §7's
 /// table).
 struct Designation {
     text: String,
     /// Read by rule 7, a bare number, which only counts when the catalog
-    /// knows it (research.md §7 step 3).
+    /// knows it (004 research.md §7 step 3).
     bare_number: bool,
 }
 
@@ -215,7 +215,7 @@ fn number_ends(chars: &[char]) -> Vec<usize> {
     ends
 }
 
-/// The name as research.md §7 reads it: NFKC, lower case, `×` as `x`, dashes
+/// The name as 004 research.md §7 reads it: NFKC, lower case, `×` as `x`, dashes
 /// as `-`, trimmed, and a decimal comma between digits read as a point
 /// (`7,62x39`).
 fn designation_chars(name: &str) -> Vec<char> {
@@ -231,7 +231,7 @@ fn designation_chars(name: &str) -> Vec<char> {
     chars
 }
 
-/// research.md §7 step 2: the leading designation by the first of the seven
+/// 004 research.md §7 step 2: the leading designation by the first of the seven
 /// rules that matches.
 fn read_designation(name: &str) -> Option<Designation> {
     let chars = designation_chars(name);
@@ -309,13 +309,13 @@ fn read_designation(name: &str) -> Option<Designation> {
     None
 }
 
-/// The bore designation at the start of `name` by research.md §7's rules,
+/// The bore designation at the start of `name` by 004 research.md §7's rules,
 /// e.g. ".308" for ".308 Winchester", "7.62mm" for "7.62x39mm", or `None`.
 pub fn leading_designation(name: &str) -> Option<String> {
     read_designation(name).map(|designation| designation.text)
 }
 
-/// The caliber `cartridge` derives (FR-003, FR-005; research.md §7): the
+/// The caliber `cartridge` derives (004 FR-003, FR-005; 004 research.md §7): the
 /// class of the catalog entry whose name or alias it is; otherwise a guess
 /// from its leading designation, mapped to a class where the catalog knows
 /// one; otherwise `None`. Never a made-up value.

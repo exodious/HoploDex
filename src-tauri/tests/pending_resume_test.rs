@@ -1,5 +1,5 @@
-//! Pending changes until their form opens (008 FR-003, FR-017; research.md
-//! §6; data-model.md "PendingState"; contracts/tauri-commands.md
+//! Pending changes until their form opens (008 FR-003, FR-017; 008 research.md
+//! §6; 008 data-model.md "PendingState"; 008 contracts/tauri-commands.md
 //! `resolve_pending_changes`): the four actions in each state, what each
 //! state lets through, and a row that stays until the form has opened.
 //! Real SQLCipher files in temp directories.
@@ -202,7 +202,7 @@ fn edit_draft(id: i64) -> Draft {
 }
 
 /// What each action does in each state: the state it leads to, or `None`
-/// for a `VALIDATION_ERROR` (data-model.md "PendingState").
+/// for a `VALIDATION_ERROR` (008 data-model.md "PendingState").
 fn expected(state: State, action: PendingAction) -> Option<State> {
     match (state, action) {
         (State::Unresolved, PendingAction::Resume) => Some(State::Resuming),
@@ -317,7 +317,7 @@ fn not_opened_returns_the_summary_for_the_dialog_and_blocks_again() {
     assert_eq!(again.draft, Some(edit_draft(firearm)));
 }
 
-// 003 US6 Scenario 6: discarding.
+// 003 US6-6: discarding.
 #[test]
 fn discard_deletes_the_row_and_serves_the_collection() {
     let world = World::new();
@@ -403,7 +403,7 @@ fn a_user_lock_a_sleep_and_a_close_while_resuming_leave_the_row() {
     }
 }
 
-// 008 US4 Scenarios 2 and 5: closing from the dialog.
+// 008 US4-2 and US4-5: closing from the dialog.
 #[test]
 fn close_database_is_served_in_unresolved_and_in_resuming() {
     for state in [State::Unresolved, State::Resuming] {
@@ -469,9 +469,9 @@ fn the_forms_own_staging_replaces_the_one_opened_made() {
     assert_eq!(world.resolve(PendingAction::Resume).unwrap().draft, Some(typed_on));
 }
 
-// --- Closing from the dialog (US4-2, US4-3, US4-5) --------------------------------
+// --- Closing from the dialog (008 US4-2, US4-3, US4-5) ----------------------------
 
-// 008 US4 Scenarios 2 and 5; 003 US6 Scenario 6 (a backup carries no pending changes).
+// 008 US4-2 and US4-5; 003 US6-6 (a backup carries no pending changes).
 #[test]
 fn a_close_leaves_the_row_and_its_backup_has_no_pending_changes() {
     for state in [State::Unresolved, State::Resuming] {
@@ -515,7 +515,7 @@ fn a_close_leaves_the_row_and_its_backup_has_no_pending_changes() {
     }
 }
 
-// 008 US4 Scenario 3; 003 US6 Scenario 6.
+// 008 US4-3; 003 US6-6.
 #[test]
 fn resume_after_a_close_returns_every_field_as_written() {
     let world = World::new();
@@ -531,7 +531,7 @@ fn resume_after_a_close_returns_every_field_as_written() {
     assert_eq!(resumed.draft, Some(edit_draft(firearm)));
 }
 
-// --- The version that kept them (FR-015) ------------------------------------------
+// --- The version that kept them (008 FR-015) --------------------------------------
 
 #[test]
 fn opened_and_discard_record_this_version_and_resume_and_not_opened_do_not() {

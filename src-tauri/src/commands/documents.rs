@@ -26,7 +26,7 @@ use crate::session::{Session, SessionId};
 #[derive(Debug)]
 pub enum OpenFailure {
     /// The OS has no program for the file's type (`SE_ERR_NOASSOC`,
-    /// `open`'s non-zero exit, `xdg-open`'s exit 3 or 4; research.md §18).
+    /// `open`'s non-zero exit, `xdg-open`'s exit 3 or 4; 007 research.md §18).
     NoApp,
     Other(String),
 }
@@ -38,7 +38,7 @@ pub enum OpenFailure {
 pub trait Opener: Send + Sync {
     /// Whether the OS has a program for files with this extension (no dot,
     /// the type's canonical one), asked before any dialog or copy
-    /// (research.md §18, amended 2026-10-07). The default is yes: Linux and
+    /// (007 research.md §18, amended 2026-10-07). The default is yes: Linux and
     /// macOS learn there is none from `open`'s exit status, and Windows
     /// answers from its file associations, because `ShellExecuteExW` shows
     /// its "How do you want to open this file?" picker rather than failing.
@@ -89,7 +89,7 @@ pub mod ops {
         rows.collect::<Result<Vec<_>, _>>().map_err(CommandError::from_db)
     }
 
-    /// The document types in table order (contracts/tauri-commands.md
+    /// The document types in table order (007 contracts/tauri-commands.md
     /// `list_document_types`): what the picker's `accept` and the drop
     /// router read, so the frontend keeps no list of its own.
     pub fn list_document_types() -> &'static [DocumentType] {
@@ -103,7 +103,7 @@ pub mod ops {
         original_filename: &str,
     ) -> Result<DocumentAttachment, CommandError> {
         // The type recorded is the one the content check finds, whatever the
-        // file chooser said (FR-016). Nothing is stored on a refusal.
+        // file chooser said (007 FR-016). Nothing is stored on a refusal.
         let document_type = classify(original_filename, file_bytes)?;
         // The name comes over IPC. A name is only ever a name: no path in it
         // (issue #68; the copy for another app uses `safe_stem` as well).
@@ -121,7 +121,7 @@ pub mod ops {
                 owner.noun()
             )));
         }
-        // At most `MAX_DOCUMENTS_PER_RECORD` (FR-010, amended 2026-10-11).
+        // At most `MAX_DOCUMENTS_PER_RECORD` (001 FR-010, amended 2026-10-11).
         require_room(conn, owner, "document_attachments", "documents", MAX_DOCUMENTS_PER_RECORD)?;
         let (firearm_id, accessory_id) = owner.owner_columns();
         conn.execute(
@@ -173,17 +173,17 @@ pub mod ops {
         if deleted == 0 {
             return Err(CommandError::not_found("No document was found with that id."));
         }
-        // The file name is in the document-names index (research.md §19).
+        // The file name is in the document-names index (007 research.md §19).
         crate::db::reclaim_deleted_record(conn);
         Ok(DeleteResult { deleted: true })
     }
 
     /// Reopens a document from its record in the OS's default program for
     /// its type, through a temporary copy under `opened_documents_dir`, after
-    /// the user's native confirmation (FR-008 to FR-012, contracts/
-    /// tauri-commands.md "open_document"). The dialog and the opener run
+    /// the user's native confirmation (007 FR-008 to FR-012,
+    /// contracts/tauri-commands.md "open_document"). The dialog and the opener run
     /// outside the session's lock; the copy is written under it, and only
-    /// into the open that asked (research.md §18).
+    /// into the open that asked (007 research.md §18).
     pub fn open_document(
         session: &Session,
         session_id: SessionId,
@@ -195,10 +195,10 @@ pub mod ops {
     ) -> Result<OpenedDocument, CommandError> {
         // 1. The document, and the open it was read from.
         let (document, stamp) = session.read_stamped(session_id, |conn| get_document(conn, id))?;
-        // 2. Refused by the attach rules before any dialog (FR-017).
+        // 2. Refused by the attach rules before any dialog (007 FR-017).
         let document_type = classify(&document.original_filename, &document.file_bytes)?;
         // 2a. No program for the type: say so before asking or writing anything
-        // (FR-010, research.md §18).
+        // (007 FR-010, research.md §18).
         if !opener.has_app(document_type.canonical_extension) {
             return Err(no_app_error(document_type, false));
         }
@@ -255,7 +255,7 @@ pub mod ops {
     }
 
     /// The native dialog is up: the idle clock waits for it, as it does for
-    /// a file chooser (research.md §16), and starts again when this is
+    /// a file chooser (007 research.md §16), and starts again when this is
     /// dropped.
     pub(crate) struct IdlePause<'a>(&'a Session);
 
@@ -284,7 +284,7 @@ pub mod ops {
     }
 
     /// Securely deletes every temporary copy `open_document` left under
-    /// `dir` (FR-035), returning the files that could not be deleted. Run on
+    /// `dir` (001 FR-035), returning the files that could not be deleted. Run on
     /// normal exit, and again at every startup as the backstop for crashes,
     /// forced kills, and anything a previous run failed to delete.
     pub fn clear_opened_documents(dir: &Path) -> Vec<PathBuf> {
@@ -294,7 +294,7 @@ pub mod ops {
 
 /// Folder under the app cache directory that holds the temporary copies
 /// `open_document` hands to the OS. Cleared on exit and again at startup
-/// (FR-035) so decrypted copies never outlive the session that made them.
+/// (001 FR-035) so decrypted copies never outlive the session that made them.
 pub const OPENED_DOCUMENTS_DIR: &str = "opened-documents";
 
 /// Clears [`OPENED_DOCUMENTS_DIR`] under the app cache directory, logging
@@ -309,7 +309,7 @@ pub fn clear_opened_documents_cache(app: &AppHandle) {
     }
 }
 
-/// Reopens a document from its record (FR-010) in the OS default app for
+/// Reopens a document from its record (001 FR-010) in the OS default app for
 /// its file type, via a temporary copy under [`OPENED_DOCUMENTS_DIR`], after
 /// the native confirmation. There is no flag the web view could set to
 /// confirm: the answer is the user's, in a dialog Rust shows.
@@ -435,7 +435,7 @@ pub fn windows_has_app(extension: &str) -> bool {
 }
 
 /// Windows: `ShellExecuteExW` through `tauri-plugin-opener`. `has_app` is
-/// asked first (T091 rework, 2026-10-07): for a type with no program (`.docx`
+/// asked first (007 T091 rework, 2026-10-07): for a type with no program (`.docx`
 /// without Office), `ShellExecuteExW` succeeds and shows "How do you want to
 /// open this file?", with or without `SEE_MASK_FLAG_NO_UI`, so it can't say so
 /// itself. Its error for a type with no program, `SE_ERR_NOASSOC` (31) or
@@ -485,13 +485,18 @@ impl Opener for E2eOpener {
 
 // ---------------------------------------------------------------- the copy
 
-fn copy_error(what: &str, e: impl std::fmt::Display) -> CommandError {
-    CommandError::new("INTERNAL_ERROR", format!("Could not prepare the document: {what}: {e}"))
+/// A failure to write the copy: `what` of it, at `path`. A full disk is
+/// `DISK_FULL`, naming `path`.
+fn copy_error(what: &str, path: &Path, e: std::io::Error) -> CommandError {
+    CommandError::from_io(&e, || {
+        CommandError::new("INTERNAL_ERROR", format!("Could not prepare the document: {what}: {e}"))
+    })
+    .located_at(path)
 }
 
 /// Writes (or reuses) the copy of `document` that is handed to the other
 /// app: `<root>/<id>/<stem>.<canonical extension>`, private from creation
-/// (research.md §18, settles #71) and marked as from elsewhere. A copy that
+/// (007 research.md §18, settles #71) and marked as from elsewhere. A copy that
 /// is already there with the same length is reused, since documents never
 /// change after attaching and Windows can't rewrite a file another program
 /// holds open; any other is replaced.
@@ -503,11 +508,11 @@ fn write_copy(
 ) -> Result<PathBuf, CommandError> {
     let folder = root.join(id.to_string());
     if let Some(parent) = root.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| copy_error("its folder", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| copy_error("its folder", parent, e))?;
     }
     private_dir(root)?;
     private_dir(&folder)?;
-    protect_folder(&folder).map_err(|e| copy_error("its folder's protection", e))?;
+    protect_folder(&folder).map_err(|e| copy_error("its folder's protection", &folder, e))?;
     let path = folder.join(format!(
         "{}.{}",
         safe_stem(&document.original_filename),
@@ -517,18 +522,22 @@ fn write_copy(
     match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.is_file() && meta.len() == bytes.len() as u64 => return Ok(path),
         Ok(meta) if meta.is_dir() => {
-            return Err(copy_error("its file", "a folder is in the way"));
+            return Err(copy_error(
+                "its file",
+                &path,
+                std::io::Error::other("a folder is in the way"),
+            ));
         }
         // A link, or a file of another length: replaced.
-        Ok(_) => std::fs::remove_file(&path).map_err(|e| copy_error("its file", e))?,
+        Ok(_) => std::fs::remove_file(&path).map_err(|e| copy_error("its file", &path, e))?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(copy_error("its file", e)),
+        Err(e) => return Err(copy_error("its file", &path, e)),
     }
-    create_private_file(&path, bytes).map_err(|e| copy_error("its file", e))?;
+    create_private_file(&path, bytes).map_err(|e| copy_error("its file", &path, e))?;
     if let Err(e) = mark_untrusted(&path) {
         // A copy that can't be marked is not handed on.
         let _ = secure_delete_file(&path);
-        return Err(copy_error("its mark", e));
+        return Err(copy_error("its mark", &path, e));
     }
     Ok(path)
 }
@@ -555,26 +564,30 @@ fn private_dir(path: &Path) -> Result<(), CommandError> {
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                     private_dir_existing(path)
                 }
-                Err(e) => Err(copy_error("its folder", e)),
+                Err(e) => Err(copy_error("its folder", path, e)),
             }
         }
-        Err(e) => Err(copy_error("its folder", e)),
+        Err(e) => Err(copy_error("its folder", path, e)),
     }
 }
 
 /// A folder that is already there is used only if it is a directory (not a
 /// link) owned by the user.
 fn private_dir_existing(path: &Path) -> Result<(), CommandError> {
-    let meta = std::fs::symlink_metadata(path).map_err(|e| copy_error("its folder", e))?;
+    let meta = std::fs::symlink_metadata(path).map_err(|e| copy_error("its folder", path, e))?;
     if !meta.is_dir() {
-        return Err(copy_error("its folder", "it is not a folder"));
+        return Err(copy_error("its folder", path, std::io::Error::other("it is not a folder")));
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         // SAFETY: `geteuid` has no preconditions and cannot fail.
         if meta.uid() != unsafe { libc::geteuid() } {
-            return Err(copy_error("its folder", "it belongs to another user"));
+            return Err(copy_error(
+                "its folder",
+                path,
+                std::io::Error::other("it belongs to another user"),
+            ));
         }
     }
     Ok(())
@@ -594,13 +607,20 @@ fn create_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
     let mut file = options.open(path)?;
-    file.write_all(bytes)?;
-    file.flush()
+    // A copy that couldn't be written whole (the disk filled) is not left
+    // behind: it was made here, by `create_new`. Overwritten like every
+    // other decrypted copy, which needs no new space.
+    let written = file.write_all(bytes).and_then(|()| file.flush());
+    if written.is_err() {
+        drop(file);
+        let _ = secure_delete_file(path);
+    }
+    written
 }
 
 /// The copy's file name without its extension: the stored name's last path
 /// component with characters that are invalid on any supported OS replaced,
-/// its own extension dropped (the canonical one is used, FR-017), nothing
+/// its own extension dropped (the canonical one is used, 007 FR-017), nothing
 /// hidden, nothing a Windows name can't be.
 fn safe_stem(original: &str) -> String {
     const RESERVED: [&str; 22] = [
@@ -631,7 +651,7 @@ fn safe_stem(original: &str) -> String {
 // Per-OS marks on a copy and its folder. Each OS has its own function, so
 // the sessions that finish them each touch one place.
 
-/// Windows (T091): gives `folder` a protected DACL granting only the current
+/// Windows (007 T091): gives `folder` a protected DACL granting only the current
 /// user (`SetSecurityInfo`), so nothing inherited from a relocated cache
 /// folder widens it. Unix folders are `0700` from creation (`private_dir`);
 /// macOS has the same.
@@ -755,13 +775,13 @@ fn current_user_sid() -> std::io::Result<Vec<u8>> {
 }
 
 /// Marks the copy as having come from elsewhere, for the other app and the
-/// OS to treat as untrusted (research.md §18). Linux has no such mark.
+/// OS to treat as untrusted (007 research.md §18). Linux has no such mark.
 #[cfg(not(any(windows, target_os = "macos")))]
 fn mark_untrusted(_copy: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// macOS (T090): adds the `com.apple.quarantine` attribute with `setxattr`
+/// macOS (007 T090): adds the `com.apple.quarantine` attribute with `setxattr`
 /// through `libc`, in the form a browser gives a download
 /// (`flags;hex seconds;agent;event`, the flags Chrome's `0081`, no event in
 /// the quarantine database), so the OS and the other app treat the copy as
@@ -861,7 +881,7 @@ pub async fn delete_document(
     session: ScopedSession,
 ) -> Result<DeleteResult, CommandError> {
     // The preview of the document goes first: its bytes, helper and surface
-    // must not outlive the document (contracts/tauri-commands.md
+    // must not outlive the document (007 contracts/tauri-commands.md
     // `delete_document`). Nothing is closed for a refused deletion.
     if confirmed {
         crate::commands::preview::ops::close_preview_of(&session.session, session.id, id)?;

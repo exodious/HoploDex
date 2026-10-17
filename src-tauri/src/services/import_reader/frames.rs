@@ -1,5 +1,5 @@
 //! The frames the reading child and the app exchange over the child's pipes
-//! (research.md §8, data-model.md "Import helper frames").
+//! (008 research.md §8, 008 data-model.md "Import helper frames").
 //!
 //! They ride on [`services::helper::frames`]' framing (a big-endian length,
 //! then a tag byte and the payload), with a lower limit of their own, which

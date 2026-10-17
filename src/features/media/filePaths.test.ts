@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fileName, isDocumentPath, isPhotoPath } from "./filePaths";
 import type { DocumentType } from "./types";
 
-// specs/007-document-preview/contracts/ui-document-preview.md §6, tasks.md T084:
+// 007 contracts/ui-document-preview.md §6, 007 T084:
 // `isDocumentPath(path, types)` is "the extension is in the document types
 // `list_document_types` gives", no longer "not a photo".
 const types: DocumentType[] = [

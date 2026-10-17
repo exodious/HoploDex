@@ -73,7 +73,7 @@ async function fill(current: string, next: string, confirmation = next) {
   return user;
 }
 
-describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
+describe("ChangePassphraseDialog (003 contracts/ui-databases.md §8)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.changePassphrase)
       .mockReset()
@@ -202,7 +202,7 @@ describe("ChangePassphraseDialog (contracts/ui-databases.md §8)", () => {
     expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
   });
 
-  it("forgets what it found when the fields are emptied at a lock or sleep (FR-007)", async () => {
+  it("forgets what it found when the fields are emptied at a lock or sleep (003 FR-007)", async () => {
     renderDialog();
     await type(CURRENT, NEW);
     expect(screen.getByRole("button", { name: "Change passphrase" })).toBeEnabled();

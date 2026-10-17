@@ -1,5 +1,5 @@
-//! The version that last saved a database (FR-015; specs/008-hardening-batch
-//! data-model.md `app_state`, research.md §16). Real SQLCipher files in temp
+//! The version that last saved a database (008 FR-015, data-model.md
+//! `app_state`, 008 research.md §16). Real SQLCipher files in temp
 //! directories.
 //!
 //! Set at creation; inside `write_pending`'s transaction whenever a draft is
@@ -261,7 +261,7 @@ fn recording_it_does_not_make_a_backup_due() {
     assert!(!world.changes_waiting(), "app_state has no change-tracking triggers");
 }
 
-// --- Set: pending changes (waits for T093) -----------------------------------
+// --- Set: pending changes (waits for 008 T093) -------------------------------
 
 #[test]
 fn a_lock_that_keeps_a_draft_records_this_version() {
@@ -300,7 +300,7 @@ fn the_immediate_close_at_sleep_or_shutdown_that_keeps_a_draft_records_this_vers
     }
 }
 
-// --- Set: writes that changed rows (wait for T093) ---------------------------
+// --- Set: writes that changed rows (wait for 008 T093) -----------------------
 
 #[test]
 fn a_write_that_changed_rows_records_this_version() {

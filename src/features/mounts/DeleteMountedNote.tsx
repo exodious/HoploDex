@@ -5,7 +5,7 @@ import { recordNameWithType } from "./recordNames";
 import type { MountedEntry } from "./types";
 import "./mounts.css";
 
-// specs/006-accessory-links FR-015, contracts/ui-accessories.md §8: what the
+// 006 FR-015, 006 contracts/ui-accessories.md §8: what the
 // delete confirmation says is left behind. Only the records mounted directly
 // on the one being deleted are named: those further down stay where they are.
 

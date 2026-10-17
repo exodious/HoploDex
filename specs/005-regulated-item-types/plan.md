@@ -244,7 +244,7 @@ src/
 │       └── *.test.tsx
 
 e2e/
-├── specs/us11-regulated-items.e2e.ts # NEW: keyboard-only registered suppressor; group by
+├── specs/regulated-items.e2e.ts # NEW: keyboard-only registered suppressor; group by
 └── screenshots/screens.e2e.ts        # + contracts/ui-registration.md §10
 ```
 

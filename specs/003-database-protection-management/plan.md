@@ -332,9 +332,9 @@ src/
 e2e/
 ├── wdio.conf.ts                    # drop HOPLODEX_E2E_DB_KEY; scratch user-dirs.dirs; unlock helper
 ├── support/ui.ts                   # createDatabase(), unlock(passphrase)
-├── specs/us7-databases.e2e.ts      # NEW: US1, US2, US5 flows
-├── specs/us8-backups.e2e.ts        # NEW: backup on close, restore, moving backups to a new location
-├── specs/us9-locking.e2e.ts        # NEW: lock now, pending changes resume and discard
+├── specs/databases.e2e.ts      # NEW: US1, US2, US5 flows
+├── specs/backups.e2e.ts        # NEW: backup on close, restore, moving backups to a new location
+├── specs/locking.e2e.ts        # NEW: lock now, pending changes resume and discard
 ├── specs/us1…us6                   # start by unlocking the seeded/created database
 └── screenshots/screens.e2e.ts      # + screens 14–27 (contracts/ui-databases.md §15)
 

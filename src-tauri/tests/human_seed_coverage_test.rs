@@ -38,9 +38,9 @@ const NEVER_SEEDED: &[(&str, &str)] = &[
 ];
 
 /// `(table, column)` pairs whose allowed values need not all appear:
-/// - a retained disposition (FR-033) uses the values
+/// - a retained disposition (001 FR-033) uses the values
 ///   `firearms.disposition_type` is checked against;
-/// - `pending_changes` holds at most one row per database (FR-039), and the
+/// - `pending_changes` holds at most one row per database (003 FR-039), and the
 ///   forms each kind and mode come from are seeded as ordinary records.
 const PARTIAL_VALUES_OK: &[(&str, &str)] = &[
     ("disposition_history", "disposition_type"),
@@ -49,19 +49,18 @@ const PARTIAL_VALUES_OK: &[(&str, &str)] = &[
 ];
 
 /// Spreadsheet columns no import sample needs: `photo_filenames` is written
-/// on export and ignored on import (FR-019).
+/// on export and ignored on import (001 FR-019).
 const NOT_IMPORTED: &[&str] = &["photo_filenames"];
 
 /// Tables that hold no user data: migration bookkeeping, the seeded lookup
-/// lists (firearm types, specs/004-cartridges-action-types' action types
-/// and their mapping, research.md §10, and specs/005-regulated-item-types'
-/// registration classifications, research.md §14, and specs/006-accessory-links'
-/// accessory kinds, research.md §23), and the full-text indexes' shadow tables.
+/// lists (firearm types, 004's action types and their mapping, 004 research.md
+/// §10, 005's registration classifications, 005 research.md §14, and 006's
+/// accessory kinds, 006 research.md §15), and the full-text indexes' shadow tables.
 fn is_user_table(name: &str) -> bool {
     !(name.starts_with("sqlite_")
         || name.starts_with("firearms_fts")
         || name.starts_with("accessories_fts")
-        // specs/007-document-preview data-model.md: the third index, over
+        // 007 data-model.md: the third index, over
         // document names, and its shadow tables.
         || name.starts_with("document_names_fts")
         || name == "accessory_kinds"
@@ -189,14 +188,12 @@ fn the_import_samples_use_every_spreadsheet_column() {
     let dir = TempDir::new().unwrap();
     human_seed::write_import_samples(dir.path());
 
-    // Import reads columns by header (specs/004-cartridges-action-types
-    // FR-023), so one sample may be shaped like a sheet exported before
-    // `cartridge` and `action_type` existed, one like a sheet exported
-    // before the four registration columns of specs/005-regulated-item-types
-    // (US4-7), and one like a sheet exported before `record_id` and
-    // `mounted_on` (specs/006-accessory-links US5-7). A sheet is the firearm
-    // table or the accessory table by its header (FR-022). No other header
-    // is allowed.
+    // Import reads columns by header (004 FR-023), so one sample may be shaped
+    // like a sheet exported before `cartridge` and `action_type` existed, one
+    // like a sheet exported before the four registration columns (005 US4-8),
+    // and one like a sheet exported before `record_id` and `mounted_on`
+    // (006 US5-7). A sheet is the firearm table or the accessory table by its
+    // header (006 FR-022). No other header is allowed.
     const REGISTRATION: [&str; 4] =
         ["registered_as", "registration_form", "registration_approved", "registered_to"];
     let firearm_headers: Vec<Vec<&str>> = vec![
@@ -295,7 +292,7 @@ fn the_cartridges_import_sample_shows_each_part_of_the_report() {
     let legacy = import("import-before-cartridges.csv");
     assert_eq!(legacy.imported_count, 1, "{:?}", legacy.row_errors);
 
-    // specs/005-regulated-item-types US4: the registration samples.
+    // 005 US4: the registration samples.
     let registrations = import("import-registrations.csv");
     assert_eq!(registrations.imported_count, 3, "{:?}", registrations.row_errors);
     assert!(!registrations.snapped_values.is_empty(), "{:?}", registrations.snapped_values);
@@ -315,7 +312,7 @@ fn the_cartridges_import_sample_shows_each_part_of_the_report() {
 }
 
 /// The accessory import samples do what their comments in the seed say
-/// (specs/006-accessory-links US5), so a person trying File > Import sees
+/// (006 US5), so a person trying File > Import sees
 /// the pair of tables, the workbook, each mount warning and the row errors.
 #[test]
 fn the_accessory_import_samples_show_each_part_of_the_report() {
