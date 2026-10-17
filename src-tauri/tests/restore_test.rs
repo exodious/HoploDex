@@ -17,6 +17,7 @@ use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::commands::photos::ops as photos;
 use hoplodex_lib::db::cipher;
+use hoplodex_lib::db::upgrade::testing::{self, Point};
 use hoplodex_lib::models::database::{
     BackupInfo, BackupLocationInput, BackupSettingsInput, CloseReason, DatabaseStatus,
     ExistingBackupsChoice,
@@ -27,7 +28,7 @@ use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::session::scoped::Target;
-use hoplodex_lib::session::{Session, lifecycle};
+use hoplodex_lib::session::{Session, SessionId, lifecycle};
 use rusqlite::Connection;
 use serde_json::json;
 use support::{ManualClock, TestEvents, passphrase, peek, sample_png_bytes, test_session_at};
@@ -849,5 +850,486 @@ fn restoring_a_damaged_database_checks_only_the_space_for_the_restored_copy() {
     )
     .unwrap();
 
+    assert!(world.session.is_open());
+}
+
+// --- A backup in an earlier layout (009 FR-019; 009 research.md §9) ----------
+//
+// Assumed API (commands::backups::ops, 009 T051): `restore_backup` takes
+// `upgrade: bool` as its last argument, and `check_backup(session, machine,
+// backup_path, passphrase, target)` takes the same `Target` as `restore_backup`
+// and returns a value whose `upgrade_to` is `Option<String>`.
+
+/// A step the build gains after the backups below are made: a database or a
+/// backup made without it is in an earlier layout, and one that has it is
+/// current (009 research.md §14).
+const NEW_STEP: (&str, &str) =
+    ("9001_test_restore", "CREATE TABLE restore_upgrade_check (id INTEGER PRIMARY KEY);");
+
+/// The registrations that make [`NEW_STEP`] part of the build for the folders
+/// the restore reads from and writes to, until it is dropped. The backup's
+/// folder is registered too, so it does not matter whether the backend works
+/// out the steps due from the database's path or the backup's.
+struct BuildGainsAStep {
+    database_folder: testing::Scope,
+    _backup_folder: testing::Scope,
+}
+
+impl BuildGainsAStep {
+    fn new(world: &World) -> Self {
+        Self {
+            database_folder: testing::scope(world.dir.path()).extra_steps(&[NEW_STEP]),
+            _backup_folder: testing::scope(&world.default_folder()).extra_steps(&[NEW_STEP]),
+        }
+    }
+
+    /// As [`BuildGainsAStep::new`], with the upgrade of a database failing
+    /// after its first step.
+    fn failing(world: &World) -> Self {
+        let step = Self::new(world);
+        Self { database_folder: step.database_folder.fail_at(Point::AfterStep(1)), ..step }
+    }
+}
+
+impl World {
+    fn restore_with(
+        &self,
+        backup: &str,
+        with: &str,
+        upgrade: bool,
+    ) -> Result<DatabaseStatus, CommandError> {
+        backups_ops::restore_backup(
+            &self.session,
+            &self.machine,
+            backup,
+            &Passphrase::from_input(with.to_owned()),
+            Target::Open(self.session.current_id()),
+            upgrade,
+        )
+    }
+
+    /// `check_backup` for the open database's backup.
+    fn check(&self, backup: &str, with: &str) -> Result<Option<String>, CommandError> {
+        self.check_for(backup, with, Target::Open(self.session.current_id()))
+    }
+
+    fn check_for(
+        &self,
+        backup: &str,
+        with: &str,
+        target: Target<'_>,
+    ) -> Result<Option<String>, CommandError> {
+        backups_ops::check_backup(
+            &self.session,
+            &self.machine,
+            backup,
+            &Passphrase::from_input(with.to_owned()),
+            target,
+        )
+        .map(|checked| checked.upgrade_to)
+    }
+
+    /// The phases of the restore's `restore:progress`, in order, each once.
+    fn restore_phases(&self) -> Vec<String> {
+        let mut phases: Vec<String> = self
+            .events
+            .payloads("restore:progress")
+            .iter()
+            .map(|payload| payload["phase"].as_str().unwrap().to_owned())
+            .collect();
+        phases.dedup();
+        phases
+    }
+
+    /// The names of the steps the open database has applied.
+    fn applied_steps(&self) -> Vec<String> {
+        self.session
+            .read(self.session.current_id(), |conn| {
+                let mut stmt = conn
+                    .prepare("SELECT name FROM schema_migrations ORDER BY name")
+                    .map_err(CommandError::from_db)?;
+                let names = stmt
+                    .query_map([], |row| row.get(0))
+                    .map_err(CommandError::from_db)?
+                    .collect::<Result<_, _>>()
+                    .map_err(CommandError::from_db)?;
+                Ok(names)
+            })
+            .unwrap()
+    }
+}
+
+/// Records a step this build does not know in a backup, as a newer version's
+/// upgrade would have.
+fn make_newer(backup: &str) {
+    let conn = Connection::open(backup).expect("could not open the backup");
+    conn.pragma_update(None, "key", support::TEST_PASSPHRASE).unwrap();
+    cipher::apply_cipher_settings(&conn, "main").unwrap();
+    conn.execute(
+        "INSERT INTO schema_migrations (name, applied_at) VALUES ('0099_from_the_future', 'x')",
+        [],
+    )
+    .unwrap();
+}
+
+/// What a closed world holds: the database's bytes and the names beside it and
+/// in its backup folder.
+fn snapshot(world: &World) -> (Vec<u8>, Vec<String>, Vec<String>) {
+    let backup_names = if world.default_folder().exists() {
+        World::names(&world.default_folder())
+    } else {
+        vec![]
+    };
+    (fs::read(world.path()).unwrap_or_default(), World::names(world.dir.path()), backup_names)
+}
+
+// 009 FR-019
+#[test]
+fn check_backup_says_what_an_older_backup_will_be_upgraded_for_and_changes_nothing() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let _gains = BuildGainsAStep::new(&world);
+    let before = snapshot(&world);
+    let backup_bytes = fs::read(&listed[1].path).unwrap();
+
+    let upgrade_to = world.check(&listed[1].path, support::TEST_PASSPHRASE).unwrap();
+
+    assert_eq!(upgrade_to.as_deref(), Some(hoplodex_lib::APP_VERSION));
+    assert_eq!(fs::read(&listed[1].path).unwrap(), backup_bytes, "the backup is read, not written");
+    assert_eq!(snapshot(&world), before, "no copy is made and nothing else is written");
+    assert!(world.leftovers().is_empty());
+    assert!(world.session.is_open());
+}
+
+// 009 FR-019
+#[test]
+fn check_backup_gives_null_for_a_backup_in_the_current_layout() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let backup_bytes = fs::read(&listed[0].path).unwrap();
+
+    let upgrade_to = world.check(&listed[0].path, support::TEST_PASSPHRASE).unwrap();
+
+    assert_eq!(upgrade_to, None);
+    assert_eq!(fs::read(&listed[0].path).unwrap(), backup_bytes);
+}
+
+// 009 FR-019
+#[test]
+fn check_backup_refuses_a_wrong_passphrase_a_newer_backup_and_a_missing_one() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let before = snapshot(&world);
+
+    let wrong = world.check(&listed[1].path, "not the passphrase at all").unwrap_err();
+    assert_eq!(wrong.code, "PASSPHRASE_INCORRECT");
+
+    let missing = world.dir.path().join("HoploDex backups").join("gone.hoplodex");
+    let gone = world.check(&missing.to_string_lossy(), support::TEST_PASSPHRASE).unwrap_err();
+    assert_eq!(gone.code, "NOT_FOUND");
+
+    make_newer(&listed[1].path);
+    let newer = world.check(&listed[1].path, support::TEST_PASSPHRASE).unwrap_err();
+    assert_eq!(newer.code, "DATABASE_NEWER_VERSION");
+    assert_eq!(snapshot(&world).0, before.0, "the database is as it was");
+}
+
+// 009 FR-019
+#[test]
+fn check_backup_of_a_damaged_backup_is_database_damaged() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let bytes = fs::read(&listed[1].path).unwrap();
+    fs::write(&listed[1].path, &bytes[..2 * 4096]).unwrap();
+
+    let refused = world.check(&listed[1].path, support::TEST_PASSPHRASE).unwrap_err();
+
+    assert_eq!(refused.code, "DATABASE_DAMAGED");
+}
+
+// 009 FR-019
+#[test]
+fn check_backup_without_a_database_path_needs_the_session_it_names() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let ended = world.session.current_id();
+    world.close();
+    world.open();
+
+    for id in [ended, SessionId::NONE] {
+        let refused = world.check_for(&listed[0].path, support::TEST_PASSPHRASE, Target::Open(id));
+        assert_eq!(refused.unwrap_err().code, "DATABASE_CLOSED", "id {id}");
+    }
+    assert_eq!(world.check(&listed[0].path, support::TEST_PASSPHRASE).unwrap(), None);
+}
+
+// 009 FR-019, 009 research.md §9; issue #62
+#[test]
+fn check_backup_with_a_database_path_applies_the_damaged_restores_authorization() {
+    let world = World::new();
+    let listed = damaged(&world);
+    let _gains = BuildGainsAStep::new(&world);
+    let at = |path: &Path, backup: &str| {
+        world.check_for(backup, support::TEST_PASSPHRASE, Target::At(&path.to_string_lossy()))
+    };
+    let stranger = world.dir.path().join("Not a database.txt");
+    fs::write(&stranger, b"precious").unwrap();
+    let before = snapshot(&world);
+
+    // The database the backup is of, nothing open: the dialog's own call.
+    assert_eq!(
+        at(&world.path(), &listed[0].path).unwrap().as_deref(),
+        Some(hoplodex_lib::APP_VERSION)
+    );
+
+    // Not on the recent list.
+    assert_eq!(at(&stranger, &listed[0].path).unwrap_err().code, "NOT_FOUND");
+
+    // A backup outside the cached backup folder.
+    let elsewhere = TempDir::new().unwrap();
+    let copy = elsewhere.path().join(&listed[0].file_name);
+    fs::copy(&listed[0].path, &copy).unwrap();
+    let outside = at(&world.path(), &copy.to_string_lossy()).unwrap_err();
+    assert_eq!(outside.code, "VALIDATION_ERROR");
+    assert!(outside.field_errors.unwrap().contains_key("backupPath"));
+
+    // An entry the web view re-located is refused until it has opened there.
+    databases::locate_database(
+        &world.machine,
+        &world.path().to_string_lossy(),
+        &stranger.to_string_lossy(),
+    )
+    .unwrap();
+    let located = at(&stranger, &listed[0].path).unwrap_err();
+    assert_eq!(located.code, "VALIDATION_ERROR");
+    assert!(located.field_errors.unwrap().contains_key("databasePath"));
+
+    fs::remove_file(&copy).unwrap();
+    assert_eq!(fs::read(&stranger).unwrap(), b"precious");
+    assert_eq!(snapshot(&world).1, before.1, "nothing is written beside the database");
+}
+
+// 009 FR-019, 009 research.md §9; issue #62
+#[test]
+fn check_backup_with_a_database_path_refuses_another_databases_backup() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    world.close();
+    let other = world.dir.path().join("Other.hoplodex");
+    lifecycle::create(&world.session, &world.machine, &other, &passphrase()).unwrap();
+    let other_id = world.database_id();
+    world.add_firearm("Z9");
+    world.close();
+    let theirs = backups::list(&world.default_folder(), &other_id).unwrap().remove(0);
+    // Named as Mine's backup, in Mine's folder.
+    let disguised = Path::new(&listed[0].path).with_file_name(&listed[1].file_name);
+    fs::copy(&theirs.path, world.dir.path().join("scratch")).unwrap();
+    fs::remove_file(&listed[1].path).unwrap();
+    fs::rename(world.dir.path().join("scratch"), &disguised).unwrap();
+
+    for backup in [theirs.path.as_str(), disguised.to_str().unwrap()] {
+        let refused = world.check_for(
+            backup,
+            support::TEST_PASSPHRASE,
+            Target::At(&world.path().to_string_lossy()),
+        );
+        assert_eq!(refused.unwrap_err().code, "VALIDATION_ERROR", "{backup}");
+    }
+}
+
+// 009 FR-019
+#[test]
+fn restoring_an_older_backup_without_upgrade_is_refused_before_anything_is_touched() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let _gains = BuildGainsAStep::new(&world);
+    let before = snapshot(&world);
+    let current = open_collection(&world);
+    let session = world.session.current_id();
+    world.events.take();
+
+    let refused = world.restore_with(&listed[1].path, support::TEST_PASSPHRASE, false).unwrap_err();
+
+    assert_eq!(refused.code, "UPGRADE_NEEDED");
+    assert_eq!(
+        refused.details.as_deref(),
+        Some(&json!({ "version": hoplodex_lib::APP_VERSION })),
+        "no awaiting database: the restore's form names only the version"
+    );
+    assert_eq!(snapshot(&world), before, "nothing copied, backed up or replaced");
+    assert!(world.leftovers().is_empty());
+    assert!(world.session.is_open(), "nothing closed");
+    assert_eq!(world.session.current_id(), session);
+    assert_eq!(open_collection(&world), current);
+    let phases = world.restore_phases();
+    assert!(
+        !phases.iter().any(|phase| phase == "savingCurrent" || phase == "replacing"),
+        "{phases:?}"
+    );
+}
+
+// 009 FR-019
+#[test]
+fn restoring_an_older_backup_with_upgrade_restores_and_upgrades_it() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let _gains = BuildGainsAStep::new(&world);
+    let expected = collection(&peek(Path::new(&listed[1].path)));
+    let backup_bytes = fs::read(&listed[1].path).unwrap();
+    assert_ne!(open_collection(&world), expected);
+    // Later than the backup restored from: the one before restoring is named
+    // for the second.
+    world.clock.advance(chrono::Duration::hours(1));
+    world.events.take();
+
+    let status = world.restore_with(&listed[1].path, support::TEST_PASSPHRASE, true).unwrap();
+
+    assert_eq!(open_collection(&world), expected, "the backup's content, 003 SC-007");
+    let upgraded = status.notes.upgraded.expect("notes.upgraded");
+    assert_eq!(upgraded.version, hoplodex_lib::APP_VERSION);
+    assert_eq!(upgraded.backup_path, listed[1].path, "the backup restored from");
+    assert!(upgraded.at_backup_location, "it is in the backup location");
+    assert!(world.applied_steps().iter().any(|name| name == NEW_STEP.0), "the step was applied");
+    assert_eq!(fs::read(&listed[1].path).unwrap(), backup_bytes, "the backup is unchanged");
+    assert_eq!(world.listed().len(), 3, "and the current database was backed up first");
+    assert!(
+        world.listed().iter().all(|backup| backup.before_upgrade_to.is_none()),
+        "no backup before an upgrade is made: the one restored from is the earlier layout"
+    );
+    assert!(world.leftovers().is_empty());
+    assert_eq!(
+        world.restore_phases(),
+        ["copying", "checking", "upgrading", "savingCurrent", "replacing"]
+    );
+    let first_upgrading = world
+        .events
+        .payloads("restore:progress")
+        .into_iter()
+        .find(|payload| payload["phase"] == "upgrading")
+        .unwrap();
+    assert_eq!(first_upgrading["total"], json!(0), "indeterminate");
+}
+
+// 009 FR-019, FR-014; 009 research.md §9
+#[test]
+fn the_backup_restored_from_still_rotates_as_a_regular_one() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let id = world.database_id();
+    let _gains = BuildGainsAStep::new(&world);
+    world.clock.advance(chrono::Duration::hours(1));
+    world.restore_with(&listed[1].path, support::TEST_PASSPHRASE, true).unwrap();
+    assert!(Path::new(&listed[1].path).exists());
+    world.set_backups(true, 1, BackupLocationInput::Default);
+    world.add_firearm("C3");
+    world.next_day();
+
+    world.close();
+
+    assert!(!Path::new(&listed[1].path).exists(), "kept for no reason but its age");
+    assert_eq!(backups::list(&world.default_folder(), &id).unwrap().len(), 1);
+}
+
+// 009 FR-019
+#[test]
+fn upgrade_true_for_a_backup_in_the_current_layout_changes_nothing() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let expected = collection(&peek(Path::new(&listed[1].path)));
+    world.clock.advance(chrono::Duration::hours(1));
+    world.events.take();
+
+    let status = world.restore_with(&listed[1].path, support::TEST_PASSPHRASE, true).unwrap();
+
+    assert_eq!(open_collection(&world), expected);
+    assert!(status.notes.upgraded.is_none(), "nothing was upgraded");
+    assert_eq!(world.restore_phases(), ["copying", "checking", "savingCurrent", "replacing"]);
+}
+
+// 009 FR-019, FR-015
+#[test]
+fn a_failure_in_the_copys_upgrade_leaves_the_database_as_it_was() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let gains = BuildGainsAStep::failing(&world);
+    let bytes = fs::read(world.path()).unwrap();
+    let current = open_collection(&world);
+    let backup_bytes = fs::read(&listed[1].path).unwrap();
+
+    let failed = world.restore_with(&listed[1].path, support::TEST_PASSPHRASE, true).unwrap_err();
+
+    assert_eq!(failed.code, "UPGRADE_FAILED");
+    assert_eq!(
+        failed.details.as_deref().unwrap()["backupPath"],
+        json!(listed[1].path),
+        "the backup restored from"
+    );
+    assert!(world.leftovers().is_empty(), "the copy at .<file>.new is removed");
+    assert_eq!(fs::read(world.path()).unwrap(), bytes, "the database is byte-identical");
+    assert_eq!(fs::read(&listed[1].path).unwrap(), backup_bytes);
+    assert!(world.session.is_open());
+    assert_eq!(open_collection(&world), current);
+
+    // Nothing is left over that stops the same restore from working once the
+    // fault is gone.
+    gains.database_folder.clear_failures();
+    world.clock.advance(chrono::Duration::hours(1));
+    let status = world.restore_with(&listed[1].path, support::TEST_PASSPHRASE, true).unwrap();
+    assert!(status.notes.upgraded.is_some());
+    assert!(world.leftovers().is_empty());
+}
+
+// 009 FR-019, 009 research.md §9: the chooser's restore of a damaged database
+#[test]
+fn restoring_a_damaged_database_upgrades_the_copy_the_same_way() {
+    let world = World::new();
+    let listed = damaged(&world);
+    let _gains = BuildGainsAStep::new(&world);
+    let expected = collection(&peek(Path::new(&listed[0].path)));
+    let before = snapshot(&world);
+    let at = world.path();
+    let restore = |upgrade: bool| {
+        backups_ops::restore_backup(
+            &world.session,
+            &world.machine,
+            &listed[0].path,
+            &passphrase(),
+            Target::At(&at.to_string_lossy()),
+            upgrade,
+        )
+    };
+
+    let refused = restore(false).unwrap_err();
+
+    assert_eq!(refused.code, "UPGRADE_NEEDED");
+    assert_eq!(refused.details.as_deref(), Some(&json!({ "version": hoplodex_lib::APP_VERSION })));
+    assert_eq!(snapshot(&world), before, "the damaged file is not set aside, nothing is copied");
+
+    let status = restore(true).unwrap();
+
+    let upgraded = status.notes.upgraded.expect("notes.upgraded");
+    assert_eq!(upgraded.backup_path, listed[0].path);
+    assert!(status.notes.damaged_file_kept_at.is_some());
+    assert_eq!(open_collection(&world), expected);
+    assert!(world.applied_steps().iter().any(|name| name == NEW_STEP.0));
+    assert!(world.leftovers().is_empty());
+}
+
+// 009 FR-018, FR-019
+#[test]
+fn restoring_a_newer_backup_is_refused_whether_or_not_it_asks_to_upgrade() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let before = snapshot(&world);
+    make_newer(&listed[1].path);
+
+    for upgrade in [false, true] {
+        let refused =
+            world.restore_with(&listed[1].path, support::TEST_PASSPHRASE, upgrade).unwrap_err();
+        assert_eq!(refused.code, "DATABASE_NEWER_VERSION", "upgrade {upgrade}");
+    }
+
+    assert_eq!(snapshot(&world).0, before.0);
+    assert!(world.leftovers().is_empty());
     assert!(world.session.is_open());
 }

@@ -16,14 +16,18 @@
 //!   `<dir>/Backups`) and closed cleanly;
 //! - "Shared collection": a few firearms, changes waiting for a backup,
 //!   pending changes from a locked edit, and left open by another computer
-//!   ("Workshop PC"), so the take-over prompt shows.
+//!   ("Workshop PC"), so the take-over prompt shows;
+//! - with `--older`, "Older collection" in `<dir>/Older/`: a copy of the
+//!   stored 0.1.0 database (`tests/fixtures/releases/0.1.0.hoplodex`, opened
+//!   with [`OLDER_PASSPHRASE`], not [`PASSPHRASE`]), listed first in the
+//!   recent list, for trying the upgrade at open (009 quickstart.md S1).
 //!
 //! It writes only into a directory it created, checked by
 //! `support/sandbox.rs`, never to the real data, config or documents
 //! directory, and never touches the keyring (constitution 1.2.0).
 //!
 //! Usage: cargo run --example human_seed -- [--dir <path>] [--extra <n>] [--reset]
-//!                                          [--pending-from <version>]
+//!                                          [--pending-from <version>] [--older]
 //!        cargo run --example human_seed -- --print-passphrase
 
 use std::path::{Path, PathBuf};
@@ -57,6 +61,13 @@ use main_collection::*;
 /// through `--print-passphrase`.
 pub const PASSPHRASE: &str = "human testing passphrase";
 
+/// The passphrase of the stored 0.1.0 database `--older` copies
+/// (`examples/release_fixture.rs`'s `PASSPHRASE`; a fixture, not a secret).
+pub const OLDER_PASSPHRASE: &str = "release fixture 0.1.0";
+/// The stored 0.1.0 database, relative to `src-tauri`.
+const OLDER_FIXTURE: &str = "tests/fixtures/releases/0.1.0.hoplodex";
+pub const OLDER_NAME: &str = "Older collection";
+
 const APP_IDENTIFIER: &str = "io.github.exodious.HoploDex";
 pub const MAIN_NAME: &str = "Main collection";
 pub const SHARED_NAME: &str = "Shared collection";
@@ -78,6 +89,8 @@ struct Args {
     reset: bool,
     /// The version the shared collection's pending changes were kept by.
     pending_from: Option<String>,
+    /// Also copy the stored 0.1.0 database in, as "Older collection".
+    older: bool,
 }
 
 fn parse_args() -> Args {
@@ -86,6 +99,7 @@ fn parse_args() -> Args {
         extra: 0,
         reset: false,
         pending_from: None,
+        older: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -105,6 +119,7 @@ fn parse_args() -> Args {
                         .unwrap_or_else(|| usage("--pending-from needs a version")),
                 );
             }
+            "--older" => args.older = true,
             "--print-passphrase" => {
                 println!("{PASSPHRASE}");
                 std::process::exit(0);
@@ -128,6 +143,8 @@ fn usage(problem: &str) -> ! {
          --reset               delete and recreate the seeded databases\n\
          --pending-from <ver>  the shared collection's pending changes were kept by HoploDex\n\
          \x20                     <ver> (an older form that can't be resumed); without it, by this build\n\
+         --older               also add \"Older collection\", a copy of the stored 0.1.0 database\n\
+         \x20                     (passphrase \"release fixture 0.1.0\"), which needs an upgrade to open\n\
          --print-passphrase    print the seeded databases' passphrase and exit"
     );
     std::process::exit(if problem.is_empty() { 0 } else { 2 });
@@ -162,6 +179,10 @@ fn main() {
 
     seed_sandbox(&args.dir, args.extra, args.pending_from.as_deref());
     let samples = write_import_samples(&args.dir.join("import-samples"));
+    if args.older {
+        let older = seed_older(&args.dir);
+        println!("Older database: {} (passphrase: {OLDER_PASSPHRASE})", older.display());
+    }
 
     let identity = must(MachineSettings::load(&paths.config), "machine.json").identity();
     let conn = must(
@@ -187,6 +208,8 @@ pub struct SandboxPaths {
     pub shared: PathBuf,
     pub main_backups: PathBuf,
     pub config: PathBuf,
+    /// "Older collection", in a folder of its own (`--older`).
+    pub older: PathBuf,
 }
 
 impl SandboxPaths {
@@ -198,6 +221,7 @@ impl SandboxPaths {
             databases,
             main_backups: dir.join("Backups"),
             config: dir.join("config").join(APP_IDENTIFIER),
+            older: dir.join("Older").join(format!("{OLDER_NAME}.hoplodex")),
         }
     }
 
@@ -209,6 +233,7 @@ impl SandboxPaths {
             }
         }
         let _ = std::fs::remove_dir_all(&self.main_backups);
+        let _ = std::fs::remove_dir_all(self.older.parent().unwrap_or(&self.older));
         let _ = std::fs::remove_dir_all(self.databases.join("HoploDex backups"));
         let _ = std::fs::remove_file(self.config.join("machine.json"));
     }
@@ -336,6 +361,52 @@ pub fn seed_sandbox(dir: &Path, extra: usize, pending_from: Option<&str>) -> San
     // Opened last, so the chooser selects it.
     machine.touch_recent(&paths.main, MAIN_NAME, &database_id(&main), &paths.main_backups);
     paths
+}
+
+/// Copies the stored 0.1.0 database into `<dir>/Older/` and lists it first in
+/// the recent list, with the backup folder the app would choose for it
+/// (009 quickstart.md S1). `dir` is a checked sandbox. This build has no
+/// upgrade step to apply (the E2E build's extra step makes the copy need one,
+/// 009 research.md §14), so reading the copy's id opens it, which sets this
+/// computer's open marker; the marker is cleared again, as the fixture had it.
+pub fn seed_older(dir: &Path) -> PathBuf {
+    let paths = SandboxPaths::new(dir);
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(OLDER_FIXTURE);
+    must(
+        std::fs::create_dir_all(paths.older.parent().unwrap_or(&paths.older)),
+        "the older database's folder",
+    );
+    must(std::fs::copy(&fixture, &paths.older), "copying the stored 0.1.0 database");
+    let machine = must(MachineSettings::load(&paths.config), "machine.json");
+    let id = {
+        let opened = must(
+            db::open_database(
+                &paths.older,
+                &Passphrase::from_input(OLDER_PASSPHRASE.to_owned()),
+                &machine.identity(),
+                false,
+            ),
+            "opening the copy of the stored 0.1.0 database",
+        );
+        // With a step due the open stops at the question and wrote nothing.
+        let (conn, wrote_marker) = match opened {
+            db::Opened::Ready(conn) => (conn, true),
+            db::Opened::UpgradeDue { conn, .. } => (conn, false),
+        };
+        if wrote_marker {
+            must(
+                conn.execute(
+                    "UPDATE app_state SET open_machine_id = NULL, open_machine_name = NULL,
+                            open_since = NULL",
+                    [],
+                ),
+                "the older database's open marker",
+            );
+        }
+        database_id(&conn)
+    };
+    machine.touch_recent(&paths.older, OLDER_NAME, &id, &backup_folder(&paths.older, "default"));
+    paths.older
 }
 
 fn database_id(conn: &Connection) -> String {

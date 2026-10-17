@@ -773,3 +773,47 @@ fn a_command_takes_the_state_session_only_if_unscoped() {
     }
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
+
+// --- 009: the upgrade's commands (009 contracts/tauri-commands.md) -----------------
+
+#[test]
+fn the_upgrade_commands_are_unscoped_commands() {
+    // No session exists while a database waits to be upgraded, or when a
+    // damaged database's backup is checked, so these take the `Session` state
+    // and not a `ScopedSession`; `a_command_takes_the_state_session_only_if_unscoped`
+    // checks each against its signature.
+    for name in ["upgrade_database", "cancel_upgrade", "check_backup"] {
+        assert!(COMMANDS.contains(&name), "{name} is not a command");
+        assert!(UNSCOPED_COMMANDS.contains(&name), "{name} is not in UNSCOPED_COMMANDS");
+    }
+}
+
+// Assumed API (009 T051): `backups_ops::check_backup(session, machine,
+// backup_path, passphrase, target)` returns a value with `upgrade_to`.
+#[test]
+fn checking_a_backup_of_the_open_database_needs_its_session_and_of_another_does_not() {
+    let world = World::new();
+    let first = world.create("Mine");
+    world.add_firearm(first, "A1").unwrap();
+    world.close(first);
+    let current = world.open("Mine");
+    let backup = backups_ops::list_backups(&world.session, &world.machine, Target::Open(current))
+        .unwrap()
+        .backups
+        .remove(0)
+        .path;
+    let check = |target: Target<'_>| {
+        backups_ops::check_backup(&world.session, &world.machine, &backup, &passphrase(), target)
+            .map(|checked| checked.upgrade_to)
+    };
+
+    // Without a database path the header's session is the one checked for.
+    assert_eq!(check(Target::Open(current)).unwrap(), None);
+    for id in [first, SessionId::NONE, never_issued()] {
+        assert_eq!(check(Target::Open(id)).unwrap_err().code, "DATABASE_CLOSED", "id {id}");
+    }
+    // With one, no session is needed, and the one that is open is not asked.
+    let by_path = check(Target::At(&world.path("Mine").to_string_lossy()));
+    assert_eq!(by_path.unwrap(), None);
+    assert_eq!(world.session.current_id(), current, "the open session is left as it was");
+}

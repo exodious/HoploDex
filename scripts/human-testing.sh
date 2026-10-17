@@ -11,6 +11,11 @@
 #                                            collection's pending changes as
 #                                            kept by HoploDex 1.2.0, in a form
 #                                            this build can't resume
+#   scripts/human-testing.sh --older         seed (with --reset) "Older
+#                                            collection" too: a copy of the
+#                                            stored 0.1.0 database, which
+#                                            needs an upgrade to open (009
+#                                            quickstart.md Setup S1)
 #   scripts/human-testing.sh --release       launch the E2E-profile build (the
 #                                            browser controls on: no reload,
 #                                            no Inspect Element) instead of
@@ -22,6 +27,10 @@
 #                                         pending changes
 #   config/io.github.exodious.HoploDex/machine.json
 #                                         the recent list naming both
+#   Older/Older collection.hoplodex       with --older: the stored 0.1.0
+#                                         database, first in the recent list;
+#                                         its passphrase is `release fixture
+#                                         0.1.0` (the seed prints it)
 #   import-samples/                       spreadsheets to import
 # Both databases open with the passphrase this script prints. The app is
 # pointed at the sandbox, so your real collections, their recent list and
