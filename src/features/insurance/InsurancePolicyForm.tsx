@@ -174,14 +174,18 @@ export function InsurancePolicyForm({
     void save();
   }
 
+  function focusField(field: Field) {
+    formRef.current
+      ?.querySelector<HTMLElement>(`[data-field="${field}"] :is(input, textarea)`)
+      ?.focus();
+  }
+
   /** Validates and saves; resolves whether it was saved. */
   async function save(): Promise<boolean> {
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
-      formRef.current
-        ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea)`)
-        ?.focus();
+      focusField(firstInvalid);
       return false;
     }
 
@@ -208,6 +212,10 @@ export function InsurancePolicyForm({
     } catch (error) {
       if (error instanceof CommandFailure) {
         setServerError(error);
+        // A field the backend refused (009 FR-008: a duplicate name) takes the
+        // focus, as a field the form's own check refused does.
+        const refused = FIELD_ORDER.find((field) => error.fieldErrors?.[field]);
+        if (refused) focusField(refused);
         return false;
       }
       throw error;
@@ -235,6 +243,7 @@ export function InsurancePolicyForm({
                 label="Policy name"
                 required
                 placeholder="e.g. Homeowner's firearms rider"
+                hint="Each policy needs its own name."
                 autoFocus={!initialValues}
                 {...bind("name")}
               />
