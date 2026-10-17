@@ -1,0 +1,2 @@
+# <step name or fixture path> <sha256 of its bytes> <release>
+# Lines are added at each release's tag (#19) and never edited.

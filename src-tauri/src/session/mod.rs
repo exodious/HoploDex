@@ -11,6 +11,7 @@ pub mod lifecycle;
 pub mod operations;
 pub mod pending;
 pub mod scoped;
+pub mod upgrade;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};

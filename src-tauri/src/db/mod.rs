@@ -6,6 +6,7 @@
 
 pub mod cipher;
 pub mod raw_file;
+pub mod upgrade;
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};

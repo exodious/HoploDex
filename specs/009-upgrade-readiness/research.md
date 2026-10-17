@@ -664,6 +664,23 @@ clears its entries when dropped.
   SQLCipher, and the hot-journal rollback, each get a test in
   `upgrade_steps_test.rs`, among the first tasks.
 
+_Probed on Linux (T005, `tests/upgrade_steps_test.rs`, SQLCipher with the
+`test-kdf` settings): both probes hold, so §4 step 2 and §7 stand as written._
+- _`BEGIN EXCLUSIVE; COMMIT` leaves the file's SHA-256 unchanged, a second
+  connection's first keyed read fails with "database is locked" until the
+  probing connection is dropped, and another process is refused the same way
+  (SQLite shares lock state inside a process, so only a child process shows
+  the operating system's lock is held)._
+- _The copy of a mid-rebuild file and its `-journal` opens rolled back to the
+  original rows and `sqlite_schema`, and `integrity_check` is `ok`. The test
+  first asserts that changed pages had reached the file (the copy differs from
+  the original), so the probe isn't vacuous._
+- _Found while probing: under `locking_mode = EXCLUSIVE` a rolled-back journal
+  is not deleted, only its header zeroed, so a `-journal` file may stay beside
+  an open database and a rolled-back copy until the connection closes. Its
+  presence therefore says nothing about whether it is hot._
+- _macOS (T006) and Windows (T007) run the same filter._
+
 **E2E** needs a database older than the app.
 - An `e2e` build appends one test-only step, `9000_e2e_upgrade_check`, which
   creates an empty table and changes nothing else. It sits behind
