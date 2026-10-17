@@ -46,6 +46,7 @@ function renderDialog() {
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     dismissNote: vi.fn(),
     restoreBackup: vi.fn(),
+    upgradeDatabase: vi.fn(),
     settingsRequested: false,
     requestSettings: vi.fn(),
     clearSettingsRequest: vi.fn(),

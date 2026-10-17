@@ -39,6 +39,7 @@ const status: DatabaseStatus = {
     openedBackup: null,
     restoredWithPassphraseOf: null,
     damagedFileKeptAt: null,
+    upgraded: null,
   },
 };
 

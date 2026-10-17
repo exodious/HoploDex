@@ -99,6 +99,7 @@ function status(pendingChanges: PendingSummary | null): DatabaseStatus {
       openedBackup: null,
       restoredWithPassphraseOf: null,
       damagedFileKeptAt: null,
+      upgraded: null,
     },
   };
 }

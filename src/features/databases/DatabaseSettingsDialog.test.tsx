@@ -65,6 +65,7 @@ function status(
       openedBackup: null,
       restoredWithPassphraseOf: null,
       damagedFileKeptAt: null,
+      upgraded: null,
     },
   };
 }
@@ -75,6 +76,7 @@ function backup(day: number): BackupInfo {
     fileName: `Main collection 2026-09-${day} 143005 3fa2c9d1.hoplodex`,
     madeAt: `2026-09-${day}T14:30:05`,
     sizeBytes: 212_000_000,
+    beforeUpgradeTo: null,
   };
 }
 

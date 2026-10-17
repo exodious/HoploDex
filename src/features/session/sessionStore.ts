@@ -14,6 +14,11 @@ export interface SessionState {
    * one saved on this computer when `passphrase` is `null`; rejects with the
    * command's `CommandFailure` and leaves the chooser showing. */
   openDatabase: (path: string, passphrase: string | null, options?: OpenOptions) => Promise<void>;
+  /** Upgrades the database waiting under `awaitingId` (`UPGRADE_NEEDED`) and
+   * opens it, saving its backup in `backupFolder` when given instead of the
+   * backup location (009 FR-011, FR-012). Rejects with the command's
+   * `CommandFailure` and leaves the chooser showing. */
+  upgradeDatabase: (awaitingId: number, backupFolder?: string) => Promise<void>;
   /** Creates a database and opens it. */
   createDatabase: (input: CreateDatabaseInput) => Promise<void>;
   /** Closes the open database, or switches away from it, asking first about
@@ -25,9 +30,15 @@ export interface SessionState {
   refreshStatus: () => Promise<void>;
   dismissNote: (note: NoteKind) => Promise<void>;
   /** Restores the open database, or the damaged one at `databasePath`, from
-   * a backup; the restored database is then open (003 FR-028). Rejects with the
-   * command's `CommandFailure`. */
-  restoreBackup: (backupPath: string, passphrase: string, databasePath?: string) => Promise<void>;
+   * a backup; the restored database is then open (003 FR-028). `upgrade`
+   * (only ever `true`) upgrades a backup in an older layout as it is restored
+   * (009 FR-019). Rejects with the command's `CommandFailure`. */
+  restoreBackup: (
+    backupPath: string,
+    passphrase: string,
+    databasePath?: string,
+    upgrade?: true,
+  ) => Promise<void>;
   /** The backup settings should open once a database is open: asked for from
    * a failed-backup notice in the chooser (003 contracts/ui-databases.md §1). */
   settingsRequested: boolean;

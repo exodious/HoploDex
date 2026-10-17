@@ -94,6 +94,7 @@ function status(diskEncryption: boolean): DatabaseStatus {
       openedBackup: null,
       restoredWithPassphraseOf: null,
       damagedFileKeptAt: null,
+      upgraded: null,
     },
   };
 }
@@ -1156,5 +1157,135 @@ describe("SessionProvider (008: resuming pending changes)", () => {
     // Nothing said the form opened, and nothing was discarded or sent back:
     // the backend keeps the row for the next open of A.
     expect(actionsSent()).toEqual(["resume"]);
+  });
+});
+
+// --- 009 US3: an upgrade installs its status as an open does (009 FR-011) -----------
+
+describe("SessionProvider (009 US3: upgrading)", () => {
+  const UPGRADED = {
+    version: "0.2.0",
+    backupPath: "/backups/Main before 0.2.0",
+    atBackupLocation: true,
+  };
+
+  function Probe() {
+    const session = useSession();
+    const scope = useSessionScope();
+    return (
+      <>
+        <p>
+          Collection shell, session {scope.id}, upgraded for{" "}
+          {session.status?.notes.upgraded?.version ?? "nothing"}
+        </p>
+        <button type="button" onClick={() => void session.dismissNote("upgraded")}>
+          Dismiss the upgraded note
+        </button>
+        <button
+          type="button"
+          onClick={() => void session.restoreBackup("/backup", "pass", undefined, true)}
+        >
+          Restore and upgrade
+        </button>
+      </>
+    );
+  }
+
+  const upgradedStatus = (sessionId: number): DatabaseStatus => {
+    const opened = status(false);
+    return { ...opened, sessionId, notes: { ...opened.notes, upgraded: UPGRADED } };
+  };
+
+  beforeEach(() => {
+    vi.mocked(sessionService.getDatabaseStatus).mockReset().mockRejectedValue(closed);
+    vi.mocked(sessionService.dismissNote).mockReset().mockResolvedValue(undefined);
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooser);
+    vi.mocked(databasesService.openDatabase)
+      .mockReset()
+      .mockRejectedValue(
+        new CommandFailure({
+          code: "UPGRADE_NEEDED",
+          message: "The database needs to be upgraded.",
+          details: { awaitingId: 7, version: "0.2.0", backupFolder: "/backups" },
+        }),
+      );
+    vi.mocked(databasesService.upgradeDatabase).mockReset().mockResolvedValue(upgradedStatus(4));
+    vi.mocked(databasesService.restoreBackup).mockReset().mockResolvedValue(upgradedStatus(5));
+  });
+
+  async function askedToUpgrade(user: ReturnType<typeof userEvent.setup>) {
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await user.type(
+      await screen.findByLabelText("Passphrase for “Main collection”"),
+      `${PASSPHRASE}{Enter}`,
+    );
+    return screen.findByRole("alertdialog", {
+      name: "Upgrade “Main collection” for HoploDex 0.2.0?",
+    });
+  }
+
+  it("opens the database it upgraded, in a new scope of the status's session", async () => {
+    const user = userEvent.setup();
+    await askedToUpgrade(user);
+
+    await user.click(screen.getByRole("button", { name: "Upgrade" }));
+
+    expect(
+      await screen.findByText(/Collection shell, session 4, upgraded for 0\.2\.0/),
+    ).toBeInTheDocument();
+    expect(databasesService.upgradeDatabase).toHaveBeenCalledExactlyOnceWith(7);
+    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+  });
+
+  it("leaves the chooser showing when the upgrade is refused", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.upgradeDatabase).mockRejectedValue(
+      new CommandFailure({ code: "UPGRADE_FAILED", message: "x", details: { backupPath: "/b" } }),
+    );
+    await askedToUpgrade(user);
+
+    await user.click(screen.getByRole("button", { name: "Upgrade" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "HoploDex couldn't upgrade “Main collection”.",
+    );
+    expect(screen.queryByText(/Collection shell/)).not.toBeInTheDocument();
+  });
+
+  it("dismisses the upgraded note for the session, as the others", async () => {
+    const user = userEvent.setup();
+    await askedToUpgrade(user);
+    await user.click(screen.getByRole("button", { name: "Upgrade" }));
+    await screen.findByText(/upgraded for 0\.2\.0/);
+
+    await user.click(screen.getByRole("button", { name: "Dismiss the upgraded note" }));
+
+    expect(sessionService.dismissNote).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: 4 }),
+      "upgraded",
+    );
+    expect(await screen.findByText(/upgraded for nothing/)).toBeInTheDocument();
+  });
+
+  it("restores with the upgrade, in the new session", async () => {
+    const user = userEvent.setup();
+    await askedToUpgrade(user);
+    await user.click(screen.getByRole("button", { name: "Upgrade" }));
+    await screen.findByText(/session 4/);
+
+    await user.click(screen.getByRole("button", { name: "Restore and upgrade" }));
+
+    expect(await screen.findByText(/session 5/)).toBeInTheDocument();
+    expect(databasesService.restoreBackup).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: 4 }),
+      "/backup",
+      "pass",
+      undefined,
+      true,
+    );
   });
 });

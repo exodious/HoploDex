@@ -299,6 +299,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [opened],
   );
 
+  const upgradeDatabase = useCallback(
+    async (...upgrade: Parameters<typeof databasesService.upgradeDatabase>) => {
+      opened(await databasesService.upgradeDatabase(...upgrade));
+    },
+    [opened],
+  );
+
   const createDatabase = useCallback(
     async (input: CreateDatabaseInput) => {
       opened(await databasesService.createDatabase(input));
@@ -307,7 +314,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const restoreBackup = useCallback(
-    async (backupPath: string, passphrase: string, databasePath?: string) => {
+    async (backupPath: string, passphrase: string, databasePath?: string, upgrade?: true) => {
       // The restored database is new to the collection views: they remount.
       opened(
         await databasesService.restoreBackup(
@@ -315,6 +322,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           backupPath,
           passphrase,
           databasePath,
+          upgrade,
         ),
       );
     },
@@ -345,6 +353,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       status: phase.kind === "open" ? phase.status : null,
       openDatabase,
+      upgradeDatabase,
       createDatabase,
       closeDatabase,
       lockDatabase,
@@ -358,6 +367,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [
       phase,
       openDatabase,
+      upgradeDatabase,
       createDatabase,
       closeDatabase,
       lockDatabase,
@@ -458,5 +468,7 @@ function withoutNote(notes: DatabaseStatus["notes"], note: NoteKind): DatabaseSt
       return { ...notes, openedBackup: null };
     case "restored":
       return { ...notes, restoredWithPassphraseOf: null, damagedFileKeptAt: null };
+    case "upgraded":
+      return { ...notes, upgraded: null };
   }
 }

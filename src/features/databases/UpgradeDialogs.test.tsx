@@ -6,7 +6,7 @@ import type { UpgradeProgress } from "./types";
 
 vi.mock("./databasesService");
 
-// 009 contracts/ui.md §2 "Upgrade progress" (FR-016). The dialog is mounted
+// 009 contracts/ui.md §2 "Upgrade progress" (009 FR-016). The dialog is mounted
 // when the user chooses Upgrade, so its second counts from then. It listens to
 // `upgrade:progress` itself (databasesService.onUpgradeProgress).
 

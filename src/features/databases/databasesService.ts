@@ -1,6 +1,7 @@
 import { CommandFailure, invoke, listen } from "../../services/tauriClient";
 import type { SessionScope } from "../session/sessionScope";
 import type {
+  BackupCheck,
   BackupList,
   BackupProgress,
   BackupsDeleted,
@@ -17,6 +18,7 @@ import type {
   PassphraseSaved,
   RecentDatabase,
   RestoreProgress,
+  UpgradeProgress,
 } from "./types";
 
 // Typed wrappers for choosing, creating and opening databases (003
@@ -139,19 +141,60 @@ export function listBackups(
 
 /** Replaces the open database (through `scope`), or the damaged one at
  * `databasePath` (`scope` is `null`), with a backup, which is then open with
- * that backup's passphrase (003 FR-028). */
+ * that backup's passphrase (003 FR-028). A backup in an older layout is
+ * refused with `UPGRADE_NEEDED` unless `upgrade` is set, which upgrades the
+ * restored copy (009 FR-019). */
 export function restoreBackup(
   scope: SessionScope | null,
   backupPath: string,
   backupPassphrase: string,
   databasePath?: string,
+  upgrade?: boolean,
 ): Promise<DatabaseStatus> {
   return invokeOnOpenOrPath<DatabaseStatus>(
     scope,
     "restore_backup",
-    { backupPath, backupPassphrase },
+    { backupPath, backupPassphrase, ...(upgrade ? { upgrade: true } : {}) },
     databasePath,
   );
+}
+
+/** Opens a backup read-only and says what restoring it would do, before
+ * anything is copied: through `scope` for the open database, or with
+ * `databasePath` for a damaged one (`scope` is `null`), as `restoreBackup`
+ * (009 FR-019). The passphrase is wiped by the backend before it returns. */
+export function checkBackup(
+  scope: SessionScope | null,
+  backupPath: string,
+  passphrase: string,
+  databasePath?: string,
+): Promise<BackupCheck> {
+  return invokeOnOpenOrPath<BackupCheck>(
+    scope,
+    "check_backup",
+    { backupPath, passphrase },
+    databasePath,
+  );
+}
+
+/** Upgrades the database waiting under `awaitingId` (from `UPGRADE_NEEDED`)
+ * after backing it up, in the backup location or, when that couldn't be used,
+ * `backupFolder`; the database is then open (009 FR-011, FR-012). No session
+ * exists yet, so none is named. */
+export function upgradeDatabase(
+  awaitingId: number,
+  backupFolder?: string,
+): Promise<DatabaseStatus> {
+  return invoke<DatabaseStatus>("upgrade_database", {
+    awaitingId,
+    ...(backupFolder ? { backupFolder } : {}),
+  });
+}
+
+/** Drops the database waiting under `awaitingId`, or stops its backup;
+ * nothing once the upgrade has started (009 FR-010, FR-016). */
+export function cancelUpgrade(awaitingId: number): Promise<null> {
+  return invoke<null>("cancel_upgrade", { awaitingId });
 }
 
 /** Changes the open database's passphrase by copy, verify and replace
@@ -185,4 +228,8 @@ export function onPassphraseChangeProgress(
   handler: (progress: PassphraseChangeProgress) => void,
 ): () => void {
   return listen<PassphraseChangeProgress>("passphrase_change:progress", handler);
+}
+
+export function onUpgradeProgress(handler: (progress: UpgradeProgress) => void): () => void {
+  return listen<UpgradeProgress>("upgrade:progress", handler);
 }
