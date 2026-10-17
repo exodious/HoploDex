@@ -91,6 +91,12 @@ CREATE TABLE insurance_policies (
     CHECK (effective_end_date > effective_start_date)
 );
 
+-- 009 FR-007 (009 research.md §2): a policy name means one policy, ignoring
+-- A-Z letter case and surrounding spaces. Names are stored as typed; only
+-- comparisons trim. The form's check and import's lookup use this same
+-- expression, so both use the index; this is the backstop for the check.
+CREATE UNIQUE INDEX idx_insurance_policies_name ON insurance_policies (trim(name) COLLATE NOCASE);
+
 -- References photos(id) below; SQLite resolves FK targets lazily so this
 -- forward reference (created before the photos table) is valid.
 CREATE TABLE firearms (
@@ -599,6 +605,10 @@ CREATE TABLE app_state (
     backup_made_at TEXT,
     -- The database name, for the "backup opened directly" note; set only in backup copies.
     backup_of_name TEXT,
+    -- 009 FR-013 (009 data-model.md): the HoploDex version a backup was made
+    -- before upgrading to; set only in such a backup, NULL everywhere else.
+    -- Cleared with the stamp when the backup is opened or restored.
+    backup_before_upgrade_to TEXT,
     -- 008 FR-015 (008 research.md §16): the HoploDex
     -- version that last saved the database; NULL when none is recorded.
     -- Written by `db::record_saved_version` only, and it is not a change to

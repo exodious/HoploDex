@@ -175,8 +175,9 @@ fn an_accessory_field_at_its_maximum_is_saved_and_one_more_character_is_refused(
 #[test]
 fn a_policy_field_at_its_maximum_is_saved_and_one_more_character_is_refused() {
     let db = TestDb::new();
-    for (field, label, max, set) in policy_fields() {
-        let mut at_max = policy("P", "2025-01-01", "2026-01-01", None);
+    for (n, (field, label, max, set)) in policy_fields().into_iter().enumerate() {
+        // 009 FR-007: each policy needs a name of its own.
+        let mut at_max = policy(&format!("P{n}"), "2025-01-01", "2026-01-01", None);
         set(&mut at_max, text_of(max));
         let created = insurance_ops::create_policy(&db.conn, &at_max)
             .unwrap_or_else(|e| panic!("{field} at {max}: {e:?}"));

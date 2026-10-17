@@ -1911,7 +1911,9 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("caliber", "6.5 Creedmoor"),
                 ("firearm_type", "Rifle"),
                 ("estimated_value", "$1,050"),
-                ("insurance_policy_name", "Vault Schedule"),
+                // 009 FR-006: another case and surrounding spaces still find
+                // the policy (the import's comparison).
+                ("insurance_policy_name", " vault SCHEDULE "),
                 ("scheduled_coverage_amount", "1200"),
                 // A zero fraction beyond the precision, and any letter case.
                 ("barrel_length_in", "24.500"),

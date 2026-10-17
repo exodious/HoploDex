@@ -505,6 +505,83 @@ fn a_backup_opened_directly_becomes_its_own_database() {
     assert_eq!((stamp, stored_id), (None, new_id));
 }
 
+// --- The upgrade stamp (009 FR-013, 009 data-model.md) ------------------------
+
+/// Sets `app_state.backup_before_upgrade_to` on a backup file by a raw
+/// `UPDATE`, as a backup made before an upgrade would carry it.
+fn mark_as_made_before_an_upgrade(backup: &Path, version: &str) {
+    let conn = rusqlite::Connection::open(backup).expect("could not open the backup");
+    conn.pragma_update(None, "key", support::TEST_PASSPHRASE).unwrap();
+    db::cipher::apply_cipher_settings(&conn, "main").unwrap();
+    let changed = conn
+        .execute("UPDATE app_state SET backup_before_upgrade_to = ?1", [version])
+        .expect("app_state.backup_before_upgrade_to exists");
+    assert_eq!(changed, 1);
+}
+
+fn stored_upgrade_stamp(conn: &rusqlite::Connection) -> Option<String> {
+    conn.query_row("SELECT backup_before_upgrade_to FROM app_state", [], |r| r.get(0)).unwrap()
+}
+
+/// 009 FR-013: the stamp that names the version a backup was made before
+/// upgrading to is set only in such a backup, and is housekeeping once the
+/// file is opened or restored.
+#[test]
+fn the_upgrade_stamp_is_empty_in_a_new_database_and_cleared_when_a_backup_is_opened_directly() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    let in_use = world
+        .session
+        .read(world.session.current_id(), |conn| Ok(stored_upgrade_stamp(conn)))
+        .unwrap();
+    assert_eq!(in_use, None, "a database made now has no stamp");
+    world.change();
+    world.close();
+    let backup = PathBuf::from(&world.backups_in(&world.default_folder(), &id)[0].path);
+    mark_as_made_before_an_upgrade(&backup, "9.9.9");
+    assert_eq!(stored_upgrade_stamp(&peek(&backup)), Some("9.9.9".to_owned()));
+
+    lifecycle::open(&world.session, &world.machine, &backup, &passphrase(), false).unwrap();
+    let opened = world
+        .session
+        .read(world.session.current_id(), |conn| Ok(stored_upgrade_stamp(conn)))
+        .unwrap();
+    assert_eq!(opened, None, "opening the backup directly clears it");
+    world.close();
+    assert_eq!(stored_upgrade_stamp(&peek(&backup)), None, "and the file keeps it cleared");
+}
+
+#[test]
+fn the_upgrade_stamp_is_cleared_when_a_backup_is_restored() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    let backup = world.backups_in(&world.default_folder(), &id).remove(0);
+    mark_as_made_before_an_upgrade(Path::new(&backup.path), "9.9.9");
+
+    world.open();
+    // The backup made before restoring is named for the minute, so it
+    // needs a later one than the backup being restored.
+    world.clock.advance(chrono::Duration::hours(1));
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &backup.path,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
+
+    let restored = world
+        .session
+        .read(world.session.current_id(), |conn| Ok(stored_upgrade_stamp(conn)))
+        .unwrap();
+    assert_eq!(restored, None);
+}
+
 // --- Failures, skips and progress -------------------------------------------
 
 fn assert_failed_and_waiting(world: &World, outcome: CloseOutcome, reason: BackupFailureReason) {

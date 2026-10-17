@@ -367,7 +367,9 @@ fn blank_or_whitespace_only_notes_are_stored_as_null() {
     let db = TestDb::new();
     let mut input = policy("Rider", "2025-01-01", "2026-01-01", None);
 
-    for blank in ["", "   ", "\n\t "] {
+    for (n, blank) in ["", "   ", "\n\t "].into_iter().enumerate() {
+        // 009 FR-007: each policy needs a name of its own.
+        input.name = format!("Rider {n}");
         input.notes = Some(blank.into());
         let created = insurance_ops::create_policy(&db.conn, &input).unwrap();
         assert_eq!(created.notes, None, "{blank:?} on create should be stored as null");

@@ -133,7 +133,8 @@ fn take_backup_stamp(conn: &Connection) -> Result<Option<OpenedBackupNote>, Comm
         CommandError::new("INTERNAL_ERROR", "An unexpected error occurred.")
     })?;
     conn.execute(
-        "UPDATE app_state SET database_id = ?1, backup_made_at = NULL, backup_of_name = NULL",
+        "UPDATE app_state SET database_id = ?1, backup_made_at = NULL, backup_of_name = NULL,
+             backup_before_upgrade_to = NULL",
         [new_id],
     )
     .map_err(CommandError::from_db)?;

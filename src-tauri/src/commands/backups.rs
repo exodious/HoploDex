@@ -264,6 +264,7 @@ pub mod ops {
             "BEGIN;
              UPDATE app_state
              SET changes_waiting = 0, backup_made_at = NULL, backup_of_name = NULL,
+                 backup_before_upgrade_to = NULL,
                  open_machine_id = NULL, open_machine_name = NULL, open_since = NULL;
              DELETE FROM pending_changes;
              COMMIT;",
