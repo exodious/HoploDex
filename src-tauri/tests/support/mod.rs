@@ -2,7 +2,7 @@ pub mod hostile_documents;
 pub mod hostile_spreadsheets;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::ChooserNotice;
@@ -36,6 +36,22 @@ pub fn test_machine() -> MachineIdentity {
 #[allow(dead_code)]
 pub fn other_machine() -> MachineIdentity {
     MachineIdentity { id: "2".repeat(32), display_name: "Workshop PC".into() }
+}
+
+/// Held for the whole of a test in a test program of its own that needs the
+/// pinned KDF (`portability_test`, `release_upgrade_test`: a file a shipped
+/// build keyed opens only with it), so those tests run one at a time. In a
+/// `test-kdf` build it also makes the process key with the pinned KDF
+/// (`cipher::test_kdf::use_real_kdf`, which applies to the whole process, so
+/// the program must not share it with tests that key with the fast one). One
+/// of `portability_test`'s tests changes the environment, which is only sound
+/// while no other thread (SQLCipher's C code included) might be reading it.
+#[allow(dead_code)]
+pub fn one_at_a_time_with_the_real_kdf() -> MutexGuard<'static, ()> {
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    #[cfg(feature = "test-kdf")]
+    hoplodex_lib::db::cipher::test_kdf::use_real_kdf();
+    ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// A real, migrated, encrypted SQLCipher database in a temp directory —

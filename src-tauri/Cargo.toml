@@ -241,6 +241,12 @@ path = "tests/portability_test.rs"
 name = "tiff_preview_test"
 path = "tests/tiff_preview_test.rs"
 
+# The stored release databases are keyed with the pinned KDF, which a
+# `test-kdf` build can use only for a whole process (`cipher::test_kdf`).
+[[test]]
+name = "release_upgrade_test"
+path = "tests/release_upgrade_test.rs"
+
 # Distributed notices arrive on the main thread's run loop, and libtest runs
 # each test on a thread of its own, so this one has its own `main`.
 [[test]]

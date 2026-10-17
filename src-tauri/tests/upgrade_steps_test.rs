@@ -11,9 +11,14 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
+use hoplodex_lib::commands::accessories::ops as accessories_ops;
+use hoplodex_lib::commands::firearms::ops as firearms_ops;
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
+use hoplodex_lib::commands::photos::ops as photos_ops;
 use hoplodex_lib::db::upgrade::{self, UpgradeError, testing};
 use hoplodex_lib::db::{self, OpenError, Opened, raw_file::RawFile};
+use hoplodex_lib::models::record::RecordRef;
+use hoplodex_lib::services::record_id;
 use rusqlite::{Connection, ErrorCode};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -648,4 +653,486 @@ fn an_upgrade_that_fails_after_the_question_leaves_the_file_as_it_was() {
     let conn = app_connection(&path);
     first_read(&conn).unwrap();
     assert_eq!(layout(&conn), before);
+}
+
+// ---------------------------------------------------------------------------
+// The shared rebuild steps (009 tasks.md T063; 009 research.md §7, §14): the
+// text `release_upgrade_test` and `performance_test` run too.
+// ---------------------------------------------------------------------------
+
+/// A closed database with every table the two rebuilds touch filled: two
+/// firearms and an accessory with photos (the first photo of each is its
+/// thumbnail), and three disposition-history rows of each kind of owner.
+fn rebuildable_database() -> (TempDir, std::path::PathBuf) {
+    let (conn, dir) = TestDb::new().into_parts();
+    let colt =
+        firearms_ops::create_firearm(&conn, &support::firearm("Colt", "Python", "A1"), false, None)
+            .unwrap();
+    let glock =
+        firearms_ops::create_firearm(&conn, &support::firearm("Glock", "19", "B2"), false, None)
+            .unwrap();
+    let scope = accessories_ops::create_accessory(
+        &conn,
+        &serde_json::from_value(serde_json::json!({
+            "accessoryKindId": 1,
+            "make": "Leupold",
+            "model": "VX-5HD",
+            "serialNumber": "L1",
+            "status": "active",
+        }))
+        .unwrap(),
+        None,
+    )
+    .unwrap();
+    for (owner, name) in [
+        (RecordRef::Firearm(colt.id), "front.png"),
+        (RecordRef::Firearm(colt.id), "back.png"),
+        (RecordRef::Firearm(glock.id), "side.png"),
+        (RecordRef::Accessory(scope.id), "scope.png"),
+    ] {
+        photos_ops::add_photo(&conn, owner, &support::sample_png_bytes(), name, "image/png")
+            .unwrap();
+    }
+    for (firearm, accessory) in [
+        (Some(colt.id), None),
+        (Some(colt.id), None),
+        (Some(glock.id), None),
+        (None, Some(scope.id)),
+        (None, Some(scope.id)),
+        (None, Some(scope.id)),
+    ] {
+        conn.execute(
+            "INSERT INTO disposition_history (firearm_id, accessory_id, disposition_type,
+                 disposition_recipient, disposition_date, disposition_price, reversed_at)
+             VALUES (?1, ?2, 'sold', 'Pat', '2025-01-01', 100, '2025-02-01')",
+            rusqlite::params![firearm, accessory],
+        )
+        .unwrap();
+    }
+    drop(conn);
+    let path = dir.path().join(TestDb::FILE_NAME);
+    (dir, path)
+}
+
+/// Every row of `sql`'s result as text, in its order.
+fn rows_as_text(conn: &Connection, sql: &str) -> Vec<String> {
+    let mut stmt = conn.prepare(sql).unwrap();
+    let columns = stmt.column_count();
+    stmt.query_map([], |row| {
+        (0..columns)
+            .map(|i| row.get::<_, rusqlite::types::Value>(i).map(|value| format!("{value:?}")))
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map(|cells| cells.join(" | "))
+    })
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
+}
+
+const PHOTO_ROWS: &str =
+    "SELECT id, uid, firearm_id, accessory_id, original_bytes, original_filename,
+        mime_type, thumbnail_bytes, sort_order, created_at FROM photos ORDER BY id";
+const THUMBNAIL_LINKS: &str = "SELECT 'firearm', id, thumbnail_photo_id FROM firearms
+     UNION ALL SELECT 'accessory', id, thumbnail_photo_id FROM accessories ORDER BY 1, 2";
+
+/// The indexes and triggers of a table (an automatic index has no SQL, so the
+/// name is compared too), in a fixed order.
+fn objects_of(conn: &Connection, table: &str) -> Vec<String> {
+    rows_as_text(
+        conn,
+        &format!(
+            "SELECT type, name, sql FROM sqlite_schema
+             WHERE tbl_name = '{table}' AND type IN ('index', 'trigger') ORDER BY type, name"
+        ),
+    )
+}
+
+fn table_sql(conn: &Connection, table: &str) -> String {
+    conn.query_row(
+        "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?1",
+        [table],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// 009 US4-1, 009 FR-020, 009 research.md §7, §14: the photos rebuild keeps
+/// every photo row, `uid`, owner and thumbnail link, changes the table's
+/// `CHECK`, and recreates each of its indexes and triggers as they were.
+#[test]
+fn the_photos_rebuild_keeps_every_row_and_link_and_recreates_the_indexes_and_triggers() {
+    let (dir, path) = rebuildable_database();
+    let _scope = testing::scope(dir.path()).extra_steps(&[testing::PHOTOS_REBUILD]);
+    let conn = app_connection(&path);
+    first_read(&conn).unwrap();
+    let rows = rows_as_text(&conn, PHOTO_ROWS);
+    let links = rows_as_text(&conn, THUMBNAIL_LINKS);
+    let objects = objects_of(&conn, "photos");
+    let table = table_sql(&conn, "photos");
+    assert_eq!(rows.len(), 4);
+    assert!(
+        links.iter().all(|link| !link.ends_with("Null")),
+        "every record has a thumbnail: {links:?}"
+    );
+    assert!(objects.len() >= 6, "the photos' indexes and triggers: {objects:?}");
+
+    upgrade::upgrade(&conn, &upgrade::build_steps(&path), None, &mut |_, _| {})
+        .expect("the photos rebuild");
+
+    assert_eq!(rows_as_text(&conn, PHOTO_ROWS), rows, "a photo row changed");
+    assert_eq!(rows_as_text(&conn, THUMBNAIL_LINKS), links, "a thumbnail link changed");
+    assert_eq!(
+        objects_of(&conn, "photos"),
+        objects,
+        "an index or trigger was not recreated as it was"
+    );
+    let rebuilt = table_sql(&conn, "photos");
+    assert_ne!(rebuilt, table, "the CHECK did not change");
+    assert!(rebuilt.contains("sort_order >= 0"), "{rebuilt}");
+    assert!(
+        rows_as_text(&conn, "PRAGMA foreign_key_check").is_empty(),
+        "the rebuild left a link to a record that is not there"
+    );
+    // The new CHECK is the table's, and the rest still accepts a photo.
+    let insert = |order: i64| {
+        conn.execute(
+            &format!(
+                "INSERT INTO photos (uid, firearm_id, original_bytes, original_filename, mime_type,
+                     thumbnail_bytes, sort_order, created_at)
+                 VALUES ({}, 1, x'00', 'a.png', 'image/png', x'00', ?1, 'now')",
+                testing::UID_EXPRESSION
+            ),
+            [order],
+        )
+    };
+    let refused = insert(-1).expect_err("the new CHECK should refuse a negative sort order");
+    assert!(refused.to_string().contains("CHECK"), "{refused}");
+    insert(0).expect("a valid photo");
+}
+
+/// 009 US4-1, 009 FR-020, 009 research.md §7: the same step plus an orphan row
+/// planted in the rebuilt table abandons the upgrade at the link check, and
+/// the database is as it was.
+#[test]
+fn the_photos_rebuild_with_a_planted_orphan_is_abandoned_at_the_link_check() {
+    let (dir, path) = rebuildable_database();
+    let _scope = testing::scope(dir.path()).extra_steps(&[testing::PHOTOS_REBUILD]).at_point(
+        testing::Point::AfterStep(1),
+        |conn| {
+            // Foreign keys are off while a step runs, so this is accepted.
+            conn.execute(
+                &format!(
+                    "INSERT INTO photos (uid, firearm_id, original_bytes, original_filename,
+                         mime_type, thumbnail_bytes, sort_order, created_at)
+                     VALUES ({}, 9999, x'00', 'orphan.png', 'image/png', x'00', 0, 'now')",
+                    testing::UID_EXPRESSION
+                ),
+                [],
+            )
+            .unwrap();
+        },
+    );
+    let rows_before = {
+        let conn = app_connection(&path);
+        first_read(&conn).unwrap();
+        rows_as_text(&conn, PHOTO_ROWS)
+    };
+    let error = assert_nothing_applied(&path, |conn| {
+        upgrade::upgrade(conn, &upgrade::build_steps(&path), None, &mut |_, _| {})
+    });
+    assert!(matches!(error, UpgradeError::LinkCheck { violations: 1 }), "{error:?}");
+    let conn = app_connection(&path);
+    first_read(&conn).unwrap();
+    assert_eq!(
+        rows_as_text(&conn, PHOTO_ROWS),
+        rows_before,
+        "the abandoned rebuild changed a photo"
+    );
+}
+
+/// 009 US4-1, 009 FR-020, 009 research.md §7: the history rebuild gives every
+/// row a distinct identifier of the kind the other tables have, and keeps the
+/// rest of each row.
+#[test]
+fn the_history_uid_fill_gives_every_row_a_distinct_valid_identifier() {
+    let (dir, path) = rebuildable_database();
+    let _scope = testing::scope(dir.path()).extra_steps(&[testing::HISTORY_UID_FILL]);
+    let conn = app_connection(&path);
+    first_read(&conn).unwrap();
+    const REST: &str =
+        "SELECT id, firearm_id, accessory_id, disposition_type, disposition_recipient,
+        disposition_date, disposition_price, reversed_at FROM disposition_history ORDER BY id";
+    let rest = rows_as_text(&conn, REST);
+    assert_eq!(rest.len(), 6);
+
+    upgrade::upgrade(&conn, &upgrade::build_steps(&path), None, &mut |_, _| {}).unwrap();
+
+    assert_eq!(rows_as_text(&conn, REST), rest, "a history row changed");
+    let uids: Vec<String> = conn
+        .prepare("SELECT uid FROM disposition_history ORDER BY id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let distinct: std::collections::HashSet<&String> = uids.iter().collect();
+    assert_eq!((uids.len(), distinct.len()), (6, 6), "{uids:?}");
+    for uid in &uids {
+        assert_eq!(record_id::parse(uid).as_deref(), Some(uid.as_str()), "{uid}");
+    }
+    assert!(
+        rows_as_text(&conn, "PRAGMA foreign_key_check").is_empty(),
+        "the rebuild left a link to a record that is not there"
+    );
+    // The table's indexes and triggers came back (the three backup-due
+    // triggers and two indexes).
+    assert_eq!(
+        objects_of(&conn, "disposition_history").len(),
+        6,
+        "{:?}",
+        objects_of(&conn, "disposition_history")
+    );
+}
+
+/// 009 research.md §7: 10,000 values of the v4 expression pass 006's `CHECK`
+/// (the one every `uid` column has) and `record_id::parse`, and none repeats.
+#[test]
+fn ten_thousand_values_of_the_v4_expression_pass_the_check_and_parse() {
+    // The CHECK as the tables write it; the schema of a new database must
+    // contain it word for word, so this copy cannot drift from the real one.
+    const CHECK: &str = "CHECK (
+        length(uid) = 36
+        AND uid GLOB '????????-????-4???-????-????????????'
+        AND substr(uid, 20, 1) IN ('8', '9', 'a', 'b')
+        AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
+    )";
+    let new = TestDb::new();
+    for table in ["firearms", "accessories", "photos", "document_attachments", "insurance_policies"]
+    {
+        assert!(
+            table_sql(&new.conn, table).contains(CHECK),
+            "{table}'s uid CHECK differs from the test's copy"
+        );
+    }
+
+    let scratch = Connection::open_in_memory().unwrap();
+    scratch
+        .execute_batch(&format!(
+            "CREATE TABLE u (id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE {CHECK});"
+        ))
+        .unwrap();
+    scratch
+        .execute_batch(&format!(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 10000)
+             INSERT INTO u (id, uid) SELECT i, {} FROM n;",
+            testing::UID_EXPRESSION
+        ))
+        .expect("a value broke the CHECK or repeated");
+    let uids: Vec<String> = scratch
+        .prepare("SELECT uid FROM u")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(uids.len(), 10_000);
+    for uid in &uids {
+        assert_eq!(record_id::parse(uid).as_deref(), Some(uid.as_str()), "{uid}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The step rules (009 tasks.md T064; 009 FR-022, 009 research.md §13).
+// ---------------------------------------------------------------------------
+
+/// The statements of `sql` that a step must not contain (009 research.md §7):
+/// the transaction's own, `PRAGMA foreign_keys`, `VACUUM`, `ATTACH` and
+/// `DETACH`. Comments and quoted text are blanked first, and a trigger's
+/// `BEGIN ... END` body is not a transaction: a statement is flagged by its
+/// first word, and `END` only after `CREATE TRIGGER` closes the body.
+fn forbidden_statements(sql: &str) -> Vec<String> {
+    let mut plain = String::new();
+    let mut chars = sql.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '-' if chars.peek() == Some(&'-') => {
+                for next in chars.by_ref() {
+                    if next == '\n' {
+                        plain.push('\n');
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                let mut last = ' ';
+                for next in chars.by_ref() {
+                    if last == '*' && next == '/' {
+                        break;
+                    }
+                    last = next;
+                }
+                plain.push(' ');
+            }
+            '\'' | '"' => {
+                // Quoted text, `''` being an escaped quote: blanked.
+                plain.push(' ');
+                while let Some(next) = chars.next() {
+                    if next == c {
+                        if chars.peek() == Some(&c) {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            other => plain.push(other),
+        }
+    }
+
+    const FORBIDDEN: [&str; 9] = [
+        "BEGIN",
+        "COMMIT",
+        "END",
+        "ROLLBACK",
+        "SAVEPOINT",
+        "RELEASE",
+        "VACUUM",
+        "ATTACH",
+        "DETACH",
+    ];
+    let mut found = Vec::new();
+    let mut in_trigger = false;
+    for statement in plain.split(';') {
+        let words: Vec<String> = statement
+            .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
+            .filter(|word| !word.is_empty())
+            .map(str::to_ascii_uppercase)
+            .collect();
+        let Some(first) = words.first() else { continue };
+        let creates_trigger =
+            first == "CREATE" && words.iter().skip(1).take(2).any(|word| word == "TRIGGER");
+        if creates_trigger {
+            in_trigger = true;
+            continue;
+        }
+        if in_trigger && first == "END" {
+            in_trigger = false;
+            continue;
+        }
+        if in_trigger {
+            continue;
+        }
+        if FORBIDDEN.contains(&first.as_str()) {
+            found.push(first.clone());
+        } else if first == "PRAGMA"
+            && words
+                .get(1)
+                .is_some_and(|name| name == "FOREIGN_KEYS" || name.ends_with(".FOREIGN_KEYS"))
+        {
+            found.push("PRAGMA foreign_keys".to_owned());
+        }
+    }
+    found
+}
+
+/// 009 FR-022, 009 research.md §13: the scan is not blind to what it forbids.
+/// A doctored step string must fail it, and text that only mentions the words
+/// must not.
+#[test]
+fn the_scan_for_forbidden_statements_catches_each_and_only_each() {
+    for (statement, expected) in [
+        ("BEGIN", "BEGIN"),
+        ("begin immediate", "BEGIN"),
+        ("COMMIT", "COMMIT"),
+        ("END", "END"),
+        ("ROLLBACK", "ROLLBACK"),
+        ("SAVEPOINT s1", "SAVEPOINT"),
+        ("RELEASE s1", "RELEASE"),
+        ("PRAGMA foreign_keys = OFF", "PRAGMA foreign_keys"),
+        ("pragma main.foreign_keys=on", "PRAGMA foreign_keys"),
+        ("VACUUM", "VACUUM"),
+        ("ATTACH DATABASE 'x.db' AS other", "ATTACH"),
+        ("DETACH other", "DETACH"),
+    ] {
+        let doctored =
+            format!("CREATE TABLE a (id INTEGER);\n{statement};\nCREATE TABLE b (id INTEGER);");
+        assert_eq!(forbidden_statements(&doctored), [expected], "missed `{statement}`");
+        // Without the final semicolon too.
+        assert_eq!(forbidden_statements(statement), [expected], "missed `{statement}`");
+    }
+    let harmless = "-- COMMIT; ROLLBACK; BEGIN
+        /* VACUUM; PRAGMA foreign_keys = OFF; */
+        INSERT INTO t (note) VALUES ('BEGIN; COMMIT; it''s ATTACH');
+        PRAGMA foreign_key_check;
+        CREATE TRIGGER t_after AFTER INSERT ON t
+        BEGIN UPDATE s SET n = 1 WHERE n = 0; SELECT CASE WHEN 1 THEN 1 ELSE 2 END; END;";
+    assert_eq!(forbidden_statements(harmless), Vec::<String>::new());
+}
+
+/// 009 FR-022, 009 research.md §7, §13: no step of this build (`MIGRATIONS`,
+/// with the test-only steps and an `e2e` build's, which `build_steps` adds)
+/// contains a statement that breaks the runner's transaction.
+#[test]
+fn no_step_contains_a_statement_the_runner_owns() {
+    let probe = TempDir::new().unwrap();
+    let mut steps: Vec<(&str, &str)> = db::MIGRATIONS.to_vec();
+    steps.extend([testing::PHOTOS_REBUILD, testing::HISTORY_UID_FILL]);
+    steps.extend(upgrade::build_steps(&probe.path().join("none.hoplodex")));
+    for (name, sql) in steps {
+        assert_eq!(
+            forbidden_statements(sql),
+            Vec::<String>::new(),
+            "step {name} contains a statement the runner owns (009 FR-022)"
+        );
+    }
+}
+
+/// 009 FR-022, 009 research.md §13: what the open reads or writes in an older
+/// layout before any step runs is still in a new database. A later step that
+/// drops or renames one makes this fail.
+#[test]
+fn a_new_database_still_has_what_an_older_layout_must_keep() {
+    let new = TestDb::new();
+    let columns = |table: &str| -> Vec<String> {
+        new.conn
+            .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    for (table, required) in [
+        ("schema_migrations", &["name"][..]),
+        (
+            "app_state",
+            &[
+                "id",
+                "database_id",
+                "open_machine_id",
+                "open_machine_name",
+                "open_since",
+                "changes_waiting",
+                "backup_made_at",
+                "backup_of_name",
+                "backup_before_upgrade_to",
+            ][..],
+        ),
+        ("collection_settings", &["backup_location"][..]),
+    ] {
+        let present = columns(table);
+        for column in required {
+            assert!(
+                present.iter().any(|name| name == column),
+                "{table}.{column} is gone: the open and the backup before an upgrade read it in \
+                 an older layout (009 research.md §13)"
+            );
+        }
+    }
+    assert!(
+        !columns("pending_changes").is_empty(),
+        "the table pending_changes is gone: the backup's stamp empties it (009 research.md §13)"
+    );
 }

@@ -3,10 +3,12 @@
 //! needs a `mod` line here (`test_files_test` fails without one: `autotests` is off).
 //!
 //! `performance_test` and `import_largest_test` (release-only, `#[ignore]`d, run by
-//! name), `macos_screen_lock_test` (its own `main`), and `portability_test` and
+//! name), `macos_screen_lock_test` (its own `main`), `portability_test` and
 //! `tiff_preview_test` (they change environment variables, which is sound only while
 //! no other test's thread reads the environment, so under `cargo test` they mustn't
-//! share a process with the rest) stay programs of their own.
+//! share a process with the rest), and `release_upgrade_test` (it keys with the
+//! pinned KDF, which a `test-kdf` build can choose only for a whole process) stay
+//! programs of their own.
 
 #[path = "support/preview_support.rs"]
 mod preview_support;
@@ -72,7 +74,6 @@ mod preview_text_test;
 mod query_plan_test;
 mod record_identifier_test;
 mod registration_test;
-mod release_upgrade_test;
 mod released_migrations_test;
 mod restore_test;
 mod scratch_ownership_test;

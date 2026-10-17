@@ -1,19 +1,51 @@
 //! The one runner for creating a database and for upgrading one: a single
 //! transaction for every step due, the foreign-key link check, and the test
-//! hooks that exercise it (009 research.md §7, §14).
+//! hooks that exercise it (009 research.md §7, §14). The steps are the files
+//! of `db/migrations/` (`MIGRATIONS`); `db/migrations/README.md` shows how to
+//! write one.
+//!
+//! # What an older layout must keep
 //!
 //! What a build may touch in an older layout before it upgrades it must mean
 //! the same thing in every release from 0.1.0 on (009 research.md §13,
-//! data-model.md "What an older layout must keep"); a step never drops or
-//! renames any of it, and `tests/upgrade_steps_test.rs` checks a new database
-//! still has it all:
-//! - `schema_migrations (name)`;
+//! data-model.md "What an older layout must keep"). The open reads and writes
+//! some of an older database before any step runs (the open marker, the
+//! changes-waiting flag, the backup location), and the backup before an
+//! upgrade is stamped in the older layout, so a step never drops or renames
+//! any of this, and `tests/upgrade_steps_test.rs` checks a new database still
+//! has it all:
+//! - `schema_migrations (name)`: what is due is read from it;
 //! - `app_state`'s `id`, `database_id`, `open_machine_id`,
 //!   `open_machine_name`, `open_since`, `changes_waiting`, `backup_made_at`,
-//!   `backup_of_name` and `backup_before_upgrade_to`;
-//! - `collection_settings.backup_location`;
-//! - the table `pending_changes`.
-
+//!   `backup_of_name` and `backup_before_upgrade_to`: the open marker, the
+//!   flag the upgrade keeps, and the backup's stamp;
+//! - `collection_settings.backup_location`: where the backup before the
+//!   upgrade goes;
+//! - the table `pending_changes`, which the stamp empties.
+//!
+//! If one ever must change, the open has to read the old and new layouts
+//! both, and that is a decision for that release.
+//!
+//! # The rules for a step
+//!
+//! A step is a file in `db/migrations/` (009 FR-020, FR-022, research.md §7;
+//! `tests/upgrade_steps_test.rs` scans for the first rule):
+//! - **Pure SQL.** No `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, `RELEASE`,
+//!   `PRAGMA foreign_keys`, `VACUUM`, `ATTACH` or `DETACH`: [`upgrade`] owns
+//!   the transaction and turns the foreign keys off around it, and those break
+//!   it or do nothing inside it. No app-defined functions or collations.
+//! - **A rebuild follows SQLite's documented order**: `CREATE TABLE new_x`;
+//!   `INSERT INTO new_x … SELECT … FROM x`; `DROP TABLE x`; `ALTER TABLE new_x
+//!   RENAME TO x`; then every index, trigger and full-text trigger of `x`
+//!   again. Never rename `x` away first: since SQLite 3.26 that rewrites the
+//!   other tables' foreign keys to follow the old name.
+//! - **A new required unique value**, such as a later table's `uid`, is filled
+//!   with SQL alone, with the version 4 expression of
+//!   [`testing::UID_EXPRESSION`] (which 006's `CHECK` and `record_id::parse`
+//!   accept).
+//! - **It depends only on the layout it starts from**: it reads no app setting
+//!   and no value only the app can interpret.
+//!
 use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension};
@@ -332,6 +364,119 @@ pub mod testing {
     use std::sync::{Arc, Mutex, MutexGuard};
 
     use rusqlite::Connection;
+
+    /// 009 research.md §7's version 4 expression: a random UUID in SQL alone,
+    /// which 006's `CHECK` on a `uid` column and `record_id::parse` accept.
+    /// A macro, so [`concat!`] can build a step's text from it.
+    macro_rules! uid_expression {
+        () => {
+            "lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' \
+             || substr(lower(hex(randomblob(2))), 2) || '-' \
+             || substr('89ab', 1 + (abs(random()) % 4), 1) \
+             || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))"
+        };
+    }
+
+    /// The expression of `uid_expression!`, for a test to check against the
+    /// `CHECK` and `record_id::parse`.
+    pub const UID_EXPRESSION: &str = uid_expression!();
+
+    /// The two test-only steps every test program shares (009 research.md §14),
+    /// so `upgrade_steps_test`, `release_upgrade_test` and
+    /// `performance_test` run one text. Register them with
+    /// `testing::scope(dir).extra_steps(&[PHOTOS_REBUILD, HISTORY_UID_FILL])`.
+    ///
+    /// A rebuild of `photos`, which links to firearms and accessories and is
+    /// linked from their `thumbnail_photo_id`, in 009 research.md §7's order: it
+    /// changes the table's `CHECK` (a sort order is never negative), and
+    /// creates the table's indexes and triggers again, as `0001_initial.sql`
+    /// writes them. Every row, `uid`, owner and thumbnail link is kept.
+    pub const PHOTOS_REBUILD: (&str, &str) = (
+        "9101_test_photos_rebuild",
+        "CREATE TABLE new_photos (
+    id INTEGER PRIMARY KEY,
+    uid TEXT NOT NULL UNIQUE CHECK (
+        length(uid) = 36
+        AND uid GLOB '????????-????-4???-????-????????????'
+        AND substr(uid, 20, 1) IN ('8', '9', 'a', 'b')
+        AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
+    ),
+    firearm_id INTEGER REFERENCES firearms (id) ON DELETE CASCADE,
+    accessory_id INTEGER REFERENCES accessories (id) ON DELETE CASCADE,
+    original_bytes BLOB NOT NULL,
+    original_filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    thumbnail_bytes BLOB NOT NULL,
+    sort_order INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK ((firearm_id IS NULL) <> (accessory_id IS NULL)),
+    CHECK (sort_order >= 0)
+);
+INSERT INTO new_photos (id, uid, firearm_id, accessory_id, original_bytes, original_filename,
+                        mime_type, thumbnail_bytes, sort_order, created_at)
+    SELECT id, uid, firearm_id, accessory_id, original_bytes, original_filename,
+           mime_type, thumbnail_bytes, sort_order, created_at
+    FROM photos;
+DROP TABLE photos;
+ALTER TABLE new_photos RENAME TO photos;
+CREATE INDEX idx_photos_firearm ON photos (firearm_id);
+CREATE INDEX idx_photos_accessory ON photos (accessory_id) WHERE accessory_id IS NOT NULL;
+CREATE TRIGGER photos_uid_fixed BEFORE UPDATE OF uid ON photos
+WHEN NEW.uid IS NOT OLD.uid
+BEGIN SELECT RAISE(ABORT, 'a record identifier never changes'); END;
+CREATE TRIGGER photos_marks_backup_due_after_insert AFTER INSERT ON photos
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+CREATE TRIGGER photos_marks_backup_due_after_update AFTER UPDATE ON photos
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+CREATE TRIGGER photos_marks_backup_due_after_delete AFTER DELETE ON photos
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;",
+    );
+
+    /// A rebuild of `disposition_history` that adds a required unique
+    /// identifier, `uid` (the `CHECK` of every other table's), filled for each
+    /// existing row with [`UID_EXPRESSION`]. The table's indexes and triggers
+    /// are created again.
+    pub const HISTORY_UID_FILL: (&str, &str) = (
+        "9102_test_history_uid_fill",
+        concat!(
+            "CREATE TABLE new_disposition_history (
+    id INTEGER PRIMARY KEY,
+    uid TEXT NOT NULL UNIQUE CHECK (
+        length(uid) = 36
+        AND uid GLOB '????????-????-4???-????-????????????'
+        AND substr(uid, 20, 1) IN ('8', '9', 'a', 'b')
+        AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
+    ),
+    firearm_id INTEGER REFERENCES firearms (id) ON DELETE CASCADE,
+    accessory_id INTEGER REFERENCES accessories (id) ON DELETE CASCADE,
+    disposition_type TEXT NOT NULL
+        CHECK (disposition_type IN ('sold', 'traded', 'gifted', 'destroyed', 'lost_stolen')),
+    disposition_recipient TEXT NOT NULL,
+    disposition_date TEXT NOT NULL,
+    disposition_price INTEGER CHECK (disposition_price IS NULL OR disposition_price >= 0),
+    reversed_at TEXT NOT NULL,
+    CHECK ((firearm_id IS NULL) <> (accessory_id IS NULL))
+);
+INSERT INTO new_disposition_history (id, uid, firearm_id, accessory_id, disposition_type,
+                                     disposition_recipient, disposition_date, disposition_price,
+                                     reversed_at)
+    SELECT id, ",
+            uid_expression!(),
+            ", firearm_id, accessory_id, disposition_type, disposition_recipient,
+           disposition_date, disposition_price, reversed_at
+    FROM disposition_history;
+DROP TABLE disposition_history;
+ALTER TABLE new_disposition_history RENAME TO disposition_history;
+CREATE INDEX idx_disposition_history_firearm ON disposition_history (firearm_id);
+CREATE INDEX idx_disposition_history_accessory ON disposition_history (accessory_id) WHERE accessory_id IS NOT NULL;
+CREATE TRIGGER disposition_history_marks_backup_due_after_insert AFTER INSERT ON disposition_history
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+CREATE TRIGGER disposition_history_marks_backup_due_after_update AFTER UPDATE ON disposition_history
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;
+CREATE TRIGGER disposition_history_marks_backup_due_after_delete AFTER DELETE ON disposition_history
+BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;"
+        ),
+    );
 
     /// Where in an upgrade (or in the backup before it) a hook runs or a
     /// failure is forced.
