@@ -491,7 +491,7 @@ describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)",
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(
-      "The backup couldn't be upgraded for this version, so nothing was restored. The database is as it was, and a backup of it was saved before the restore began.",
+      "The backup couldn't be upgraded for this version, so nothing was restored. The database is as it was.",
     );
     expect(onOpenChange).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();

@@ -133,6 +133,10 @@ It is shown with the existing restored note, which comes first.
   "The backup couldn't be upgraded for this version, so nothing was restored.
   The database is as it was, and a backup of it was saved before the restore
   began."
+  _Amended 2026-10-17: the text is now "The backup couldn't be upgraded for
+  this version, so nothing was restored. The database is as it was." The
+  copy is upgraded before the current database is saved (`upgrading` comes
+  before `savingCurrent`), so no "before restoring" backup exists yet._
 
 ## 7. Backup lists and the "backup opened directly" note (FR-013)
 

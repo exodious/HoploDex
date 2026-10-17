@@ -234,7 +234,7 @@ function RestoreForm({
         return;
       case "UPGRADE_FAILED":
         setRefusal({
-          text: "The backup couldn't be upgraded for this version, so nothing was restored. The database is as it was, and a backup of it was saved before the restore began.",
+          text: "The backup couldn't be upgraded for this version, so nothing was restored. The database is as it was.",
           changeLocation: false,
         });
         return;

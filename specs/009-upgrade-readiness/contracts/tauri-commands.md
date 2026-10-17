@@ -79,6 +79,8 @@ identifiers are in no IPC type (FR-003).
   (research.md §9). A failure there removes the copy and returns
   `UPGRADE_FAILED` with `backupPath` set to the backup restored from. The
   database is as it was, and the "before restoring" backup has been made.
+  _Amended 2026-10-17: no "before restoring" backup has been made yet, since
+  `upgrading` comes before `savingCurrent` (below); nothing is written._
   `upgrade: true` for a backup in the current layout changes nothing.
 - **Output**: `DatabaseStatus`, whose `notes.upgraded` is set when it was
   upgraded.
