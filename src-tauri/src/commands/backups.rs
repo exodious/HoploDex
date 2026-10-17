@@ -35,9 +35,9 @@ pub mod ops {
     use crate::db::{self, OpenError, cipher, raw_file::RawFile};
     use crate::models::database::{
         BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind, PassphraseChanged,
-        PendingState,
+        PendingState, RestorePhase,
     };
-    use crate::services::backups::{self, BackupFailure, BackupJob, CopyError};
+    use crate::services::backups::{self, BackupFailure, BackupJob, BackupKind, CopyError};
     use crate::services::disk_space;
     use crate::services::file_swap;
     use crate::services::machine_settings::MachineSettings;
@@ -113,7 +113,7 @@ pub mod ops {
     }
 
     /// Reports a restore's progress (003 contracts/tauri-commands.md).
-    fn progress(events: &dyn SessionEvents, phase: &str, processed: u64, total: u64) {
+    fn progress(events: &dyn SessionEvents, phase: RestorePhase, processed: u64, total: u64) {
         events.emit(
             "restore:progress",
             json!({ "phase": phase, "processed": processed, "total": total }),
@@ -244,7 +244,7 @@ pub mod ops {
             &source,
             out,
             &|| operation.is_cancelled(),
-            &mut |done, total| progress(events, "copying", done, total),
+            &mut |done, total| progress(events, RestorePhase::Copying, done, total),
         );
         match copied {
             Ok(()) => {}
@@ -252,7 +252,7 @@ pub mod ops {
             Err(CopyError::Io(err)) => return Err(io_failure(new, &err)),
         }
 
-        progress(events, "checking", 0, 0);
+        progress(events, RestorePhase::Checking, 0, 0);
         let conn = db::check_copy(new, passphrase).map_err(|err| match err {
             OpenError::Damaged => CommandError::database_damaged(false),
             other => other.into(),
@@ -326,7 +326,7 @@ pub mod ops {
         ])?;
         // The bar shows at once (003 SC-005); checking the passphrase derives a
         // key, which takes longer than the 100 ms feedback budget.
-        progress(events, "copying", 0, restored_len);
+        progress(events, RestorePhase::Copying, 0, restored_len);
         check_backup_passphrase(backup, passphrase)?;
 
         // 2. The restored copy, known good before the current database is
@@ -337,7 +337,7 @@ pub mod ops {
         // 3. The "before restoring" backup, whatever the once-a-day limit
         // and even with automatic backups off: it makes the restore
         // undoable (003 FR-028). Without it there is no restore.
-        progress(events, "savingCurrent", 0, current_len);
+        progress(events, RestorePhase::SavingCurrent, 0, current_len);
         let saved = backups::make_backup(
             machine,
             BackupJob {
@@ -348,8 +348,11 @@ pub mod ops {
                 folder: &settings.folder,
                 make_folder: settings.is_default,
                 now: session.clock().now(),
+                kind: BackupKind::Regular,
                 cancel: &|| operation.is_cancelled(),
-                progress: &mut |done, total| progress(events, "savingCurrent", done, total),
+                progress: &mut |done, total| {
+                    progress(events, RestorePhase::SavingCurrent, done, total)
+                },
             },
         );
         match saved {
@@ -366,7 +369,7 @@ pub mod ops {
         }
 
         // 4. Close, replace and reopen with the backup's passphrase.
-        progress(events, "replacing", 0, 0);
+        progress(events, RestorePhase::Replacing, 0, 0);
         if operation.is_cancelled() {
             remove_copy(&new);
             return Err(stopped());
@@ -490,14 +493,14 @@ pub mod ops {
         let database_folder = path.parent().unwrap_or(Path::new("")).to_owned();
         let restored_len = backup_len(backup)?;
         disk_space::check_room_for_copy(restored_len, &database_folder)?;
-        progress(events, "copying", 0, restored_len);
+        progress(events, RestorePhase::Copying, 0, restored_len);
         if check_backup_passphrase(backup, passphrase)? != expected_id {
             return Err(not_its_backup());
         }
         let new = file_swap::new_path(path);
         let made_at = prepare_restored_copy(session, &operation, backup, &new, passphrase)?;
 
-        progress(events, "replacing", 0, 0);
+        progress(events, RestorePhase::Replacing, 0, 0);
         if operation.is_cancelled() {
             remove_copy(&new);
             return Err(stopped());

@@ -29,15 +29,31 @@ compile_error!(
      or `e2e`"
 );
 
-/// Calls the test hooks registered for `Point` on the database in `conn`'s
-/// file, and returns the failure one forces. Expands to nothing without
-/// `upgrade-test-steps`.
+/// Calls the test hooks registered for a `Point` on the database in a
+/// file, and returns the failure one forces (with `?`, so the function's error
+/// type needs a `From<testing::Injected>`). Expands to nothing without
+/// `upgrade-test-steps`, so no call site needs a `cfg` of its own.
+///
+/// - `reach!(conn, Point::AfterStep(n))`: the runner's points, with the
+///   connection that holds the database.
+/// - `reach!(Point::AtStamp, path, Some(conn), if cond)`: `services::backups`'
+///   points, which may have no connection (a hook needs one), only when
+///   `cond` holds (only a backup before an upgrade has them).
 #[cfg(feature = "upgrade-test-steps")]
 macro_rules! reach {
+    (Point::$point:ident, $path:expr, $conn:expr, if $cond:expr) => {
+        if $cond {
+            $crate::db::upgrade::testing::reach(
+                $crate::db::upgrade::testing::Point::$point,
+                $path,
+                $conn,
+            )?;
+        }
+    };
     ($conn:expr, Point::$point:ident $(($n:expr))?) => {
-        testing::reach(
-            testing::Point::$point $(($n))?,
-            Path::new($conn.path().unwrap_or("")),
+        $crate::db::upgrade::testing::reach(
+            $crate::db::upgrade::testing::Point::$point $(($n))?,
+            std::path::Path::new($conn.path().unwrap_or("")),
             Some($conn),
         )?
     };
@@ -47,6 +63,8 @@ macro_rules! reach {
 macro_rules! reach {
     ($($tokens:tt)*) => {};
 }
+pub(crate) use reach;
+
 /// Why a create or an upgrade did not complete. Every variant means the
 /// transaction was rolled back and the file is as it was. None carries a row's
 /// data: a step is named, a link failure is counted, and the table and row id
@@ -107,18 +125,30 @@ impl OpenMarker {
     }
 }
 
+/// The `e2e` build's one test-only step (009 research.md §14): an empty table,
+/// so a database an E2E run creates is newer than the stored 0.1.0 fixture,
+/// which lacks it, and opening the fixture asks the upgrade question. It is
+/// appended after [`MIGRATIONS`] by [`build_steps`] in an `e2e` build only, so
+/// no shipped build has it.
+#[cfg(feature = "e2e")]
+const E2E_STEPS: &[(&str, &str)] =
+    &[("9000_e2e_upgrade_check", "CREATE TABLE e2e_upgrade_check (id INTEGER PRIMARY KEY);")];
+
 /// Every step a build applies to the database at `database_path`, in order:
 /// [`MIGRATIONS`], plus, with `upgrade-test-steps`, the test-only steps
-/// registered for the database's folder. Every caller that creates, opens or
+/// registered for the database's folder, or, in an `e2e` build, [`E2E_STEPS`].
+/// Every caller that creates, opens or
 /// checks a database uses this list, never `MIGRATIONS` itself.
 pub fn build_steps(database_path: &Path) -> Vec<(&'static str, &'static str)> {
-    // `mut` is used only by the builds that add steps (test hooks; 009 T034's E2E step).
-    #[cfg_attr(not(feature = "upgrade-test-steps"), allow(unused_mut))]
+    // `mut` is used only by the builds that add steps: the test hooks, and the `e2e` build's.
+    #[cfg_attr(not(any(feature = "upgrade-test-steps", feature = "e2e")), allow(unused_mut))]
     let mut steps: Vec<(&'static str, &'static str)> = MIGRATIONS.to_vec();
     #[cfg(feature = "upgrade-test-steps")]
     steps.extend(testing::extra_steps(database_path));
     #[cfg(not(feature = "upgrade-test-steps"))]
     let _ = database_path;
+    #[cfg(feature = "e2e")]
+    steps.extend_from_slice(E2E_STEPS);
     steps
 }
 

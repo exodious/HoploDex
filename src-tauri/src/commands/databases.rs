@@ -552,6 +552,11 @@ pub mod ops {
                 open.notes.damaged_file_kept_at = None;
                 Ok(())
             }),
+            // 009 FR-017: once, after an open or a restore that upgraded it.
+            NoteKind::Upgraded => session.inspect_mut(id, |open| {
+                open.notes.upgraded = None;
+                Ok(())
+            }),
         }
     }
 

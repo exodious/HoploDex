@@ -20,8 +20,11 @@ use crate::services::passphrase::Passphrase;
 
 /// Versioned SQL migrations, applied in order. Names are stored in
 /// `schema_migrations`, which is also the database's data-layout version
-/// (003 contracts/database-file.md).
-const MIGRATIONS: &[(&str, &str)] = &[
+/// (003 contracts/database-file.md). Every caller that creates, opens or checks
+/// a database uses [`upgrade::build_steps`], which adds a build's test-only
+/// steps, never this list itself; it is public for the tests that check the two
+/// agree.
+pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_initial", include_str!("migrations/0001_initial.sql")),
     ("0002_fts5", include_str!("migrations/0002_fts5.sql")),
     ("0003_seed_firearm_types", include_str!("migrations/0003_seed_firearm_types.sql")),

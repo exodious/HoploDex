@@ -776,6 +776,7 @@ fn a_backup_left_unfinished_is_swept_at_the_next_launch() {
         database_path: world.path(),
         partial_path: partial.clone(),
         started_at: "2026-09-25T12:30:05Z".into(),
+        before_upgrade: false,
     });
     drop(world.session.take(world.session.current_id()));
 

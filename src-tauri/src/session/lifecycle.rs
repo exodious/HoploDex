@@ -16,7 +16,7 @@ use crate::models::database::{
     BackupFailureReason, BackupOutcome, ChooserNotice, CloseOutcome, CloseReason, Draft,
     OpenedBackupNote, OperationKind,
 };
-use crate::services::backups::{self, BackupFailure, BackupJob, Due};
+use crate::services::backups::{self, BackupFailure, BackupJob, BackupKind, Due};
 use crate::services::file_swap;
 use crate::services::machine_settings::{self, MachineSettings};
 use crate::services::passphrase::Passphrase;
@@ -119,15 +119,16 @@ pub(crate) fn prepare(
 /// are kept apart from the original's, and the stamp is cleared: both are
 /// housekeeping, not a change to back up. Returns the note to show once.
 fn take_backup_stamp(conn: &Connection) -> Result<Option<OpenedBackupNote>, CommandError> {
-    let stamp: Option<(String, Option<String>)> = conn
+    let stamp: Option<(String, Option<String>, Option<String>)> = conn
         .query_row(
-            "SELECT backup_made_at, backup_of_name FROM app_state WHERE backup_made_at IS NOT NULL",
+            "SELECT backup_made_at, backup_of_name, backup_before_upgrade_to FROM app_state
+             WHERE backup_made_at IS NOT NULL",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(CommandError::from_db)?;
-    let Some((made_at, of_name)) = stamp else { return Ok(None) };
+    let Some((made_at, of_name, before_upgrade_to)) = stamp else { return Ok(None) };
     let new_id = db::random_hex(16).map_err(|err| {
         log::error!("could not make a database id: {err}");
         CommandError::new("INTERNAL_ERROR", "An unexpected error occurred.")
@@ -138,7 +139,11 @@ fn take_backup_stamp(conn: &Connection) -> Result<Option<OpenedBackupNote>, Comm
         [new_id],
     )
     .map_err(CommandError::from_db)?;
-    Ok(Some(OpenedBackupNote { backup_of_name: of_name.unwrap_or_default(), made_at }))
+    Ok(Some(OpenedBackupNote {
+        backup_of_name: of_name.unwrap_or_default(),
+        made_at,
+        before_upgrade_to,
+    }))
 }
 
 /// The normal close (003 FR-010, FR-022, FR-025, FR-027, FR-032): announce it,
@@ -637,6 +642,7 @@ fn backup_at_close(
             folder: &folder,
             make_folder: location == "default",
             now,
+            kind: BackupKind::Regular,
             cancel: &|| operation.is_cancelled(),
             progress: &mut progress,
         },

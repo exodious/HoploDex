@@ -174,6 +174,7 @@ fn an_unfinished_backup_survives_a_reload_until_cleared() {
         database_path: "/data/A.hoplodex".into(),
         partial_path: "/data/HoploDex backups/A 2026-09-26 101500 abcd1234.hoplodex.partial".into(),
         started_at: "2026-09-26T10:15:00Z".into(),
+        before_upgrade: false,
     };
 
     settings.set_unfinished_backup(record.clone());

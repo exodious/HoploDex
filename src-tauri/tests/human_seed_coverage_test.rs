@@ -141,7 +141,19 @@ fn the_seed_uses_every_column_of_every_table() {
         .filter(|path| path.extension().is_some_and(|ext| ext == "hoplodex"))
         .collect();
     seeded_backups.sort();
-    assert_eq!(seeded_backups.len(), 2, "yesterday's and today's backups");
+    assert_eq!(
+        seeded_backups.len(),
+        3,
+        "yesterday's and today's backups, and one made a minute later before an upgrade (009 FR-013)"
+    );
+    assert!(
+        seeded_backups
+            .last()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with(&format!(" before {}.hoplodex", hoplodex_lib::APP_VERSION)),
+        "the newest seeded backup is the one made before an upgrade"
+    );
     let conns = [open(&paths.main), open(&paths.shared), open(seeded_backups.last().unwrap())];
 
     let mut unseeded = Vec::new();

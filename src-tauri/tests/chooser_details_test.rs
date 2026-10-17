@@ -86,7 +86,12 @@ impl World {
         let folder = entry.backup_folder.unwrap();
         fs::create_dir_all(&folder).unwrap();
         let when = DateTime::parse_from_rfc3339(local).unwrap();
-        let file = folder.join(backups::backup_file_name("Mine", &when, &id));
+        let file = folder.join(backups::backup_file_name(
+            "Mine",
+            &when,
+            &id,
+            backups::BackupKind::Regular,
+        ));
         fs::write(&file, b"").unwrap();
         file
     }

@@ -359,6 +359,20 @@ fn steps_due_names_the_build_steps_after_the_databases_own() {
     assert_eq!(upgrade::steps_due(&conn, &path).unwrap(), ["9001_test_a", "9002_test_b"]);
 }
 
+/// 009 research.md §14: the `e2e` build's test-only step is behind its feature,
+/// so a build without it (this one) gives a new database exactly `MIGRATIONS`'
+/// steps, and no shipped build carries a step of its own.
+#[test]
+fn a_new_database_gets_exactly_the_migrations() {
+    let names: Vec<&str> = db::MIGRATIONS.iter().map(|(name, _)| *name).collect();
+    let new = TestDb::new();
+
+    let built: Vec<&str> =
+        upgrade::build_steps(&new.path()).into_iter().map(|(name, _)| name).collect();
+    assert_eq!(built, names, "the steps this build applies");
+    assert_eq!(layout(&new.conn).applied, names, "the steps a new database was given");
+}
+
 /// 009 research.md §7: the steps and their rows are one transaction, so a
 /// failure in a later step takes the earlier ones with it (009 spec.md Edge Cases,
 /// several releases skipped).

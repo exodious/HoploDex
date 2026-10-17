@@ -10,6 +10,7 @@ use crate::models::database::OperationKind;
 use crate::models::record::RecordRef;
 use crate::services::disk_space;
 use crate::services::import_reader::limits::ImportLimit;
+use crate::session::SessionId;
 
 /// The single error shape returned by every Tauri IPC command, per
 /// 001 contracts/tauri-commands.md. `code` is a stable, machine-matchable
@@ -133,12 +134,78 @@ impl CommandError {
     }
 
     /// 003 FR-014.
-    pub fn database_newer_version() -> Self {
+    ///
+    /// 009 FR-018: `backup_folder` is the backup folder this computer cached
+    /// for the database, when it has one, so the message can point at a backup
+    /// made before the newer version's upgrade.
+    pub fn database_newer_version(backup_folder: Option<&Path>) -> Self {
         Self::new(
             "DATABASE_NEWER_VERSION",
             "This database was last used by a newer version of HoploDex. Update HoploDex to \
              open it.",
         )
+        .with_details(
+            backup_folder.map(|folder| json!({ "backupFolder": folder.to_string_lossy() })),
+        )
+    }
+
+    /// 009 FR-010: `open_database` found steps due. The database waits,
+    /// keyed and locked with nothing written, under `awaiting_id`; `version`
+    /// is the build's `APP_VERSION` and `backup_folder` the backup location
+    /// resolved on this computer.
+    pub fn upgrade_needed_to_open(
+        awaiting_id: SessionId,
+        version: &str,
+        backup_folder: &Path,
+    ) -> Self {
+        Self::new(
+            "UPGRADE_NEEDED",
+            "This database was made by an earlier version of HoploDex. It needs to be upgraded \
+             before it can be opened.",
+        )
+        .with_details(Some(json!({
+            "awaitingId": awaiting_id,
+            "version": version,
+            "backupFolder": backup_folder.to_string_lossy(),
+        })))
+    }
+
+    /// 009 FR-019: `restore_backup` without `upgrade: true` for a backup that
+    /// needs one; nothing was copied or written.
+    pub fn upgrade_needed_to_restore(version: &str) -> Self {
+        Self::new(
+            "UPGRADE_NEEDED",
+            "This backup was made by an earlier version of HoploDex. It needs to be upgraded \
+             before it can be restored.",
+        )
+        .with_details(Some(json!({ "version": version })))
+    }
+
+    /// 009 FR-015: the upgrade failed (a step, the link check, the commit) and
+    /// was rolled back, so the database is as it was. `backup_path` is the
+    /// backup made before it; for a restore, the backup restored from.
+    pub fn upgrade_failed(backup_path: &Path, at_backup_location: bool) -> Self {
+        Self::new(
+            "UPGRADE_FAILED",
+            "The database couldn't be upgraded. It is as it was before, and the backup made \
+             before the upgrade is kept.",
+        )
+        .with_details(Some(json!({
+            "backupPath": backup_path.to_string_lossy(),
+            "atBackupLocation": at_backup_location,
+        })))
+    }
+
+    /// 009 FR-012: the backup before the upgrade failed while it was being
+    /// written (I/O) in `folder`. Nothing was upgraded, and the database still
+    /// waits.
+    pub fn upgrade_backup_failed(folder: &Path) -> Self {
+        Self::new(
+            "UPGRADE_BACKUP_FAILED",
+            "The backup before the upgrade couldn't be saved, so the database wasn't upgraded. \
+             Nothing has been changed.",
+        )
+        .with_details(Some(json!({ "folder": folder.to_string_lossy() })))
     }
 
     /// 003 FR-032. `since` is ISO-8601 UTC.
@@ -433,7 +500,7 @@ impl From<OpenError> for CommandError {
             OpenError::Unreadable { path } => Self::database_unreadable(&path),
             OpenError::InUse => Self::database_in_use(),
             OpenError::PassphraseIncorrect => Self::passphrase_incorrect(None, None),
-            OpenError::NewerVersion => Self::database_newer_version(),
+            OpenError::NewerVersion => Self::database_newer_version(None),
             OpenError::OpenElsewhere { machine_name, since } => {
                 Self::database_open_elsewhere(&machine_name, &since)
             }
