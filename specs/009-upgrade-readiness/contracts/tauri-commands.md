@@ -43,7 +43,7 @@ identifiers are in no IPC type (FR-003).
 | `UPGRADE_NEEDED` (new) | `restore_backup` without `upgrade: true` for a backup that needs one; nothing copied or written | `{ version: string }` |
 | `UPGRADE_FAILED` (new) | the upgrade transaction failed (a step, the link check, the commit); rolled back, the database as it was | `{ backupPath: string, atBackupLocation: boolean }` |
 | `UPGRADE_BACKUP_FAILED` (new) | the backup before the upgrade failed while it was being written (I/O), at the location or a chosen folder; the database still waits | `{ folder: string }` |
-| `BACKUP_LOCATION_UNAVAILABLE` (amended) | also from `upgrade_database`: the backup location, or the chosen folder, is missing, not writable or full; the database still waits | unchanged: `{ folder, reason }` |
+| `BACKUP_LOCATION_UNAVAILABLE` (amended) | also from `upgrade_database`: the backup location, or the chosen folder, is missing, not writable or full; the database still waits | unchanged: `{ path, reason }` (003's field name; _amended 2026-10-17: was written `folder` here_) |
 | `INSUFFICIENT_SPACE` (amended) | also from `upgrade_database`; the database still waits | unchanged |
 | `OPERATION_STOPPED` (amended) | also `operation: "upgrade"`: the backup before the upgrade was cancelled or stopped by a shutdown; partial removed, the database closed untouched | unchanged shape |
 | `DATABASE_NEWER_VERSION` (amended, FR-018) | unchanged condition | NEW: `{ backupFolder?: string }`, the backup folder this computer cached for the database, when it has one |

@@ -70,6 +70,9 @@ backup somewhere else?" shows:
   - `notWritable`: "HoploDex isn't allowed to save files there";
   - `insufficientSpace`, or `INSUFFICIENT_SPACE`: "there isn't enough free
     space (it needs <required>; <available> is free)";
+    _Amended 2026-10-17: `BACKUP_LOCATION_UNAVAILABLE` carries no sizes, so
+    with `insufficientSpace` the parenthesis is left out; `INSUFFICIENT_SPACE`
+    has them._
   - `UPGRADE_BACKUP_FAILED`: "saving it failed part way".
 - **Buttons**: **Choose a folder…** (primary, focused) and **Cancel**.
 - **Choose a folder…** opens the OS folder picker. Choosing one sends
