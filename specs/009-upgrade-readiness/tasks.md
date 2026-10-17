@@ -203,7 +203,7 @@ These come first because the E2E journey and US4 open the fixture, and the fixtu
 - [X] T059 [P] [US3] In `src/features/databases/DatabaseNotes.tsx` (contracts/ui.md §5, §7): the upgraded note and its two variants, dismissible with `"upgraded"`; the opened-backup note's `beforeUpgradeTo` wording
 - [X] T060 [P] [US3] In `e2e/support/sandbox.ts`, add a helper that copies `src-tauri/tests/fixtures/releases/0.1.0.hoplodex` into a sandbox folder under a given name and returns its path and SHA-256, and an `upgradePhaseSeconds` setting in `applySessionSettings` that sets `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS` as `idleMinuteSeconds` sets its variable, with tests for both in `e2e/support/sandbox.test.ts`
 - [X] T061 [US3] Add `--older` to `scripts/human-testing.sh` and the seed (`src-tauri/examples/human_seed.rs`): copy the stored 0.1.0 database to `.human-testing/Older/Older collection.hoplodex` and add "Older collection" to the sandbox's recent list; document it in the script's header (quickstart.md Setup S1)
-- [ ] T062 [US3] On Linux, run the whole Rust suite, `npm test`, and `npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts` in the dev container; all must pass
+- [X] T062 [US3] On Linux, run the whole Rust suite, `npm test`, and `npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts` in the dev container; all must pass
 
 **Checkpoint**: an older database is upgraded only after the question, with its backup, all or nothing; Story 3's two 0.1.0 parts (FR-013's naming, FR-018's wording) are in.
 

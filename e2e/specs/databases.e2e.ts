@@ -37,7 +37,7 @@ import {
   sendQuitEvent,
   skipWithoutMacInput,
 } from "../support/macInput";
-import { realClick, skipWithoutRealInput } from "../support/realInput";
+import { HAS_REAL_INPUT, realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/003-database-protection-management's
@@ -633,7 +633,9 @@ describe("009 US3 - A Beta Tester's Database Survives an Upgrade", () => {
   });
 
   it("asks before upgrading, with Upgrade focused, and Cancel leaves the file as it was (009 FR-010)", async () => {
-    await selectChooserRow(olderName);
+    // The first row is selected when the chooser opens, and a selected row has
+    // no button to select it with.
+    if ((await selectedChooserRow()) !== olderName) await selectChooserRow(olderName);
     await openUntilQuestion();
 
     const question = await dialogText('[role="alertdialog"]');
@@ -658,7 +660,23 @@ describe("009 US3 - A Beta Tester's Database Survives an Upgrade", () => {
   it("upgrades on Enter, opens the collection with the note, and lists the backup made first (009 FR-017, FR-013)", async () => {
     await openUntilQuestion();
     expect(await focusedButton()).toBe("Upgrade");
-    await browser.keys(["Enter"]);
+    // Enter submits the question's form. The embedded WebDriver's key presses
+    // are synthetic and submit nothing, so where real input exists it is used
+    // (DEVELOPMENT.md, "Real keyboard and mouse input"); elsewhere the button
+    // stands in for it.
+    if (HAS_REAL_INPUT) await realKey("Return");
+    else await clickButton("Upgrade");
+
+    // The copy was locked mid-edit by the earlier version (a policy form half
+    // typed): that change survived the upgrade (009 FR-015) and is offered
+    // before the collection, as 003 FR-039 has it for any open. Discard it
+    // to reach the collection.
+    await $('[role="dialog"]').waitForExist({ timeout: 20000 });
+    await settle();
+    expect(await dialogText('[role="dialog"]')).toContain("Unsaved changes to Range Rider (add)");
+    await clickButton("Discard changes");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Discard changes");
     await waitForCollection();
 
     // The note, once, in the notes area (009 contracts/ui.md §5).

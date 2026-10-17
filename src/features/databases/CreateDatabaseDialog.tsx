@@ -232,29 +232,27 @@ function CreateDatabaseForm({
           />
         </div>
         <div className="hd-form-grid hd-form-grid--2">
-          <div data-field="passphrase">
-            <PassphraseField
-              ref={passphrase}
-              label="Passphrase"
-              autoComplete="new-password"
-              required
-              strength
-              disabled={submitting}
-              error={errors.passphrase ?? checks.errors.passphrase}
-              onInput={() => edited("passphrase")}
-            />
-          </div>
-          <div data-field="confirmation">
-            <PassphraseField
-              ref={confirmation}
-              label="Confirm passphrase"
-              autoComplete="new-password"
-              required
-              disabled={submitting}
-              error={errors.confirmation ?? checks.errors.confirmation}
-              onInput={() => edited("confirmation")}
-            />
-          </div>
+          <PassphraseField
+            ref={passphrase}
+            dataField="passphrase"
+            label="Passphrase"
+            autoComplete="new-password"
+            required
+            strength
+            disabled={submitting}
+            error={errors.passphrase ?? checks.errors.passphrase}
+            onInput={() => edited("passphrase")}
+          />
+          <PassphraseField
+            ref={confirmation}
+            dataField="confirmation"
+            label="Confirm passphrase"
+            autoComplete="new-password"
+            required
+            disabled={submitting}
+            error={errors.confirmation ?? checks.errors.confirmation}
+            onInput={() => edited("confirmation")}
+          />
         </div>
         <section className="hd-privacy-note" role="note" aria-labelledby="create-db-backups">
           <Icon name="archive" size={16} />

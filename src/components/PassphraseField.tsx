@@ -27,6 +27,11 @@ export interface PassphraseFieldProps {
   required?: boolean;
   id?: string;
   fieldClassName?: string;
+  /** The form's name for this field, set as `data-field` on the field's own
+   * wrapper so that a refused field takes the focus (`lib/formFocus.ts`).
+   * A wrapper of the form's own would sit between the field and a two-column
+   * grid, and the strength hint's grid placement needs it as the grid's child. */
+  dataField?: string;
   /** Called on each keystroke, without the value, e.g. to clear an error
    * or check the field again. */
   onInput?: () => void;
@@ -53,6 +58,7 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
       required,
       id,
       fieldClassName,
+      dataField,
       onInput,
     },
     ref,
@@ -81,6 +87,7 @@ export const PassphraseField = forwardRef<PassphraseFieldHandle, PassphraseField
 
     return (
       <div
+        data-field={dataField}
         className={["hd-passphrase", strength && "hd-passphrase--strength", fieldClassName]
           .filter(Boolean)
           .join(" ")}
