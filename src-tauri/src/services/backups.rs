@@ -360,11 +360,15 @@ pub fn copy_chunked(
 /// SQLCipher use the main database's key (the copy shares its salt, so it
 /// opens), the copy gets its open marker cleared, its pending changes
 /// removed and the backup stamp set, which for a backup made before an
-/// upgrade also says the version (009 research.md §6). Nothing is waiting to
+/// upgrade also says the version (009 research.md §6). The copy carries
+/// `database_id`, which is the database's own except for a backup opened
+/// directly and about to be upgraded: its backup before the upgrade belongs to
+/// the database the file becomes (009 research.md §8). Nothing is waiting to
 /// be backed up in it: its content is a backup.
 pub fn stamp_backup(
     conn: &Connection,
     partial: &Path,
+    database_id: &str,
     name: &str,
     now: &DateTime<FixedOffset>,
     kind: BackupKind,
@@ -375,8 +379,8 @@ pub fn stamp_backup(
             "UPDATE backup.app_state
              SET open_machine_id = NULL, open_machine_name = NULL, open_since = NULL,
                  changes_waiting = 0, backup_made_at = ?1, backup_of_name = ?2,
-                 backup_before_upgrade_to = ?3",
-            rusqlite::params![utc_text(now), name, kind.before_upgrade_to()],
+                 backup_before_upgrade_to = ?3, database_id = ?4",
+            rusqlite::params![utc_text(now), name, kind.before_upgrade_to(), database_id],
         )?;
         conn.execute("DELETE FROM backup.pending_changes", [])?;
         conn.execute_batch("COMMIT")
@@ -674,7 +678,7 @@ fn write_backup(
     copy_chunked(source, out, job.cancel, job.progress)?;
     reach!(Point::DuringCopy, job.database_path, Some(job.conn), if job.kind.is_before_upgrade());
     reach!(Point::AtStamp, job.database_path, Some(job.conn), if job.kind.is_before_upgrade());
-    stamp_backup(job.conn, partial, job.name, &job.now, job.kind)
+    stamp_backup(job.conn, partial, job.database_id, job.name, &job.now, job.kind)
         .map_err(|err| CopyError::Io(sqlite_as_io(err)))?;
     if (job.cancel)() {
         return Err(CopyError::Stopped);
