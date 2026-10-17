@@ -701,9 +701,13 @@ pub fn seed(conn: &Connection, extra: usize) {
     must(
         conn.execute(
             "INSERT INTO document_attachments
-                (firearm_id, file_bytes, original_filename, mime_type, created_at)
-             VALUES (?1, ?2, 'Old scan.jpg', 'image/jpeg', datetime('now'))",
-            rusqlite::params![glock, gradient_image(600, 400, 40, true)],
+                (uid, firearm_id, file_bytes, original_filename, mime_type, created_at)
+             VALUES (?3, ?1, ?2, 'Old scan.jpg', 'image/jpeg', datetime('now'))",
+            rusqlite::params![
+                glock,
+                gradient_image(600, 400, 40, true),
+                hoplodex_lib::services::record_id::generate()
+            ],
         ),
         "a pre-007 document of another type",
     );

@@ -1,20 +1,40 @@
 //! The record identifier on firearms (006 FR-019,
 //! research.md §6): a random version 4 UUID, set once at creation, never
 //! changed, and never sent over IPC. Real SQLCipher databases, no mocks.
-//! The accessory half is 006 tasks.md T016 (006 FR-019, FR-022).
+//! The accessory half is 006 tasks.md T016 (006 FR-019, FR-022). The last
+//! section is 009 T012: the same identifier on insurance policies, photos and
+//! documents (009 FR-001 to FR-005).
 
 use crate::support;
 
 use std::collections::HashSet;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use hoplodex_lib::commands::accessories::ops as accessory_ops;
+use hoplodex_lib::commands::backups::ops as backups_ops;
+use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::{DisposeInput, HistoryChoice, ReverseDispositionInput, ops};
+use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::insurance::ops as insurance;
+use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::models::accessory::{Accessory, AccessoryInput};
+use hoplodex_lib::models::database::CloseReason;
+use hoplodex_lib::models::document_attachment::DocumentSummary;
 use hoplodex_lib::models::firearm::{DispositionType, Firearm};
+use hoplodex_lib::models::photo::PhotoSummary;
+use hoplodex_lib::models::record::RecordRef;
+use hoplodex_lib::services::backups;
+use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::preview::availability::PdfAvailability;
 use hoplodex_lib::services::record_id;
+use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
+use hoplodex_lib::session::scoped::Target;
+use hoplodex_lib::session::{Session, lifecycle};
 use rusqlite::Connection;
-use support::TestDb;
+use support::{ManualClock, TestDb, passphrase, peek, sample_png_bytes, test_session_at};
+use tempfile::TempDir;
 
 /// The shape 006 FR-019 gives, checked without a regex dependency.
 fn is_v4_uuid(text: &str) -> bool {
@@ -406,4 +426,529 @@ fn a_raw_insert_of_a_fresh_identifier_into_either_table_still_works() {
     let db = TestDb::new();
     assert_eq!(insert_accessory_row(&db.conn, &support::uid()).unwrap(), 1);
     assert_eq!(insert_firearm_row(&db.conn, &support::uid()).unwrap(), 1);
+}
+
+// --- On policies, photos and documents (009 T012) ---------------------------------------------
+
+const PDF_BYTES: &[u8] = b"%PDF-1.4\n% a tiny document\n%%EOF\n";
+const START: &str = "2026-09-25T14:30:05+02:00";
+const NEW_PASSPHRASE: &str = "a much longer passphrase of several words";
+
+/// The three tables 009 FR-001 gives an identifier.
+const NEW_KINDS: [&str; 3] = ["insurance_policies", "photos", "document_attachments"];
+
+/// What is not a valid identifier, for a raw insert: uppercase, a wrong version
+/// digit, a wrong variant digit, 35 characters (009 FR-001, US1-3).
+const MALFORMED: [&str; 4] = [
+    "3F2A9C1E-5B7D-4E8A-9C0F-1A2B3C4D5E6F",
+    "3f2a9c1e-5b7d-1e8a-9c0f-1a2b3c4d5e6f",
+    "3f2a9c1e-5b7d-4e8a-7c0f-1a2b3c4d5e6f",
+    "3f2a9c1e-5b7d-4e8a-9c0f-1a2b3c4d5e6",
+];
+
+/// `(table, id, uid)` of every policy, photo and document, by table then id.
+fn identifiers(conn: &Connection) -> Vec<(String, i64, String)> {
+    let mut all = Vec::new();
+    for table in NEW_KINDS {
+        let mut stmt = conn.prepare(&format!("SELECT id, uid FROM {table} ORDER BY id")).unwrap();
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)));
+        for row in rows.unwrap() {
+            let (id, uid) = row.unwrap();
+            all.push((table.to_owned(), id, uid));
+        }
+    }
+    all
+}
+
+fn add_photo(conn: &Connection, owner: RecordRef) -> PhotoSummary {
+    photo_ops::add_photo(conn, owner, &sample_png_bytes(), "front.png", "image/png").unwrap().into()
+}
+
+fn add_document(
+    conn: &Connection,
+    owner: RecordRef,
+) -> hoplodex_lib::models::document_attachment::DocumentAttachment {
+    document_ops::add_document(conn, owner, PDF_BYTES, "bill.pdf").unwrap()
+}
+
+/// A raw insert into `table`, owned by firearm 1 where it has an owner, with
+/// `uid` left out when it is `None`.
+fn insert_raw(conn: &Connection, table: &str, uid: Option<&str>) -> rusqlite::Result<usize> {
+    let (columns, values) = match table {
+        "insurance_policies" => (
+            "name, policy_number, insurance_company, effective_start_date, effective_end_date, \
+             created_at, updated_at",
+            "'P', 'P-1', 'Acme', '2026-01-01', '2027-01-01', 'now', 'now'",
+        ),
+        "photos" => (
+            "firearm_id, original_bytes, original_filename, mime_type, thumbnail_bytes, \
+             sort_order, created_at",
+            "1, x'00', 'a.png', 'image/png', x'00', 0, 'now'",
+        ),
+        _ => (
+            "firearm_id, file_bytes, original_filename, mime_type, created_at",
+            "1, x'00', 'a.pdf', 'application/pdf', 'now'",
+        ),
+    };
+    match uid {
+        Some(uid) => conn
+            .execute(&format!("INSERT INTO {table} (uid, {columns}) VALUES (?1, {values})"), [uid]),
+        None => conn.execute(&format!("INSERT INTO {table} ({columns}) VALUES ({values})"), []),
+    }
+}
+
+/// A database holding a firearm (id 1) so a raw photo or document insert has an
+/// owner.
+fn db_with_owner() -> (TestDb, Firearm) {
+    let db = TestDb::new();
+    let firearm = create(&db, "A1");
+    (db, firearm)
+}
+
+fn count(conn: &Connection, table: &str) -> i64 {
+    conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+}
+
+// 009 US1-1, 009 FR-001, 009 SC-001
+#[test]
+fn two_policies_with_the_same_insurer_and_dates_get_distinct_identifiers() {
+    let db = TestDb::new();
+    let first = insurance::create_policy(
+        &db.conn,
+        &support::policy("Home", "2025-01-01", "2030-01-01", None),
+    )
+    .unwrap();
+    let second = insurance::create_policy(
+        &db.conn,
+        &support::policy("Safe", "2025-01-01", "2030-01-01", None),
+    )
+    .unwrap();
+
+    let stored: Vec<String> = identifiers(&db.conn).into_iter().map(|(_, _, uid)| uid).collect();
+    assert_eq!(stored.len(), 2);
+    assert_ne!(stored[0], stored[1]);
+    assert!(stored.iter().all(|uid| is_v4_uuid(uid) && record_id::parse(uid).is_some()));
+    assert_eq!(first.name, "Home");
+    assert_eq!(second.name, "Safe");
+}
+
+// 009 US1-1, 009 FR-001, 009 SC-001
+#[test]
+fn every_photo_and_document_made_through_ops_has_a_stored_identifier() {
+    let (db, firearm) = db_with_owner();
+    let accessory = create_accessory(&db);
+    for owner in [RecordRef::Firearm(firearm.id), RecordRef::Accessory(accessory.id)] {
+        add_photo(&db.conn, owner);
+        add_photo(&db.conn, owner);
+        add_document(&db.conn, owner);
+        add_document(&db.conn, owner);
+    }
+
+    let stored = identifiers(&db.conn);
+    let all: HashSet<&String> = stored.iter().map(|(_, _, uid)| uid).collect();
+    assert_eq!(stored.len(), 8);
+    assert_eq!(all.len(), 8, "no two records share one");
+    for (table, id, uid) in &stored {
+        assert_eq!(record_id::parse(uid).as_deref(), Some(uid.as_str()), "{table} {id}");
+    }
+}
+
+// 009 US1-3, 009 FR-001
+#[test]
+fn the_database_refuses_a_missing_malformed_or_used_identifier_on_each_new_kind() {
+    for table in NEW_KINDS {
+        let (db, _) = db_with_owner();
+
+        assert!(insert_raw(&db.conn, table, None).is_err(), "{table}: a missing uid");
+        for bad in MALFORMED {
+            assert!(insert_raw(&db.conn, table, Some(bad)).is_err(), "{table}: {bad}");
+        }
+        assert_eq!(count(&db.conn, table), 0, "{table}: nothing was stored");
+
+        assert_eq!(insert_raw(&db.conn, table, Some(VALID)).unwrap(), 1, "{table}");
+        assert!(insert_raw(&db.conn, table, Some(VALID)).is_err(), "{table}: a used uid");
+        assert_eq!(count(&db.conn, table), 1, "{table}");
+    }
+}
+
+// 009 US1-2, 009 FR-002
+#[test]
+fn the_database_refuses_to_change_an_identifier_on_each_new_kind() {
+    for table in NEW_KINDS {
+        let (db, _) = db_with_owner();
+        let fresh = support::uid();
+        insert_raw(&db.conn, table, Some(&fresh)).unwrap();
+
+        let err = db
+            .conn
+            .execute(&format!("UPDATE {table} SET uid = ?1"), [VALID])
+            .expect_err("the identifier is fixed");
+
+        assert!(err.to_string().contains("a record identifier never changes"), "{table}: {err}");
+        let kept: String =
+            db.conn.query_row(&format!("SELECT uid FROM {table}"), [], |r| r.get(0)).unwrap();
+        assert_eq!(kept, fresh, "{table}");
+    }
+}
+
+// 009 US1-2, 009 FR-002
+#[test]
+fn editing_a_policy_a_photo_a_document_and_their_owners_leaves_every_identifier_unchanged() {
+    let db = TestDb::new();
+    let firearm = create(&db, "A1");
+    let accessory = create_accessory(&db);
+    let policy = insurance::create_policy(
+        &db.conn,
+        &support::policy("Home", "2025-01-01", "2030-01-01", None),
+    )
+    .unwrap();
+    for owner in [RecordRef::Firearm(firearm.id), RecordRef::Accessory(accessory.id)] {
+        add_photo(&db.conn, owner);
+        add_photo(&db.conn, owner);
+        add_document(&db.conn, owner);
+    }
+    let before = identifiers(&db.conn);
+    assert_eq!(before.len(), 7);
+
+    let mut edited = support::policy("Home", "2025-01-01", "2030-01-01", Some(5000));
+    edited.notes = Some("Edited".into());
+    insurance::update_policy(&db.conn, policy.id, &edited).unwrap();
+    // A photo's caption is its file name, a document's details its name and
+    // type, and a reorder is `sort_order`; none has an op, so by SQL, as the
+    // statements they would run.
+    let photos = photo_ops::list_photos(&db.conn, RecordRef::Firearm(firearm.id)).unwrap();
+    photo_ops::set_thumbnail_photo(&db.conn, RecordRef::Firearm(firearm.id), photos[1].id).unwrap();
+    db.conn
+        .execute_batch(
+            "UPDATE photos SET original_filename = 'renamed.png', sort_order = 9 - sort_order;
+             UPDATE document_attachments SET original_filename = 'renamed.pdf', created_at = 'later';",
+        )
+        .unwrap();
+    let mut changed = support::firearm("Glock", "19", "A1");
+    changed.notes = Some("Edited".into());
+    ops::update_firearm(&db.conn, firearm.id, &changed, false).unwrap();
+    let mut changed_accessory = plain_accessory();
+    changed_accessory.notes = Some("Edited".into());
+    accessory_ops::update_accessory(&db.conn, accessory.id, &changed_accessory).unwrap();
+    ops::dispose_firearm(&db.conn, firearm.id, &dispose_input()).unwrap();
+    accessory_ops::dispose_accessory(
+        &db.conn,
+        accessory.id,
+        &serde_json::from_value(serde_json::json!({
+            "dispositionType": "sold",
+            "recipient": "Jane Doe",
+            "date": "2025-06-15",
+            "price": 40000,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(identifiers(&db.conn), before, "disposed of");
+
+    ops::reverse_disposition(
+        &db.conn,
+        firearm.id,
+        &ReverseDispositionInput {
+            history: HistoryChoice::Keep,
+            nickname: None,
+            confirmed_warnings: false,
+        },
+    )
+    .unwrap();
+    accessory_ops::reverse_accessory_disposition(
+        &db.conn,
+        accessory.id,
+        &serde_json::from_value(serde_json::json!({ "history": "keep" })).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(identifiers(&db.conn), before, "reversed");
+}
+
+/// "Mine", with its backups folder, a manual clock and machine settings, all in
+/// temp directories (the shape `backup_test` and `passphrase_change_test` use).
+struct World {
+    dir: TempDir,
+    _config: TempDir,
+    scratch: TempDir,
+    machine: MachineSettings,
+    session: Session,
+    clock: Arc<ManualClock>,
+}
+
+impl World {
+    fn new() -> Self {
+        let config = TempDir::new().unwrap();
+        let clock = ManualClock::at(START);
+        let (session, _events) =
+            test_session_at(&config.path().join("opened-documents"), clock.clone());
+        let world = Self {
+            dir: TempDir::new().unwrap(),
+            scratch: TempDir::new().unwrap(),
+            machine: MachineSettings::load(config.path()).unwrap(),
+            _config: config,
+            session,
+            clock,
+        };
+        lifecycle::create(&world.session, &world.machine, &world.path(), &passphrase()).unwrap();
+        world
+            .session
+            .write(world.session.current_id(), |conn| {
+                let firearm = ops::create_firearm(
+                    conn,
+                    &support::firearm("Colt", "Python", "A1"),
+                    false,
+                    None,
+                )?;
+                insurance::create_policy(
+                    conn,
+                    &support::policy("Home", "2025-01-01", "2030-01-01", None),
+                )?;
+                add_photo(conn, RecordRef::Firearm(firearm.id));
+                add_document(conn, RecordRef::Firearm(firearm.id));
+                Ok(())
+            })
+            .unwrap();
+        world
+    }
+
+    fn path(&self) -> PathBuf {
+        self.dir.path().join("Mine.hoplodex")
+    }
+
+    fn identifiers(&self) -> Vec<(String, i64, String)> {
+        self.session.read(self.session.current_id(), |conn| Ok(identifiers(conn))).unwrap()
+    }
+
+    fn database_id(&self) -> String {
+        self.session
+            .inspect(self.session.current_id(), |open| Ok(open.database_id.clone()))
+            .unwrap()
+    }
+}
+
+// 009 US1-2, 009 FR-002, 009 SC-002
+#[test]
+fn a_backup_a_restore_and_a_passphrase_change_keep_every_identifier() {
+    let world = World::new();
+    let before = world.identifiers();
+    assert_eq!(before.len(), 3);
+
+    // Close makes the backup; its rows are the same.
+    lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
+    let folder = world.dir.path().join("HoploDex backups");
+    let backup = backups::list(&folder, &{
+        lifecycle::open(&world.session, &world.machine, &world.path(), &passphrase(), false)
+            .unwrap();
+        world.database_id()
+    })
+    .unwrap()
+    .remove(0);
+    assert_eq!(identifiers(&peek(std::path::Path::new(&backup.path))), before, "the backup");
+
+    // Change the collection, restore the backup: the same rows come back.
+    world
+        .session
+        .write(world.session.current_id(), |conn| {
+            add_photo(conn, RecordRef::Firearm(1));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(world.identifiers().len(), 4);
+    world.clock.advance(chrono::Duration::hours(1));
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &backup.path,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
+    assert_eq!(world.identifiers(), before, "restored");
+
+    backups_ops::change_passphrase(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        world.scratch.path(),
+        &passphrase(),
+        &Passphrase::from_input(NEW_PASSPHRASE.to_owned()),
+    )
+    .unwrap();
+    assert_eq!(world.identifiers(), before, "after a passphrase change");
+}
+
+// 009 US1-4, 009 SC-001
+#[test]
+fn a_new_record_after_deleting_the_newest_gets_a_new_identifier() {
+    let (db, firearm) = db_with_owner();
+    let owner = RecordRef::Firearm(firearm.id);
+    let policy = |name: &str| {
+        insurance::create_policy(&db.conn, &support::policy(name, "2025-01-01", "2030-01-01", None))
+            .unwrap()
+    };
+    policy("First");
+    let doomed_policy = policy("Second");
+    add_photo(&db.conn, owner);
+    let doomed_photo = add_photo(&db.conn, owner);
+    add_document(&db.conn, owner);
+    let doomed_document = add_document(&db.conn, owner);
+    let before = identifiers(&db.conn);
+    let uid_of_row = |table: &str, id: i64| {
+        before.iter().find(|(t, i, _)| t == table && *i == id).unwrap().2.clone()
+    };
+    let doomed = [
+        ("insurance_policies", doomed_policy.id),
+        ("photos", doomed_photo.id),
+        ("document_attachments", doomed_document.id),
+    ];
+
+    insurance::delete_policy(&db.conn, doomed_policy.id, true, None).unwrap();
+    photo_ops::delete_photo(&db.conn, doomed_photo.id, true).unwrap();
+    document_ops::delete_document(&db.conn, doomed_document.id, true).unwrap();
+    policy("Third");
+    add_photo(&db.conn, owner);
+    add_document(&db.conn, owner);
+
+    let after = identifiers(&db.conn);
+    for (table, id) in doomed {
+        let reused = after.iter().find(|(t, i, _)| t == table && *i == id).unwrap();
+        assert_ne!(reused.2, uid_of_row(table, id), "{table}: the id repeats, the uid does not");
+        assert!(before.iter().all(|(_, _, uid)| *uid != reused.2), "{table}: matches no earlier");
+    }
+}
+
+// 009 FR-005
+#[test]
+fn a_photo_or_document_may_share_an_identifier_with_a_firearm() {
+    for table in ["photos", "document_attachments"] {
+        let (db, firearm) = db_with_owner();
+        insert_raw(&db.conn, table, Some(&firearm.uid))
+            .unwrap_or_else(|e| panic!("{table}: no cross-kind trigger: {e}"));
+        assert_eq!(count(&db.conn, table), 1, "{table}");
+    }
+}
+
+// 009 FR-004
+#[test]
+fn history_and_the_built_in_lists_have_no_identifier_column() {
+    let db = TestDb::new();
+    for table in [
+        "disposition_history",
+        "firearm_types",
+        "action_types",
+        "registration_classes",
+        "accessory_kinds",
+    ] {
+        let mut stmt = db.conn.prepare(&format!("PRAGMA table_info({table})")).unwrap();
+        let names: Vec<String> =
+            stmt.query_map([], |r| r.get(1)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert!(!names.is_empty(), "{table} exists");
+        assert!(!names.iter().any(|n| n == "uid"), "{table} has a uid column");
+    }
+}
+
+// 009 FR-003
+#[test]
+fn no_identifier_of_a_policy_photo_or_document_is_serialized_or_exported() {
+    let (db, firearm) = db_with_owner();
+    let owner = RecordRef::Firearm(firearm.id);
+    let policy = insurance::create_policy(
+        &db.conn,
+        &support::policy("Home", "2025-01-01", "2030-01-01", None),
+    )
+    .unwrap();
+    let photo = add_photo(&db.conn, owner);
+    let document = add_document(&db.conn, owner);
+    let pdf = PdfAvailability::Available;
+
+    let mut returned = vec![
+        ("create_policy", serde_json::to_value(&policy).unwrap()),
+        (
+            "get_policy",
+            serde_json::to_value(insurance::get_policy(&db.conn, policy.id).unwrap()).unwrap(),
+        ),
+        (
+            "list_policies",
+            serde_json::to_value(insurance::list_policies(&db.conn).unwrap()).unwrap(),
+        ),
+        (
+            "list_policy_views",
+            serde_json::to_value(insurance::list_policy_views(&db.conn).unwrap()).unwrap(),
+        ),
+        ("add_photo", serde_json::to_value(&photo).unwrap()),
+        (
+            "get_photo",
+            serde_json::to_value(PhotoSummary::from(
+                photo_ops::get_photo(&db.conn, photo.id).unwrap(),
+            ))
+            .unwrap(),
+        ),
+        (
+            "list_photos",
+            serde_json::to_value(
+                photo_ops::list_photos(&db.conn, owner)
+                    .unwrap()
+                    .into_iter()
+                    .map(PhotoSummary::from)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap(),
+        ),
+        (
+            "add_document",
+            serde_json::to_value(DocumentSummary::new(document.clone(), &pdf)).unwrap(),
+        ),
+        (
+            "list_documents",
+            serde_json::to_value(
+                document_ops::list_documents(&db.conn, owner)
+                    .unwrap()
+                    .into_iter()
+                    .map(|d| DocumentSummary::new(d, &pdf))
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap(),
+        ),
+    ];
+    let dest = TempDir::new().unwrap();
+    let records = import_export_ops::export_records(&db.conn, "all", None).unwrap();
+    let exported = import_export_ops::export_collection(
+        &db.conn,
+        dest.path(),
+        "export",
+        SpreadsheetFormat::Csv,
+        &records,
+        &mut |_, _| {},
+    )
+    .unwrap();
+    returned.push(("ExportResult", serde_json::to_value(&exported).unwrap()));
+
+    let uids: Vec<String> = identifiers(&db.conn).into_iter().map(|(_, _, uid)| uid).collect();
+    assert_eq!(uids.len(), 3);
+    for (name, value) in &returned {
+        let text = value.to_string();
+        assert!(!text.contains("\"uid\""), "{name} has a uid key");
+        for uid in &uids {
+            assert!(!text.contains(uid.as_str()), "{name} carries an identifier");
+        }
+    }
+    // Every file the export wrote: the spreadsheet and the photos.
+    let mut files = vec![exported.spreadsheet_path.clone()];
+    files.extend(
+        std::fs::read_dir(&exported.photos_folder_path).unwrap().map(|e| e.unwrap().path()),
+    );
+    for file in files {
+        let bytes = std::fs::read(&file).unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        for uid in &uids {
+            assert!(!text.contains(uid.as_str()), "{} carries an identifier", file.display());
+        }
+    }
 }

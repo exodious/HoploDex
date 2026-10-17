@@ -288,8 +288,9 @@ pub fn csv_file(rows: &[String]) -> String {
     lines.join("\n") + "\n"
 }
 
-/// A valid record identifier (006 FR-019), for tests that insert a firearm with
-/// raw SQL.
+/// A new valid record identifier (006 FR-019, 009 FR-001), for tests that
+/// insert a record (a firearm, an accessory, a policy, a photo or a document)
+/// with raw SQL.
 #[allow(dead_code)]
 pub fn uid() -> String {
     hoplodex_lib::services::record_id::generate()

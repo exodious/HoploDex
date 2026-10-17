@@ -380,9 +380,9 @@ fn a_document_row_needs_exactly_one_owner() {
     let insert = |firearm_id: Option<i64>, accessory_id: Option<i64>| {
         db.conn.execute(
             "INSERT INTO document_attachments (
-                firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at
-            ) VALUES (?1, ?2, x'00', 'd.pdf', 'application/pdf', datetime('now'))",
-            rusqlite::params![firearm_id, accessory_id],
+                uid, firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at
+            ) VALUES (?3, ?1, ?2, x'00', 'd.pdf', 'application/pdf', datetime('now'))",
+            rusqlite::params![firearm_id, accessory_id, support::uid()],
         )
     };
 
@@ -465,9 +465,16 @@ fn insert_raw_document(
     db.conn
         .execute(
             "INSERT INTO document_attachments
-                (firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))",
-            rusqlite::params![firearm_id, accessory_id, b"raw".to_vec(), name, mime_type],
+                (uid, firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
+             VALUES (?6, ?1, ?2, ?3, ?4, ?5, datetime('now'))",
+            rusqlite::params![
+                firearm_id,
+                accessory_id,
+                b"raw".to_vec(),
+                name,
+                mime_type,
+                support::uid()
+            ],
         )
         .unwrap();
     document_ops::get_document(&db.conn, db.conn.last_insert_rowid()).unwrap()

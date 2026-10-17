@@ -1412,8 +1412,8 @@ fn seed_30k_documents(conn: &Connection) {
         let mut stmt = tx
             .prepare(
                 "INSERT INTO document_attachments
-                    (firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
-                 VALUES (?1, ?2, ?3, ?4, 'application/pdf', datetime('now'))",
+                    (uid, firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
+                 VALUES (?5, ?1, ?2, ?3, ?4, 'application/pdf', datetime('now'))",
             )
             .unwrap();
         for i in 0..DOCUMENT_COUNT {
@@ -1432,7 +1432,8 @@ fn seed_30k_documents(conn: &Connection) {
                 (!on_accessory).then_some(owner),
                 on_accessory.then_some(owner),
                 bytes,
-                name
+                name,
+                support::uid()
             ])
             .unwrap();
         }

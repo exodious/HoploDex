@@ -107,7 +107,7 @@ const STEPS: &[(&str, &str)] = &[
     ("accessory_kinds update", "UPDATE accessory_kinds SET name = 'Other test kind' WHERE id = 99"),
     (
         "insurance_policies insert",
-        "INSERT INTO insurance_policies (id, name, policy_number, insurance_company, effective_start_date, effective_end_date, created_at, updated_at) VALUES (1, 'P', 'P-1', 'Acme', '2026-01-01', '2027-01-01', 'now', 'now')",
+        "INSERT INTO insurance_policies (id, uid, name, policy_number, insurance_company, effective_start_date, effective_end_date, created_at, updated_at) VALUES (1, '22222222-2222-4222-8222-222222222222', 'P', 'P-1', 'Acme', '2026-01-01', '2027-01-01', 'now', 'now')",
     ),
     ("insurance_policies update", "UPDATE insurance_policies SET notes = 'n' WHERE id = 1"),
     (
@@ -117,13 +117,13 @@ const STEPS: &[(&str, &str)] = &[
     ("firearms update", "UPDATE firearms SET notes = 'n' WHERE id = 1"),
     (
         "photos insert",
-        "INSERT INTO photos (id, firearm_id, original_bytes, original_filename, mime_type, thumbnail_bytes, sort_order, created_at) VALUES (1, 1, x'00', 'a.png', 'image/png', x'00', 0, 'now')",
+        "INSERT INTO photos (id, uid, firearm_id, original_bytes, original_filename, mime_type, thumbnail_bytes, sort_order, created_at) VALUES (1, '33333333-3333-4333-8333-333333333333', 1, x'00', 'a.png', 'image/png', x'00', 0, 'now')",
     ),
     ("photos update", "UPDATE photos SET sort_order = 1 WHERE id = 1"),
     ("photos delete", "DELETE FROM photos WHERE id = 1"),
     (
         "document_attachments insert",
-        "INSERT INTO document_attachments (id, firearm_id, file_bytes, original_filename, mime_type, created_at) VALUES (1, 1, x'00', 'a.pdf', 'application/pdf', 'now')",
+        "INSERT INTO document_attachments (id, uid, firearm_id, file_bytes, original_filename, mime_type, created_at) VALUES (1, '44444444-4444-4444-8444-444444444444', 1, x'00', 'a.pdf', 'application/pdf', 'now')",
     ),
     (
         "document_attachments update",

@@ -882,10 +882,16 @@ fn insert_photo_row(db: &TestDb, owner: RecordRef, stored_name: &str) {
     let (firearm_id, accessory_id) = owner.owner_columns();
     db.conn
         .execute(
-            "INSERT INTO photos (firearm_id, accessory_id, original_bytes, original_filename,
+            "INSERT INTO photos (uid, firearm_id, accessory_id, original_bytes, original_filename,
                 mime_type, thumbnail_bytes, sort_order, created_at)
-             VALUES (?1, ?2, ?3, ?4, 'image/png', ?3, 0, datetime('now'))",
-            rusqlite::params![firearm_id, accessory_id, sample_png_bytes(), stored_name],
+             VALUES (?5, ?1, ?2, ?3, ?4, 'image/png', ?3, 0, datetime('now'))",
+            rusqlite::params![
+                firearm_id,
+                accessory_id,
+                sample_png_bytes(),
+                stored_name,
+                support::uid()
+            ],
         )
         .unwrap();
 }

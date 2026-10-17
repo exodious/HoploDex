@@ -434,10 +434,10 @@ fn make_large(world: &World) {
         .write(world.session.current_id(), |conn| {
             conn.execute(
                 "INSERT INTO document_attachments
-                     (firearm_id, file_bytes, original_filename, mime_type, created_at)
-                 VALUES (1, randomblob(48 * 1024 * 1024), 'large.pdf', 'application/pdf',
+                     (uid, firearm_id, file_bytes, original_filename, mime_type, created_at)
+                 VALUES (?1, 1, randomblob(48 * 1024 * 1024), 'large.pdf', 'application/pdf',
                          datetime('now'))",
-                [],
+                [support::uid()],
             )
             .map(|_| ())
             .map_err(CommandError::from_db)

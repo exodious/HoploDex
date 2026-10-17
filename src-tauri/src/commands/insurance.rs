@@ -197,14 +197,16 @@ pub mod ops {
         check_blanket_overlap(conn, None, input)?;
         conn.execute(
             "INSERT INTO insurance_policies (
-                name, policy_number, insurance_company, company_contact, agent_name, agent_contact,
+                uid, name, policy_number, insurance_company, company_contact, agent_name, agent_contact,
                 notes, blanket_coverage_limit, effective_start_date, effective_end_date, created_at, updated_at
             ) VALUES (
-                :name, :policy_number, :insurance_company, :company_contact, :agent_name, :agent_contact,
+                :uid, :name, :policy_number, :insurance_company, :company_contact, :agent_name, :agent_contact,
                 :notes, :blanket_coverage_limit, :effective_start_date, :effective_end_date,
                 datetime('now'), datetime('now')
             )",
             named_params! {
+                // 009 FR-001: the record's identifier, never sent over IPC.
+                ":uid": crate::services::record_id::generate(),
                 ":name": input.name,
                 ":policy_number": input.policy_number,
                 ":insurance_company": input.insurance_company,

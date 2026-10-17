@@ -545,11 +545,11 @@ fn the_database_itself_refuses_a_clashing_policy_name() {
         .conn
         .execute(
             "INSERT INTO insurance_policies (
-                name, policy_number, insurance_company, effective_start_date,
+                uid, name, policy_number, insurance_company, effective_start_date,
                 effective_end_date, created_at, updated_at
-            ) VALUES (' homeowners RIDER', 'P-2', 'Acme', '2026-01-01', '2027-01-01',
+            ) VALUES (?1, ' homeowners RIDER', 'P-2', 'Acme', '2026-01-01', '2027-01-01',
                 datetime('now'), datetime('now'))",
-            [],
+            [support::uid()],
         )
         .expect_err("the index refuses the second name");
     assert!(err.to_string().contains("idx_insurance_policies_name"), "{err}");
