@@ -7,6 +7,8 @@ by earlier builds, or makes earlier files unreadable. Once the application is
 released, such a change needs a new data-layout version and a migration.
 Until then it follows CLAUDE.md's "schema edited in place" rule.
 
+_Amended by [spec 009](../../009-upgrade-readiness/contracts/database-file.md): from the 0.1.0 tag on, a layout change is a new step appended to `db/migrations/`, run as an in-place upgrade in one transaction after the user agrees and a backup is made; a released step never changes (009 FR-009 to FR-015, FR-021)._
+
 ## The file
 
 - One file, `<name>.hoplodex`. No sidecar files. SQLite's rollback journal
@@ -77,6 +79,8 @@ file (SC-002).
   as `default` in `collection_settings.backup_location`, so it resolves on
   every computer.
 - While being written: `<final name>.partial`.
+
+_Amended by [spec 009](../../009-upgrade-readiness/contracts/database-file.md#backup-files-amends-backup-files): a backup made before an upgrade is named `<name> <YYYY-MM-DD HHMMSS> <id8> before <version>.hoplodex` and its stamp also sets `backup_before_upgrade_to` (009 FR-013)._
 
 ## Replacing the file (passphrase change, restore)
 

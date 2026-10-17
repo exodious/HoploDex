@@ -85,6 +85,8 @@ way (or whose folder can't even hold the write check's probe file) fails with
 `failureReason: "insufficientSpace"`, as a copy refused beforehand does, not
 `io`._
 
+_Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#errors-added-and-amended): new codes `UPGRADE_NEEDED`, `UPGRADE_FAILED` and `UPGRADE_BACKUP_FAILED`; `DATABASE_NEWER_VERSION` gains `details.backupFolder` and the wording of 009 FR-018; `BACKUP_LOCATION_UNAVAILABLE`, `INSUFFICIENT_SPACE` and `OPERATION_STOPPED` also come from `upgrade_database`._
+
 ---
 
 ## Shared types
@@ -208,6 +210,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 - `useSavedPassphrase` finds the saved passphrase through the recent entry's cached `databaseId`; when there is none, or it no longer opens the file, the open fails with `PASSPHRASE_INCORRECT { savedPassphraseFailed: true }`. `rememberPassphrase` on a computer without a keyring still opens the database, with `passphraseSaved: false`.
 - Any other database that is open is closed first, as a `switched` close. The frontend only opens from the chooser, where nothing is open (FR-010: switching is a lock, then an open). On success with a typed passphrase: the recent entry is added or refreshed, and the keyring entry is written when `rememberPassphrase` is set, or refreshed when it was saved but failed (FR-018). Nothing is written to the file on any failure (FR-006, FR-014).
 
+  _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#open_database-amended-fr-009-fr-010): when steps are due, `open_database` answers `UPGRADE_NEEDED` with the keyed database waiting and nothing written, until `upgrade_database` or `cancel_upgrade` (009 FR-009, FR-010)._
+
 ### `remove_recent_database`
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
 - Also deletes the saved keyring passphrase for it (FR-018). Never touches the file.
@@ -240,6 +244,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): f
 ### `dismiss_note`
 - **Input**: `{ note: "diskEncryption" | "openedBackup" | "restored" }` → **Output**: `null`
 - `diskEncryption` sets `app_state.disk_encryption_note_dismissed` (housekeeping, FR-008). The other two are session-only.
+
+  _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#dismiss_note-amended-fr-017): `note` also takes `"upgraded"`, session-only like the other two (009 FR-017)._
 
 ### `note_activity`
 - **Input**: none → **Output**: `null`. Called at most once per second while there is input (research §15).
@@ -315,6 +321,8 @@ sleep stops it (FR-037).
 - **Output**: `{ folder: string; available: boolean; backups: BackupInfo[] }` (newest first). `BackupInfo.madeAt` is the local time in the backup's name, without a zone (`2026-09-25T14:30:05`)
 - **Errors**: `NOT_FOUND` when `databasePath` is not in this computer's recent list, which is where its backup folder and id are cached
 
+  _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#list_backups-amended-fr-013): each `BackupInfo` also carries `beforeUpgradeTo` (009 FR-013)._
+
 ### `restore_backup` 🔑
 - **Input**: `{ backupPath: string; backupPassphrase: string; databasePath?: string }` (`databasePath` only when restoring a damaged database with nothing open)
 - **Output**: `DatabaseStatus` (the restored database is open), with `notes.restoredWithPassphraseOf` set
@@ -323,6 +331,8 @@ sleep stops it (FR-037).
 - Steps in research §8. `savingCurrent` is the "before restoring" backup, made whatever the once-a-day limit says and even when automatic backups are off (FR-028); if it fails or is stopped, the restore is abandoned and the database is unchanged. A damaged database is renamed aside, not deleted, and its new path is returned in `notes.damagedFileKeptAt`.
 
   _Amended 2026-10-09 ([#62](https://github.com/exodious/HoploDex/issues/62)): with `databasePath`, the backend authorizes the target itself and no longer takes the web view's word for it. `databasePath` must be in this computer's recent list (as for `list_backups`), else `NOT_FOUND`. `backupPath` must be in that entry's cached backup folder, and the database id stored inside the backup (read when its passphrase is checked) must be the entry's cached one, else `VALIDATION_ERROR` with `fieldErrors.backupPath`. An entry `locate_database` re-pointed and that hasn't opened at its new path since is refused with `VALIDATION_ERROR` and `fieldErrors.databasePath`. What is at `databasePath` must be a regular file or nothing, never a symlink (not followed), a directory or anything else, else `VALIDATION_ERROR` with `fieldErrors.databasePath`; it is checked before anything is closed and again right before it is renamed aside, and what was renamed is checked after, so a swap in between is put back and refused with `REPLACE_FAILED`, as is a `damaged` name that is already taken. No refusal changes a file. The frontend needs no new code: the dialog only offers the listed backups and shows the message of any other refusal._
+
+  _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#restore_backup-amended-fr-019): `restore_backup` takes `upgrade?: boolean`, refuses an older-layout backup without it as `UPGRADE_NEEDED`, upgrades the restored copy with it, and gains the progress phase `"upgrading"`; the new unscoped `check_backup` runs first (009 FR-019, [research.md §9](../../009-upgrade-readiness/research.md))._
 
 ### `delete_all_backups`
 - **Input**: `{ confirmed: boolean }` → **Output**: `{ deletedCount: number; failedPaths: string[] }`

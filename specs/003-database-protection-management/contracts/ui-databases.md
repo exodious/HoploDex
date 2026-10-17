@@ -177,7 +177,7 @@ collection data, top-bar tabs or counts are shown.
 | `PASSPHRASE_INCORRECT` | "That passphrase didn't open <name>. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged." | the field stays for another try (FR-006); **Restore from a backup…** when `backupsAvailable` |
 | — with `savedPassphraseFailed` | "The saved passphrase no longer opens <name>. Enter its passphrase; the saved copy will be updated." | prompt shown |
 | `DATABASE_IN_USE` | "<name> is open in another copy of HoploDex, on this computer or another one. Close it there first." | — |
-| `DATABASE_NEWER_VERSION` | "<name> was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed." | — |
+| `DATABASE_NEWER_VERSION` | "<name> was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed." _Amended by [spec 009](../../009-upgrade-readiness/contracts/ui.md#8-a-database-from-a-newer-version-fr-018-amends-003-ui-databasesmd-1): the text also says a backup saved before the upgrade opens in this version and names the folder; an older database gets the upgrade question instead (009 FR-010)._ | — |
 | `DATABASE_DAMAGED` | "<name> is damaged and can't be opened." | **Restore from a backup…** when `backupsAvailable` |
 | `DATABASE_NOT_FOUND` | "<name> is no longer at this location." | **Locate…**, **Remove from list** |
 | `DATABASE_UNREADABLE` | "HoploDex can't read <name>: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed." | the row stays selected so **Open** can be tried again |
@@ -488,6 +488,8 @@ backup…", "Backing up the current database…", "Replacing the database…"),
 and the dialog has no close button and ignores Escape. Afterwards the
 database is open, and a notice says it now opens with the passphrase from <date> (US3-5).
 
+_Amended by [spec 009](../../009-upgrade-readiness/contracts/ui.md#6-restoring-a-backup-in-an-older-layout-fr-019-amends-003-ui-databasesmd-9): **Restore** first runs `check_backup`, the confirmation adds a sentence when the backup will be upgraded, progress gains "Upgrading the restored copy…", and a backup made before an upgrade reads "before upgrading to HoploDex <version>" in the list (009 FR-013, FR-019)._
+
 ## 10. Notes shown once in the collection
 
 _Amended 2026-10-13: the notes head the Collection, Accessories and Insurance pages, not only the collection page, and no record or policy page. A note dismissed on one is gone from all three, since a dismissal is kept in the database's status (#59)._
@@ -508,6 +510,8 @@ existing notice style:
   made on <date>. Changes here aren't part of <backupOfName>. It's still in the
   backup folder, where it may be removed when older backups are cleared: move
   the file elsewhere to keep it."
+
+_Amended by [spec 009](../../009-upgrade-readiness/contracts/ui.md#7-backup-lists-and-the-backup-opened-directly-note-fr-013): the "backup opened directly" note names the version when the backup was made before an upgrade and drops the "may be removed" clause, and a new "upgraded" note appears once after an upgrade (009 FR-013, FR-017)._
 
 ## 11. Guide: "About databases and security" (FR-030)
 
