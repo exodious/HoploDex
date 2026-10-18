@@ -581,6 +581,9 @@ pub fn will_sleep(session: &Session, machine: &MachineSettings) {
 pub fn screen_locked(session: &Session, machine: &MachineSettings) {
     session.events().emit("system:clear-passphrase-fields", json!({}));
     session.drop_awaiting_upgrade();
+    // An upgrade at work has no open database to lock. It stops nothing and
+    // decides at its end whether to open (009 research.md §5).
+    session.note_screen_lock_for_upgrade();
     let lock_on_screen_lock =
         session.idle().settings().is_some_and(|settings| settings.on_screen_lock);
     if lock_on_screen_lock {

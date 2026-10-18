@@ -14,7 +14,7 @@ use crate::commands::CommandError;
 use crate::db::upgrade::reach;
 use crate::db::{self, SeenMarker, upgrade as runner};
 use crate::models::database::{
-    OpenedBackupNote, OperationKind, UpgradePhase, UpgradeProgress, UpgradedNote,
+    CloseReason, OpenedBackupNote, OperationKind, UpgradePhase, UpgradeProgress, UpgradedNote,
 };
 use crate::services::backups::{
     self, BackupFailure, BackupJob, BackupKind, ChosenFolder, LocationProblem,
@@ -180,6 +180,7 @@ pub fn upgrade_database(
         let operation = session.operations().begin(OperationKind::Upgrade, None)?;
         operation.set_user_stoppable(true);
         session.set_upgrading_id(id);
+        session.clear_screen_lock_for_upgrade();
         let generation = session.generation(&slot);
         (slot.take().expect("checked above"), generation, operation, Working(session))
     };
@@ -289,10 +290,13 @@ pub fn upgrade_database(
             &waiting.path,
         ));
     }
-    // A sleep or shutdown stopped the operation, which it can't do mid-upgrade:
-    // the database is upgraded, and stays closed, so this computer no longer
-    // has it open (003 FR-032, FR-040).
-    if operation.is_cancelled() {
+    // A sleep or shutdown stopped the operation, which it can't do mid-upgrade,
+    // or a screen lock came while the database's "lock when the screen locks"
+    // is on (it stops nothing, 009 research.md §5): the database is upgraded,
+    // and stays closed, so this computer no longer has it open (003 FR-032,
+    // FR-038, FR-040). Read in the upgraded layout, since the older one need
+    // not keep the column.
+    if operation.is_cancelled() || screen_lock_closes(session, &waiting) {
         if let Err(err) = db::clear_open_marker(&waiting.conn) {
             log::error!("could not clear the open marker of {}: {err}", waiting.path.display());
         }
@@ -313,8 +317,42 @@ pub fn upgrade_database(
         backup_path: backup_path.to_string_lossy().into_owned(),
         at_backup_location,
     });
+    reach!(&open.conn, Point::BeforeInstall);
     session.install(open);
+    // `screen_locked` notes the lock (N) and then reads the open database's
+    // settings (R); this function checks (C) and then installs (I). A lock
+    // whose N comes before C is caught by C, and one whose R comes after I
+    // finds the database open and locks it itself. One whose N comes after C
+    // and whose R comes before I found nothing to lock, so the flag is read
+    // once more now that the settings are in place (C2). If both lock, the
+    // second finds nothing open, which is harmless.
+    if session.screen_locked_in_upgrade()
+        && session.idle().settings().is_some_and(|settings| settings.on_screen_lock)
+    {
+        lifecycle::lock_with_staged(session, machine, CloseReason::ScreenLocked).ok();
+        return Err(CommandError::operation_stopped(OperationKind::Upgrade, None, None));
+    }
     Ok(Upgraded { save_passphrase })
+}
+
+/// Whether a screen lock came since Upgrade was chosen and the database is to
+/// lock when the screen locks (003 FR-038). If the setting can't be read it
+/// counts as on: the database stays closed rather than open behind a locked
+/// screen.
+fn screen_lock_closes(session: &Session, waiting: &AwaitingUpgrade) -> bool {
+    session.screen_locked_in_upgrade()
+        && waiting
+            .conn
+            .query_row("SELECT lock_on_screen_lock FROM collection_settings", [], |row| {
+                row.get::<_, bool>(0)
+            })
+            .unwrap_or_else(|err| {
+                log::error!(
+                    "could not read the screen lock setting of {}: {err}",
+                    waiting.path.display()
+                );
+                true
+            })
 }
 
 /// The database waits again, as `error` says why it couldn't go on (the

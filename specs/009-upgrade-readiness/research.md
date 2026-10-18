@@ -242,6 +242,20 @@ for (003 FR-007).
     shutdown in the `upgrading` phase is ignored by the operation: the upgrade
     finishes, this computer's open marker is cleared, and the command ends with
     `OPERATION_STOPPED` with the database upgraded and closed (T099, T101)._
+    _Amended 2026-10-17: a screen lock stops nothing, but it is not ignored
+    (003 FR-038). `lifecycle::screen_locked` finds no open database to lock
+    while the question is answered, so `Session` remembers that one came since
+    `upgrade_database` took the waiting database out of the slot. At the end of
+    the upgrade, if one did and the upgraded database's `lock_on_screen_lock`
+    is on, the database is treated as a sleep treats it: the open marker is
+    cleared, the connection dropped, nothing installed, and the command ends
+    with `OPERATION_STOPPED`, the database upgraded and closed and the backup
+    kept (T110). Not install-then-lock: that lock would be a normal close with
+    another backup, and an `Ok` followed by a close event would race the
+    chooser. With the setting off it opens as before. The flag is read once
+    more after `install`, for a lock whose note came after the check and whose
+    settings read came before the install: the database is then locked and the
+    command ends with `OPERATION_STOPPED` too._
   - Neither leaves a chooser notice (FR-015: after an interruption, nothing
     more is reported).
 - **The result** is `DatabaseNotes.upgraded = { version, backupPath, atBackupLocation }`.

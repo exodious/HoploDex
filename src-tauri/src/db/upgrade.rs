@@ -500,6 +500,10 @@ BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;"
         AtLinkCheck,
         /// Before the commit.
         BeforeCommit,
+        /// After the upgraded database is ready to open and any screen lock
+        /// has been checked for, before it is put in the session (009
+        /// research.md §5 "Sleep and shutdown").
+        BeforeInstall,
     }
 
     /// A failure forced by [`Scope::fail_at`].

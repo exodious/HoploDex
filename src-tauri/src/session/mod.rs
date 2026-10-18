@@ -14,7 +14,7 @@ pub mod scoped;
 pub mod upgrade;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -282,6 +282,12 @@ pub struct SessionInner {
     /// database out of the slot and is still working, or 0: what
     /// `cancel_upgrade` finds the backup it stops by.
     upgrading: AtomicU64,
+    /// A screen lock came while `upgrade_database` worked (since Upgrade was
+    /// chosen): set by `lifecycle::screen_locked`, cleared as the next
+    /// `upgrade_database` takes the waiting database, read at the end of the
+    /// upgrade to decide whether the database opens (009 research.md §5
+    /// "Sleep and shutdown").
+    screen_locked_in_upgrade: AtomicBool,
 }
 
 /// A backup opened directly that needs an upgrade: its stamp is taken inside
@@ -367,6 +373,7 @@ impl Session {
             awaiting_upgrade: Mutex::new(None),
             awaiting_drops: AtomicU64::new(0),
             upgrading: AtomicU64::new(0),
+            screen_locked_in_upgrade: AtomicBool::new(false),
         }))
     }
 
@@ -800,6 +807,26 @@ impl SessionInner {
 
     pub(crate) fn set_upgrading_id(&self, id: SessionId) {
         self.upgrading.store(id.get(), Ordering::SeqCst);
+    }
+
+    /// A screen lock came: if `upgrade_database` is working (the waiting
+    /// database is out of the slot, so the lock's drop found nothing), it is
+    /// remembered for the end of the upgrade.
+    pub(crate) fn note_screen_lock_for_upgrade(&self) {
+        if self.upgrading_id() != SessionId::NONE {
+            self.screen_locked_in_upgrade.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// A new `upgrade_database` begins: no screen lock has come yet.
+    pub(crate) fn clear_screen_lock_for_upgrade(&self) {
+        self.screen_locked_in_upgrade.store(false, Ordering::SeqCst);
+    }
+
+    /// Whether a screen lock came since `upgrade_database` last took the
+    /// waiting database.
+    pub(crate) fn screen_locked_in_upgrade(&self) -> bool {
+        self.screen_locked_in_upgrade.load(Ordering::SeqCst)
     }
 
     /// Keeps `passphrase` with the database waiting under `id`, to save or

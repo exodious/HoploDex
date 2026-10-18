@@ -2131,6 +2131,114 @@ fn a_sleep_or_shutdown_during_the_upgrade_lets_it_finish_and_leaves_it_closed() 
     }
 }
 
+/// 009 FR-016, 003 FR-038: a screen lock that comes once Upgrade is chosen, in
+/// the backup or in the upgrade, stops nothing. With "lock when the screen
+/// locks" on, the database is upgraded and left closed, as a sleep leaves it
+/// in the `upgrading` phase: this computer's open marker cleared, the
+/// connection dropped, the command ended with `OPERATION_STOPPED`. With it off
+/// the database opens with the upgraded note.
+#[test]
+fn a_screen_lock_during_the_upgrade_leaves_it_closed_only_when_the_setting_is_on() {
+    for phase in ["backingUp", "upgrading"] {
+        for lock_on in [true, false] {
+            let label = format!("{phase}, setting {}", if lock_on { "on" } else { "off" });
+            let world = World::new();
+            // A multi-chunk file, for the lock to come between chunks.
+            world.older_database(Older { extra_bytes: 3 << 20, ..Older::default() });
+            raw_exec(
+                &world.path(),
+                "UPDATE collection_settings SET lock_on_screen_lock = ?1",
+                rusqlite::params![lock_on],
+            );
+            let _scope = world.steps(&[STEP_A]);
+            let id = world.waiting();
+            let (session, machine) = (world.session.clone(), world.machine.clone());
+            world.at_progress(
+                move |p| {
+                    p["phase"] == phase
+                        && (phase == "upgrading" || p["processed"].as_u64().unwrap() > 0)
+                },
+                move || lifecycle::screen_locked(&session, &machine),
+            );
+
+            let result = world.upgrade(id, None);
+
+            if lock_on {
+                let stopped = result.expect_err(&label);
+                assert_eq!(stopped.code, "OPERATION_STOPPED", "{label}: {stopped:?}");
+                assert_eq!(details(&stopped)["operation"], json!("upgrade"), "{label}");
+                assert!(!world.session.is_open(), "{label}: the database stays closed");
+                assert!(!is_held(&world.path()), "{label}: the connection is dropped");
+                let closed = world.closed();
+                assert_eq!(
+                    applied_steps(&closed).last().map(String::as_str),
+                    Some("9001_test_a"),
+                    "{label}: the upgrade finished"
+                );
+                assert_eq!(marker_of(&closed), None, "{label}: no computer has it open");
+                assert_eq!(before_backups(&world.default_folder()).len(), 1, "{label}");
+                assert!(no_partials(&world.default_folder()), "{label}");
+                assert_eq!(world.machine.unfinished_backup(), None, "{label}");
+                assert_eq!(world.upgrade(id, None).unwrap_err().code, "DATABASE_CLOSED", "{label}");
+            } else {
+                let status = result.unwrap_or_else(|err| panic!("{label}: {err:?}"));
+                assert!(as_json(&status)["notes"]["upgraded"].is_object(), "{label}");
+                assert!(world.session.is_open(), "{label}");
+                assert_eq!(before_backups(&world.default_folder()).len(), 1, "{label}");
+                assert!(no_partials(&world.default_folder()), "{label}");
+            }
+            // The screen lock found the slot empty, and said so to the chooser as any does.
+            assert_eq!(world.events.payloads("system:clear-passphrase-fields").len(), 1, "{label}");
+        }
+    }
+}
+
+/// 009 FR-016, 003 FR-038: a screen lock whose note comes after the upgrade's
+/// check and whose read of the settings comes before the database is
+/// installed finds nothing to lock. The upgrade reads the note again once the
+/// database is installed and locks it, so it ends upgraded and closed, whatever
+/// the interleaving (009 research.md §5 "Sleep and shutdown").
+#[test]
+fn a_screen_lock_between_the_check_and_the_install_still_locks_the_database() {
+    for lock_on in [true, false] {
+        let label = format!("setting {}", if lock_on { "on" } else { "off" });
+        let world = World::new();
+        world.older_database(Older::default());
+        raw_exec(
+            &world.path(),
+            "UPDATE collection_settings SET lock_on_screen_lock = ?1",
+            rusqlite::params![lock_on],
+        );
+        let (session, machine) = (world.session.clone(), world.machine.clone());
+        let _scope = world
+            .steps(&[STEP_A])
+            .at_point(Point::BeforeInstall, move |_| lifecycle::screen_locked(&session, &machine));
+        let id = world.waiting();
+
+        let result = world.upgrade(id, None);
+
+        if lock_on {
+            let stopped = result.expect_err(&label);
+            assert_eq!(stopped.code, "OPERATION_STOPPED", "{label}: {stopped:?}");
+            assert_eq!(details(&stopped)["operation"], json!("upgrade"), "{label}");
+            assert!(!world.session.is_open(), "{label}: the database ends locked");
+            assert!(!is_held(&world.path()), "{label}");
+            let closed = world.closed();
+            assert_eq!(
+                applied_steps(&closed).last().map(String::as_str),
+                Some("9001_test_a"),
+                "{label}: the upgrade finished"
+            );
+            assert_eq!(marker_of(&closed), None, "{label}: no computer has it open");
+            assert!(no_partials(&world.default_folder()), "{label}");
+        } else {
+            let status = result.unwrap_or_else(|err| panic!("{label}: {err:?}"));
+            assert!(as_json(&status)["notes"]["upgraded"].is_object(), "{label}");
+            assert!(world.session.is_open(), "{label}");
+        }
+    }
+}
+
 /// Caps the database at the pages it has, so a step that adds rows runs out of
 /// room as SQLite says it (`SQLITE_FULL`), without a full disk.
 fn no_room_to_grow(conn: &Connection) {

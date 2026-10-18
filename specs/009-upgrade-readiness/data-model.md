@@ -239,6 +239,10 @@ and closed. A sleep, screen lock or shutdown that comes while nothing is in the
 slot (during the open's key derivation, or while the backup's refusal is on its
 way back) still drops the database (research.md §4)._
 
+_Amended 2026-10-17: a screen lock during `backingUp` or `upgrading` stops
+nothing, but with the database's "lock when the screen locks" on it ends like a
+sleep in `upgrading`: upgraded, closed, `OPERATION_STOPPED` (research.md §5)._
+
 ## Validation rules added
 
 | Rule | Where | Error |
