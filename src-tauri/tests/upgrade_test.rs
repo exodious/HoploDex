@@ -1255,6 +1255,8 @@ fn a_chosen_folder_that_cannot_be_used_is_refused_and_never_created() {
     let a_file = scratch.path().join("a file");
     fs::write(&a_file, b"precious").unwrap();
 
+    // Only the unix block below pushes more.
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut refusals = vec![
         (relative.clone(), world.upgrade(id, Some(&relative)).unwrap_err()),
         (text(&missing), world.upgrade(id, Some(&text(&missing))).unwrap_err()),
