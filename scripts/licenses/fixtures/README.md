@@ -97,17 +97,21 @@ license file is over 400 bytes, so a size test can't mistake it for a pointer.
 
 - `fetch`: nothing.
 - `metadata`: `metadata.json`, the whole workspace (it lists crates no triple
-  ships, as the real output does: the over-count 010 research.md §5 describes). A
-  node's `resolve.nodes[].features` holds `libsqlite3-sys`'s enabled features.
+  ships, as the real output does: the over-count 010 research.md §5 describes). Its
+  `resolve` is left in, as the real output has it, but nothing reads it: the
+  enabled features come from the tree (below), since `resolve` unions the features
+  of every target and of development dependencies.
 - `tree` with `build` among its `-e`/`--edges`: `build-<triple>.txt`, which is
   `cargo tree -e build --target <triple> --invert cc --invert cmake --prefix none
   -f '{p}'`: `cc`, then the packages with a build dependency on it, flat. It
   includes `buildtool-sys`, which no triple ships, so a reader must keep only
   shipped crates.
 - any other `tree`: `tree-<triple>.txt`, `cargo tree --locked -e normal,no-proc-macro
-  --target <triple> --features custom-protocol --prefix none -f '{p}'`: the
-  `hoplodex v0.1.0 (<root>/src-tauri)` line first, one `name vX.Y.Z` per crate,
-  and a repeated crate marked `(*)`.
+  --target <triple> --features custom-protocol --prefix none -f '{p} {f}'`: the
+  `hoplodex v0.1.0 (<root>/src-tauri)` line first, one `name vX.Y.Z` per crate
+  followed by its enabled features, comma-separated, when it has any
+  (`libsqlite3-sys v0.38.1 bundled-sqlcipher,default`), and a repeated crate
+  marked `(*)`.
 - anything else throws.
 
 `@ROOT@` in the recorded output becomes `root` (default: `project/`), so
@@ -118,7 +122,7 @@ Variants (`cargo/variants/<name>/`, each replacing only the files it has):
 | Variant | Replaces | Shows |
 | --- | --- | --- |
 | `carrier-0.39.0` | all trees, build lists and metadata | `libsqlite3-sys` at 0.39.0 |
-| `no-sqlcipher-feature` | metadata | the carrier without `bundled-sqlcipher` |
+| `no-sqlcipher-feature` | all trees | the carrier with only `default`, without `bundled-sqlcipher` |
 | `extra-crate` | the Linux tree | `extra v1.0.0` added: its notice appears, and only on Linux |
 | `path-package` | the Linux tree | a path package that isn't `hoplodex` (`rogue`): must fail |
 

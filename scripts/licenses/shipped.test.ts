@@ -1,7 +1,7 @@
 // What ships in the interface (010 research.md §5, §6): one function that the
 // audit and the notices share, over package-lock.json.
 import { describe, expect, it } from "vitest";
-import { npmPackages, npmShipped } from "./shipped.mjs";
+import { npmPackages, npmShipped, targetTriple } from "./shipped.mjs";
 
 const lock = {
   packages: {
@@ -71,5 +71,23 @@ describe("010 research.md §6 - npmPackages()", () => {
       .map((p: { name: string }) => p.name)
       .sort();
     expect(development).toEqual(["@types/react", "csstype", "typescript"]);
+  });
+});
+
+describe("010 research.md §5 - targetTriple()", () => {
+  const rustc = () => "rustc 1.90.0\nbinary: rustc\nhost: aarch64-apple-darwin\nrelease: 1.90.0\n";
+  const env = { TAURI_ENV_TARGET_TRIPLE: "x86_64-pc-windows-msvc" };
+
+  it("takes --target first, in either spelling", () => {
+    expect(targetTriple({ argv: ["--target", "a-b-c"], env, rustc })).toBe("a-b-c");
+    expect(targetTriple({ argv: ["--check", "--target=d-e-f"], env, rustc })).toBe("d-e-f");
+  });
+
+  it("then Tauri's TAURI_ENV_TARGET_TRIPLE", () => {
+    expect(targetTriple({ argv: ["--check"], env, rustc })).toBe("x86_64-pc-windows-msvc");
+  });
+
+  it("then the host of rustc -vV", () => {
+    expect(targetTriple({ argv: [], env: {}, rustc })).toBe("aarch64-apple-darwin");
   });
 });

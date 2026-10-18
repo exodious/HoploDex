@@ -218,6 +218,8 @@ a new `scripts/licenses/` folder that both the audit and the notices use.
 - **Size**: one license per crate, with identical texts stored once, comes to
   about 240 KB for Linux. The interface packages' texts add about 40 KB (§8).
 
+_Amended 2026-10-18 (010 T016): the commands above don't work as written on the real tree. `cargo fetch` and `cargo metadata` also take `--manifest-path src-tauri/Cargo.toml` (they fail outside `src-tauri/`). `cargo tree -e build` alone follows only the app's own build edges and prints nothing for `cc`, so the build dependencies come from `cargo tree -e normal,build --depth 1 --invert cc --invert cmake`, and where cargo refuses a tool the graph doesn't have (no crate uses `cmake`) the script asks for each tool alone and skips the one that isn't there. A crate's enabled features come from the same per-target `cargo tree -f '{p} {f}'` call as the shipped set, not from `cargo metadata`'s resolve, which unions the features of every target and of development dependencies._
+
 **Rationale**: no new tool on any machine that builds HoploDex. Every
 `npm run build` produces the notices (FR-008), so `cargo-about` would have
 been needed on the Linux container, both Windows setup scripts, the macOS VM

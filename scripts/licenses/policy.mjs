@@ -106,3 +106,18 @@ export function isAllowed(license, subject = {}) {
           e.entries.includes(subject.entry))),
   );
 }
+
+/**
+ * Data files that must not be in the app (010 research.md §2): the build fails
+ * naming the file when an emitted chunk contains its `marker`, a plain
+ * substring of the file's opening entries as the bundle encodes them (a JS
+ * string literal, so the words run together). `file` is the path inside
+ * node_modules, `reason` what is wrong with it.
+ */
+export const WITHDRAWN = [
+  {
+    file: "@zxcvbn-ts/language-en/dist/wikipedia.json",
+    marker: "AtheAofAandAinAwasAisAforAasAonAwithAbyAheAatAfromAhisAanAwere",
+    reason: "CC BY-SA 3.0 / GFDL, 010 research.md §2",
+  },
+];

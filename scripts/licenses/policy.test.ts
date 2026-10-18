@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ALLOWED, EXCEPTIONS, isAllowed, PREFERENCE } from "./policy.mjs";
+import { ALLOWED, EXCEPTIONS, isAllowed, PREFERENCE, WITHDRAWN } from "./policy.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -138,5 +138,17 @@ describe("010 FR-019 research.md §15 - the README's license notice", () => {
       "utf8",
     );
     expect(joinLines(readmeLicenseSection())).toContain(joinLines(permission));
+  });
+});
+
+describe("010 research.md §2 - the withdrawn data files", () => {
+  it("lists the Wikipedia word list, with a marker that is a plain substring and a reason", () => {
+    expect(WITHDRAWN).toEqual([
+      {
+        file: "@zxcvbn-ts/language-en/dist/wikipedia.json",
+        marker: "AtheAofAandAinAwasAisAforAasAonAwithAbyAheAatAfromAhisAanAwere",
+        reason: "CC BY-SA 3.0 / GFDL, 010 research.md §2",
+      },
+    ]);
   });
 });
