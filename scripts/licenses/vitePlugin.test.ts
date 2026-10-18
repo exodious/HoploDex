@@ -29,6 +29,7 @@
 import { copyFileSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { fileURLToPath } from "node:url";
 import { build, createLogger, createServer, type InlineConfig } from "vite";
 import { describe, expect, it } from "vitest";
@@ -223,7 +224,9 @@ describe("010 FR-008 - a generator failure fails the build with the whole list",
       error = e as Error;
     }
     expect(error).toBeDefined();
-    const lines = error!.message.split("\n");
+    // Vite colours its errors on Windows even without a terminal (picocolors),
+    // wrapping the first and last lines in escape codes.
+    const lines = stripVTControlCharacters(error!.message).split("\n");
     for (const failure of failures) expect(lines, failure).toContain(failure);
   });
 
