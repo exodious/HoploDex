@@ -83,11 +83,11 @@ The audit that found HoploDex's dependencies compatible with GPL-3.0 (#20) is wr
 - **A component with a declared license but no license file in its package**: the check fails, unless an exception records where its notice text was taken from (for example the license file in the component's source repository at that version) and why.
 - **Public-domain and no-notice components** (SQLite): listed, with their dedication, even though nothing requires it, so the list is complete.
 - **A component shipped on only one operating system** (OpenSSL 3, linked into the Windows build; a backend component used only on macOS): it appears in that operating system's build and not in the others.
-- **The system's own libraries** (WebKitGTK and GTK on Linux, WebView2 on Windows, WKWebView and CommonCrypto on macOS, the system crypto library on Linux): not shipped by HoploDex, so not in its notices. An AppImage, which would carry the Linux ones, is not published (FR-017).
+- **The system's own libraries** (WebKitGTK and GTK on Linux, the WebView2 runtime on Windows, WKWebView and CommonCrypto on macOS, the system crypto library on Linux): not shipped by HoploDex, so not in its notices. The WebView2 loader linked into the Windows program is listed (FR-009). An AppImage, which would carry the Linux ones, is not published (FR-017).
 - **A database locks or closes while About HoploDex is open from its menu**: the screen closes with the rest of that database's screens, as every screen of an open database does (003); it can be opened again from the chooser.
 - **A narrow window, or a very long notice**: the screen fits the window, and long texts scroll within it.
 - **Searching with no match**: the list says that no component matches.
-- **A development build** run with the development server: it shows notices, which may be from the last full build; only a release or end-to-end build is held to Story 2's checks.
+- **A development build** run with the development server: it shows notices worked out when they are first asked for and marked as a development build, with any failure reported as a warning; only a release or end-to-end build is held to Story 2's checks.
 
 ## Requirements *(mandatory)*
 
@@ -135,7 +135,7 @@ The audit that found HoploDex's dependencies compatible with GPL-3.0 (#20) is wr
 - **SC-001**: In a release build for each operating system, 100% of the components the license audit counts as shipped appear in About HoploDex and in the plain-text notices, and 0 development-only components do.
 - **SC-002**: Adding or removing a shipped dependency changes the notices on the next build with 0 manual edits; a shipped component with no findable notice fails the check in 100% of cases.
 - **SC-003**: From the chooser or an open database, a user reaches the license statement and source address in 2 actions or fewer, and the full GPL-3.0 text in 3 or fewer.
-- **SC-004**: About HoploDex opens within 1 second, narrowing the list shows results within 500 milliseconds of typing, and the list scrolls without pauses with every notice loaded (constitution IV).
+- **SC-004**: About HoploDex opens within 1 second, narrowing the list shows results within 500 milliseconds of typing, and scrolling the whole list, with every component listed, shows no frame longer than 100 milliseconds (constitution IV).
 - **SC-005**: About HoploDex makes 0 network requests and 0 reads or writes of any database or setting.
 - **SC-006**: All 7 word lists have a recorded source and compatible license or are absent from the shipped app, and 0 of the manual license checks #20 names remain open.
 

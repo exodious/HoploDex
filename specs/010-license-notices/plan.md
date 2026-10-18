@@ -40,7 +40,9 @@ GPL-3.0-only.
 - **#20, the audit's last items (P3)**:
   - **The audit is recorded** (research.md §1).
   - **The word lists**: `wikipedia.json` no longer ships (CC BY-SA 3.0 /
-    GFDL), and the other seven ship with recorded sources and attributions
+    GFDL), and the other seven the strength hint uses (`commonWords.json`
+    and the six other lists that stated no source) ship with recorded sources
+    and attributions
     (§2).
   - **The WebView2 loader** is settled both as a System Library and by a
     GPL-3.0 §7 additional permission (§3, §15).
@@ -81,8 +83,9 @@ unchanged
 **Testing**:
 - **Vitest** for the generator, with fixtures (`scripts/licenses/*.test.ts`;
   Vitest already runs `scripts/citations.test.ts`). One test runs it against
-  the real trees and is skipped, with a message, where `cargo` isn't on the
-  PATH.
+  the real trees for the host's target, so each OS's run checks its own
+  notices and its `NOTICES.txt`, and is skipped, with a message, where
+  `cargo` isn't on the PATH.
 - **Vitest for the interface**: `AboutDialog.test.tsx`, plus amended
   `DatabaseChooser.test.tsx`, `DatabaseMenu.test.tsx`,
   `SessionProvider.test.tsx` and `strength.test.ts`.
@@ -90,6 +93,8 @@ unchanged
 - **One E2E journey** in `databases.e2e.ts`, with OS-specific steps (the
   macOS menu bar, Windows' linked components).
 - **The screenshot walk** gets five new shots in both themes.
+- **The Linux gate run** builds the AppImage once, so FR-017's "keep the
+  ability" is checked, not assumed.
 - **`npm run audit:licenses`** gains the all-targets check.
 
 **Target Platform**: desktop: Windows 10+, macOS 26+, Linux (WebKitGTK
@@ -133,7 +138,7 @@ success criteria.
 | Principle | Requirement | How this plan satisfies it |
 |---|---|---|
 | I. Code Quality | Lint/static analysis, review, small single-purpose modules, no speculative abstraction | **One definition of "shipped"** (`scripts/licenses/shipped.mjs`), used by the audit and the notices. **One SPDX evaluator and allow list**, moved out of `check-npm-licenses.mjs`, which now imports them (refactor, not a copy). **One About**, rendered by `SessionProvider` for all three entry points. **One owner for each kind of record**: hand-recorded, exception, clarification and native code each have their own file and check. No new dependency: the generator replaces a tool. `eslint`, `prettier`, `clippy`, `rustfmt`, the citations check |
-| II. Testing (NON-NEGOTIABLE) | Tests first, real persistence, one test per acceptance scenario, isolation | Every scenario and criterion maps to a test (quickstart.md). Each failure rule has a red fixture before it is implemented. The real trees are checked by the audit and a Vitest test. The E2E journey runs in the sandbox on the seeded database, and shows its file unchanged by SHA-256. No test reads real data |
+| II. Testing (NON-NEGOTIABLE) | Tests first, real persistence, one test per acceptance scenario, isolation | Every scenario and criterion maps to a test (quickstart.md). Each failure rule has a red fixture before it is implemented. The real trees are checked by the audit and a Vitest test. The E2E journey runs in the sandbox on a database it creates, and shows that file and `machine.json` unchanged by SHA-256 across About. No test reads real data |
 | III. UX Consistency | One component set and pattern, WCAG 2.1 AA | The shared `Dialog`, `Disclosure`, `TextField`, `Button` and `MenuItem`. The select-all path style from export. The closing screen's delay rule for the loading line. No new navigation pattern. Keyboard paths, focus return and region names in contracts/ui.md §3. The new screen joins the walk. `AboutDialog` joins CLAUDE.md's list of forms and dialogs that share patterns |
 | IV. Performance | 100 ms feedback / 1 s completion, 500 ms search, no UI-thread blocking | Program block at once, the list in milliseconds, filtering without a debounce, texts rendered on demand (Technical Context). The E2E journey times both budgets. The build-time cost is measured and noted |
 | V. User Privacy | Local only, no telemetry, nothing leaves without consent | About reads no collection data and sends nothing. The source address is text. The CSP and `csp_test.rs` stay as they are |
@@ -150,8 +155,8 @@ each scenario at the cheapest level that can show it, and say why wherever the
 plan departs from these defaults.*
 
 - **E2E, one journey per user story**: Story 1's in `databases.e2e.ts`. Its
-  setup is the chooser and opening the seeded database, which is the story's
-  path. Stories 2 and 3 are the maintainer's and the reviewer's: their
+  setup is the chooser and creating and opening a database, which is the
+  story's path. Stories 2 and 3 are the maintainer's and the reviewer's: their
   journeys are the build and audit checks themselves, and the research record.
 - **E2E, one test per error mechanism per form or dialog**: About takes no
   input and has no error path except a failed load, which only a broken build
@@ -159,20 +164,22 @@ plan departs from these defaults.*
 - **E2E, what only the real app shows**:
   - the fetch of `notices.json` through the app's protocol;
   - the macOS menu bar item, through `chooseMenuBarItem`;
-  - Windows' linked components, OpenSSL's version among them;
-  - the database file left unchanged;
+  - each OS's own components, Windows' linked ones and OpenSSL's version
+    among them, and the list's count equal to the build's `notices.json`;
+  - the database file and `machine.json` left unchanged;
+  - scrolling the whole list without a long frame;
   - the walk.
 - **Security**: About's "no network, no database" is enforced by the CSP and
   by calling no command. `csp_test.rs` already guards the first. The E2E
-  journey's SHA-256 and Vitest's "no `invoke`" assertion guard the second.
+  journey's SHA-256s and Vitest's "no `invoke`" assertion guard the second.
 - **Everything else** in Vitest, as the table says. Each test cites its
   scenario (`010 US2-3`).
 
 | Story | E2E journey | Other E2E (error mechanism, real app, security) | Scenarios tested in Rust or Vitest |
 |-------|-------------|-------------------------------------------------|------------------------------------|
-| US1 | In `databases.e2e.ts` (its setup: the chooser and opening the seeded database). From the chooser: **About HoploDex**, check the program block and the selected source address, open the license, filter "sqlcipher" and open SQLCipher's notice, filter "zzzz" for no match, Escape (focus back on the button). Then open "Main collection" (`human testing passphrase`), **About HoploDex** from the database menu, Ctrl/⌘+L closes it with the lock, unlock, and the file's SHA-256 is unchanged. Timed for SC-004 | macOS only: the menu bar's **About HoploDex**, from the chooser and with a database open. Windows only: OpenSSL 3.x and the WebView2 loader are listed. Both need the real OS build | US1-1 to US1-6, the edge cases (no match, lock, narrow), FR-005, FR-007's region names → Vitest (`AboutDialog.test.tsx`, `DatabaseChooser.test.tsx`, `DatabaseMenu.test.tsx`, `SessionProvider.test.tsx`); US1-7's item id and event → Rust unit test in `main.rs`'s menu module |
-| US2 | None. The story is the maintainer's build, and its journey is the build and audit checks | — | US2-1 → Vitest (`notices.test.ts` against the real Linux trees) and `audit:licenses --all-targets`; US2-2 to US2-5 → Vitest with fixtures (`notices.test.ts`, `licenseFiles.test.ts`, `handRecorded.test.ts`, `vitePlugin.test.ts`, `policy.test.ts`) |
-| US3 | None. The record is reviewed in the PR; the strength hint's part is unit-level | — | US3-2's shipped lists and US3-3 → Vitest (`strength.test.ts`) and the worker-bundle check; US3-1, US3-4 → research.md and DEVELOPMENT.md, reviewed; FR-019 → `policy.test.ts` (README matches) and Vitest (About shows it) |
+| US1 | In `databases.e2e.ts` (its setup: the chooser, and creating and opening a database). From the chooser: **About HoploDex**, check the program block, the version and the selected source address, the count equal to `dist/notices.json`'s, open the license, filter "sqlcipher" and open SQLCipher's notice, filter "zzzz" for no match, scroll the whole list, Escape (focus back on the button). Then create a database, **About HoploDex** from the database menu, Escape, with the database file's and `machine.json`'s SHA-256 unchanged across it; open it again and Ctrl/⌘+L closes it with the lock. Timed for SC-004 | Per OS, the components only that OS ships are listed and the others' aren't (Linux `webkit2gtk`, macOS `objc2`, Windows OpenSSL 3.x and the WebView2 loader). macOS only: the menu bar's **About HoploDex**, from the chooser and with a database open. All need the real OS build | US1-1 to US1-6, the edge cases (no match, lock, narrow), FR-005, FR-007's region names → Vitest (`AboutDialog.test.tsx`, `DatabaseChooser.test.tsx`, `DatabaseMenu.test.tsx`, `SessionProvider.test.tsx`); US1-7's item id and event → Rust unit test in `app_menu.rs` |
+| US2 | None. The story is the maintainer's build, and its journey is the build and audit checks | — | US2-1 → Vitest (`notices.test.ts` against the real trees for the host's target, run on each OS) and `audit:licenses --all-targets`; US2-2 to US2-5 → Vitest with fixtures (`notices.test.ts`, `licenseFiles.test.ts`, `records.test.ts`, `vitePlugin.test.ts`, `policy.test.ts`, `spdx.test.ts`, `shipped.test.ts`); US2-5 also → `notices.test.ts`'s real `NOTICES.txt` |
+| US3 | None. The record is reviewed in the PR; the strength hint's part is unit-level | — | US3-2's shipped lists and US3-3 → Vitest (`strength.test.ts`) and the worker-bundle check; US3-1, US3-4 → research.md and DEVELOPMENT.md, reviewed, and the Linux gate run builds the AppImage (FR-017); FR-019 → `policy.test.ts` (README matches) and Vitest (About shows it) |
 
 ## Project Structure
 
@@ -183,7 +190,7 @@ specs/010-license-notices/
 ├── plan.md              # This file
 ├── research.md          # Phase 0: the audit record (§1–§4) and decisions (§5–§16)
 ├── data-model.md        # Phase 1: program block, notices document, the licenses/ records
-├── quickstart.md        # Phase 1: automated coverage and manual checks
+├── quickstart.md        # Phase 1: automated coverage and the one manual check
 ├── contracts/
 │   ├── notices.md             # commands, failures, notices.json, NOTICES.txt, licenses/, the Vite plugin
 │   ├── ui.md                  # About HoploDex: ways in, layout, wording, keyboard, shots
@@ -337,8 +344,8 @@ quickstart.md).*
   is which license (`licenseFiles.mjs`), and each kind of record's check
   (`records.mjs`). Still PASS.
 - **Testing**: every scenario and criterion has a named test, and every
-  failure rule has a red fixture (quickstart.md). Three manual procedures,
-  none a gate. Still PASS.
+  failure rule has a red fixture (quickstart.md). One manual procedure (a
+  screen reader), not a gate. Still PASS.
 - **UX Consistency**: one dialog built from shared parts. Every wording is in
   contracts/ui.md. Still PASS.
 - **Performance**: as designed. The build-time cost is measured. Still PASS.

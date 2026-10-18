@@ -27,7 +27,8 @@ From top to bottom:
 1. **Program block** (always shown, from compiled-in constants):
    - "HoploDex" as an `h3`, with "Version 0.1.0" beside it.
    - "Copyright © 2026 exodious and the HoploDex contributors". The years are
-     "2026–YYYY" from the year after 2026 on.
+     "2026–YYYY" from the year after 2026 on. The screen uses the © sign;
+     `NOTICES.txt` and the README keep the GPL's plain-text "Copyright (C)".
    - "HoploDex is free software: you can share it and change it under the
      terms of the GNU General Public License, version 3 only, as published by
      the Free Software Foundation."
