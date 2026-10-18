@@ -242,7 +242,7 @@ These come first because the E2E journey and US4 open the fixture, and the fixtu
 
 - [X] T072 Extend `src-tauri/tests/performance_test.rs` (cite `009 SC-007`), which is built in release with `upgrade-test-steps` (research.md §14, §16): an open with nothing due stays within 003 SC-003's 1 s at 10,000 items; on a 10,000-item database made older by `testing::scope(dir).extra_steps(&[PHOTOS_REBUILD])`, the first `upgrade:progress` arrives within 1 s of `upgrade_database` being called; the backup's and the rebuild's times are recorded
 - [X] T073 On Linux, run the release `performance_test` (as DEVELOPMENT.md runs it, now with `--features upgrade-test-steps`; quickstart.md) and record the figures for the PR: the open with nothing due, the first progress event, the backup and the rebuild at 10,000 items, and that search ≤ 500 ms and actions ≤ 1 s still hold; fix anything over budget
-- [ ] T074 [P] On macOS, in the macOS 26 VM, run the release `performance_test` as T073 and record the same figures
+- [X] T074 [P] On macOS, in the macOS 26 VM, run the release `performance_test` as T073 and record the same figures
 - [ ] T075 [P] On Windows, on the Windows test machine, run the release `performance_test` as T073 and record the same figures
 
 ### Screens, docs and checks
