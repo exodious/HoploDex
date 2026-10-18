@@ -233,6 +233,11 @@ impl std::ops::Deref for Session {
     }
 }
 
+/// A reading of the waiting slot's generation (009 research.md §4 "The slot's
+/// life"): how many times the slot has been dropped, up to then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AwaitingGeneration(u64);
+
 /// What a [`Session`] holds.
 pub struct SessionInner {
     open: Mutex<Option<OpenDatabase>>,
@@ -266,6 +271,13 @@ pub struct SessionInner {
     /// research.md §4). Separate from `open`, so no collection command, scoped
     /// or not, can reach it.
     awaiting_upgrade: Mutex<Option<AwaitingUpgrade>>,
+    /// How many times the waiting slot has been dropped (the generation). Only
+    /// raised, and only changed, under `awaiting_upgrade`'s mutex. A database
+    /// goes into the slot, or back into it, only if the generation is still
+    /// the one read before it left the slot or before its key was derived, so
+    /// a sleep, screen lock or shutdown that found the slot empty still wins
+    /// (009 research.md §4 "The slot's life").
+    awaiting_drops: AtomicU64,
     /// The `awaitingId` of the `upgrade_database` call that took the waiting
     /// database out of the slot and is still working, or 0: what
     /// `cancel_upgrade` finds the backup it stops by.
@@ -353,6 +365,7 @@ impl Session {
             closing: Mutex::new(Closing::default()),
             closing_changed: Condvar::new(),
             awaiting_upgrade: Mutex::new(None),
+            awaiting_drops: AtomicU64::new(0),
             upgrading: AtomicU64::new(0),
         }))
     }
@@ -711,31 +724,73 @@ impl SessionInner {
         self.awaiting_upgrade.lock().expect("session mutex poisoned")
     }
 
+    /// The slot's generation now. Taking the slot's guard is the proof that
+    /// the mutex is held.
+    fn generation(&self, _slot: &MutexGuard<'_, Option<AwaitingUpgrade>>) -> AwaitingGeneration {
+        AwaitingGeneration(self.awaiting_drops.load(Ordering::SeqCst))
+    }
+
     /// Puts a database that needs an upgrade in the waiting slot, in place of
-    /// any other (009 research.md §4).
-    pub(crate) fn wait_for_upgrade(&self, waiting: AwaitingUpgrade) {
-        let replaced = self.awaiting().replace(waiting);
-        // Its connection closes outside the slot's lock.
+    /// any other (009 research.md §4), if the slot has not been dropped since
+    /// `generation` was read. Otherwise a sleep, screen lock, shutdown or
+    /// another open came while its key was being derived: the database is
+    /// dropped instead (its connection closes and the passphrase to be saved
+    /// is zeroized). Returns whether it is waiting.
+    pub(crate) fn wait_for_upgrade(
+        &self,
+        waiting: AwaitingUpgrade,
+        generation: AwaitingGeneration,
+    ) -> bool {
+        let (replaced, unplaced) = {
+            let mut slot = self.awaiting();
+            if self.generation(&slot) == generation {
+                (slot.replace(waiting), None)
+            } else {
+                (None, Some(waiting))
+            }
+        };
+        // Connections close outside the slot's lock.
+        let placed = unplaced.is_none();
         drop(replaced);
+        drop(unplaced);
+        placed
     }
 
     /// Drops the waiting database, if there is one: its connection closes, the
     /// file's lock is released and the key cleared, and nothing was written.
     /// Called when any open, create or restore begins, at quit, sleep, screen
-    /// lock and shutdown (009 research.md §4). Returns whether one was waiting.
-    pub fn drop_awaiting_upgrade(&self) -> bool {
-        let dropped = self.awaiting().take();
-        dropped.is_some()
+    /// lock and shutdown (009 research.md §4). Raises the slot's generation,
+    /// and returns the new one: what an open that begins here passes to
+    /// [`wait_for_upgrade`](Self::wait_for_upgrade).
+    pub fn drop_awaiting_upgrade(&self) -> AwaitingGeneration {
+        let (dropped, generation) = {
+            let mut slot = self.awaiting();
+            let generation = self.awaiting_drops.fetch_add(1, Ordering::SeqCst) + 1;
+            (slot.take(), AwaitingGeneration(generation))
+        };
+        // Its connection closes outside the slot's lock.
+        drop(dropped);
+        generation
     }
 
     /// Puts a database back in the waiting slot after the backup before its
-    /// upgrade could not be made, for a retry under the same id; dropped
-    /// instead when another database has been put there meanwhile.
-    pub(crate) fn put_back_for_upgrade(&self, waiting: AwaitingUpgrade) {
+    /// upgrade could not be made, for a retry under the same id, if the slot
+    /// has not been dropped since `generation` was read (when it took the
+    /// database out). Returns whether it was put back; if not, the database
+    /// is dropped here.
+    pub(crate) fn put_back_for_upgrade(
+        &self,
+        waiting: AwaitingUpgrade,
+        generation: AwaitingGeneration,
+    ) -> bool {
         let mut slot = self.awaiting();
-        if slot.is_none() {
-            *slot = Some(waiting);
+        if self.generation(&slot) != generation {
+            drop(slot);
+            drop(waiting);
+            return false;
         }
+        *slot = Some(waiting);
+        true
     }
 
     /// The `awaitingId` of the upgrade at work, or `SessionId::NONE`.

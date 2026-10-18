@@ -45,7 +45,8 @@ identifiers are in no IPC type (FR-003).
 | `UPGRADE_BACKUP_FAILED` (new) | the backup before the upgrade failed while it was being written (I/O), at the location or a chosen folder; the database still waits | `{ folder: string }` |
 | `BACKUP_LOCATION_UNAVAILABLE` (amended) | also from `upgrade_database`: the backup location, or the chosen folder, is missing, not writable or full; the database still waits | unchanged: `{ path, reason }` (003's field name; _amended 2026-10-17: was written `folder` here_) |
 | `INSUFFICIENT_SPACE` (amended) | also from `upgrade_database`; the database still waits | unchanged |
-| `OPERATION_STOPPED` (amended) | also `operation: "upgrade"`: the backup before the upgrade was cancelled or stopped by a shutdown; partial removed, the database closed untouched | unchanged shape |
+| `OPERATION_STOPPED` (amended) | also `operation: "upgrade"`: the backup before the upgrade was cancelled or stopped by a sleep or shutdown; partial removed, the database closed untouched | unchanged shape |
+| `DISK_FULL` (amended) | also from `upgrade_database`, when the database's own disk fills during the upgrade; rolled back, the database as it was, dropped | `{ path: string }` as before, and now `backupPath: string, atBackupLocation: boolean`: the backup made before the upgrade, which was finished before any step ran (_amended 2026-10-17, the owner's decision D1: the chooser says where the backup is, FR-015_) |
 | `DATABASE_NEWER_VERSION` (amended, FR-018) | unchanged condition | NEW: `{ backupFolder?: string }`, the backup folder this computer cached for the database, when it has one |
 | `VALIDATION_ERROR` (amended, FR-008) | also from `create_insurance_policy` and `update_insurance_policy` when another policy has the same name | `fieldErrors.name`: "“<other name>” is already the name of another policy. Give this one a different name, such as “<other name> 2026”." The year is the current one |
 
@@ -141,10 +142,24 @@ only.
   `BACKUP_LOCATION_UNAVAILABLE`, `INSUFFICIENT_SPACE`,
   `UPGRADE_BACKUP_FAILED`, `OPERATION_STOPPED`, `UPGRADE_FAILED`, `DISK_FULL`
   (the database's own disk filled during the upgrade; rolled back; dropped).
+  _Amended 2026-10-17: that `DISK_FULL` carries `backupPath` and
+  `atBackupLocation` beside `path`, as `UPGRADE_FAILED` does._
   - The first refusal (`DATABASE_CLOSED`) leaves nothing to drop.
   - `BACKUP_LOCATION_UNAVAILABLE`, `INSUFFICIENT_SPACE` and
     `UPGRADE_BACKUP_FAILED` keep the database waiting.
   - Every other error drops it.
+  - _Amended 2026-10-17: a sleep, screen lock or shutdown that comes while the
+    slot is empty (during the open's key derivation, or while the backup's
+    refusal is on its way back to the slot) still wins. The slot has a
+    generation that dropping it raises; a database is put in the slot, or back
+    in it, only if the generation is the one read before its key was derived
+    or when it was taken out. Otherwise it is dropped: the open fails with
+    `DATABASE_CLOSED`, and `upgrade_database` with `OPERATION_STOPPED`
+    (research.md §4)._
+  - _Amended 2026-10-17: when a sleep or shutdown stops an upgrade that then
+    finishes, `OPERATION_STOPPED` is returned after this computer's open marker
+    is cleared, so the database is upgraded, closed, and not shown as open
+    here (003 FR-032, FR-040)._
 
 ### `cancel_upgrade` (FR-010, FR-016)
 

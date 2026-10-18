@@ -93,6 +93,11 @@ selected row shows, in the existing open-failure slot (003 ui-databases.md
 The row stays selected, so **Open** can be tried again. A `DISK_FULL` uses the
 existing `DISK_FULL` text.
 
+_Amended 2026-10-17 (the owner's decision D1): a `DISK_FULL` from
+`upgrade_database` carries `backupPath`, and the text goes on: "The upgrade
+didn't happen; the backup made before it is at <backupPath>." A `DISK_FULL`
+without `backupPath` (an open that ran out of room) reads as before._
+
 ## 5. After the upgrade: the note (FR-017)
 
 A note shown once, in the notes area that heads the Collection, Accessories

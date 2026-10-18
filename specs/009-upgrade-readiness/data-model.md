@@ -129,6 +129,15 @@ deleted.
 
 An earlier or later version's file therefore never costs the recent list.
 
+_Amended 2026-10-17 (the owner's decision D2, tasks.md T104): the file's own
+`version` was the one thing still set aside, so a build now reads a file whose
+`version` is higher than its own, by the fields it knows, with the same checks
+on `machineId`; a lower (0), non-numeric or missing `version`, or a bad
+`machineId`, is set aside as before. Loading writes nothing. The first change
+written afterwards carries this build's `version` and only the fields it knows,
+so a field only a later version knows is gone from the file then, and the later
+version reads that file as it does any file of this layout._
+
 ## In memory: models and IPC types (`src-tauri/src/models/database.rs`, `src/features/databases/types.ts`)
 
 ### `OperationKind` (amended)
@@ -221,6 +230,14 @@ chooser ──open_database──▶ checks 1–4 ─▶ steps due ─▶ write 
    interruption anywhere ─▶ next launch: partial swept silently;
                             next open: the journal rolls back, the question again
 ```
+
+_Amended 2026-10-17: in `backingUp` a sleep stops the backup as a shutdown does
+(`OPERATION_STOPPED`, dropped, partial removed). In `upgrading` a sleep or
+shutdown doesn't stop it: the upgrade finishes, this computer's open marker is
+cleared, and the command ends with `OPERATION_STOPPED`, the database upgraded
+and closed. A sleep, screen lock or shutdown that comes while nothing is in the
+slot (during the open's key derivation, or while the backup's refusal is on its
+way back) still drops the database (research.md §4)._
 
 ## Validation rules added
 

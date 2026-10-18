@@ -11,6 +11,7 @@ use rusqlite::Connection;
 
 use crate::APP_VERSION;
 use crate::commands::CommandError;
+use crate::db::upgrade::reach;
 use crate::db::{self, SeenMarker, upgrade as runner};
 use crate::models::database::{
     OpenedBackupNote, OperationKind, UpgradePhase, UpgradeProgress, UpgradedNote,
@@ -21,8 +22,8 @@ use crate::services::backups::{
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::session::{
-    AwaitingBackupStamp, AwaitingUpgrade, OpenDatabase, Session, SessionId, database_name,
-    lifecycle,
+    AwaitingBackupStamp, AwaitingGeneration, AwaitingUpgrade, OpenDatabase, Session, SessionId,
+    database_name, lifecycle,
 };
 
 /// What a successful [`upgrade_database`] leaves for its caller: the database
@@ -38,12 +39,18 @@ pub struct Upgraded {
 /// `UPGRADE_NEEDED` the open fails with. Nothing has been written to the
 /// file. If what the question needs can't be read, that failure is returned
 /// instead and the connection is dropped.
+///
+/// `generation` is the slot's generation `lifecycle::open` read when it began,
+/// before the key was derived. If the slot was dropped since (a sleep, screen
+/// lock or shutdown came meanwhile), the database is not put in it: it is
+/// dropped, and the open fails with `DATABASE_CLOSED` (009 FR-010).
 pub fn wait_for_answer(
     session: &Session,
     conn: Connection,
     path: &Path,
     steps_due: Vec<&'static str>,
     marker_seen: SeenMarker,
+    generation: AwaitingGeneration,
 ) -> CommandError {
     let waiting = match describe(conn, path, steps_due, marker_seen) {
         Ok(waiting) => waiting,
@@ -51,8 +58,11 @@ pub fn wait_for_answer(
     };
     let error =
         CommandError::upgrade_needed_to_open(waiting.id, APP_VERSION, &waiting.backup_folder);
-    session.wait_for_upgrade(waiting);
-    error
+    if session.wait_for_upgrade(waiting, generation) {
+        error
+    } else {
+        CommandError::database_closed()
+    }
 }
 
 /// Reads what the question and the upgrade need from the older layout, which
@@ -99,6 +109,8 @@ fn describe(
         }
         None => None,
     };
+    // The window between the key's derivation and the slot (009 T098).
+    reach!(&conn, Point::BeforeWaiting);
     Ok(AwaitingUpgrade {
         id: SessionId::next(),
         conn,
@@ -158,7 +170,9 @@ pub fn upgrade_database(
     let id = SessionId::from_request(awaiting_id).ok_or_else(CommandError::database_closed)?;
     // 1. Take the waiting database, and begin the operation, under the slot's
     // lock so `cancel_upgrade` finds one or the other.
-    let (waiting, operation, _working) = {
+    // The generation is read in the same lock: a sleep, screen lock or
+    // shutdown from here on finds the slot empty, and raises it (009 T098).
+    let (waiting, generation, operation, _working) = {
         let mut slot = session.awaiting();
         if slot.as_ref().is_none_or(|waiting| waiting.id != id) {
             return Err(CommandError::database_closed());
@@ -166,7 +180,8 @@ pub fn upgrade_database(
         let operation = session.operations().begin(OperationKind::Upgrade, None)?;
         operation.set_user_stoppable(true);
         session.set_upgrading_id(id);
-        (slot.take().expect("checked above"), operation, Working(session))
+        let generation = session.generation(&slot);
+        (slot.take().expect("checked above"), generation, operation, Working(session))
     };
 
     // 2. Another computer may have marked the database open since the
@@ -186,7 +201,7 @@ pub fn upgrade_database(
             Ok(ChosenFolder { folder, is_backup_location }) => (folder, false, is_backup_location),
             Err(problem) => {
                 let error = location_problem(chosen, problem);
-                return Err(wait_again(session, waiting, error));
+                return Err(wait_again(session, waiting, generation, error));
             }
         },
         None => (waiting.backup_folder.clone(), waiting.backup_folder_is_default, true),
@@ -232,14 +247,19 @@ pub fn upgrade_database(
         }
         Err(BackupFailure::Location(problem)) => {
             let error = location_problem(&folder, problem);
-            return Err(wait_again(session, waiting, error));
+            return Err(wait_again(session, waiting, generation, error));
         }
         Err(BackupFailure::InsufficientSpace(short)) => {
-            return Err(wait_again(session, waiting, short.into()));
+            return Err(wait_again(session, waiting, generation, short.into()));
         }
         Err(BackupFailure::Io(err)) => {
             log::error!("the backup before upgrading {} failed: {err}", waiting.path.display());
-            return Err(wait_again(session, waiting, CommandError::upgrade_backup_failed(&folder)));
+            return Err(wait_again(
+                session,
+                waiting,
+                generation,
+                CommandError::upgrade_backup_failed(&folder),
+            ));
         }
     };
 
@@ -270,8 +290,12 @@ pub fn upgrade_database(
         ));
     }
     // A sleep or shutdown stopped the operation, which it can't do mid-upgrade:
-    // the database is upgraded, and stays closed.
+    // the database is upgraded, and stays closed, so this computer no longer
+    // has it open (003 FR-032, FR-040).
     if operation.is_cancelled() {
+        if let Err(err) = db::clear_open_marker(&waiting.conn) {
+            log::error!("could not clear the open marker of {}: {err}", waiting.path.display());
+        }
         return Err(CommandError::operation_stopped(OperationKind::Upgrade, None, None));
     }
 
@@ -294,10 +318,21 @@ pub fn upgrade_database(
 }
 
 /// The database waits again, as `error` says why it couldn't go on (the
-/// location, the room or the copy: a retry may do better).
-fn wait_again(session: &Session, waiting: AwaitingUpgrade, error: CommandError) -> CommandError {
-    session.put_back_for_upgrade(waiting);
-    error
+/// location, the room or the copy: a retry may do better). If the slot was
+/// dropped meanwhile, by a sleep, screen lock or shutdown that found it empty
+/// (which also stopped the operation), the database is dropped instead and the
+/// upgrade ends as a stopped one (009 T098).
+fn wait_again(
+    session: &Session,
+    waiting: AwaitingUpgrade,
+    generation: AwaitingGeneration,
+    error: CommandError,
+) -> CommandError {
+    if session.put_back_for_upgrade(waiting, generation) {
+        error
+    } else {
+        CommandError::operation_stopped(OperationKind::Upgrade, None, None)
+    }
 }
 
 fn location_problem(folder: &Path, problem: LocationProblem) -> CommandError {
@@ -350,5 +385,15 @@ pub mod testing {
         let id = SessionId::from_request(awaiting_id)?;
         let waiting = session.awaiting();
         waiting.as_ref().filter(|waiting| waiting.id == id).map(|waiting| with(&waiting.conn))
+    }
+}
+
+/// A test that forces a failure at a point (`Scope::fail_at`) reaches the
+/// open as an unexpected error.
+#[cfg(feature = "upgrade-test-steps")]
+impl From<runner::testing::Injected> for CommandError {
+    fn from(err: runner::testing::Injected) -> Self {
+        log::error!("{err}");
+        Self::new("INTERNAL_ERROR", "An unexpected error occurred.")
     }
 }

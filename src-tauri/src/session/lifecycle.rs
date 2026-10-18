@@ -76,7 +76,10 @@ pub fn open(
     passphrase: &Passphrase,
     take_over: bool,
 ) -> Result<(), CommandError> {
-    session.drop_awaiting_upgrade();
+    // The generation is read as the slot is emptied, before the key is
+    // derived: a sleep, screen lock or shutdown during the derivation raises
+    // it, and the database is not put in the slot (009 research.md §4).
+    let generation = session.drop_awaiting_upgrade();
     if session.is_open() {
         // The frontend closes first itself, to ask about unsaved changes;
         // this covers anything else. It can only fail when nothing is open.
@@ -93,7 +96,7 @@ pub fn open(
             Ok(())
         }
         db::Opened::UpgradeDue { conn, steps_due, marker_seen } => {
-            Err(upgrade::wait_for_answer(session, conn, path, steps_due, marker_seen))
+            Err(upgrade::wait_for_answer(session, conn, path, steps_due, marker_seen, generation))
         }
     }
 }

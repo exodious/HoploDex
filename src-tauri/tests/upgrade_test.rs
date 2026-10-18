@@ -1993,3 +1993,182 @@ fn a_failure_in_the_second_of_two_steps_leaves_neither() {
     assert_eq!(after, before, "neither the first step nor the second");
     assert!(!after.rows.contains_key("t_a") && !after.rows.contains_key("t_invalid"));
 }
+
+// ===========================================================================
+// 009 T098, T099, T101, T103: the slot while no database is in it, a sleep or
+// shutdown during the backup and the upgrade, and a full disk
+// ===========================================================================
+
+type SystemEvent = fn(&Session, &MachineSettings);
+
+/// The events that drop a waiting database (009 research.md §4).
+const DROPPING_EVENTS: [(&str, SystemEvent); 3] = [
+    ("sleep", lifecycle::will_sleep),
+    ("screen lock", lifecycle::screen_locked),
+    ("shutdown", lifecycle::will_shut_down),
+];
+
+/// What an open or an upgrade that lost its database to an event leaves: no
+/// lock held, nothing open, no backup, the file as it was.
+fn assert_nothing_waits(world: &World, before: &str, label: &str) {
+    assert!(!is_held(&world.path()), "{label}: the database still holds its lock");
+    assert!(!world.session.is_open(), "{label}");
+    assert!(before_backups(&world.default_folder()).is_empty(), "{label}: a backup was made");
+    assert_eq!(sha(&world.path()), before, "{label}: not a byte changed");
+}
+
+/// 009 FR-010, 009 research.md §4 "The slot's life": a sleep, screen lock or
+/// shutdown that comes while an open derives its key finds the slot empty, and
+/// still wins: nothing is put in it, and the open fails with `DATABASE_CLOSED`.
+#[test]
+fn an_event_during_the_opens_key_derivation_leaves_no_waiting_database() {
+    for (name, event) in DROPPING_EVENTS {
+        let world = World::new();
+        world.older_database(Older::default());
+        let before = sha(&world.path());
+        let (session, machine) = (world.session.clone(), world.machine.clone());
+        let scope = world
+            .steps(&[STEP_A])
+            .at_point(Point::BeforeWaiting, move |_| event(&session, &machine));
+
+        let refused =
+            lifecycle::open(&world.session, &world.machine, &world.path(), &passphrase(), false)
+                .unwrap_err();
+
+        assert_eq!(refused.code, "DATABASE_CLOSED", "{name}: {refused:?}");
+        assert_nothing_waits(&world, &before, name);
+        // The next open asks again.
+        drop(scope);
+        let _scope = world.steps(&[STEP_A]);
+        let id = world.waiting();
+        world.cancel(id);
+    }
+}
+
+/// 009 FR-010, 009 FR-012: the same while a refusal to make the backup is on
+/// its way back to the slot: the database is dropped, not put back, and the
+/// upgrade ends as a stopped one.
+#[test]
+fn an_event_while_a_location_refusal_returns_leaves_no_waiting_database() {
+    for (name, event) in DROPPING_EVENTS {
+        let world = World::new();
+        world.older_database(Older::default());
+        let before = sha(&world.path());
+        let (session, machine) = (world.session.clone(), world.machine.clone());
+        let _scope = world
+            .steps(&[STEP_A])
+            .at_point(Point::BeforeBackup, move |_| event(&session, &machine));
+        let id = world.waiting();
+        fs::write(world.default_folder(), b"not a folder").unwrap();
+
+        let stopped = world.upgrade(id, None).unwrap_err();
+
+        assert_eq!(stopped.code, "OPERATION_STOPPED", "{name}: {stopped:?}");
+        assert_eq!(details(&stopped)["operation"], json!("upgrade"), "{name}");
+        assert_eq!(fs::read(world.default_folder()).unwrap(), b"not a folder", "{name}");
+        assert!(!is_held(&world.path()), "{name}: the database still holds its lock");
+        assert!(!world.session.is_open(), "{name}");
+        assert_eq!(sha(&world.path()), before, "{name}: not a byte changed");
+        assert_eq!(world.upgrade(id, None).unwrap_err().code, "DATABASE_CLOSED", "{name}");
+    }
+}
+
+/// 009 FR-016, 003 FR-037: a sleep during the backup stops the upgrade as a
+/// shutdown does (009 research.md §5).
+#[test]
+fn a_sleep_during_the_backup_stops_the_upgrade() {
+    let (world, id, before, _scope) = waiting_big();
+    let (session, machine) = (world.session.clone(), world.machine.clone());
+    world.at_progress(
+        |p| p["phase"] == "backingUp" && p["processed"].as_u64().unwrap() > 0,
+        move || lifecycle::will_sleep(&session, &machine),
+    );
+
+    let stopped = world.upgrade(id, None).unwrap_err();
+
+    assert_stopped(&world, id, &before, stopped);
+}
+
+/// 009 FR-016, 003 FR-037, 003 FR-032, 003 FR-040: a sleep or shutdown that
+/// comes in the `upgrading` phase can't stop it: the upgrade finishes and
+/// commits, the command ends as a stopped one, the database stays closed, and
+/// this computer's open marker is gone, so another computer doesn't see the
+/// database as open here.
+#[test]
+fn a_sleep_or_shutdown_during_the_upgrade_lets_it_finish_and_leaves_it_closed() {
+    type Event = fn(&Session, &MachineSettings);
+    let events: [(&str, Event); 2] =
+        [("sleep", lifecycle::will_sleep), ("shutdown", lifecycle::will_shut_down)];
+    for (name, event) in events {
+        let world = World::new();
+        world.older_database(Older::default());
+        let _scope = world.steps(&[STEP_A]);
+        let id = world.waiting();
+        let (session, machine) = (world.session.clone(), world.machine.clone());
+        world.at_progress(
+            |p| p["phase"] == "upgrading",
+            move || {
+                event(&session, &machine);
+            },
+        );
+
+        let stopped = world.upgrade(id, None).unwrap_err();
+
+        assert_eq!(stopped.code, "OPERATION_STOPPED", "{name}: {stopped:?}");
+        assert_eq!(details(&stopped)["operation"], json!("upgrade"), "{name}");
+        assert!(!world.session.is_open(), "{name}: the database stays closed");
+        assert!(!is_held(&world.path()), "{name}: the connection is dropped");
+        let closed = world.closed();
+        assert_eq!(
+            applied_steps(&closed).last().map(String::as_str),
+            Some("9001_test_a"),
+            "{name}: the upgrade finished"
+        );
+        assert_eq!(marker_of(&closed), None, "{name}: no computer has it open");
+        assert_eq!(before_backups(&world.default_folder()).len(), 1, "{name}");
+        assert!(no_partials(&world.default_folder()), "{name}");
+        assert_eq!(world.upgrade(id, None).unwrap_err().code, "DATABASE_CLOSED", "{name}");
+    }
+}
+
+/// Caps the database at the pages it has, so a step that adds rows runs out of
+/// room as SQLite says it (`SQLITE_FULL`), without a full disk.
+fn no_room_to_grow(conn: &Connection) {
+    let pages: i64 = conn.query_row("PRAGMA page_count", [], |row| row.get(0)).unwrap();
+    let _: i64 =
+        conn.query_row(&format!("PRAGMA max_page_count = {pages}"), [], |r| r.get(0)).unwrap();
+}
+
+/// 009 FR-015, 009 contracts/tauri-commands.md "upgrade_database": a full disk
+/// during the upgrade rolls it back and says where the backup made before it
+/// is, in the backup location and in a chosen folder.
+#[test]
+fn a_full_disk_during_the_upgrade_is_disk_full_naming_the_backup_made_before_it() {
+    for chosen in [false, true] {
+        let world = World::new();
+        world.older_database(Older::default());
+        let before_steps = applied_steps(&world.closed());
+        let _scope = world.steps(&[STEP_BIG]).at_point(Point::BeforeBackup, no_room_to_grow);
+        let id = world.waiting();
+        let picked = TempDir::new().unwrap();
+        let folder = if chosen { picked.path().to_owned() } else { world.default_folder() };
+        let folder_text = chosen.then(|| text(&folder));
+
+        let failed = world.upgrade(id, folder_text.as_deref()).unwrap_err();
+
+        assert_eq!(failed.code, "DISK_FULL", "chosen {chosen}: {failed:?}");
+        let backups = before_backups(&folder);
+        assert_eq!(backups.len(), 1, "chosen {chosen}: the backup was made first");
+        assert_eq!(
+            details(&failed),
+            json!({
+                "path": text(&world.path()),
+                "backupPath": text(&folder.join(&backups[0])),
+                "atBackupLocation": !chosen,
+            }),
+            "chosen {chosen}"
+        );
+        assert!(!is_held(&world.path()), "chosen {chosen}: dropped");
+        assert_eq!(applied_steps(&world.closed()), before_steps, "chosen {chosen}: rolled back");
+    }
+}

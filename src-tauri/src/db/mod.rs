@@ -331,6 +331,18 @@ fn set_open_marker(conn: &Connection, marker: &upgrade::OpenMarker) -> rusqlite:
     .map(|_| ())
 }
 
+/// Marks the database not open on any computer, as a close does (003 FR-032,
+/// FR-040): for an upgrade that finished and then found it was not to open
+/// the database (009 FR-016).
+pub fn clear_open_marker(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE app_state
+         SET open_machine_id = NULL, open_machine_name = NULL, open_since = NULL",
+        [],
+    )
+    .map(|_| ())
+}
+
 /// Opens a copy that is to replace a database (a restore's, a passphrase
 /// change's) with the passphrase it should have, and proves it sound
 /// before anything is replaced (003 research.md §4): every page's HMAC

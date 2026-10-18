@@ -60,8 +60,15 @@ function openFailureText(databaseName: string, error: unknown): string {
     }
     case "DATABASE_DAMAGED":
       return `${name} is damaged and can't be opened.`;
-    case "DISK_FULL":
-      return `The disk is full, so HoploDex couldn't open ${name}. Free some space on the drive that holds it, then try again. The file has not been changed.`;
+    case "DISK_FULL": {
+      const full = `The disk is full, so HoploDex couldn't open ${name}. Free some space on the drive that holds it, then try again. The file has not been changed.`;
+      // A full disk during the upgrade names the backup made before it (009
+      // FR-015); one while opening has no backup to name.
+      const { backupPath } = (error.details ?? {}) as Partial<UpgradeFailedDetails>;
+      return typeof backupPath === "string" && backupPath
+        ? `${full} The upgrade didn't happen; the backup made before it is at ${backupPath}.`
+        : full;
+    }
     case "DATABASE_UNREADABLE":
       return `HoploDex can't read ${name}: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed.`;
     default:

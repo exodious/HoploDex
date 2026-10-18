@@ -1354,7 +1354,21 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("uses the disk-full text when the upgrade ran out of room", async () => {
+  // 009 FR-015
+  it("adds where the backup is to the disk-full text when the upgrade ran out of room", async () => {
+    const backupPath = `${BACKUPS}/Main collection 2026-10-17 101500 3fa2c9d1 before 0.2.0.hoplodex`;
+    await upgradeRefusedWith(
+      refusal("DISK_FULL", { path: main.path, backupPath, atBackupLocation: true }),
+    );
+
+    const text = `The disk is full, so HoploDex couldn't open “Main collection”. Free some space on the drive that holds it, then try again. The file has not been changed. The upgrade didn't happen; the backup made before it is at ${backupPath}.`;
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.getByLabelText("Passphrase for “Main collection”")).toHaveAccessibleDescription(
+      text,
+    );
+  });
+
+  it("uses the plain disk-full text when the full disk is not the upgrade's", async () => {
     await upgradeRefusedWith(refusal("DISK_FULL", { path: main.path }));
 
     expect(

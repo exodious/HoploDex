@@ -207,7 +207,9 @@ impl CommandError {
 
     /// A rolled-back upgrade (a step, the link check, the commit) as the command
     /// reports it: `UPGRADE_FAILED` naming `backup_path` (009 FR-015), or
-    /// `DISK_FULL` naming the file `database_path` when its disk filled.
+    /// `DISK_FULL` naming the file `database_path` when its disk filled, and
+    /// also `backup_path` and `at_backup_location`, since the backup before the
+    /// upgrade was made by then.
     pub fn upgrade_error(
         err: crate::db::upgrade::UpgradeError,
         backup_path: &Path,
@@ -217,7 +219,15 @@ impl CommandError {
         log::error!("upgrading {} failed and was rolled back: {err}", database_path.display());
         let error = Self::from_upgrade(err);
         if error.code == Self::DISK_FULL {
-            error.located_at(database_path)
+            let mut error = error.located_at(database_path);
+            let mut details = match error.details.take().map(|details| *details) {
+                Some(Value::Object(details)) => details,
+                _ => serde_json::Map::new(),
+            };
+            details.insert("backupPath".into(), backup_path.to_string_lossy().into());
+            details.insert("atBackupLocation".into(), at_backup_location.into());
+            error.details = Some(Box::new(Value::Object(details)));
+            error
         } else {
             Self::upgrade_failed(backup_path, at_backup_location)
         }

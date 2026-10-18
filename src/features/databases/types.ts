@@ -353,7 +353,8 @@ export interface UpgradeNeededDetails {
   backupFolder: string;
 }
 
-/** `UPGRADE_FAILED`'s details (009 FR-015). */
+/** `UPGRADE_FAILED`'s details (009 FR-015); a `DISK_FULL` from `upgrade_database`
+ * carries them too, beside its `path`. */
 export interface UpgradeFailedDetails {
   backupPath: string;
   atBackupLocation: boolean;

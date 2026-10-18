@@ -482,6 +482,10 @@ BEGIN UPDATE app_state SET changes_waiting = 1 WHERE changes_waiting = 0; END;"
     /// failure is forced.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Point {
+        /// After an open's key has been derived and what the question needs has
+        /// been read, before the database is put in the waiting slot (009
+        /// research.md §4).
+        BeforeWaiting,
         /// Before the backup before an upgrade begins.
         BeforeBackup,
         /// While the backup is being copied (an I/O error).

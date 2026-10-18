@@ -169,6 +169,14 @@ answer.
 - **Not kept** after a cancel during the backup, or a failed upgrade (FR-015,
   FR-016).
 
+_Amended 2026-10-17 (T098): an event that comes while the slot is empty still
+wins. `Session` counts the drops of the slot (a generation, changed only under
+its mutex). `lifecycle::open` reads it as it empties the slot, before the key
+is derived, and `upgrade_database` reads it as it takes the database out; the
+database goes in, or back, only if it is unchanged. Otherwise it is dropped,
+zeroizing the passphrase to be saved, and the open ends with `DATABASE_CLOSED`
+or the upgrade with `OPERATION_STOPPED`._
+
 **The passphrase**: the backend still never keeps one beyond the open it is
 for (003 FR-007).
 - The held connection holds SQLCipher's derived key, as an open database
@@ -228,6 +236,12 @@ for (003 FR-007).
     setting to apply. The OS suspends the copy, and on waking
     `finish_on_wake` locks the database if it opened meanwhile and its idle
     lock is on.
+    _Amended 2026-10-17: a sleep stops the backup before an upgrade, as a
+    shutdown does (`lifecycle::will_sleep` closes immediately while an upgrade
+    operation runs), so the command ends with `OPERATION_STOPPED`. A sleep or
+    shutdown in the `upgrading` phase is ignored by the operation: the upgrade
+    finishes, this computer's open marker is cleared, and the command ends with
+    `OPERATION_STOPPED` with the database upgraded and closed (T099, T101)._
   - Neither leaves a chooser notice (FR-015: after an interruption, nothing
     more is reported).
 - **The result** is `DatabaseNotes.upgraded = { version, backupPath, atBackupLocation }`.
