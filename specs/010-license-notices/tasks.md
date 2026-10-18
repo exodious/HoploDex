@@ -253,10 +253,12 @@ Existing Tauri desktop app: React/TypeScript frontend in `src/`, Rust backend in
 
 ### Manual check (best effort before a release, not a merge gate)
 
-Everything else is automated: a build's notices matching its OS in T014 (run on each OS) and T031, and `NOTICES.txt`'s content in T014. Only the screen reader needs a person.
+Everything else is automated: a build's notices matching its OS in T014 (run on each OS) and T031, and `NOTICES.txt`'s content in T014. Only the screen reader needs a person. That check is deferred to #48 (below).
 
-- [ ] T058 [P] On Linux, do quickstart.md's manual check **M1** with Orca (on "Main collection", passphrase `human testing passphrase`), and record the result for the PR
-- [ ] T059 [P] On macOS, do quickstart.md's manual check **M1** with VoiceOver (on "Main collection", passphrase `human testing passphrase`), and record the result for the PR
+- [X] T058 [P] On Linux, do quickstart.md's manual check **M1** with Orca (on "Main collection", passphrase `human testing passphrase`), and record the result for the PR
+  - **Deferred** (2026-10-18) to #48, with 004's to 009's screen reader checks, and listed in #37's pre-release checks: not run before the PR. The dialog's name, the focus on open and on close, the text regions' names and the polite count are covered by `AboutDialog.test.tsx` (T027) and `SessionProvider.test.tsx` (T029)
+- [X] T059 [P] On macOS, do quickstart.md's manual check **M1** with VoiceOver (on "Main collection", passphrase `human testing passphrase`), and record the result for the PR
+  - **Deferred** (2026-10-18) to #48, with 004's to 009's screen reader checks, and listed in #37's pre-release checks: not run before the PR. The dialog's name, the focus on open and on close, the text regions' names and the polite count are covered by `AboutDialog.test.tsx` (T027) and `SessionProvider.test.tsx` (T029)
 
 ### Close-out (at pull request time)
 

@@ -59,6 +59,8 @@ bar item.
 
 Everything else above is automated. This one needs a person with a screen
 reader.
+It is deferred to #48 with the earlier features' screen reader checks, and
+run with #37's list before a release.
 
 ### Setup S1 (Linux or macOS)
 
