@@ -18,21 +18,24 @@ pub fn requested_event(menu_id: &str) -> Option<&'static str> {
     (menu_id == ABOUT_MENU_ID).then_some(ABOUT_REQUESTED)
 }
 
-/// The text of the predefined About item in Tauri's default macOS menu:
-/// "About <name>", with `name` the package name `Menu::default` gives it
-/// (`app.package_info().name`, the product name). The only way to tell that
-/// item from another predefined one, since a `PredefinedMenuItem` exposes its
-/// id and text and no kind (tauri 2.11.5, `menu/predefined.rs`).
+/// Whether `text` is what muda gives the predefined About item in Tauri's
+/// default macOS menu: "About " and the running application's localized
+/// name, which is the bundle's name in an app bundle but the executable's
+/// ("hoplodex") for a bare binary, and so is not always
+/// `app.package_info().name` ("HoploDex"). That text is the only way to tell
+/// the item from another predefined one, since a `PredefinedMenuItem` exposes
+/// its id and text and no kind (tauri 2.11.5, `menu/predefined.rs`; muda
+/// 0.19.3, `platform_impl/macos/mod.rs`, `new_predefined`).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-pub fn default_about_text(app_name: &str) -> String {
-    format!("About {app_name}")
+pub fn is_default_about_text(text: &str) -> bool {
+    text == "About" || text.starts_with("About ")
 }
 
 /// Tauri's default macOS menu, with the application submenu's predefined
 /// About item replaced, at the same position, by an item of id
 /// [`ABOUT_MENU_ID`]. Every other item is left as Tauri builds it. The first
 /// item is replaced only when it is the predefined About (a predefined item
-/// whose text is [`default_about_text`]); otherwise a warning is logged and
+/// whose text is [`is_default_about_text`]); otherwise a warning is logged and
 /// the default menu is returned as it is.
 #[cfg(target_os = "macos")]
 pub fn build<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
@@ -48,21 +51,19 @@ pub fn build<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<taur
         log::warn!("the default menu has no application submenu; left as is");
         return Ok(menu);
     };
-    let expected = default_about_text(&app.package_info().name);
     let is_about = match application.items()?.get(ABOUT_POSITION) {
         Some(kind) => match kind.as_predefined_menuitem() {
-            Some(item) => item.text()? == expected,
+            Some(item) => is_default_about_text(&item.text()?),
             None => false,
         },
         None => false,
     };
     if !is_about {
-        log::warn!(
-            "the default menu's first item is not the predefined \"{expected}\"; left as is"
-        );
+        log::warn!("the default menu's first item is not the predefined About; left as is");
         return Ok(menu);
     }
-    let about = MenuItem::with_id(app, ABOUT_MENU_ID, &expected, true, None::<&str>)?;
+    let text = format!("About {}", app.package_info().name);
+    let about = MenuItem::with_id(app, ABOUT_MENU_ID, text, true, None::<&str>)?;
     application.remove_at(ABOUT_POSITION)?;
     application.insert(&about, ABOUT_POSITION)?;
     Ok(menu)
@@ -80,11 +81,16 @@ mod tests {
         assert_eq!(ABOUT_REQUESTED, "app:about-requested");
     }
 
-    // 010 US1-7: the replaced item is recognised by the text Tauri's default
-    // menu gives its About item.
+    // 010 US1-7: the replaced item is recognised by the text muda gives the
+    // predefined About item, whatever name the running application has.
     #[test]
-    fn the_default_about_item_text_names_the_app() {
-        assert_eq!(default_about_text("HoploDex"), "About HoploDex");
+    fn the_default_about_item_text_is_recognised() {
+        assert!(is_default_about_text("About HoploDex"));
+        assert!(is_default_about_text("About hoplodex"));
+        assert!(is_default_about_text("About"));
+        assert!(!is_default_about_text("Services"));
+        assert!(!is_default_about_text("Aboutness"));
+        assert!(!is_default_about_text(""));
     }
 
     #[test]
