@@ -108,3 +108,35 @@ describe("010 FR-008 research.md §7 - exceptions are scoped", () => {
     }
   });
 });
+
+/** Text with every run of whitespace (a wrapped line's break included) as one space. */
+function joinLines(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** The README's "License" section: from its heading to the next "## " heading. */
+function readmeLicenseSection(): string {
+  const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const section = /^## License\s*$([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(readme);
+  if (!section) throw new Error('README.md has no "License" section');
+  return section[1];
+}
+
+describe("010 FR-019 research.md §15 - the README's license notice", () => {
+  it("has a License section with the copyright line and the GPL-3.0-only notice", () => {
+    const section = joinLines(readmeLicenseSection());
+    expect(section).toContain("Copyright (C) 2026 exodious and the HoploDex contributors");
+    expect(section).toContain("GNU General Public License");
+    expect(section).toContain("version 3 only");
+    expect(section).toContain("WITHOUT ANY WARRANTY");
+    expect(section).toContain("LICENSE");
+  });
+
+  it("carries licenses/additional-permission.txt's text verbatim", () => {
+    const permission = readFileSync(
+      path.join(repoRoot, "licenses/additional-permission.txt"),
+      "utf8",
+    );
+    expect(joinLines(readmeLicenseSection())).toContain(joinLines(permission));
+  });
+});
