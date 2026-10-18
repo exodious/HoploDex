@@ -38,7 +38,7 @@ Existing Tauri desktop app: React/TypeScript frontend in `src/`, Rust backend in
 
 **Purpose**: Empty modules and the committed-records folder, so later tasks in different files can proceed in parallel.
 
-- [ ] T001 Create the build tooling's skeleton, each module with a header comment naming its research.md section and exporting nothing yet, and confirm Vitest, `npm run lint` and `npm run format:check` pick them up:
+- [X] T001 Create the build tooling's skeleton, each module with a header comment naming its research.md section and exporting nothing yet, and confirm Vitest, `npm run lint` and `npm run format:check` pick them up:
   - `scripts/licenses/policy.mjs` (research.md §5, §7), `spdx.mjs` (§5), `shipped.mjs` (§5, §6), `licenseFiles.mjs` (§5), `records.mjs` (§7, §8), `notices.mjs` (§5, §10; with a `#!/usr/bin/env node` CLI entry that exits 0), `vitePlugin.mjs` (§6, §10);
   - an empty `scripts/licenses/fixtures/` with a `README.md` saying each fixture folder is one case and naming the rule it shows;
   - `licenses/hand-recorded.json`, `licenses/exceptions.json`, `licenses/clarify.json` and `licenses/native-code.json`, each `[]`;
@@ -58,19 +58,19 @@ Existing Tauri desktop app: React/TypeScript frontend in `src/`, Rust backend in
 
 ### First task 1: one policy for the audit and the notices (research.md §5, §6, §9)
 
-- [ ] T003 Write the policy's tests first; they fail until T004:
+- [X] T003 Write the policy's tests first; they fail until T004:
   - `scripts/licenses/spdx.test.ts`: `satisfies()` keeps today's behaviour (OR, AND, WITH, parentheses, an unbalanced or trailing token throws); `choose(expression, isAllowed)` resolves a choice (`OR`) to the first allowed license in `PREFERENCE` order ("MIT OR Apache-2.0" → MIT, "Apache-2.0 OR MIT" → MIT, "Zlib OR Apache-2.0 OR MIT" → MIT), keeps every part of a conjunction (`AND`), keeps a `WITH` exception whole ("Apache-2.0 WITH LLVM-exception"), and returns nothing when no choice is allowed;
   - `scripts/licenses/policy.test.ts`: `ALLOWED` equals the `allow` list in `src-tauri/deny.toml`'s `[licenses]` (parse the TOML array with a small reader in the test; no new dependency), both ways, naming any difference (research.md §9); `PREFERENCE` is exactly research.md §5's order (MIT, Apache-2.0, BSD-3-Clause, BSD-2-Clause, ISC, Zlib, Unicode-3.0, BSL-1.0, 0BSD, MIT-0, CC0-1.0, MPL-2.0, Apache-2.0 WITH LLVM-exception) and each is in `ALLOWED`; OFL-1.1 is allowed for `@fontsource/…` and `@fontsource-variable/…` packages and for nothing else; `blessing`, `CC-BY-4.0`, `ODC-By-1.0` and `LicenseRef-public-domain` are allowed only for the hand-recorded entries research.md §7 names, never for a package or crate (constitution, "Licensing");
   - `scripts/licenses/shipped.test.ts`: `npmShipped(lock)` over a small fixture lockfile returns the packages with neither `dev` nor `devOptional` (research.md §6), leaves out the root (`""`), and names a nested package by its last `node_modules/` segment, as `check-npm-licenses.mjs` does today
 
   Cite `010 FR-008`, `010 FR-012` and research.md sections in the test names
-- [ ] T004 Move the policy out of `scripts/check-npm-licenses.mjs` (a refactor, not a copy; CLAUDE.md memory "Refactor, not workaround"):
+- [X] T004 Move the policy out of `scripts/check-npm-licenses.mjs` (a refactor, not a copy; CLAUDE.md memory "Refactor, not workaround"):
   - `scripts/licenses/policy.mjs`: `ALLOWED` (the script's set, with its "keep in step with deny.toml" comment now pointing to `policy.test.ts`), `EXCEPTIONS` scoped to packages (`packages: RegExp`) or to hand-recorded entries (`entries: string[]`), and `PREFERENCE`;
   - `scripts/licenses/spdx.mjs`: `satisfies()` moved unchanged, and `choose()`;
   - `scripts/licenses/shipped.mjs`: `npmShipped(lock)`, where `devOptional` now counts as development.
 
   `check-npm-licenses.mjs` imports all three and keeps its output format. Run it before and after (save both outputs in the scratchpad) and confirm the only change is that `@types/react`, `@types/react-dom`, `@types/prop-types` and `csstype` leave the shipped count (research.md §6); any other difference is a bug. T003's tests must now pass
-- [ ] T005 On Linux, run `scripts/dev-container.sh bash -c 'npx vitest run scripts/licenses && npm run audit:licenses && npm run lint'`; all must pass. Keep T004's before/after outputs for the PR notes
+- [X] T005 On Linux, run `scripts/dev-container.sh bash -c 'npx vitest run scripts/licenses && npm run audit:licenses && npm run lint'`; all must pass. Keep T004's before/after outputs for the PR notes
 
 ### First task 2: the strength hint without `wikipedia.json` (research.md §2)
 
