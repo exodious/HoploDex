@@ -273,15 +273,15 @@ These come first because the E2E journey and US4 open the fixture, and the fixtu
 
 Done when the pull request is opened, not before (CLAUDE.md; plan.md "Close-out (at pull request time)"). Check each issue's state first (`gh issue view <n> --json state`) and don't comment on a closed one unless the owner asks.
 
-- [ ] T089 Write the pull request body with "Fixes #53, fixes #115" (one keyword per issue), `/security-review`'s result (T083), research.md §17's data-handling notes, the performance note and the before/after screenshots (the repository's hook requires the review); after opening it, check `closingIssuesReferences` names both issues
-- [ ] T090 [P] On issue **#53**, comment what was settled: `uid` on `insurance_policies`, `photos` and `document_attachments` on 006's terms; none on `disposition_history` or the built-in lists; uniqueness across kinds only between firearms and accessories; the tests that cover it (`record_identifier_test.rs`, `release_upgrade_test.rs`)
-- [ ] T091 [P] On issue **#115**, comment item by item: released steps frozen by `released.txt`, its test and the CLAUDE.md rule; the backup before upgrading and its rotation; one transaction with foreign keys off and the link check; the stored 0.1.0 database and the tests that open it
-- [ ] T092 [P] On issue **#54**, comment that names are now unique (A–Z case and surrounding spaces ignored) and rows keep naming their policy by name; update its "Identity and matching" question: names are unique and `uid` exists, so matching an imported policy row is the open part
-- [ ] T093 [P] On issue **#24**, comment that the 0.x upgrade machinery exists (frozen steps, the backup, the question, stored release databases); the post-1.0 policy stays there (breaking changes, a fuller dialog, squashing the 0.x steps, showing the last-saved version)
-- [ ] T094 [P] On issue **#19**, comment that tagging a release must add its steps' and stored database's lines to `released.txt`, add the next stored database once a step exists, and run `release_upgrade_test.rs`; 0.1.0 is the first
-- [ ] T095 [P] On issue **#16**, comment that adding `location` to `pending_changes.kind` is possible after 0.1.0 as a rebuild step, pointing to `src-tauri/src/db/migrations/README.md`'s worked example
-- [ ] T096 [P] On issues **#30** and **#31**, comment that policies, photos and documents now carry identifiers that hold across copies of a database
-- [ ] T097 [P] On issue **#118**, comment that letting policies own documents is, after 0.1.0, a rebuild of `document_attachments` (its owner `CHECK`), which the runner now supports
+- [X] T089 Write the pull request body with "Fixes #53, fixes #115" (one keyword per issue), `/security-review`'s result (T083), research.md §17's data-handling notes, the performance note and the before/after screenshots (the repository's hook requires the review); after opening it, check `closingIssuesReferences` names both issues
+- [X] T090 [P] On issue **#53**, comment what was settled: `uid` on `insurance_policies`, `photos` and `document_attachments` on 006's terms; none on `disposition_history` or the built-in lists; uniqueness across kinds only between firearms and accessories; the tests that cover it (`record_identifier_test.rs`, `release_upgrade_test.rs`)
+- [X] T091 [P] On issue **#115**, comment item by item: released steps frozen by `released.txt`, its test and the CLAUDE.md rule; the backup before upgrading and its rotation; one transaction with foreign keys off and the link check; the stored 0.1.0 database and the tests that open it
+- [X] T092 [P] On issue **#54**, comment that names are now unique (A–Z case and surrounding spaces ignored) and rows keep naming their policy by name; update its "Identity and matching" question: names are unique and `uid` exists, so matching an imported policy row is the open part
+- [X] T093 [P] On issue **#24**, comment that the 0.x upgrade machinery exists (frozen steps, the backup, the question, stored release databases); the post-1.0 policy stays there (breaking changes, a fuller dialog, squashing the 0.x steps, showing the last-saved version)
+- [X] T094 [P] On issue **#19**, comment that tagging a release must add its steps' and stored database's lines to `released.txt`, add the next stored database once a step exists, and run `release_upgrade_test.rs`; 0.1.0 is the first
+- [X] T095 [P] On issue **#16**, comment that adding `location` to `pending_changes.kind` is possible after 0.1.0 as a rebuild step, pointing to `src-tauri/src/db/migrations/README.md`'s worked example
+- [X] T096 [P] On issues **#30** and **#31**, comment that policies, photos and documents now carry identifiers that hold across copies of a database
+- [X] T097 [P] On issue **#118**, comment that letting policies own documents is, after 0.1.0, a rebuild of `document_attachments` (its owner `CHECK`), which the runner now supports
 
 ---
 
