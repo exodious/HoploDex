@@ -55,7 +55,7 @@ One per build.
 | `name` | Package, crate or component name | Not empty |
 | `version` | Its version, as shipped | For OpenSSL on Windows, read from the build (research.md §7) |
 | `kind` | `npm`, `crate`, `compiled-in`, `linked`, `font` or `data` | `font` for an `@fontsource*` package; `compiled-in`, `linked` and `data` for a hand-recorded entry |
-| `license` | The SPDX expression HoploDex uses it under | A choice is resolved to one allowed license (research.md §5). It must satisfy the shared allow list (the audit's `ALLOWED`, or a recorded exception such as OFL-1.1 for fonts, or ODC-BY for the dictionary's data) |
+| `license` | The SPDX expression HoploDex uses it under | A choice is resolved to one allowed license (research.md §5): the first allowed alternative, in the shared preference order, that the package (or an exception's committed texts) has a text for; a slash reads as `OR`. It must satisfy the shared allow list (the audit's `ALLOWED`, or a recorded exception such as OFL-1.1 for fonts, or ODC-BY for the dictionary's data) |
 | `declared` | The expression the package declares, when it differs from `license` | Present only for a choice |
 | `texts` | Ids into `texts`, in display order | At least one. NOTICE and attribution texts follow the license text |
 | `source` | Where the texts came from: `package`, `exception`, `clarified` or `hand-recorded` | |
@@ -71,7 +71,7 @@ Cases).
 |---|---|
 | `name`, `version`, `license`, `kind` | As a component notice. `version` may be `"from-build"` (OpenSSL) |
 | `os` | One or more of `linux`, `windows`, `macos` |
-| `carrier` | `{ "npm" \| "crate": name, version, feature? }` |
+| `carrier` | `{ "npm" \| "crate": name, version, feature? }`: exactly one of `npm` and `crate`, and a `version` |
 | `texts` | Paths: `licenses/texts/…` (committed), or `package:<path>` inside the carrier's folder |
 | `reason` | Why the tools can't see it |
 
@@ -155,11 +155,14 @@ closed ──showAbout()──▶ open: loading ──fetch ok──▶ open: re
                            │                          │
                            └──fetch fails──▶ open: failed (program block still shown)
 any phase change (open, lock, close, switch) ──▶ closed
+  (except the window's start, starting ──▶ chooser, which leaves it open)
 ```
 
 - **Loading and failed** still show the program block, from the compiled-in
   constants, so FR-002's statement never waits on the fetch.
 - **Ready**: the GPL disclosure, closed. The component list, with its filter
   empty and every row closed.
-- **The filter**: a case-insensitive substring of `name`. A filter with no
-  match shows the no-match line.
+- **The filter**: a case-insensitive substring of `name`, trimmed. A filter
+  with no match shows the no-match line.
+- **Ready**'s focus: on the license disclosure's button, once the notices
+  have loaded (the button doesn't exist while loading).

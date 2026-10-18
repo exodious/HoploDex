@@ -16,7 +16,13 @@ it is. If another dialog is open when the macOS item is chosen, About opens
 over it, and closing About returns focus there.
 
 About closes, without asking, on any change of session phase: an open, a
-lock, a close, a database switch, or the closing screen (research.md §11).
+lock, a close, a database switch, or the closing screen (research.md §11). The
+one move it survives is the window's start: from the starting phase to the
+chooser, so About chosen from the macOS menu bar while the window starts
+doesn't vanish when the chooser appears.
+
+_Amended 2026-10-18 (010 T053): the starting-phase exception is new here; the
+contract said "any change" without it._
 
 ## §2 Layout
 
@@ -53,10 +59,14 @@ From top to bottom:
      Escape in it clears it when it has text, and otherwise closes the dialog
      (the dialog's own Escape).
    - **The count**, a polite live region: "324 components", or "3 of 324
-     components" while filtering.
+     components" while filtering. A total of 1 reads "1 component" (and
+     "0 of 1 component" when the filter leaves none). The filter is trimmed
+     before it is matched.
    - **The list**: one `Disclosure` (`headingLevel={4}`) per component, in
      `notices.json`'s order. Title: the name. Summary: "version · license",
-     plus ", used under MIT" when the package offers a choice. Opened, it
+     or for a package that offers a choice "version · <declared expression>,
+     used under MIT" (for example "0.4.42 · MIT OR Apache-2.0, used under
+     MIT"). Opened, it
      shows each of its texts in order, in `.hd-about__text` blocks.
      Hand-recorded components add one line saying what carries them: "Built
      into libsqlite3-sys 0.38.1".
@@ -75,14 +85,21 @@ the dialog takes the window's width less the gutters, and the text blocks wrap
 
 ## §3 Keyboard and focus (FR-007; One Enter rule)
 
-- **On open**: focus goes to the first control in the body, the license
-  disclosure's button. That is the shared `Dialog`'s rule (`FIRST_FIELD`), as
-  for "About databases and security". The program block above it is text the
+- **On open**: the license disclosure's button is the first control, but it
+  doesn't exist while the notices load, so the shared `Dialog`'s rule
+  (`FIRST_FIELD`) finds nothing to focus then. `AboutDialog` moves focus to
+  the button as soon as the notices have loaded, unless the reader has already
+  moved focus into the body. When loading fails there is no button, and focus
+  stays where the `Dialog` put it. The program block above it is text the
   reader reaches by reading. The filter follows, by Tab.
+
+  _Amended 2026-10-18 (010 T053): this said focus goes there "on open"._
 - **Enter and Space** on a disclosure's button toggle it. Enter in the filter
   does nothing, because About has no primary action, so it isn't a `<form>`.
 - **Escape** closes the dialog, unless the filter has text, which Escape
-  clears first. Focus returns to the control that opened it: the chooser's
+  clears first (a window capture-phase `keydown` listener, since the dialog's
+  own Escape listens on the document in the capture phase and would close it
+  first). Focus returns to the control that opened it: the chooser's
   button, or the database menu's trigger, as `Dialog` restores it.
 - **The `/` shortcut** stays inert while About is open, as for any dialog
   (`useSearchShortcut`).
@@ -99,16 +116,17 @@ phase, through `sessionService.onAboutRequested`, beside `onQuitRequested`.
 
 ## §5 Screenshots (the walk)
 
-`e2e/screenshots/screens.e2e.ts`. Numbers are the walk's next free ones at
-implementation:
+`e2e/screenshots/screens.e2e.ts`, `describe("Screenshots: About HoploDex")`.
+The numbers are the walk's next free ones at implementation:
 
 | Shot | State |
 |---|---|
-| `NN-about-chooser-{light,dark}` | Chooser, About open, at the top |
-| `NN-about-license-{light,dark}` | The license disclosure opened |
-| `NN-about-component-{light,dark}` | Filter "sqlcipher", its row opened |
-| `NN-about-no-match-{light,dark}` | Filter "zzzz" |
-| `NN-about-narrow-{light,dark}` | At the narrow width, from the database menu |
+| `98-about-chooser-{light,dark}` | Chooser, About open, at the top |
+| `99-about-license-{light,dark}` | The license disclosure opened |
+| `100-about-component-{light,dark}` | Filter "sqlcipher", its row opened |
+| `101-about-no-match-{light,dark}` | Filter "zzzz" |
+| `102-about-narrow-{light,dark}` | At the narrow width (800 px), from the database menu |
+| `103-database-menu-{light,dark}` | The database menu open, for the before/after pair |
 
 ## §6 What the strength hint changes
 

@@ -16,13 +16,18 @@ unchanged, and `acl_manifest_test.rs` has nothing new to check.
 |---|---|---|---|
 | `app:about-requested` | backend → main web view | none (`()`) | macOS only: the application menu's "About HoploDex" item (id `about`) is chosen |
 
-- **Emitted by** `main.rs`'s `on_menu_event`, for id `about` only, with
-  `app.emit(ABOUT_REQUESTED, ())` beside `request_quit`'s
-  `app:quit-requested`.
-- **The menu**: on macOS, `setup()` sets `Menu::default(app)` with the
-  application submenu's predefined About item replaced by
-  `MenuItem::with_id(app, "about", "About HoploDex", true, None)` at the same
-  position. On Linux and Windows the app sets no menu, as today.
+- **Emitted by** `main.rs`'s `on_menu_event`, which asks `app_menu::requested_event`
+  for the event of the chosen item's id (`about` gives `app:about-requested`,
+  any other id none) and emits it with `app.emit(name, ())`, beside
+  `request_quit`'s `app:quit-requested`.
+- **The menu**: on macOS, `setup()` sets the menu `app_menu::build` makes
+  (`src-tauri/src/app_menu.rs`): `Menu::default(app)` with the application
+  submenu's predefined About item replaced, at the same position, by
+  `MenuItem::with_id(app, "about", "About HoploDex", true, None)`. If the
+  default menu isn't shaped as expected (the first item isn't the predefined
+  About), it is left as Tauri builds it and a warning is logged. On Linux and
+  Windows the app sets no menu, as today. The item id and event names, and the
+  mapping between them, compile on every OS and are unit-tested there.
 - **Permissions**: listening needs `core:event:allow-listen`, which
   `core:default` already grants. No capability changes.
 - **Frontend**: `sessionService.onAboutRequested(handler)` wraps `listen`, and
