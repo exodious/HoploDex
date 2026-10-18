@@ -527,6 +527,9 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
             <span className="hd-brand__name">HoploDex</span>
           </div>
           <div className="hd-topbar__tools">
+            <Button variant="ghost" size="sm" onClick={session.showAbout}>
+              About HoploDex
+            </Button>
             <ThemeToggle />
           </div>
         </div>

@@ -1,0 +1,9 @@
+{
+  "name": "hoplodex",
+  "version": "0.1.0",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/exodious/HoploDex.git"
+  }
+}

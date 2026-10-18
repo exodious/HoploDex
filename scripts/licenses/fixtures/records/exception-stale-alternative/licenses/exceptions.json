@@ -1,0 +1,12 @@
+[
+  {
+    "component": "crate:ships-alternative",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT OR Apache-2.0",
+    "texts": [
+      "licenses/texts/ships-alternative/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/ships-alternative/blob/v1.0.0/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  }
+]

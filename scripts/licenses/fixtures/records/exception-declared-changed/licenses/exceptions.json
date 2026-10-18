@@ -1,0 +1,12 @@
+[
+  {
+    "component": "crate:changed-license",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/changed-license/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/changed-license/blob/v1.0.0/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  }
+]

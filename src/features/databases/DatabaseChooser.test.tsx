@@ -71,6 +71,7 @@ function renderChooser(session: Partial<SessionState> = {}, selectPath?: string)
     settingsRequested: false,
     requestSettings: vi.fn(),
     clearSettingsRequest: vi.fn(),
+    showAbout: vi.fn(),
     ...session,
   };
   render(
@@ -1524,5 +1525,44 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
       expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeEnabled();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("DatabaseChooser's About HoploDex button (010 US1-1, 010 FR-001)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
+  });
+
+  it("is a ghost button in the top bar, before the theme toggle", async () => {
+    renderChooser();
+
+    const button = await screen.findByRole("button", { name: "About HoploDex" });
+    expect(button).toHaveClass("hd-button--ghost");
+    const topBar = screen.getByRole("banner");
+    expect(topBar).toContainElement(button);
+    const colorMode = within(topBar).getByRole("radiogroup", { name: "Color mode" });
+    expect(
+      button.compareDocumentPosition(colorMode) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("asks the session to show About, and nothing else", async () => {
+    const user = userEvent.setup();
+    const session = renderChooser();
+
+    await user.click(await screen.findByRole("button", { name: "About HoploDex" }));
+
+    expect(session.showAbout).toHaveBeenCalledTimes(1);
+    expect(session.openDatabase).not.toHaveBeenCalled();
+    expect(databasesService.openDatabase).not.toHaveBeenCalled();
+  });
+
+  it("is there on a first run too, with no database to choose", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [], selectedPath: null }),
+    );
+    renderChooser();
+
+    expect(await screen.findByRole("button", { name: "About HoploDex" })).toBeInTheDocument();
   });
 });

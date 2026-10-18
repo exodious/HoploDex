@@ -1,0 +1,13 @@
+[
+  {
+    "component": "crate:unplaceable",
+    "version": "1.0.0",
+    "files": [
+      {
+        "path": "LICENSE",
+        "sha256": "3e708e865b99426e576453054b0b17dcf1fd5b177f027b3bc855f588a8274ed3"
+      }
+    ],
+    "reason": "LICENSE is the MIT text; the matcher can't tell"
+  }
+]

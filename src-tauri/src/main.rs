@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_menu;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -41,6 +43,10 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuil
 /// §17).
 const QUIT_REQUESTED: &str = "app:quit-requested";
 
+/// The label of the main window, the only web view the frontend's events go to
+/// (the PDF preview's child web view has no listener and gets none; 010 T072).
+const MAIN_WINDOW: &str = "main";
+
 /// The OS is shutting down or ending the application, so its exit request
 /// is let through rather than asked about (003 research.md §17).
 static OS_ENDING: AtomicBool = AtomicBool::new(false);
@@ -48,7 +54,7 @@ static OS_ENDING: AtomicBool = AtomicBool::new(false);
 /// Asks the frontend to quit: the unsaved-changes question first, then
 /// `quit_application` (003 research.md §17).
 fn request_quit(app: &AppHandle) {
-    if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
+    if let Err(err) = app.emit_to(MAIN_WINDOW, QUIT_REQUESTED, ()) {
         log::warn!("could not emit {QUIT_REQUESTED}: {err}");
     }
 }
@@ -284,7 +290,7 @@ fn main() {
             let origins = main_navigation::app_origins(cfg!(windows), dev_url.as_ref());
             #[cfg(windows)]
             let filter_origins = origins.clone();
-            let _main = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+            let _main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::default())
                 .on_navigation(move |url| main_navigation::navigation_allowed(&origins, url))
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .title("HoploDex")
@@ -301,7 +307,28 @@ fn main() {
             if let Err(err) = window_controls::apply(&_main, false) {
                 log::error!("the native browser controls could not be installed: {err}");
             }
+            // The macOS application menu, with its About item opening
+            // HoploDex's own About screen (010 research.md §11). Linux and
+            // Windows set no menu. A failure leaves Tauri's default menu.
+            #[cfg(target_os = "macos")]
+            match app_menu::build(app.handle()) {
+                Ok(menu) => {
+                    if let Err(err) = app.set_menu(menu) {
+                        log::error!("the application menu could not be set: {err}");
+                    }
+                }
+                Err(err) => log::error!("the application menu could not be built: {err}"),
+            }
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            // Only the About item is the app's own; the predefined items act
+            // by themselves (010 contracts/tauri-commands.md).
+            if let Some(name) = app_menu::requested_event(event.id().as_ref())
+                && let Err(err) = app.emit_to(MAIN_WINDOW, name, ())
+            {
+                log::warn!("could not emit {name}: {err}");
+            }
         })
         .on_window_event(|window, event| {
             // Closing the window is a request: unsaved changes are asked

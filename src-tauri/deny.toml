@@ -98,7 +98,8 @@ ignore = [
 # License audit. HoploDex is released under GPL-3.0-only, so every crate
 # linked into it needs a license expression satisfiable from this list of
 # GPLv3-compatible licenses. Keep the list in step with ALLOWED in
-# scripts/check-npm-licenses.mjs. Before adding a license, check it against
+# scripts/licenses/policy.mjs (scripts/licenses/policy.test.ts fails when the
+# two differ). Before adding a license, check it against
 # the FSF's list of GPL-compatible licenses
 # (https://www.gnu.org/licenses/license-list.html). Apache-2.0 is fine for
 # GPLv3 (not GPLv2). MPL-2.0 is fine unless a file carries the Exhibit B

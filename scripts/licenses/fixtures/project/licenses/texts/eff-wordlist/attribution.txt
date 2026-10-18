@@ -1,0 +1,3 @@
+Source: https://example.invalid/eff/wordlist
+The EFF Large Wordlist for Passphrases is by the Electronic Frontier Foundation,
+licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).

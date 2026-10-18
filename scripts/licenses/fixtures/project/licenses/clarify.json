@@ -1,0 +1,27 @@
+[
+  {
+    "component": "crate:unplaceable",
+    "version": "1.0.0",
+    "files": [
+      {
+        "path": "LICENSE",
+        "sha256": "3865150a40e7fd6f5288f6111e637d0e8cdacf12bdba6d2cb6979963c7076841"
+      }
+    ],
+    "reason": "LICENSE is the MIT text; the matcher can't tell"
+  },
+  {
+    "component": "npm:@fontsource-variable/example-font",
+    "version": "5.0.0",
+    "files": [
+      {
+        "text": "Copyright 2020 The Example Font Project Authors (https://example.invalid/fonts)"
+      },
+      {
+        "path": "licenses/texts/example-font/OFL.txt",
+        "sha256": "2e8480648483c4a819f71ca2bec3f23a48fa3ec93722e8b4f0d5583065ca4c61"
+      }
+    ],
+    "reason": "the package's copyright line is not the font's own"
+  }
+]

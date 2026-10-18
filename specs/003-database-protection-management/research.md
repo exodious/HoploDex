@@ -892,6 +892,8 @@ the OFL-1.1 one, since `scripts/check-npm-licenses.mjs` reads only the
 declared license and cannot express it. Dropping the English dictionary was
 rejected: the hint would no longer notice ordinary English words.
 
+_Amended by [spec 010](../010-license-notices/research.md): the other word lists are settled and wikipedia.json no longer ships (010 research.md §2); the attribution is shown in About HoploDex and NOTICES.txt (010 FR-009)._
+
 ---
 
 ## §19 File extension, default location and name

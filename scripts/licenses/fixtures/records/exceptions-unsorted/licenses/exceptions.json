@@ -1,0 +1,22 @@
+[
+  {
+    "component": "npm:no-license-file",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/no-license-file/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/no-license-file/blob/v1.0.0/LICENSE",
+    "reason": "the published package leaves out its license file"
+  },
+  {
+    "component": "crate:needs-exception",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/needs-exception/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/needs-exception/blob/v1.0.0/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  }
+]

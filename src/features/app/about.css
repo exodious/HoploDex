@@ -1,0 +1,129 @@
+/* The About HoploDex dialog (010 contracts/ui.md §2). Colours come from the
+   tokens, which hold WCAG 2.1 AA in both themes. One column throughout; the
+   dialog itself takes the window's width at the narrow breakpoint. */
+
+.hd-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.hd-about p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.hd-about__program {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hd-about__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.hd-about__title,
+.hd-about__heading {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.hd-about__version {
+  color: var(--ink-2);
+}
+
+/* The additional permission, in the smaller text style, its heading line a
+   run-in. */
+.hd-about__permission {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.hd-about__permission strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* The source address: selectable at a click, as export's paths are
+   (.hd-paths dd). Not a link (010 FR-006). */
+.hd-about__source {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.hd-about__status,
+.hd-about__development {
+  color: var(--ink-2);
+}
+
+.hd-about__development {
+  font-size: var(--text-sm);
+}
+
+.hd-about__components {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hd-about__count {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+.hd-about__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hd-about__carrier {
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+
+/* A license text, word for word: monospace, wrapping, in its own scrolling
+   box so a long text doesn't make the dialog's body long. */
+.hd-about__text {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--sheet-sunk);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hd-about__text:focus-visible {
+  outline: 2px solid var(--niter);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .hd-about {
+    gap: var(--space-4);
+  }
+
+  .hd-about__text {
+    padding: var(--space-2) var(--space-3);
+  }
+}

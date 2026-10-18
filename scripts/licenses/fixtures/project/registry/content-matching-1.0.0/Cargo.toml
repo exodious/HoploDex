@@ -1,0 +1,5 @@
+[package]
+name = "content-matching"
+version = "1.0.0"
+edition = "2021"
+license = "Unicode-3.0 OR Zlib OR BSD-3-Clause"

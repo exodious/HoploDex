@@ -1,0 +1,12 @@
+[
+  {
+    "component": "crate:zlib-only",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT OR Apache-2.0 OR Zlib",
+    "texts": [
+      "licenses/texts/zlib-only/NOTES.txt"
+    ],
+    "from": "https://example.invalid/zlib-only/blob/v1.0.0/LICENSE-ZLIB",
+    "reason": "the published crate leaves out its license file, and its repository holds only Zlib's text and a statement of the choice"
+  }
+]

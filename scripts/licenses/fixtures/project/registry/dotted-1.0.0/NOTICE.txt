@@ -1,0 +1,3 @@
+Dotted
+Copyright 2020 Dotted Authors
+This product includes software developed at Example Org.

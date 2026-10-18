@@ -1,0 +1,5 @@
+Source: https://www.gutenberg.org/ebooks/3201
+Moby Word Lists, by Grady Ward (Project Gutenberg #3201), in the public
+domain. The strength hint's list of given names is Moby's names-f.txt (less one
+duplicate), by way of the random-name package (below). Moby's readme says:
+"Public Domain material by grant from the author, January, 2001".

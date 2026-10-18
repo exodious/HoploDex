@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createEstimator, strengthDictionary } from "./estimate";
 import type { StrengthAnswer } from "./estimate";
 
 afterEach(() => {
@@ -77,5 +78,45 @@ describe("the passphrase strength worker (#102)", () => {
     expect(posted).toHaveBeenCalledTimes(1);
     expect(error).toHaveBeenCalledTimes(1);
     error.mockRestore();
+  });
+});
+
+describe("the strength hint's word lists (010 research.md §2)", () => {
+  it("has no list from the English Wikipedia, which can't ship (010 US3-3, 010 FR-015)", () => {
+    expect(Object.keys(strengthDictionary()).filter((key) => /wikipedia/i.test(key))).toEqual([]);
+  });
+
+  it("has every other list the package's entry modules gave it, so none disappears silently (010 FR-015)", () => {
+    // `@zxcvbn-ts/language-en` and `-common` 4.1.3's `dist/index.mjs` keys,
+    // less `wikipedia-en`.
+    expect(Object.keys(strengthDictionary()).sort()).toEqual(
+      [
+        "commonWords-en",
+        "firstnames-en",
+        "lastnames-en",
+        "cardinalNumbers-en",
+        "ordinalNumbers-en",
+        "daysOfWeek-en",
+        "months-en",
+        "seasons-en",
+        "timePeriods-en",
+        "rainbowColors-en",
+        "directions-en",
+        "intermediateDirections-en",
+        "sizeProgression-en",
+        "militaryAlphabet-en",
+        "planets-en",
+        "zodiacSigns-en",
+        "chineseZodiac-en",
+        "passwords-common",
+        "diceware-common",
+      ].sort(),
+    );
+  });
+
+  it("keeps the answers it gave: 'password' scores 0 with a suggestion, a five-word phrase 4 (003 FR-003)", () => {
+    const estimate = createEstimator();
+    expect(estimate("password")).toEqual({ score: 0, suggestion: expect.stringMatching(/\S/) });
+    expect(estimate("vivid otter ledger crane mosaic").score).toBe(4);
   });
 });

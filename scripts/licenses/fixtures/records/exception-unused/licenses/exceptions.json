@@ -1,0 +1,12 @@
+[
+  {
+    "component": "crate:gone-crate",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/needs-exception/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/gone-crate/blob/v1.0.0/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "crate": "baz-sys",
+    "what": "something-else",
+    "note": "not one of the four"
+  }
+]

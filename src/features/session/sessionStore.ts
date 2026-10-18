@@ -44,6 +44,9 @@ export interface SessionState {
   settingsRequested: boolean;
   requestSettings: () => void;
   clearSettingsRequest: () => void;
+  /** Opens About HoploDex, over the chooser or the open database; when it is
+   * already open, leaves it as it is (010 FR-001, contracts/ui.md §1). */
+  showAbout: () => void;
 }
 
 export const SessionContext = createContext<SessionState | null>(null);

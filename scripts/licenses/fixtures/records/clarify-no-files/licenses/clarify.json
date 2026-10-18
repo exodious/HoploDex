@@ -1,0 +1,8 @@
+[
+  {
+    "component": "crate:unplaceable",
+    "version": "1.0.0",
+    "files": [],
+    "reason": "LICENSE is the MIT text; the matcher can't tell"
+  }
+]

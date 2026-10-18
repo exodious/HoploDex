@@ -61,6 +61,7 @@ export function DatabaseMenu() {
         </MenuItem>
         <MenuSeparator />
         <MenuItem onSelect={() => setDialog("guide")}>About databases and security</MenuItem>
+        <MenuItem onSelect={() => session.showAbout()}>About HoploDex</MenuItem>
       </Menu>
       <Button
         variant="ghost"

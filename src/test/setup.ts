@@ -15,19 +15,23 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   };
 }
 
-// jsdom does not implement the Pointer Capture / scrollIntoView APIs that
-// Radix UI's Select relies on for its popover positioning and interaction.
-if (!Element.prototype.hasPointerCapture) {
-  Element.prototype.hasPointerCapture = () => false;
-}
-if (!Element.prototype.setPointerCapture) {
-  Element.prototype.setPointerCapture = () => {};
-}
-if (!Element.prototype.releasePointerCapture) {
-  Element.prototype.releasePointerCapture = () => {};
-}
-if (!Element.prototype.scrollIntoView) {
-  Element.prototype.scrollIntoView = () => {};
+// A test file with `// @vitest-environment node` (scripts/licenses/vitePlugin.test.ts:
+// esbuild refuses to load under jsdom) has no DOM to patch.
+if (typeof Element !== "undefined") {
+  // jsdom does not implement the Pointer Capture / scrollIntoView APIs that
+  // Radix UI's Select relies on for its popover positioning and interaction.
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
 }
 
 // jsdom has no Web Workers: the passphrase strength hint's zxcvbn runs in

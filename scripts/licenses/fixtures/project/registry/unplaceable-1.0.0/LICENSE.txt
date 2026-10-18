@@ -1,0 +1,8 @@
+Frobnicate Public Terms, edition 2
+
+Everyone may read this software. Everyone may run this software on a machine
+that the reader owns. Copies must keep this paragraph. The authors keep all
+other rights. Nothing here grants a patent license. Nothing here limits the
+fair use of the work. Disputes go to the courts of the authors' home town.
+These terms are the authors' own and are not one of the well known licenses.
+Read them again before you rely on them, because they are not a standard text.

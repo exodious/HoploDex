@@ -1,0 +1,12 @@
+[
+  {
+    "component": "crate:gone-crate",
+    "version": "1.0.0",
+    "files": [
+      {
+        "text": "stand-in text"
+      }
+    ],
+    "reason": "no target ships this"
+  }
+]

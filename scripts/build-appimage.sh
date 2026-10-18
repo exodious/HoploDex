@@ -16,6 +16,10 @@
 # anything matching LINUXDEPLOY_EXCLUDED_LIBRARIES; the linuxdeploy that
 # Tauri CLI 2.12 downloads is the first to read it, and older ones ignore it
 # silently, so the build is checked afterwards.
+#
+# An AppImage is built, not published with a release (010 FR-017, research.md
+# §4): it carries LGPL libraries (WebKitGTK, GTK and their stack) inside it.
+# Publishing one first needs a decision on how HoploDex offers their source.
 
 set -euo pipefail
 

@@ -119,3 +119,9 @@ export function onSessionClosed(handler: (closed: SessionClosed) => void): () =>
 export function onQuitRequested(handler: () => void): () => void {
   return listen<unknown>("app:quit-requested", () => handler());
 }
+
+/** The macOS application menu's "About HoploDex" item was chosen (010
+ * contracts/tauri-commands.md). Only macOS emits it. */
+export function onAboutRequested(handler: () => void): () => void {
+  return listen<unknown>("app:about-requested", () => handler());
+}

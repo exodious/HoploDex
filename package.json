@@ -29,7 +29,7 @@
     "audit": "npm run audit:npm && npm run audit:cargo && npm run audit:licenses && npm run audit:webdriver",
     "audit:npm": "audit-ci --config audit-ci.jsonc",
     "audit:cargo": "cargo deny --manifest-path src-tauri/Cargo.toml check advisories",
-    "audit:licenses": "node scripts/check-npm-licenses.mjs && cargo deny --manifest-path src-tauri/Cargo.toml check licenses",
+    "audit:licenses": "node scripts/check-npm-licenses.mjs && cargo deny --manifest-path src-tauri/Cargo.toml check licenses && node scripts/licenses/notices.mjs --check --all-targets",
     "audit:webdriver": "node scripts/check-no-webdriver.mjs"
   },
   "dependencies": {

@@ -1,0 +1,5 @@
+Source: https://xato.net/today-i-am-releasing-ten-million-passwords-b6278bbe7495
+The strength hint's list of common passwords is counted from Mark Burnett's
+ten million passwords (xato.net, 2015-02-09), which he released to the public
+domain: "So I built a data set of ten million usernames and passwords that I am
+releasing to the public domain."
