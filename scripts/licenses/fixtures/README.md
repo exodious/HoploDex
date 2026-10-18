@@ -86,6 +86,7 @@ trees (`L` Linux, `W` Windows, `M` macOS).
 | `dual-by-content` 1.0.0 | no | MIT in `LICENSE`, Apache in `COPYING`: placed by content |
 | `ships-license` 1.0.0 | no | ships `LICENSE`: a stale exception |
 | `changed-license` 1.0.0 | no | declares "MIT OR Apache-2.0" where an exception recorded "MIT" |
+| `zlib-only` 1.0.0 | `zlib-exception` variant | "MIT OR Apache-2.0 OR Zlib" with no license file: `records/exception-zlib` commits Zlib's text (and a statement that only names Apache-2.0 and MIT), so its notice is under Zlib; `records/exception-unplaced` commits a text of none, which fails |
 | `quux` 2.0.0 | `gpl-crate` variant | "GPL-2.0-only" (below, "Recorded cargo output") |
 
 Crate folders have a `Cargo.toml` naming the `license`. Texts are short but keep
@@ -127,6 +128,7 @@ Variants (`cargo/variants/<name>/`, each replacing only the files it has):
 | `no-sqlcipher-feature` | all trees | the carrier with only `default`, without `bundled-sqlcipher` |
 | `extra-crate` | the Linux tree | `extra v1.0.0` added: its notice appears, and only on Linux |
 | `path-package` | the Linux tree | a path package that isn't `hoplodex` (`rogue`): must fail |
+| `zlib-exception` | the Linux tree and metadata | `zlib-only` 1.0.0 ("MIT OR Apache-2.0 OR Zlib", `registry/zlib-only-1.0.0`): an exception chooses the license by its text |
 | `gpl-crate` | the Linux tree and metadata | `quux` 2.0.0 under GPL-2.0-only (`registry/quux-2.0.0`): not an allowed license |
 
 ## The tiny Vite app (`vite-app/`)

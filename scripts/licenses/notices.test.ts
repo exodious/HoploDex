@@ -282,6 +282,40 @@ describe("010 US2-1 - the components are exactly what the audit counts as shippe
   });
 });
 
+describe("010 US2-2 - an exception's license is the alternative its text is a text of", () => {
+  const zlibCargo = () => fakeCargo({ variant: "zlib-exception" });
+
+  it('uses an "MIT OR Apache-2.0 OR Zlib" crate under Zlib when its committed text is Zlib\'s', () => {
+    const built = build(LINUX, { cargo: zlibCargo(), licensesDir: record("exception-zlib") });
+    expect(built.failures.filter((f) => f.includes("zlib-only"))).toEqual([]);
+    const crate = find(built.document, "zlib-only");
+    expect(crate).toMatchObject({
+      license: "Zlib",
+      declared: "MIT OR Apache-2.0 OR Zlib",
+      source: "exception",
+    });
+    // the one-line statement that only names the other licenses is kept, as a record gives it
+    expect(textsOf(built.document, crate)).toHaveLength(2);
+    expect(renderText(built.document)).toContain(
+      "zlib-only 1.0.0  (Zlib, used under Zlib of MIT OR Apache-2.0 OR Zlib)",
+    );
+  });
+
+  it("fails, naming the component, when none of an exception's texts is a text of an allowed alternative", () => {
+    const built = build(LINUX, { cargo: zlibCargo(), licensesDir: record("exception-unplaced") });
+    expect(built.failures).toContainEqual(
+      expect.stringMatching(
+        /^crate zlib-only 1\.0\.0 \(x86_64-unknown-linux-gnu\): none of its exception's texts \(licenses\/texts\/zlib-only\/NOTES\.txt\) is a text for MIT, Apache-2\.0, Zlib\./,
+      ),
+    );
+    expect(find(built.document, "zlib-only")).toBeUndefined();
+  });
+
+  it("keeps an exception for a single license under that license", () => {
+    expect(find(good(), "needs-exception")).toMatchObject({ license: "MIT", source: "exception" });
+  });
+});
+
 describe("010 US2-2 - a failed check names the component and every failure is collected", () => {
   it("fails a license the policy doesn't allow, in the contract's words", () => {
     const built = build(LINUX, { cargo: fakeCargo({ variant: "gpl-crate" }) });
@@ -668,7 +702,7 @@ describe("010 US2-5 - NOTICES.txt", () => {
   ].join("\n");
   const trimEnd = (text: string) => text.replace(/\n+$/, "");
 
-  /** contracts/notices.md's layout, built from the document: sections are separated by one blank line. */
+  /** 010 contracts/notices.md's layout, built from the document: sections are separated by one blank line. */
   function expected(doc: Doc) {
     const p = doc.program;
     const heading = (c: Component) =>
@@ -891,7 +925,7 @@ describe("010 US2-5 - the command line", () => {
 });
 
 // The host's own trees, with the real cargo: each OS's test run checks its own
-// notices (010 research.md §14). The records and texts are T021's, so this
+// notices (010 research.md §14). The records and texts are 010 T021's, so this
 // group is red until they are written.
 const hasCargo = spawnSync("cargo", ["--version"], { stdio: "ignore" }).status === 0;
 if (!hasCargo) {
@@ -985,7 +1019,7 @@ describe.skipIf(!hasCargo)("010 SC-001 - the host's notices against the real tre
     expect(text).toContain(
       `Source code: https://github.com/exodious/HoploDex\n\n${permission.replace(/\n+$/, "")}\n\n`,
     );
-    // research.md §2's CC BY 4.0 attribution of the EFF list, word for word (line breaks aside)
+    // 010 research.md §2's CC BY 4.0 attribution of the EFF list, word for word (line breaks aside)
     const attribution =
       'EFF Large Wordlist for Passphrases, by Joseph Bonneau for the Electronic Frontier Foundation (https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases), licensed under the Creative Commons Attribution 4.0 International License (https://creativecommons.org/licenses/by/4.0/). Changed: the dice numbers are removed, the hyphens are removed from "drop-down", "felt-tip" and "t-shirt", and "yo-yo" is replaced by "cheetah" (by github.com/dmuth/diceware, Apache-2.0).';
     expect(text.replace(/\s+/g, " ")).toContain(attribution);

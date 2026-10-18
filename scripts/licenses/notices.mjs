@@ -12,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isAllowed } from "./policy.mjs";
+import { PREFERENCE, isAllowed } from "./policy.mjs";
 import {
   checkClarifications,
   checkExceptions,
@@ -21,7 +21,7 @@ import {
   readRecords,
   unusedAcrossTargets,
 } from "./records.mjs";
-import { findTexts } from "./licenseFiles.mjs";
+import { findTextsAmong, placeTexts } from "./licenseFiles.mjs";
 import { crateShipped, npmShipped, runCargo, targetTriple } from "./shipped.mjs";
 import { choose } from "./spdx.mjs";
 
@@ -60,7 +60,7 @@ function realGit(root) {
 
 /**
  * The program block compiled into the interface and repeated in `notices.json`
- * (010 data-model.md, "Program block"; research.md §13). `git(args)` returns a
+ * (010 data-model.md, "Program block"; 010 research.md §13). `git(args)` returns a
  * git command's stdout and throws, or returns "", when there is no git; `now`
  * is then the build's own year.
  */
@@ -109,6 +109,39 @@ export function resolveInputs(options = {}) {
  */
 const spdxOf = (license) =>
   typeof license === "string" ? license.replace(/\s*\/\s*/g, " OR ") : license;
+
+/**
+ * The licenses to look for a text of, best first: `chosen`, then the other
+ * allowed alternatives of a plain choice (`A OR B`) in the shared preference
+ * order, since a package may ship only a less preferred alternative's text.
+ */
+function alternativesOf(declared, chosen, name) {
+  if (/[()]|\sAND\s/.test(declared)) return [chosen];
+  const rank = (id) => {
+    const index = PREFERENCE.indexOf(id);
+    return index === -1 ? PREFERENCE.length : index;
+  };
+  const others = declared
+    .split(/\s+OR\s+/)
+    .filter((id) => id !== chosen && isAllowed(id, { package: name }))
+    .sort((a, b) => rank(a) - rank(b));
+  return [chosen, ...others];
+}
+
+/**
+ * Whether the package or crate in `item.folder` ships a text for its license.
+ * An exception is for the version that doesn't; another version of the same
+ * name (`zune-core` 0.5 beside 0.4) uses its own files.
+ */
+function shipsOwnText(item, declared, chosen, label) {
+  if (!existsSync(item.folder)) return false;
+  try {
+    const alternatives = alternativesOf(declared, chosen, item.name);
+    return findTextsAmong(item.folder, alternatives, { declared, label }).failure === null;
+  } catch {
+    return false;
+  }
+}
 
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -239,9 +272,21 @@ export function buildNotices(options = {}) {
       // A clarification that failed has said why; the component waits for its fix.
       texts = clarifications.resolved[id];
       source = "clarified";
-    } else if (exceptions.used.includes(id)) {
+    } else if (exceptions.used.includes(id) && !shipsOwnText(item, declared, chosen, label)) {
       texts = exceptions.resolved[id];
       source = "exception";
+      // A choice is used under the alternative the exception's text is a text of.
+      const alternatives = alternativesOf(declared, chosen, item.name);
+      if (alternatives.length > 1) {
+        const placed = placeTexts(texts, alternatives);
+        if (placed === undefined) {
+          failures.push(
+            `${label}: none of its exception's texts (${texts.map((t) => t.file).join(", ")}) is a text for ${alternatives.join(", ")}. Review the exception (licenses/exceptions.json).`,
+          );
+          return;
+        }
+        chosen = placed;
+      }
     } else if (!existsSync(item.folder)) {
       failures.push(
         `${label}: its folder ${item.folder} doesn't exist${kind === "crate" ? " (cargo fetch should have fetched it)" : " (run npm ci)"}.`,
@@ -250,7 +295,11 @@ export function buildNotices(options = {}) {
     } else {
       let found;
       try {
-        found = findTexts(item.folder, chosen, { declared, label });
+        found = findTextsAmong(item.folder, alternativesOf(declared, chosen, item.name), {
+          declared,
+          label,
+        });
+        if (found.failure === null) chosen = found.license;
       } catch (error) {
         failures.push(`${label}: can't read its license files (${oneLine(error)}).`);
         return;

@@ -1,0 +1,10 @@
+Source: https://raw.githubusercontent.com/rusqlite/rusqlite/6d3c282dc5531a57eb4e22ece3207f00c95d0fb0/libsqlite3-sys/sqlcipher/sqlite3.c
+SQLite is in the public domain. The notice at the top of its source code
+(lines 64 to 69 of sqlcipher/sqlite3.c in libsqlite3-sys 0.38.1) reads:
+
+The author disclaims copyright to this source code.  In place of
+a legal notice, here is a blessing:
+
+   May you do good and not evil.
+   May you find forgiveness for yourself and forgive others.
+   May you share freely, never taking more than you give.

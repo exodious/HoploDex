@@ -28,7 +28,7 @@ the `e2e` build's WebDriver plugin don't ship.
 |---|---|---|---|
 | **Interface packages** | Every package that isn't development-only in `package-lock.json` (65), against the allow list | `scripts/check-npm-licenses.mjs` (`npm run audit:licenses`) | All allowed. OFL-1.1 only for `@fontsource*`, the recorded exception. 55 of the 65 are in the built bundle (52 in the scripts, plus the 3 font packages' CSS and `woff2`). The other 10 are counted by the audit but never bundled: 4 type and CSS-type packages marked `devOptional`, and 6 runtime packages that are removed as unused code. §6 |
 | **Backend crates** | Every crate for every target and feature, build crates and procedural macros included | `cargo deny check licenses` (`src-tauri/deny.toml`) | All allowed. Shipped with the release feature (`custom-protocol`), counted with `cargo tree -e normal,no-proc-macro`: Linux 280, Windows 202, macOS 197 crates. 324 across the three OSes |
-| **Licenses that need a second look** | Licenses other than MIT, Apache-2.0 and BSD among the shipped crates | `cargo tree … -f '{p} {l}'` | Unicode-3.0 (16, the `icu_*`/`zerovec` families, `unicode-ident`). Zlib (16, mostly one choice among several; Zlib alone for `foldhash`, `tinyvec_macros`). BSL-1.0 (`ryu`, with Apache-2.0 as the other choice). MPL-2.0 (`option-ext` only). CC0-1.0 or MIT-0 (`dunce`). 0BSD (`adler2`). Apache-2.0 WITH LLVM-exception (`rustix`, `linux-raw-sys`). All GPLv3-compatible on the FSF's list. No OpenSSL or SSLeay license anywhere in the tree |
+| **Licenses that need a second look** | Licenses other than MIT, Apache-2.0 and BSD among the shipped crates | `cargo tree … -f '{p} {l}'` | Unicode-3.0 (16, the `icu_*`/`zerovec` families, `unicode-ident`). Zlib (16, mostly one choice among several; Zlib alone for `foldhash`, `tinyvec_macros`). BSL-1.0 (`ryu`, with Apache-2.0 as the other choice). MPL-2.0 (`option-ext` only). CC0-1.0 or MIT-0 (`dunce`). 0BSD (`adler2`). Apache-2.0 WITH LLVM-exception (`rustix`, `linux-raw-sys`). All GPLv3-compatible on the FSF's list. The macOS `objc2` crates (MIT, or Zlib, Apache-2.0 or MIT) are derived from Apple SDKs and their repository says it is unclear whether distributing them is allowed; the owner accepted that on 2026-10-18 (§8). No OpenSSL or SSLeay license anywhere in the tree |
 | **MPL-2.0 Exhibit B** | Whether any MPL-2.0 file says "Incompatible With Secondary Licenses" | `grep -rli 'Incompatible With Secondary Licenses' --exclude='LICENSE*'` in each MPL-2.0 crate's source: `option-ext` 0.2.0 (shipped), and `cssparser` 0.36.0, `dtoa-short` 0.3.5, `selectors` 0.36.1 (build-only) | None |
 | **C code compiled inside a crate** | Shipped crates whose build compiles bundled C, or links a library the crate carries | The shipped trees, each crate's `build.rs` and package contents (§7) | `libsqlite3-sys` 0.38.1 (`bundled-sqlcipher`) compiles SQLCipher 4.14.0 community (BSD-3-Clause, "Copyright (c) 2008-2020 Zetetic LLC", `sqlcipher/LICENSE` in the crate) on SQLite 3.51.3 (public domain, the blessing at `sqlcipher/sqlite3.c:64`). `libdbus-sys` 0.2.7 is built without `vendored`, so it links the system's `libdbus` and compiles nothing. On macOS, `objc2-exception-helper` compiles its own small Objective-C file, under its crate's license. On Windows, `webview2-com-sys` 0.38.2 links Microsoft's `WebView2LoaderStatic.lib` (§3) |
 | **SQLCipher's crypto library** | Which library each OS's build links, and under what license | `libsqlite3-sys`'s `build.rs`; `scripts/windows/setup-system.ps1` | Linux: the system's OpenSSL `libcrypto`, dynamically, a system library. macOS: CommonCrypto (`SQLCIPHER_CRYPTO_CC`, the Security and CoreFoundation frameworks), a system library. Windows: OpenSSL from vcpkg (`x64-windows-static-md`), linked statically, so it ships inside the program. OpenSSL 3.x is Apache-2.0, which is compatible with GPLv3. 1.1.x and older use the OpenSSL/SSLeay license, which isn't, so the version decides. Today only `setup-system.ps1` checks the version (`OPENSSL_VERSION_MAJOR >= 3`), when a machine is set up. The notices build now reads the version the program is linked against and refuses anything older than 3 (§7). `openssl-sys` isn't in the tree on any target |
@@ -309,6 +309,17 @@ Today's entries:
 | Ten million passwords, Mark Burnett (public domain) | npm `@zxcvbn-ts/language-common` 4.1.3 | all | committed: the acknowledgement |
 | EFF Large Wordlist for Passphrases (CC BY 4.0) | npm `@zxcvbn-ts/language-common` 4.1.3 | all | committed: §2's attribution |
 
+_Amended 2026-10-18 (010 T021): the nine entries are as listed, with these
+settled details. OpenSSL's text is `LICENSE.txt` at `openssl-3.6.5`, the version
+vcpkg's port installs today (the Apache-2.0 text is the same across 3.x), and
+the entry's carrier needs `libsqlite3-sys`'s `bundled-sqlcipher` feature like
+SQLCipher's. The WebView2 loader's version is the SDK's, 1.0.3650.58 (§3). The
+SQLite text is the blessing with a line saying where it is in the source. The
+Moby entry carries its credit and random-name's MIT `LICENSE` (the repository at
+468ae50d). Each data entry's `version` names its list's release (2024, 2001-01,
+1990, 2015-02-09, 2016-07). Every committed text's first line is `Source: <url>`
+and nothing between it and the text._
+
 **Their licenses** are allowed for these entries only, as exceptions scoped
 to them in `policy.mjs` (constitution, "Licensing": a license acceptable only
 for particular packages is recorded as an exception):
@@ -355,6 +366,14 @@ automated one. It is how §3's loader would have been found. The initial list:
   `libdbus` and Core Foundation. These are found by `links` in the manifest,
   and listed only if they also carry files or build C.
 
+_Amended 2026-10-18 (010 T021): on the three real trees only four crates need
+an entry: `libsqlite3-sys`, `objc2-exception-helper`, `webview2-com-sys` (it
+carries the loader for three architectures, `WebView2Loader.dll` and the
+static `.lib`) and `windows_x86_64_msvc` (two versions, one entry; its import
+libraries). No `-sys` crate builds C or carries a prebuilt file, and no
+`windows_*_gnu` crate ships on these targets, so none is listed (a listed
+crate no target ships fails `--all-targets`)._
+
 **Rationale**: FR-009 asks for "recorded once" with a carrier check, and the
 loader showed the tools miss more than the spec named. A record kept by hand
 can only stay true if something fails when what it describes changes.
@@ -380,14 +399,46 @@ Rejected by FR-009.
     recorded version shows how old the check is, and the release review's
     manual list (FR-018) includes rechecking exceptions whose version is
     behind.
-  - **Today's entries**: on Linux, `alloc-stdlib`, `dlopen2`, the five
-    `unic-*` crates, `zune-core` 0.4 and `zune-jpeg` 0.4. On macOS, `block2`,
-    `dispatch2`, `objc2`, `objc2-app-kit`, `objc2-core-foundation`,
-    `objc2-encode`, `objc2-exception-helper`, `objc2-web-kit`. On Windows,
-    `webview2-com` and `webview2-com-sys`. On npm, `react-remove-scroll-bar`
-    and `@tauri-apps/plugin-dialog`. That is 19 crates and 2 packages. Where
-    several crates share one repository and one license file (the `objc2` and
-    `unic` families), they share a text file.
+  - **Today's entries**: on Linux, `alloc-stdlib`, `dlopen2`, `siphasher`,
+    the five `unic-*` crates, `zune-core` 0.4 and `zune-jpeg` 0.4. On macOS,
+    `block2`, `dispatch2`, `objc2`, `objc2-app-kit`, `objc2-core-foundation`,
+    `objc2-encode`, `objc2-exception-helper`, `objc2-foundation`,
+    `objc2-web-kit`. On Windows, `webview2-com` and `webview2-com-sys`. On
+    npm, `react-remove-scroll-bar` and `@tauri-apps/plugin-dialog`. That is 21
+    crates and 2 packages. Where several crates share one repository and one
+    license file (the `objc2` and `unic` families, the two `zune` crates, the
+    two `webview2` crates), they share a text file.
+  - _Amended 2026-10-18 (010 T021): the real trees differ from the list
+    planned: `siphasher` (its `COPYING` only names its licenses) and
+    `objc2-foundation` were missing from it. Three texts come from a commit
+    later than the checked version, because the repository had no text then:
+    the `objc2` family's `LICENSE-MIT.txt` (ee9a7ada, "Include license text in
+    the repository"), `siphasher`'s `LICENSE-MIT` (07a910ae) and
+    `react-remove-scroll-bar`'s `LICENSE` (the repository has no tag for
+    2.3.8). The `zune` crates' repository holds no MIT or Apache-2.0 text at
+    all, only Zlib's and a statement of the three-way choice, so both are
+    committed and the notice is under Zlib: an exception for a choice is used
+    under the first allowed alternative (in the preference order) that one of
+    its committed texts is a text of, placed by name and then by content as a
+    package's files are (a text under 400 bytes that no name places only
+    points, so the repository's statement of the choice doesn't count), and it
+    fails, naming the component, when none places. The
+    other crates take the text at the commit their package records
+    (`.cargo_vcs_info.json`)._
+  - _Amended 2026-10-18 (010 T021): owner decision. The `objc2` crates are
+    derived from Apple SDKs shipped with Xcode, and their repository's
+    [LICENSE.md](https://github.com/madsmtm/objc2/blob/8852b424193ca41602281b3d7540d7c8ed51e49a/LICENSE.md)
+    says "it is unclear whether distributing derived works such as these crates
+    are allowed". That is accepted: the crates are used under their stated
+    licenses, as the objc2 project reasons (using them needs Xcode, whose
+    license the builder has agreed to). The notices don't change._
+  - **A choice whose preferred license has no text** (`brotli-decompressor`:
+    `BSD-3-Clause/MIT`, ships BSD-3-Clause's text; `dunce`: `CC0-1.0 OR MIT-0
+    OR Apache-2.0`, ships CC0's) is not an exception. The notice names the
+    first allowed alternative the package has a text for (`findTextsAmong`,
+    in `licenseFiles.mjs`), and fails only when none has (§5, "Fail
+    closed"). An older crate writes a choice with a slash (`MIT/Apache-2.0`);
+    it is read as `OR`, as cargo and cargo-deny read it.
 - **`licenses/clarify.json`**: for a crate whose files the matcher places
   wrongly or can't place, it names the files to use, with the SHA-256 of each.
   If a file changes, the clarification fails and is reviewed. This is the Big

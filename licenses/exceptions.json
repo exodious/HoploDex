@@ -1,1 +1,192 @@
-[]
+[
+  {
+    "component": "crate:alloc-stdlib",
+    "checkedVersion": "0.2.4",
+    "declared": "BSD-3-Clause",
+    "texts": ["licenses/texts/alloc-stdlib/LICENSE.txt"],
+    "from": "https://raw.githubusercontent.com/dropbox/rust-alloc-no-stdlib/ae42d22078b98549e987d2f03d12df7b984fde47/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:block2",
+    "checkedVersion": "0.6.2",
+    "declared": "MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 0.6.2's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:dispatch2",
+    "checkedVersion": "0.3.1",
+    "declared": "Zlib OR Apache-2.0 OR MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 0.3.1's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:dlopen2",
+    "checkedVersion": "0.8.2",
+    "declared": "MIT",
+    "texts": ["licenses/texts/dlopen2/LICENSE.txt"],
+    "from": "https://raw.githubusercontent.com/OpenByteDev/dlopen2/cc80e4a0a90d499b677fdf7743699b4b3a43a989/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:objc2",
+    "checkedVersion": "0.6.4",
+    "declared": "MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 0.6.4's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:objc2-app-kit",
+    "checkedVersion": "0.3.2",
+    "declared": "Zlib OR Apache-2.0 OR MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 0.3.2's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:objc2-core-foundation",
+    "checkedVersion": "0.3.2",
+    "declared": "Zlib OR Apache-2.0 OR MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 0.3.2's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:objc2-encode",
+    "checkedVersion": "4.1.0",
+    "declared": "MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 4.1.0's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:objc2-exception-helper",
+    "checkedVersion": "0.1.1",
+    "declared": "Zlib OR Apache-2.0 OR MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 0.1.1's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:objc2-foundation",
+    "checkedVersion": "0.3.2",
+    "declared": "MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 0.3.2's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:objc2-web-kit",
+    "checkedVersion": "0.3.2",
+    "declared": "Zlib OR Apache-2.0 OR MIT",
+    "texts": ["licenses/texts/objc2/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/madsmtm/objc2/ee9a7ada2131f5944b8750428e265c15632f2a19/LICENSE-MIT.txt",
+    "reason": "the published crate leaves out its license file, and the repository had none at 0.3.2's commit; its MIT text was added later, in ee9a7ada (\"Include license text in the repository\"), unchanged for the license the crate declares"
+  },
+  {
+    "component": "crate:siphasher",
+    "checkedVersion": "1.0.3",
+    "declared": "MIT OR Apache-2.0",
+    "texts": ["licenses/texts/siphasher/COPYING.txt", "licenses/texts/siphasher/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/jedisct1/rust-siphash/07a910ae2ad302c795c7fca173e997c0eb923c40/LICENSE-MIT",
+    "reason": "the published crate ships only a COPYING that names its licenses; the repository added the MIT text later (07a910ae, \"Add full Apache-2.0 and MIT license texts\")"
+  },
+  {
+    "component": "crate:unic-char-property",
+    "checkedVersion": "0.9.0",
+    "declared": "MIT OR Apache-2.0",
+    "texts": ["licenses/texts/unic/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/open-i18n/rust-unic/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:unic-char-range",
+    "checkedVersion": "0.9.0",
+    "declared": "MIT OR Apache-2.0",
+    "texts": ["licenses/texts/unic/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/open-i18n/rust-unic/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:unic-common",
+    "checkedVersion": "0.9.0",
+    "declared": "MIT OR Apache-2.0",
+    "texts": ["licenses/texts/unic/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/open-i18n/rust-unic/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:unic-ucd-ident",
+    "checkedVersion": "0.9.0",
+    "declared": "MIT OR Apache-2.0",
+    "texts": ["licenses/texts/unic/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/open-i18n/rust-unic/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:unic-ucd-version",
+    "checkedVersion": "0.9.0",
+    "declared": "MIT OR Apache-2.0",
+    "texts": ["licenses/texts/unic/LICENSE-MIT.txt"],
+    "from": "https://raw.githubusercontent.com/open-i18n/rust-unic/5878605364af97a3358368a6eaef02104af2e016/LICENSE-MIT",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:webview2-com",
+    "checkedVersion": "0.38.2",
+    "declared": "MIT",
+    "texts": ["licenses/texts/webview2-rs/LICENSE.txt"],
+    "from": "https://raw.githubusercontent.com/wravery/webview2-rs/b74dc5e2b394044bea5191052868ce7a106c202c/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:webview2-com-sys",
+    "checkedVersion": "0.38.2",
+    "declared": "MIT",
+    "texts": ["licenses/texts/webview2-rs/LICENSE.txt"],
+    "from": "https://raw.githubusercontent.com/wravery/webview2-rs/b74dc5e2b394044bea5191052868ce7a106c202c/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "crate:zune-core",
+    "checkedVersion": "0.4.12",
+    "declared": "MIT OR Apache-2.0 OR Zlib",
+    "texts": [
+      "licenses/texts/zune-image/LICENSE.md.txt",
+      "licenses/texts/zune-image/LICENSE-ZLIB.txt"
+    ],
+    "from": "https://raw.githubusercontent.com/etemesi254/zune-image/f8fbb123d5ed04441e8324a555bfcda0cb1bd28f/LICENSE-ZLIB",
+    "reason": "the published crate leaves out its license file; the repository's own license statement (copyright line) and its only license text, Zlib's, are used, since it holds no MIT or Apache-2.0 text"
+  },
+  {
+    "component": "crate:zune-jpeg",
+    "checkedVersion": "0.4.21",
+    "declared": "MIT OR Apache-2.0 OR Zlib",
+    "texts": [
+      "licenses/texts/zune-image/LICENSE.md.txt",
+      "licenses/texts/zune-image/LICENSE-ZLIB.txt"
+    ],
+    "from": "https://raw.githubusercontent.com/etemesi254/zune-image/fa2c767a01d7d9373911d0bf63e0588553d67e0e/LICENSE-ZLIB",
+    "reason": "the published crate leaves out its license file; the repository's own license statement (copyright line) and its only license text, Zlib's, are used, since it holds no MIT or Apache-2.0 text"
+  },
+  {
+    "component": "npm:@tauri-apps/plugin-dialog",
+    "checkedVersion": "2.7.2",
+    "declared": "MIT OR Apache-2.0",
+    "texts": ["licenses/texts/tauri-plugin-dialog/LICENSE_MIT.txt"],
+    "from": "https://raw.githubusercontent.com/tauri-apps/plugins-workspace/dialog-v2.7.2/LICENSE_MIT",
+    "reason": "the package ships only LICENSE.spdx, SPDX metadata with a copyright line and no license text"
+  },
+  {
+    "component": "npm:react-remove-scroll-bar",
+    "checkedVersion": "2.3.8",
+    "declared": "MIT",
+    "texts": ["licenses/texts/react-remove-scroll-bar/LICENSE.txt"],
+    "from": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/7301c160fda44cb8cf2b9fdfde61efad35736196/LICENSE",
+    "reason": "the published package leaves out its license file; the repository has no tag for 2.3.8, so this is the last commit that changed LICENSE"
+  }
+]

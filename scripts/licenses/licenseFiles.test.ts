@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { findTexts } from "./licenseFiles.mjs";
+import { findTexts, findTextsAmong } from "./licenseFiles.mjs";
 
 const project = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "project");
 const crate = (name: string, version = "1.0.0") =>
@@ -233,5 +233,33 @@ describe("010 FR-010 - fail closed: no text, no guess, no generic fallback", () 
     const found = find(crate("unplaceable"), "MIT", "MIT");
     expect(found.failure).toBeNull();
     expect(files(found).sort()).toEqual(["LICENSE", "LICENSE.txt"]);
+  });
+});
+
+describe("010 research.md §5 - a choice uses the alternative whose text the package ships", () => {
+  const declared = "MIT OR Apache-2.0";
+  const among = (folder: string, licenses: string[]) =>
+    findTextsAmong(folder, licenses, { declared, label: "crate fixture 1.0.0" }) as Found & {
+      license: string;
+    };
+
+  it("takes the first license that has a text, with that license named", () => {
+    // with-notice ships only Apache-2.0's LICENSE and a NOTICE
+    const found = among(crate("with-notice"), ["MIT", "Apache-2.0"]);
+    expect(found.failure).toBeNull();
+    expect(found.license).toBe("Apache-2.0");
+    expect(files(found)).toEqual(["LICENSE", "NOTICE", "AUTHORS"]);
+  });
+
+  it("keeps the preferred license when the package ships its text", () => {
+    const found = among(crate("dual"), ["MIT", "Apache-2.0"]);
+    expect(found.license).toBe("MIT");
+    expect(files(found)).toEqual(["LICENSE-MIT"]);
+  });
+
+  it("fails with the preferred license's message when no alternative has a text", () => {
+    const found = among(crate("authors-only"), ["MIT", "Apache-2.0"]);
+    expect(found.failure).toMatch(/^crate fixture 1\.0\.0: no license text for MIT/);
+    expect(found.texts).toEqual([]);
   });
 });

@@ -1,0 +1,8 @@
+Source: https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases
+EFF Large Wordlist for Passphrases, by Joseph Bonneau for the Electronic
+Frontier Foundation (https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases),
+licensed under the Creative Commons Attribution 4.0 International License
+(https://creativecommons.org/licenses/by/4.0/). Changed: the dice numbers
+are removed, the hyphens are removed from "drop-down", "felt-tip" and
+"t-shirt", and "yo-yo" is replaced by "cheetah" (by github.com/dmuth/diceware,
+Apache-2.0).

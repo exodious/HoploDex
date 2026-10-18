@@ -166,3 +166,40 @@ export function findTexts(folder, chosen, { declared, label }) {
     failure: null,
   };
 }
+
+/**
+ * `findTexts` for the first of `licenses` that the folder has a text for (010
+ * research.md §5): a choice resolves to its most preferred allowed license, but
+ * a package that ships only another alternative's text (`dunce` ships CC0's,
+ * not Apache-2.0's) is used under that one. Returns `findTexts`' result and
+ * the `license` it is for; with no text for any, the first license's failure.
+ */
+export function findTextsAmong(folder, licenses, options) {
+  let first;
+  for (const license of licenses) {
+    const found = findTexts(folder, license, options);
+    if (found.failure === null) return { ...found, license };
+    first ??= { ...found, license };
+  }
+  return first;
+}
+
+/**
+ * The first of `licenses` (best first) that some of `texts` (`[{ file, text }]`,
+ * committed under licenses/texts/) is a text of, placed as `findTexts` places a
+ * package's files: by the file's name, then by its content, and a text under 400
+ * bytes that no name places only points elsewhere (an exception for a choice of
+ * licenses names the license whose text it holds, 010 research.md §8).
+ * `undefined` when none places.
+ */
+export function placeTexts(texts, licenses) {
+  for (const license of licenses) {
+    for (const { file, text } of texts) {
+      if (placedByName(file, [license]).length > 0) return license;
+      if (Buffer.byteLength(text) >= POINTER_BYTES && placedByContent(text, [license]).length > 0) {
+        return license;
+      }
+    }
+  }
+  return undefined;
+}

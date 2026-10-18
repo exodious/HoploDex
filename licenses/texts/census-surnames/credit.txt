@@ -1,0 +1,4 @@
+Source: https://www.census.gov/topics/population/genealogy/data/1990_census/1990_census_namefiles.html
+The strength hint's list of surnames is the U.S. Census Bureau's 1990 Census
+surname list (dist.all.last), a work of the United States government and in
+the public domain (17 U.S.C. section 105).
