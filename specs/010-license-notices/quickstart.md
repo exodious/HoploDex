@@ -10,7 +10,7 @@ has the full forms, including single files.
 scripts/dev-container.sh npm test
 scripts/dev-container.sh npm run audit:licenses
 scripts/dev-container.sh bash -c 'npm run build && node scripts/licenses/notices.mjs --check'
-scripts/dev-container.sh bash -c 'cd src-tauri && cargo test --features test-kdf'
+scripts/dev-container.sh bash -c 'cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf'
 scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts'
 scripts/dev-container.sh bash -c 'npm run build && npm run screenshots'
 scripts/dev-container.sh npm run bundle:linux -- --bundles appimage
