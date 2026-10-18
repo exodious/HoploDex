@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState } from "react";
@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { ToastProvider, useToast } from "../../components";
 import type { Notify } from "../../components/toastContext";
 import { CommandFailure } from "../../services/tauriClient";
+import { DatabaseMenu } from "../databases/DatabaseMenu";
 import { DatabaseNotes } from "../databases/DatabaseNotes";
 import * as databasesService from "../databases/databasesService";
 import type { ChooserState, DatabaseStatus, Draft, PendingSummary } from "../databases/types";
@@ -19,6 +20,7 @@ import type { SessionScope } from "./sessionScope";
 import * as sessionService from "./sessionService";
 import type { SessionClosed, SessionClosing } from "./sessionService";
 import { useSession } from "./sessionStore";
+import type { SessionState } from "./sessionStore";
 
 /** What the session scope of the open (session id 1) looks like to a mocked service. */
 const SCOPE = expect.objectContaining({ id: 1 });
@@ -1287,5 +1289,320 @@ describe("SessionProvider (009 US3: upgrading)", () => {
       undefined,
       true,
     );
+  });
+});
+
+// --- 010: About HoploDex (010 FR-001, contracts/ui.md §1, §4) --------------------
+
+describe("SessionProvider and About HoploDex (010 FR-001)", () => {
+  let sessionClosing: (closing: SessionClosing) => void;
+  let sessionClosed: (closed: SessionClosed) => void;
+  let aboutRequested: () => void;
+  let session: SessionState;
+  const unsubscribeAbout = vi.fn();
+  const fetchNotices = vi.fn();
+
+  /** The open collection's tree: the way into About from a session, and the
+   * session itself for a test to call. */
+  function Probe() {
+    session = useSession();
+    return (
+      <>
+        <button type="button" onClick={() => session.showAbout()}>
+          Show About
+        </button>
+        <button type="button" onClick={() => void session.closeDatabase("closed")}>
+          Close it
+        </button>
+        <button type="button" onClick={() => void session.closeDatabase("switched")}>
+          Switch it
+        </button>
+        <DatabaseMenu />
+        <p>Collection shell</p>
+      </>
+    );
+  }
+
+  /** The dialog's program block needs the Vite define of 010 contracts/notices.md
+   * ("The Vite plugin"); the fetch never answers, so the dialog stays loading. */
+  beforeEach(() => {
+    vi.stubGlobal("__HOPLODEX_PROGRAM__", {
+      name: "HoploDex",
+      version: "0.1.0",
+      copyrightYears: "2026",
+      copyrightHolder: "exodious and the HoploDex contributors",
+      sourceUrl: "https://github.com/exodious/HoploDex",
+    });
+    fetchNotices.mockReset().mockReturnValue(new Promise(() => {}));
+    vi.stubGlobal("fetch", fetchNotices);
+    unsubscribeAbout.mockReset();
+    vi.mocked(sessionService.getDatabaseStatus).mockReset().mockRejectedValue(closed);
+    vi.mocked(sessionService.closeDatabase)
+      .mockReset()
+      .mockResolvedValue({ backup: "notAttempted" });
+    vi.mocked(sessionService.onSessionClosing)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosing = handler;
+        return () => {};
+      });
+    vi.mocked(sessionService.onSessionClosed)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sessionClosed = handler;
+        return () => {};
+      });
+    vi.mocked(sessionService.onQuitRequested)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(sessionService.onAboutRequested)
+      .mockReset()
+      .mockImplementation((handler) => {
+        aboutRequested = handler;
+        return unsubscribeAbout;
+      });
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooser);
+    vi.mocked(databasesService.openDatabase).mockReset();
+    vi.mocked(databasesService.listBackups).mockReset();
+    vi.mocked(databasesService.onRestoreProgress)
+      .mockReset()
+      .mockReturnValue(() => {});
+    vi.mocked(databasesService.onBackupsDeleteProgress)
+      .mockReset()
+      .mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const aboutDialog = () => screen.queryByRole("dialog", { name: "About HoploDex" });
+  const findAbout = () => screen.findByRole("dialog", { name: "About HoploDex" });
+
+  function renderProvider() {
+    return render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+  }
+
+  async function renderOpen() {
+    vi.mocked(sessionService.getDatabaseStatus).mockResolvedValue(status(false));
+    const rendered = renderProvider();
+    await screen.findByText("Collection shell");
+    return rendered;
+  }
+
+  async function renderChooser() {
+    const rendered = renderProvider();
+    await screen.findByLabelText("Passphrase for “Main collection”");
+    return rendered;
+  }
+
+  it("opens the one dialog from the chooser's button, and a second call leaves it as it is", async () => {
+    const user = userEvent.setup();
+    await renderChooser();
+
+    await user.click(screen.getByRole("button", { name: "About HoploDex" }));
+    const dialog = await findAbout();
+    act(() => aboutRequested());
+
+    expect(screen.getAllByRole("dialog")).toEqual([dialog]);
+    expect(fetchNotices).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the one dialog in the open phase, and a second call leaves it as it is", async () => {
+    await renderOpen();
+
+    act(() => session.showAbout());
+    const dialog = await findAbout();
+    act(() => session.showAbout());
+    act(() => aboutRequested());
+
+    expect(screen.getAllByRole("dialog")).toEqual([dialog]);
+    expect(fetchNotices).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens from the menu bar's event in the starting phase", async () => {
+    vi.mocked(sessionService.getDatabaseStatus).mockReturnValue(new Promise(() => {}));
+    renderProvider();
+
+    expect(sessionService.onAboutRequested).toHaveBeenCalledTimes(1);
+    act(() => aboutRequested());
+
+    expect(await findAbout()).toBeInTheDocument();
+  });
+
+  it("opens from the menu bar's event in the chooser phase", async () => {
+    await renderChooser();
+
+    act(() => aboutRequested());
+
+    expect(await findAbout()).toBeInTheDocument();
+  });
+
+  it("opens from the menu bar's event in the open phase", async () => {
+    await renderOpen();
+
+    act(() => aboutRequested());
+
+    expect(await findAbout()).toBeInTheDocument();
+  });
+
+  it("listens for the event for the provider's whole life, across every phase", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.openDatabase).mockResolvedValue(status(false));
+    const { unmount } = await renderChooser();
+    expect(sessionService.onAboutRequested).toHaveBeenCalledTimes(1);
+
+    await user.type(
+      screen.getByLabelText("Passphrase for “Main collection”"),
+      `${PASSPHRASE}{Enter}`,
+    );
+    await screen.findByText("Collection shell");
+    await user.click(screen.getByRole("button", { name: "Close it" }));
+    await screen.findByLabelText("Passphrase for “Main collection”");
+
+    expect(sessionService.onAboutRequested).toHaveBeenCalledTimes(1);
+    expect(unsubscribeAbout).not.toHaveBeenCalled();
+    unmount();
+    expect(unsubscribeAbout).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes, without asking, when a database opens", async () => {
+    const user = userEvent.setup();
+    let finishOpen: (opened: DatabaseStatus) => void = () => {};
+    vi.mocked(databasesService.openDatabase).mockReturnValue(
+      new Promise((resolve) => {
+        finishOpen = resolve;
+      }),
+    );
+    await renderChooser();
+    await user.type(
+      screen.getByLabelText("Passphrase for “Main collection”"),
+      `${PASSPHRASE}{Enter}`,
+    );
+    await waitFor(() => expect(databasesService.openDatabase).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "About HoploDex" }));
+    await findAbout();
+
+    await act(async () => finishOpen(status(false)));
+
+    expect(await screen.findByText("Collection shell")).toBeInTheDocument();
+    expect(aboutDialog()).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("closes, without asking, on a lock, which shows the closing screen", async () => {
+    await renderOpen();
+    act(() => session.showAbout());
+    await findAbout();
+
+    act(() => sessionClosing({ sessionId: 1, reason: "lockedByUser" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Closing “Main collection”…" }),
+    ).toBeInTheDocument();
+    expect(aboutDialog()).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    act(() => sessionClosed({ sessionId: 1, reason: "lockedByUser", databasePath: PATH }));
+    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(aboutDialog()).not.toBeInTheDocument();
+  });
+
+  it("stays open for a closing event of another session", async () => {
+    await renderOpen();
+    act(() => session.showAbout());
+    await findAbout();
+
+    act(() => sessionClosing({ sessionId: 2, reason: "closed" }));
+
+    expect(aboutDialog()).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Closing/ })).not.toBeInTheDocument();
+  });
+
+  it("closes, without asking, when the database closes under it (a take-over)", async () => {
+    await renderOpen();
+    act(() => session.showAbout());
+    await findAbout();
+
+    act(() => sessionClosed({ sessionId: 1, reason: "takenOver", databasePath: PATH }));
+
+    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(aboutDialog()).not.toBeInTheDocument();
+  });
+
+  it.each(["closed", "switched"] as const)(
+    "closes, without asking, on a database %s",
+    async (reason) => {
+      await renderOpen();
+      act(() => session.showAbout());
+      await findAbout();
+
+      await act(async () => void (await session.closeDatabase(reason)));
+
+      expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, reason);
+      expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+      expect(aboutDialog()).not.toBeInTheDocument();
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    },
+  );
+
+  it("does not stay closed: the next call opens it again, from the chooser", async () => {
+    const user = userEvent.setup();
+    await renderOpen();
+    act(() => session.showAbout());
+    await findAbout();
+    await act(async () => void (await session.closeDatabase("closed")));
+    await screen.findByLabelText("Passphrase for “Main collection”");
+
+    await user.click(screen.getByRole("button", { name: "About HoploDex" }));
+
+    expect(await findAbout()).toBeInTheDocument();
+  });
+
+  it("returns focus to the chooser's button when it closes", async () => {
+    const user = userEvent.setup();
+    await renderChooser();
+    const button = screen.getByRole("button", { name: "About HoploDex" });
+    await user.click(button);
+    await findAbout();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(aboutDialog()).not.toBeInTheDocument());
+    expect(button).toHaveFocus();
+  });
+
+  it("returns focus to the control that opened it in the open phase", async () => {
+    const user = userEvent.setup();
+    await renderOpen();
+    const button = screen.getByRole("button", { name: "Show About" });
+    await user.click(button);
+    await findAbout();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(aboutDialog()).not.toBeInTheDocument());
+    expect(button).toHaveFocus();
+  });
+
+  it("opens over another dialog from the menu bar, and returns focus there", async () => {
+    const user = userEvent.setup();
+    await renderOpen();
+    await user.click(screen.getByRole("button", { name: "Database" }));
+    await user.click(await screen.findByRole("menuitem", { name: "About databases and security" }));
+    const guide = await screen.findByRole("dialog", { name: "About databases and security" });
+
+    act(() => aboutRequested());
+    const about = await findAbout();
+
+    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(about).not.toBeInTheDocument());
+    expect(guide).toBeInTheDocument();
+    expect(guide).toContainElement(document.activeElement as HTMLElement);
   });
 });

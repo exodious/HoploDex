@@ -4,6 +4,8 @@ import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import * as sessionService from "../session/sessionService";
 import { SessionProvider } from "../session/SessionProvider";
+import { SessionContext } from "../session/sessionStore";
+import type { SessionState } from "../session/sessionStore";
 import { useDirtyForm } from "../session/usePendingDraft";
 import * as databasesService from "./databasesService";
 import { DatabaseMenu } from "./DatabaseMenu";
@@ -141,6 +143,7 @@ describe("DatabaseMenu (003 contracts/ui-databases.md §4)", () => {
       "Change passphrase…",
       "Restore from a backup…",
       "About databases and security",
+      "About HoploDex",
     ]);
   });
 
@@ -323,5 +326,55 @@ describe("Lock now (003 FR-033, FR-035)", () => {
     await user.keyboard("{Meta>}l{/Meta}");
 
     await waitFor(() => expect(sessionService.lockDatabase).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("DatabaseMenu's About HoploDex item (010 US1-2, 010 FR-001)", () => {
+  function renderWithSession() {
+    const value: SessionState = {
+      status,
+      openDatabase: vi.fn().mockResolvedValue(undefined),
+      createDatabase: vi.fn().mockResolvedValue(undefined),
+      closeDatabase: vi.fn().mockResolvedValue(undefined),
+      lockDatabase: vi.fn().mockResolvedValue(undefined),
+      refreshStatus: vi.fn().mockResolvedValue(undefined),
+      dismissNote: vi.fn().mockResolvedValue(undefined),
+      restoreBackup: vi.fn().mockResolvedValue(undefined),
+      upgradeDatabase: vi.fn().mockResolvedValue(undefined),
+      settingsRequested: false,
+      requestSettings: vi.fn(),
+      clearSettingsRequest: vi.fn(),
+      showAbout: vi.fn(),
+    };
+    render(
+      <SessionContext.Provider value={value}>
+        <DatabaseMenu />
+      </SessionContext.Provider>,
+    );
+    return value;
+  }
+
+  it("comes directly after About databases and security", async () => {
+    const user = userEvent.setup();
+    renderWithSession();
+
+    await user.click(screen.getByRole("button", { name: "Database" }));
+
+    const names = (await screen.findAllByRole("menuitem")).map((item) => item.textContent);
+    const guide = names.indexOf("About databases and security");
+    expect(guide).toBeGreaterThan(-1);
+    expect(names[guide + 1]).toBe("About HoploDex");
+  });
+
+  it("asks the session to show About, and opens none of the menu's own dialogs", async () => {
+    const user = userEvent.setup();
+    const session = renderWithSession();
+
+    await user.click(screen.getByRole("button", { name: "Database" }));
+    await user.click(await screen.findByRole("menuitem", { name: "About HoploDex" }));
+
+    expect(session.showAbout).toHaveBeenCalledTimes(1);
+    expect(session.lockDatabase).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
