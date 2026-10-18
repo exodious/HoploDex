@@ -1420,10 +1420,15 @@ container keeps the data in `~/human-testing` in its home volume (via
 
 ```bash
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
-cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
+cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml --features test-kdf -- -D warnings
 npm run lint             # eslint, --max-warnings 0
 npm run format:check     # prettier
 ```
+
+Clippy takes `--features test-kdf` because the upgrade's tests import
+`db::upgrade::testing`, which exists only with `upgrade-test-steps` (009
+research.md §14), and `test-kdf` turns that on; without it `--all-targets`
+doesn't compile.
 
 ## Dependency audit
 
