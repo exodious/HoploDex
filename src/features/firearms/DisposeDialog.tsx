@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button, ChoiceCards, DateField, Dialog, MoneyField, TextField } from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
@@ -150,6 +150,7 @@ function DisposeForm({
   // The backend's own refusal of the recipient (`fieldErrors.recipient`),
   // shown on its field until it is edited.
   const [recipientRefusal, setRecipientRefusal] = useState<string | null>(null);
+  const recipientRef = useRef<HTMLInputElement>(null);
 
   const parsedDate = parseDateInput(date);
   const parsedPrice = parseDollars(price);
@@ -260,6 +261,8 @@ function DisposeForm({
       const refusedRecipient = e instanceof CommandFailure ? e.fieldErrors?.recipient : undefined;
       if (refusedRecipient) {
         setRecipientRefusal(refusedRecipient);
+        // The refused field takes the focus, as in the other forms.
+        recipientRef.current?.focus();
         return false;
       }
       setServerError(
@@ -292,6 +295,7 @@ function DisposeForm({
           minCardWidth={96}
         />
         <TextField
+          ref={recipientRef}
           label="Transferred to"
           required
           value={recipient}

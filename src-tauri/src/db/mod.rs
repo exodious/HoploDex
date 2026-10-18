@@ -6,6 +6,7 @@
 
 pub mod cipher;
 pub mod raw_file;
+pub mod upgrade;
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -19,8 +20,11 @@ use crate::services::passphrase::Passphrase;
 
 /// Versioned SQL migrations, applied in order. Names are stored in
 /// `schema_migrations`, which is also the database's data-layout version
-/// (003 contracts/database-file.md).
-const MIGRATIONS: &[(&str, &str)] = &[
+/// (003 contracts/database-file.md). Every caller that creates, opens or checks
+/// a database uses [`upgrade::build_steps`], which adds a build's test-only
+/// steps, never this list itself; it is public for the tests that check the two
+/// agree.
+pub const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_initial", include_str!("migrations/0001_initial.sql")),
     ("0002_fts5", include_str!("migrations/0002_fts5.sql")),
     ("0003_seed_firearm_types", include_str!("migrations/0003_seed_firearm_types.sql")),
@@ -40,6 +44,8 @@ pub enum DbError {
     Random(#[from] getrandom::Error),
     #[error("a file already exists at {}", .0.display())]
     Exists(PathBuf),
+    #[error("{0}")]
+    Upgrade(#[from] upgrade::UpgradeError),
 }
 
 /// Why a database did not open (003 research.md §2). Each maps to one command
@@ -139,7 +145,7 @@ fn initialize(
 ) -> Result<Connection, DbError> {
     let conn = Connection::open(path)?;
     configure(&conn, passphrase)?;
-    apply_migrations(&conn)?;
+    upgrade::upgrade(&conn, &upgrade::build_steps(path), None, &mut |_, _| {})?;
     // The settings row goes in before `app_state` exists, so its
     // change-tracking trigger finds no backup record to mark: creating a
     // database is not a change to back up (003 FR-025).
@@ -168,18 +174,97 @@ pub fn record_saved_version(conn: &Connection) -> rusqlite::Result<()> {
     .map(|_| ())
 }
 
+/// What [`open_database`] found (009 research.md §4).
+#[derive(Debug)]
+pub enum Opened {
+    /// Opened: this computer's open marker is set, and the connection holds
+    /// the file's exclusive lock.
+    Ready(Connection),
+    /// The database is in an older layout. It is keyed and holds the file's
+    /// write lock, but nothing has been written to it, not even the open
+    /// marker: the caller keeps it until the user answers the upgrade
+    /// question, and then runs [`upgrade::upgrade`] on it.
+    UpgradeDue {
+        conn: Connection,
+        /// The names of the steps to apply, in order.
+        steps_due: Vec<&'static str>,
+        /// The open marker found at the question: another computer's when
+        /// `take_over` opened a database it had open.
+        marker_seen: SeenMarker,
+    },
+}
+
+impl Opened {
+    /// The connection of an open that had nothing to upgrade.
+    ///
+    /// # Panics
+    /// When steps are due: for a caller that knows there are none (a test's
+    /// database in the current layout).
+    pub fn expect_ready(self) -> Connection {
+        match self {
+            Self::Ready(conn) => conn,
+            Self::UpgradeDue { steps_due, .. } => {
+                panic!("expected a database in the current layout, steps are due: {steps_due:?}")
+            }
+        }
+    }
+
+    /// The connection of an open that must have had nothing to upgrade
+    /// (a restored copy that was just upgraded; a re-keyed copy), as an
+    /// error when steps are due after all.
+    pub fn into_ready(self) -> Result<Connection, OpenError> {
+        match self {
+            Self::Ready(conn) => Ok(conn),
+            Self::UpgradeDue { steps_due, .. } => {
+                log::error!("steps are due on a database that should be current: {steps_due:?}");
+                Err(OpenError::Internal(rusqlite::Error::InvalidQuery))
+            }
+        }
+    }
+}
+
+/// The open marker as `app_state` holds it (003 FR-032).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeenMarker {
+    pub machine_id: Option<String>,
+    pub machine_name: Option<String>,
+    pub since: Option<String>,
+}
+
+impl SeenMarker {
+    /// Reads the marker of the database on `conn`.
+    pub fn read(conn: &Connection) -> rusqlite::Result<Self> {
+        conn.query_row(
+            "SELECT open_machine_id, open_machine_name, open_since FROM app_state",
+            [],
+            |row| {
+                Ok(Self { machine_id: row.get(0)?, machine_name: row.get(1)?, since: row.get(2)? })
+            },
+        )
+    }
+
+    /// Another computer than `machine` has marked the database open.
+    pub fn is_another_computers(&self, machine: &MachineIdentity) -> bool {
+        self.machine_id.as_ref().is_some_and(|id| *id != machine.id)
+    }
+}
+
 /// Opens the database at `path` with `passphrase` on `machine`, in
 /// 003 research.md §2's order. Nothing is written until every check has passed,
 /// so a refused open never changes the file (003 FR-006, FR-014). A database
 /// marked open on another computer is refused unless `take_over` is set
 /// (003 FR-032). The returned connection holds the file's exclusive lock until
 /// it is dropped.
+///
+/// A database in an older layout is not changed (009 research.md §4): it is
+/// returned as [`Opened::UpgradeDue`], holding the file's write lock, for the
+/// caller to ask the user before it upgrades it.
 pub fn open_database(
     path: &Path,
     passphrase: &Passphrase,
     machine: &MachineIdentity,
     take_over: bool,
-) -> Result<Connection, OpenError> {
+) -> Result<Opened, OpenError> {
     // Before SQLite: a missing or inaccessible file.
     match OpenOptions::new().read(true).write(true).open(path) {
         Ok(file) if file.metadata().is_ok_and(|m| m.is_file()) => {}
@@ -207,39 +292,55 @@ pub fn open_database(
     }
     // Step 3, read-only: a migration this build doesn't know means a newer
     // version of HoploDex has changed the data layout.
-    if has_unknown_migration(&conn).map_err(OpenError::classify)? {
+    if has_unknown_migration(&conn, path).map_err(OpenError::classify)? {
         return Err(OpenError::NewerVersion);
     }
     // Step 4, read-only: open on another computer. This computer's own
     // marker is one a crash left behind, since the exclusive lock has
     // already shown no other copy here has the file open.
-    let (marker_id, marker_name, marker_since): (Option<String>, Option<String>, Option<String>) =
-        conn.query_row(
-            "SELECT open_machine_id, open_machine_name, open_since FROM app_state",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .map_err(OpenError::classify)?;
-    if let Some(marker_id) = marker_id
-        && marker_id != machine.id
-        && !take_over
-    {
+    let marker_seen = SeenMarker::read(&conn).map_err(OpenError::classify)?;
+    if marker_seen.is_another_computers(machine) && !take_over {
         return Err(OpenError::OpenElsewhere {
-            machine_name: marker_name.unwrap_or_default(),
-            since: marker_since.unwrap_or_default(),
+            machine_name: marker_seen.machine_name.unwrap_or_default(),
+            since: marker_seen.since.unwrap_or_default(),
         });
     }
 
-    // Step 5: the housekeeping writes. Setting the marker also takes the
+    // Step 4b: steps due. Taking the write lock changes nothing, and
+    // exclusive locking mode keeps it, so any other connection to the file is
+    // refused as "in use" while the user decides (009 research.md §4).
+    let steps_due = upgrade::steps_due(&conn, path).map_err(OpenError::classify)?;
+    if !steps_due.is_empty() {
+        conn.execute_batch("BEGIN EXCLUSIVE; COMMIT").map_err(OpenError::classify)?;
+        return Ok(Opened::UpgradeDue { conn, steps_due, marker_seen });
+    }
+
+    // Step 5: the housekeeping write. Setting the marker also takes the
     // write lock, which exclusive locking mode then keeps, so any other
     // connection to the file is refused as "in use" from here on.
-    apply_migrations(&conn).map_err(OpenError::classify)?;
+    set_open_marker(&conn, &upgrade::OpenMarker::now(machine)).map_err(OpenError::classify)?;
+    Ok(Opened::Ready(conn))
+}
+
+/// Marks the database open on this computer.
+fn set_open_marker(conn: &Connection, marker: &upgrade::OpenMarker) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",
-        rusqlite::params![machine.id, machine.display_name, now_utc()],
+        rusqlite::params![marker.machine_id, marker.machine_name, marker.since],
     )
-    .map_err(OpenError::classify)?;
-    Ok(conn)
+    .map(|_| ())
+}
+
+/// Marks the database not open on any computer, as a close does (003 FR-032,
+/// FR-040): for an upgrade that finished and then found it was not to open
+/// the database (009 FR-016).
+pub fn clear_open_marker(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE app_state
+         SET open_machine_id = NULL, open_machine_name = NULL, open_since = NULL",
+        [],
+    )
+    .map(|_| ())
 }
 
 /// Opens a copy that is to replace a database (a restore's, a passphrase
@@ -280,19 +381,21 @@ pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, Op
     if !is_hoplodex_database(&conn).map_err(OpenError::classify)? {
         return Err(OpenError::PassphraseIncorrect);
     }
-    if has_unknown_migration(&conn).map_err(OpenError::classify)? {
+    if has_unknown_migration(&conn, path).map_err(OpenError::classify)? {
         return Err(OpenError::NewerVersion);
     }
     Ok(conn)
 }
 
-/// Whether `schema_migrations` names a migration this build doesn't have.
-fn has_unknown_migration(conn: &Connection) -> rusqlite::Result<bool> {
+/// Whether `schema_migrations` names a migration this build doesn't have
+/// (for the database at `path`: [`upgrade::build_steps`]).
+pub(crate) fn has_unknown_migration(conn: &Connection, path: &Path) -> rusqlite::Result<bool> {
+    let steps = upgrade::build_steps(path);
     let mut stmt = conn.prepare("SELECT name FROM schema_migrations")?;
     let names = stmt.query_map([], |row| row.get::<_, String>(0))?;
     for name in names {
         let name = name?;
-        if !MIGRATIONS.iter().any(|(known, _)| *known == name) {
+        if !steps.iter().any(|(known, _)| *known == name) {
             return Ok(true);
         }
     }
@@ -397,36 +500,6 @@ fn reclaim(conn: &Connection) {
     }
 }
 
-fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (
-            name TEXT PRIMARY KEY,
-            applied_at TEXT NOT NULL
-        )",
-    )?;
-
-    for (name, sql) in MIGRATIONS {
-        let already_applied: bool = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name = ?1)",
-            [name],
-            |row| row.get(0),
-        )?;
-        if already_applied {
-            continue;
-        }
-
-        let tx = conn.unchecked_transaction()?;
-        tx.execute_batch(sql)?;
-        tx.execute(
-            "INSERT INTO schema_migrations (name, applied_at) VALUES (?1, datetime('now'))",
-            [name],
-        )?;
-        tx.commit()?;
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,7 +527,9 @@ mod tests {
 
         // Reopening must succeed and must not re-apply (and thus fail to
         // re-insert unique-constrained) migrations.
-        let conn2 = open_database(&db_path, &passphrase(PASSPHRASE), &machine(), false).unwrap();
+        let conn2 = open_database(&db_path, &passphrase(PASSPHRASE), &machine(), false)
+            .unwrap()
+            .expect_ready();
         let type_count2: i64 =
             conn2.query_row("SELECT count(*) FROM firearm_types", [], |r| r.get(0)).unwrap();
         assert_eq!(type_count2, 5);

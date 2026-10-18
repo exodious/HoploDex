@@ -273,9 +273,9 @@ pub fn insert_raw_document(
         .write(session.current_id(), |conn| {
             conn.execute(
                 "INSERT INTO document_attachments
-                    (firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
-                 VALUES (?1, NULL, ?2, ?3, ?4, datetime('now'))",
-                rusqlite::params![firearm, bytes, name, mime_type],
+                    (uid, firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
+                 VALUES (?5, ?1, NULL, ?2, ?3, ?4, datetime('now'))",
+                rusqlite::params![firearm, bytes, name, mime_type, support::uid()],
             )
             .unwrap();
             Ok(conn.last_insert_rowid())

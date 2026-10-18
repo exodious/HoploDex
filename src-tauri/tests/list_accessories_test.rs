@@ -166,10 +166,10 @@ fn a_summary_carries_the_thumbnail_photo_id() {
     let id = create(&db, &accessory(OPTIC, "Leupold", "VX"));
     db.conn
         .execute(
-            "INSERT INTO photos (accessory_id, original_bytes, original_filename, mime_type,
+            "INSERT INTO photos (uid, accessory_id, original_bytes, original_filename, mime_type,
                                  thumbnail_bytes, sort_order, created_at)
-             VALUES (?1, x'00', 'a.jpg', 'image/jpeg', x'00', 0, datetime('now'))",
-            [id],
+             VALUES (?2, ?1, x'00', 'a.jpg', 'image/jpeg', x'00', 0, datetime('now'))",
+            rusqlite::params![id, support::uid()],
         )
         .unwrap();
     let photo_id = db.conn.last_insert_rowid();

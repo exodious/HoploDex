@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Button, DateField, MoneyField, TextArea, TextField } from "../../components";
 import { parseDateInput } from "../../lib/dates";
+import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
 import { CommandFailure } from "../../services/tauriClient";
@@ -179,9 +180,7 @@ export function InsurancePolicyForm({
     setSubmitted(true);
     const firstInvalid = FIELD_ORDER.find((field) => clientErrors[field]);
     if (firstInvalid) {
-      formRef.current
-        ?.querySelector<HTMLElement>(`[data-field="${firstInvalid}"] :is(input, textarea)`)
-        ?.focus();
+      focusFormField(formRef.current, firstInvalid);
       return false;
     }
 
@@ -208,6 +207,10 @@ export function InsurancePolicyForm({
     } catch (error) {
       if (error instanceof CommandFailure) {
         setServerError(error);
+        // A field the backend refused (009 FR-008: a duplicate name) takes the
+        // focus, as a field the form's own check refused does.
+        const refused = firstRefusedField(FIELD_ORDER, error.fieldErrors);
+        if (refused) focusFormField(formRef.current, refused);
         return false;
       }
       throw error;
@@ -235,6 +238,7 @@ export function InsurancePolicyForm({
                 label="Policy name"
                 required
                 placeholder="e.g. Homeowner's firearms rider"
+                hint="Each policy needs its own name."
                 autoFocus={!initialValues}
                 {...bind("name")}
               />

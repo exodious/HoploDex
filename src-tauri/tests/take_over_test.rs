@@ -75,7 +75,8 @@ fn this_computers_own_stale_marker_opens_without_a_warning() {
     assert_eq!(marker_id(&conn), Some(test_machine().id));
     drop(conn);
 
-    let conn = db::open_database(&path, &passphrase(), &test_machine(), false).unwrap();
+    let conn =
+        db::open_database(&path, &passphrase(), &test_machine(), false).unwrap().expect_ready();
 
     assert_eq!(marker_id(&conn), Some(test_machine().id));
 }

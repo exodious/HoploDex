@@ -22,7 +22,7 @@ use tempfile::TempDir;
 
 /// Opens `path` as this test's computer would.
 fn open(path: &Path, passphrase: &Passphrase) -> Result<Connection, OpenError> {
-    db::open_database(path, passphrase, &test_machine(), false)
+    db::open_database(path, passphrase, &test_machine(), false).map(db::Opened::expect_ready)
 }
 
 #[test]
@@ -253,7 +253,9 @@ fn the_normal_close_clears_the_marker_drops_the_connection_and_the_document_copi
         ]
     );
     // The connection is gone: the file opens again, and the marker is clear.
-    let conn = db::open_database(&path, &passphrase(), &support::other_machine(), false).unwrap();
+    let conn = db::open_database(&path, &passphrase(), &support::other_machine(), false)
+        .unwrap()
+        .expect_ready();
     let marker: String =
         conn.query_row("SELECT open_machine_id FROM app_state", [], |r| r.get(0)).unwrap();
     assert_eq!(marker, support::other_machine().id, "another computer opens it without a warning");
@@ -360,7 +362,8 @@ fn opening_a_second_database_closes_the_first_as_a_switch() {
     // "Second" was closed normally: another computer opens it without a
     // warning.
     db::open_database(&setup.db_path("Second"), &passphrase(), &support::other_machine(), false)
-        .unwrap();
+        .unwrap()
+        .expect_ready();
 }
 
 #[test]
@@ -482,4 +485,117 @@ fn locate_and_remove_through_the_commands() {
     let names: Vec<String> = setup.machine.recent().into_iter().map(|r| r.name).collect();
     assert_eq!(names, ["Moved"]);
     assert_eq!(fs::read(&kept).unwrap(), before, "the database file is never touched");
+}
+
+// --- A newer database names where a backup from before its upgrade may be ----------
+// (009 US3-4, FR-018; 009 research.md §10)
+
+/// Records a step this build does not know in the closed database at `path`,
+/// as a newer version's upgrade would have.
+fn make_newer(path: &Path) {
+    let conn = Connection::open(path).expect("could not open the database");
+    conn.pragma_update(None, "key", support::TEST_PASSPHRASE).unwrap();
+    db::cipher::apply_cipher_settings(&conn, "main").unwrap();
+    conn.execute(
+        "INSERT INTO schema_migrations (name, applied_at) VALUES ('0099_from_the_future', 'x')",
+        [],
+    )
+    .unwrap();
+}
+
+fn open_through_the_command(
+    setup: &Setup,
+    machine: &MachineSettings,
+    name: &str,
+) -> Result<hoplodex_lib::models::database::DatabaseStatus, CommandError> {
+    ops::open_database(
+        &setup.session,
+        machine,
+        &setup.path_text(name),
+        ops::Unlock::typed(&passphrase()),
+        false,
+    )
+}
+
+fn backup_folder_of(error: &CommandError) -> Option<serde_json::Value> {
+    error.details.as_deref().and_then(|details| details.get("backupFolder")).cloned()
+}
+
+// 009 US3-4, FR-018
+#[test]
+fn a_newer_database_is_refused_unchanged_naming_the_backup_folder_of_its_recent_entry() {
+    let setup = Setup::new();
+    setup.create("Mine");
+    setup.close();
+    // Not the default folder, so the answer is the recent entry's, not a guess.
+    let elsewhere = setup.dir.path().join("Backups on a USB drive");
+    setup.machine.set_backup_folder(&setup.db_path("Mine"), &elsewhere);
+    make_newer(&setup.db_path("Mine"));
+    let before = fs::read(setup.db_path("Mine")).unwrap();
+
+    let refused = open_through_the_command(&setup, &setup.machine, "Mine").unwrap_err();
+
+    assert_eq!(refused.code, "DATABASE_NEWER_VERSION");
+    assert_eq!(
+        refused.details.as_deref(),
+        Some(&json!({ "backupFolder": elsewhere.to_string_lossy() }))
+    );
+    assert_eq!(fs::read(setup.db_path("Mine")).unwrap(), before, "003 FR-014: nothing is written");
+    assert!(!setup.session.is_open());
+}
+
+// 009 US3-4, FR-018
+#[test]
+fn a_newer_database_this_computer_has_never_opened_names_no_backup_folder() {
+    let setup = Setup::new();
+    let db = TestDb::new();
+    let path = db.path();
+    let (conn, _dir) = db.into_parts();
+    drop(conn);
+    make_newer(&path);
+    let before = fs::read(&path).unwrap();
+
+    let refused = ops::open_database(
+        &setup.session,
+        &setup.machine,
+        &path.to_string_lossy(),
+        ops::Unlock::typed(&passphrase()),
+        false,
+    )
+    .unwrap_err();
+
+    assert_eq!(refused.code, "DATABASE_NEWER_VERSION");
+    assert_eq!(backup_folder_of(&refused), None, "no recent entry, no folder");
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+// 009 US3-4, FR-018
+#[test]
+fn a_newer_database_whose_recent_entry_has_no_cached_folder_names_none() {
+    let setup = Setup::new();
+    setup.create("Mine");
+    setup.close();
+    make_newer(&setup.db_path("Mine"));
+    // The entry another version wrote, without a cached folder.
+    let config = TempDir::new().unwrap();
+    fs::write(
+        config.path().join("machine.json"),
+        json!({
+            "version": 1,
+            "machineId": "0123456789abcdef0123456789abcdef",
+            "recentDatabases": [{
+                "path": setup.path_text("Mine"), "name": "Mine",
+                "lastOpenedAt": "2027-01-15T09:30:12Z", "databaseId": null,
+                "backupFolder": null, "passphraseSaved": false
+            }],
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let machine = MachineSettings::load(config.path()).unwrap();
+
+    let refused = open_through_the_command(&setup, &machine, "Mine").unwrap_err();
+
+    assert_eq!(refused.code, "DATABASE_NEWER_VERSION");
+    assert_eq!(backup_folder_of(&refused), None);
 }

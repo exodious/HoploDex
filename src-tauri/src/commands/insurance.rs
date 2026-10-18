@@ -189,22 +189,62 @@ pub mod ops {
         }
     }
 
+    /// 009 FR-007, FR-008 (009 contracts/tauri-commands.md): the policy that
+    /// already has this name, ignoring A-Z letter case and surrounding
+    /// spaces; `?2` is the policy being edited (NULL on create), which never
+    /// clashes with itself. It matches `idx_insurance_policies_name`'s
+    /// expression, so the lookup uses that index (`query_plan_test`).
+    pub const NAME_CLASH_SQL: &str = "SELECT name FROM insurance_policies
+        WHERE trim(name) = trim(?1) COLLATE NOCASE AND id IS NOT ?2";
+
+    /// Refuses a name another policy already has (009 FR-008). The caller
+    /// holds the session's write lock, so nothing can add one between this
+    /// check and the write; the unique index is only the backstop.
+    fn check_name_unique(
+        conn: &Connection,
+        exclude_id: Option<i64>,
+        name: &str,
+    ) -> Result<(), CommandError> {
+        let other: Option<String> = conn
+            .query_row(NAME_CLASH_SQL, rusqlite::params![name, exclude_id], |row| row.get(0))
+            .optional()
+            .map_err(CommandError::from_db)?;
+        match other {
+            None => Ok(()),
+            Some(other) => {
+                use chrono::Datelike;
+                let message = format!(
+                    "\u{201c}{other}\u{201d} is already the name of another policy. Give this \
+                     one a different name, such as \u{201c}{other} {}\u{201d}.",
+                    chrono::Local::now().year()
+                );
+                Err(CommandError::validation(
+                    message.clone(),
+                    [("name".to_string(), message)].into(),
+                ))
+            }
+        }
+    }
+
     pub fn create_policy(
         conn: &Connection,
         input: &InsurancePolicyInput,
     ) -> Result<InsurancePolicy, CommandError> {
         validate_insurance_policy_input(input)?;
+        check_name_unique(conn, None, &input.name)?;
         check_blanket_overlap(conn, None, input)?;
         conn.execute(
             "INSERT INTO insurance_policies (
-                name, policy_number, insurance_company, company_contact, agent_name, agent_contact,
+                uid, name, policy_number, insurance_company, company_contact, agent_name, agent_contact,
                 notes, blanket_coverage_limit, effective_start_date, effective_end_date, created_at, updated_at
             ) VALUES (
-                :name, :policy_number, :insurance_company, :company_contact, :agent_name, :agent_contact,
+                :uid, :name, :policy_number, :insurance_company, :company_contact, :agent_name, :agent_contact,
                 :notes, :blanket_coverage_limit, :effective_start_date, :effective_end_date,
                 datetime('now'), datetime('now')
             )",
             named_params! {
+                // 009 FR-001: the record's identifier, never sent over IPC.
+                ":uid": crate::services::record_id::generate(),
                 ":name": input.name,
                 ":policy_number": input.policy_number,
                 ":insurance_company": input.insurance_company,
@@ -228,6 +268,7 @@ pub mod ops {
         input: &InsurancePolicyInput,
     ) -> Result<InsurancePolicy, CommandError> {
         validate_insurance_policy_input(input)?;
+        check_name_unique(conn, Some(id), &input.name)?;
         check_blanket_overlap(conn, Some(id), input)?;
         let updated = conn
             .execute(

@@ -12,7 +12,7 @@ use std::path::Path;
 use std::process::Command;
 
 use hoplodex_lib::db::{self, OpenError};
-use hoplodex_lib::services::backups::{self, BackupJob};
+use hoplodex_lib::services::backups::{self, BackupJob, BackupKind};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use support::{TestDb, other_machine, passphrase};
 use tempfile::TempDir;
@@ -85,6 +85,7 @@ fn making_a_backup_keeps_the_lock() {
             folder: &folder,
             make_folder: true,
             now: chrono::Local::now().fixed_offset(),
+            kind: BackupKind::Regular,
             cancel: &|| false,
             progress: &mut |_, _| {},
         },

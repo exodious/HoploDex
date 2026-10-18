@@ -296,6 +296,62 @@ describe("Issue #116 - Dialogs that load their content open at the size they kee
   });
 });
 
+describe("009 US2 - A Policy Name Means One Policy", () => {
+  before(async () => {
+    // The journeys above leave their database open when the whole file runs.
+    if (await $("button=Create a new database…").isExisting()) await createDatabase();
+  });
+
+  // 009 US2-1, 009 FR-007, 009 FR-008: the form's field error at Name, with
+  // focus there, then a different name saves.
+  it("refuses a policy renamed to another's name in other case and spaces, at the Name field, then saves a different name (009 US2-1)", async () => {
+    const term = { startDate: "2020-01-01", endDate: isoDaysFromNow(365) };
+    // Schedule-only, so the blanket-overlap rule has no say.
+    await addPolicy({ name: "InsE2E Homeowners rider", policyNumber: "H-1", ...term });
+    await addPolicy({ name: "InsE2E Collector schedule", policyNumber: "C-1", ...term });
+    await goTo("Insurance");
+
+    await clickInPolicyCard("InsE2E Collector schedule", "Edit");
+    await fill("Policy name", " inse2e HOMEOWNERS rider ");
+    await clickButton("Save changes");
+
+    await browser.waitUntil(async () => (await dialogFieldError("Policy name")) !== null, {
+      timeoutMsg: "the Policy name field shows no error",
+    });
+    expect(await dialogFieldError("Policy name")).toContain(
+      "\u201cInsE2E Homeowners rider\u201d is already the name of another policy.",
+    );
+    expect(await focusedFieldLabel()).toBe("Policy name");
+    expect(await dialogFieldError("Policy number")).toBeNull();
+    expect(await policyNames()).toContain("InsE2E Collector schedule");
+
+    await fill("Policy name", "InsE2E Collector schedule 2026");
+    await clickButton("Save changes");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await waitForPolicyGone("InsE2E Collector schedule");
+    expect(await policyNames()).toContain("InsE2E Collector schedule 2026");
+    expect(await policyCardText("InsE2E Collector schedule 2026")).toContain("C-1");
+  });
+});
+
+/** The exact names of the policy cards on the page. */
+async function policyNames(): Promise<string[]> {
+  return browser.execute(() =>
+    [...document.querySelectorAll(".hd-policy__name")].map((n) => n.textContent?.trim() ?? ""),
+  );
+}
+
+/** The label text of the field that has focus in the open dialog, or `null`. */
+async function focusedFieldLabel(): Promise<string | null> {
+  return browser.execute(() => {
+    const active = document.activeElement as HTMLElement | null;
+    const dialog = document.querySelector('[role="dialog"]');
+    if (!active?.id || !dialog?.contains(active)) return null;
+    const label = [...dialog.querySelectorAll("label")].find((l) => l.htmlFor === active.id);
+    return label?.textContent?.trim() ?? null;
+  });
+}
+
 /** Waits for the policy card with exactly this name to leave the page.
  * (Substring selectors can't tell "InsE2E Rider" from "InsE2E Rider Old".) */
 async function waitForPolicyGone(name: string) {

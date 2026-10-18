@@ -126,12 +126,14 @@ pub mod ops {
         let (firearm_id, accessory_id) = owner.owner_columns();
         conn.execute(
             "INSERT INTO document_attachments (
-                firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at
+                uid, firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at
             ) VALUES (
-                :firearm_id, :accessory_id, :file_bytes, :original_filename, :mime_type,
+                :uid, :firearm_id, :accessory_id, :file_bytes, :original_filename, :mime_type,
                 datetime('now')
             )",
             named_params! {
+                // 009 FR-001: the record's identifier, never sent over IPC.
+                ":uid": crate::services::record_id::generate(),
                 ":firearm_id": firearm_id,
                 ":accessory_id": accessory_id,
                 ":file_bytes": file_bytes,

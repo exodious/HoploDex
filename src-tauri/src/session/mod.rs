@@ -11,9 +11,10 @@ pub mod lifecycle;
 pub mod operations;
 pub mod pending;
 pub mod scoped;
+pub mod upgrade;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -23,8 +24,11 @@ use serde::Serialize;
 use crate::commands::CommandError;
 use crate::commands::import_export::ImportSessionStore;
 use crate::db;
-use crate::models::database::{ChooserNotice, DatabaseNotes, Draft, LockSettings, PendingState};
+use crate::models::database::{
+    ChooserNotice, DatabaseNotes, Draft, LockSettings, OpenedBackupNote, PendingState,
+};
 use crate::services::machine_settings::MachineSettings;
+use crate::services::passphrase::Passphrase;
 use crate::services::preview::{Preview, PreviewLoading};
 use clock::{Clock, SystemClock};
 use fingerprint::{FileFingerprint, FingerprintCheck};
@@ -229,6 +233,11 @@ impl std::ops::Deref for Session {
     }
 }
 
+/// A reading of the waiting slot's generation (009 research.md §4 "The slot's
+/// life"): how many times the slot has been dropped, up to then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AwaitingGeneration(u64);
+
 /// What a [`Session`] holds.
 pub struct SessionInner {
     open: Mutex<Option<OpenDatabase>>,
@@ -258,6 +267,63 @@ pub struct SessionInner {
     closing: Mutex<Closing>,
     /// Signalled when a close under way finishes.
     closing_changed: Condvar,
+    /// The database waiting for the answer to the upgrade question (009
+    /// research.md §4). Separate from `open`, so no collection command, scoped
+    /// or not, can reach it.
+    awaiting_upgrade: Mutex<Option<AwaitingUpgrade>>,
+    /// How many times the waiting slot has been dropped (the generation). Only
+    /// raised, and only changed, under `awaiting_upgrade`'s mutex. A database
+    /// goes into the slot, or back into it, only if the generation is still
+    /// the one read before it left the slot or before its key was derived, so
+    /// a sleep, screen lock or shutdown that found the slot empty still wins
+    /// (009 research.md §4 "The slot's life").
+    awaiting_drops: AtomicU64,
+    /// The `awaitingId` of the `upgrade_database` call that took the waiting
+    /// database out of the slot and is still working, or 0: what
+    /// `cancel_upgrade` finds the backup it stops by.
+    upgrading: AtomicU64,
+    /// A screen lock came while `upgrade_database` worked (since Upgrade was
+    /// chosen): set by `lifecycle::screen_locked`, cleared as the next
+    /// `upgrade_database` takes the waiting database, read at the end of the
+    /// upgrade to decide whether the database opens (009 research.md §5
+    /// "Sleep and shutdown").
+    screen_locked_in_upgrade: AtomicBool,
+}
+
+/// A backup opened directly that needs an upgrade: its stamp is taken inside
+/// the upgrade transaction, not before the question, so Cancel leaves the
+/// file untouched and still a backup (009 research.md §8).
+pub struct AwaitingBackupStamp {
+    /// The identity the file gets, which the backup before the upgrade is
+    /// named and stamped with.
+    pub new_database_id: String,
+    /// What `prepare` shows once the file has become a database of its own.
+    pub note: OpenedBackupNote,
+}
+
+/// The database waiting for the answer to the upgrade question (009 FR-010, data-model.md
+/// "AwaitingUpgrade"): keyed and holding the file's exclusive lock, with
+/// nothing written. Dropping it closes the connection, which releases the lock
+/// and clears the key.
+pub struct AwaitingUpgrade {
+    /// The `awaitingId` the chooser answers with.
+    pub id: SessionId,
+    pub conn: Connection,
+    pub path: PathBuf,
+    pub name: String,
+    pub database_id: String,
+    /// The step names to apply, in order.
+    pub steps_due: Vec<&'static str>,
+    /// The open marker found at the question, compared again at Upgrade.
+    pub marker_seen: db::SeenMarker,
+    pub backup_stamp: Option<AwaitingBackupStamp>,
+    /// A typed passphrase the open will save or refresh in the keyring once
+    /// the upgrade succeeds (003 FR-017, FR-018); zeroized when dropped.
+    pub save_passphrase: Option<Passphrase>,
+    /// The database's backup location, resolved for this computer.
+    pub backup_folder: PathBuf,
+    /// The backup location is the default one, made when missing.
+    pub backup_folder_is_default: bool,
 }
 
 /// A close under way.
@@ -304,6 +370,10 @@ impl Session {
             open_path: Mutex::new(None),
             closing: Mutex::new(Closing::default()),
             closing_changed: Condvar::new(),
+            awaiting_upgrade: Mutex::new(None),
+            awaiting_drops: AtomicU64::new(0),
+            upgrading: AtomicU64::new(0),
+            screen_locked_in_upgrade: AtomicBool::new(false),
         }))
     }
 
@@ -655,6 +725,118 @@ impl SessionInner {
         self.current.store(0, Ordering::SeqCst);
         self.idle.stop();
         *self.open_path.lock().expect("session mutex poisoned") = None;
+    }
+
+    fn awaiting(&self) -> MutexGuard<'_, Option<AwaitingUpgrade>> {
+        self.awaiting_upgrade.lock().expect("session mutex poisoned")
+    }
+
+    /// The slot's generation now. Taking the slot's guard is the proof that
+    /// the mutex is held.
+    fn generation(&self, _slot: &MutexGuard<'_, Option<AwaitingUpgrade>>) -> AwaitingGeneration {
+        AwaitingGeneration(self.awaiting_drops.load(Ordering::SeqCst))
+    }
+
+    /// Puts a database that needs an upgrade in the waiting slot, in place of
+    /// any other (009 research.md §4), if the slot has not been dropped since
+    /// `generation` was read. Otherwise a sleep, screen lock, shutdown or
+    /// another open came while its key was being derived: the database is
+    /// dropped instead (its connection closes and the passphrase to be saved
+    /// is zeroized). Returns whether it is waiting.
+    pub(crate) fn wait_for_upgrade(
+        &self,
+        waiting: AwaitingUpgrade,
+        generation: AwaitingGeneration,
+    ) -> bool {
+        let (replaced, unplaced) = {
+            let mut slot = self.awaiting();
+            if self.generation(&slot) == generation {
+                (slot.replace(waiting), None)
+            } else {
+                (None, Some(waiting))
+            }
+        };
+        // Connections close outside the slot's lock.
+        let placed = unplaced.is_none();
+        drop(replaced);
+        drop(unplaced);
+        placed
+    }
+
+    /// Drops the waiting database, if there is one: its connection closes, the
+    /// file's lock is released and the key cleared, and nothing was written.
+    /// Called when any open, create or restore begins, at quit, sleep, screen
+    /// lock and shutdown (009 research.md §4). Raises the slot's generation,
+    /// and returns the new one: what an open that begins here passes to
+    /// [`wait_for_upgrade`](Self::wait_for_upgrade).
+    pub fn drop_awaiting_upgrade(&self) -> AwaitingGeneration {
+        let (dropped, generation) = {
+            let mut slot = self.awaiting();
+            let generation = self.awaiting_drops.fetch_add(1, Ordering::SeqCst) + 1;
+            (slot.take(), AwaitingGeneration(generation))
+        };
+        // Its connection closes outside the slot's lock.
+        drop(dropped);
+        generation
+    }
+
+    /// Puts a database back in the waiting slot after the backup before its
+    /// upgrade could not be made, for a retry under the same id, if the slot
+    /// has not been dropped since `generation` was read (when it took the
+    /// database out). Returns whether it was put back; if not, the database
+    /// is dropped here.
+    pub(crate) fn put_back_for_upgrade(
+        &self,
+        waiting: AwaitingUpgrade,
+        generation: AwaitingGeneration,
+    ) -> bool {
+        let mut slot = self.awaiting();
+        if self.generation(&slot) != generation {
+            drop(slot);
+            drop(waiting);
+            return false;
+        }
+        *slot = Some(waiting);
+        true
+    }
+
+    /// The `awaitingId` of the upgrade at work, or `SessionId::NONE`.
+    pub(crate) fn upgrading_id(&self) -> SessionId {
+        SessionId(self.upgrading.load(Ordering::SeqCst))
+    }
+
+    pub(crate) fn set_upgrading_id(&self, id: SessionId) {
+        self.upgrading.store(id.get(), Ordering::SeqCst);
+    }
+
+    /// A screen lock came: if `upgrade_database` is working (the waiting
+    /// database is out of the slot, so the lock's drop found nothing), it is
+    /// remembered for the end of the upgrade.
+    pub(crate) fn note_screen_lock_for_upgrade(&self) {
+        if self.upgrading_id() != SessionId::NONE {
+            self.screen_locked_in_upgrade.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// A new `upgrade_database` begins: no screen lock has come yet.
+    pub(crate) fn clear_screen_lock_for_upgrade(&self) {
+        self.screen_locked_in_upgrade.store(false, Ordering::SeqCst);
+    }
+
+    /// Whether a screen lock came since `upgrade_database` last took the
+    /// waiting database.
+    pub(crate) fn screen_locked_in_upgrade(&self) -> bool {
+        self.screen_locked_in_upgrade.load(Ordering::SeqCst)
+    }
+
+    /// Keeps `passphrase` with the database waiting under `id`, to save or
+    /// refresh in the keyring once it is upgraded and open (003 FR-017,
+    /// FR-018; 009 research.md §4 "The passphrase"). Nothing happens for any
+    /// other id.
+    pub(crate) fn keep_passphrase_for_upgrade(&self, id: SessionId, passphrase: Passphrase) {
+        if let Some(waiting) = self.awaiting().as_mut().filter(|waiting| waiting.id == id) {
+            waiting.save_passphrase = Some(passphrase);
+        }
     }
 
     /// The database most recently closed in this run, if any.

@@ -154,16 +154,16 @@ fn deleting_a_firearm_cascades_to_its_photos_and_documents() {
 
     db.conn
         .execute(
-            "INSERT INTO photos (firearm_id, original_bytes, original_filename, mime_type, thumbnail_bytes, sort_order, created_at)
-             VALUES (?1, x'00', 'a.jpg', 'image/jpeg', x'00', 0, datetime('now'))",
-            [created.id],
+            "INSERT INTO photos (uid, firearm_id, original_bytes, original_filename, mime_type, thumbnail_bytes, sort_order, created_at)
+             VALUES (?2, ?1, x'00', 'a.jpg', 'image/jpeg', x'00', 0, datetime('now'))",
+            rusqlite::params![created.id, support::uid()],
         )
         .unwrap();
     db.conn
         .execute(
-            "INSERT INTO document_attachments (firearm_id, file_bytes, original_filename, mime_type, created_at)
-             VALUES (?1, x'00', 'a.pdf', 'application/pdf', datetime('now'))",
-            [created.id],
+            "INSERT INTO document_attachments (uid, firearm_id, file_bytes, original_filename, mime_type, created_at)
+             VALUES (?2, ?1, x'00', 'a.pdf', 'application/pdf', datetime('now'))",
+            rusqlite::params![created.id, support::uid()],
         )
         .unwrap();
 

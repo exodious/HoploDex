@@ -134,6 +134,7 @@ fn the_seed_uses_every_column_of_every_table() {
             true,
         )
         .unwrap()
+        .expect_ready()
     };
     let mut seeded_backups: Vec<_> = std::fs::read_dir(&paths.main_backups)
         .expect("the seed makes backups of the main database")
@@ -141,7 +142,19 @@ fn the_seed_uses_every_column_of_every_table() {
         .filter(|path| path.extension().is_some_and(|ext| ext == "hoplodex"))
         .collect();
     seeded_backups.sort();
-    assert_eq!(seeded_backups.len(), 2, "yesterday's and today's backups");
+    assert_eq!(
+        seeded_backups.len(),
+        3,
+        "yesterday's and today's backups, and one made a minute later before an upgrade (009 FR-013)"
+    );
+    assert!(
+        seeded_backups
+            .last()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with(&format!(" before {}.hoplodex", hoplodex_lib::APP_VERSION)),
+        "the newest seeded backup is the one made before an upgrade"
+    );
     let conns = [open(&paths.main), open(&paths.shared), open(seeded_backups.last().unwrap())];
 
     let mut unseeded = Vec::new();
@@ -409,7 +422,8 @@ fn the_dispose_receiver_sample_lists_everything_mounted_on_the_receiver() {
         &machine,
         true,
     )
-    .unwrap();
+    .unwrap()
+    .expect_ready();
 
     let result = ops::import_collection(
         &conn,
@@ -452,7 +466,8 @@ fn the_seeded_pending_changes_name_the_version_that_kept_them() {
             &machine,
             true,
         )
-        .unwrap();
+        .unwrap()
+        .expect_ready();
 
         let (label, form_version, saved): (String, i64, Option<String>) = conn
             .query_row(

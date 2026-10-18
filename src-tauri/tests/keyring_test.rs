@@ -350,6 +350,7 @@ fn a_passphrase_change_updates_the_saved_one_and_a_restore_sets_the_backups() {
         backup,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
     assert!(restored.passphrase_saved);

@@ -243,18 +243,31 @@ pub mod ops {
                 }
             }
         };
+        // Whether the open saves or refreshes the passphrase in the keyring
+        // once it succeeds (003 FR-017, FR-018), as the recent entry stood
+        // before the open.
+        let save_typed = match unlock {
+            Unlock::Typed { remember, .. } => {
+                remember || machine.recent_entry(path).is_some_and(|entry| entry.passphrase_saved)
+            }
+            Unlock::Saved => false,
+        };
         match lifecycle::open(session, machine, path, passphrase, take_over) {
             Ok(()) => {
-                if let Unlock::Typed { passphrase, remember } = unlock {
-                    let entry = machine.recent_entry(path);
-                    let was_saved = entry.as_ref().is_some_and(|entry| entry.passphrase_saved);
-                    if let Some(id) = entry.and_then(|entry| entry.database_id)
-                        && (remember || was_saved)
-                    {
-                        save_for(machine, path, &id, passphrase);
-                    }
+                if let (Unlock::Typed { passphrase, .. }, true) = (unlock, save_typed) {
+                    save_if_listed(machine, path, passphrase);
                 }
                 database_status(session, machine)
+            }
+            Err(err) if err.code == "UPGRADE_NEEDED" => {
+                // Saving waits for the upgrade to succeed, so the passphrase
+                // stays with the database that waits, and nowhere else.
+                if let (Unlock::Typed { passphrase, .. }, true) = (unlock, save_typed)
+                    && let Some(id) = err.awaiting_id()
+                {
+                    session.keep_passphrase_for_upgrade(id, passphrase.clone());
+                }
+                Err(err)
             }
             Err(err) if err.code == "DATABASE_DAMAGED" => {
                 Err(CommandError::database_damaged(has_backups(machine, path)))
@@ -265,8 +278,56 @@ pub mod ops {
                     has_backups(machine, path).then_some(true),
                 ))
             }
+            Err(err) if err.code == "DATABASE_NEWER_VERSION" => {
+                // The backup folder this computer cached for it, for the
+                // message that points at a backup made before the upgrade
+                // (009 FR-018).
+                let folder = machine.recent_entry(path).and_then(|entry| entry.backup_folder);
+                Err(CommandError::database_newer_version(folder.as_deref()))
+            }
             Err(err) => Err(err),
         }
+    }
+
+    /// Saves the typed `passphrase` in the keyring for the database just
+    /// opened at `path`, whose recent entry carries its id.
+    fn save_if_listed(machine: &MachineSettings, path: &Path, passphrase: &Passphrase) {
+        if let Some(id) = machine.recent_entry(path).and_then(|entry| entry.database_id) {
+            save_for(machine, path, &id, passphrase);
+        }
+    }
+
+    /// Upgrades the database waiting under `awaiting_id` after backing it up,
+    /// and opens it (009 FR-011 to FR-017). The database waits again for a
+    /// retry when the backup can't be made at its location or in
+    /// `backup_folder`, the folder the user chose for this one backup
+    /// (009 FR-012). The passphrase kept for the keyring is saved now.
+    pub fn upgrade_database(
+        session: &Session,
+        machine: &MachineSettings,
+        awaiting_id: u64,
+        backup_folder: Option<&str>,
+    ) -> Result<DatabaseStatus, CommandError> {
+        let upgraded = crate::session::upgrade::upgrade_database(
+            session,
+            machine,
+            awaiting_id,
+            backup_folder.map(Path::new),
+        )?;
+        if let Some(passphrase) = &upgraded.save_passphrase {
+            let path = session.open_path();
+            if let Some(path) = path {
+                save_if_listed(machine, &path, passphrase);
+            }
+        }
+        database_status(session, machine)
+    }
+
+    /// `cancel_upgrade` (009 FR-010, FR-016): drops the database waiting under
+    /// `awaiting_id`, or stops its backup; nothing once the upgrade has
+    /// started, or for an id that isn't current.
+    pub fn cancel_upgrade(session: &Session, awaiting_id: u64) -> Result<(), CommandError> {
+        crate::session::upgrade::cancel_upgrade(session, awaiting_id)
     }
 
     /// Saves `passphrase` in the keyring for the database `database_id`,
@@ -550,6 +611,11 @@ pub mod ops {
             NoteKind::Restored => session.inspect_mut(id, |open| {
                 open.notes.restored_with_passphrase_of = None;
                 open.notes.damaged_file_kept_at = None;
+                Ok(())
+            }),
+            // 009 FR-017: once, after an open or a restore that upgraded it.
+            NoteKind::Upgraded => session.inspect_mut(id, |open| {
+                open.notes.upgraded = None;
                 Ok(())
             }),
         }
@@ -887,6 +953,26 @@ pub async fn open_database(
     ops::open_database(&session, &machine, &path, unlock, take_over.unwrap_or(false))
 }
 
+/// Upgrades the database `open_database` left waiting (`UPGRADE_NEEDED`):
+/// no session exists yet, so none is named (009 contracts/tauri-commands.md).
+#[tauri::command]
+pub async fn upgrade_database(
+    awaiting_id: u64,
+    backup_folder: Option<String>,
+    session: State<'_, Session>,
+    machine: State<'_, MachineSettings>,
+) -> Result<DatabaseStatus, CommandError> {
+    ops::upgrade_database(&session, &machine, awaiting_id, backup_folder.as_deref())
+}
+
+#[tauri::command]
+pub async fn cancel_upgrade(
+    awaiting_id: u64,
+    session: State<'_, Session>,
+) -> Result<(), CommandError> {
+    ops::cancel_upgrade(&session, awaiting_id)
+}
+
 #[tauri::command]
 pub async fn close_database(
     reason: CloseReason,
@@ -904,16 +990,7 @@ pub async fn quit_application(
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<(), CommandError> {
-    if session.is_open() {
-        // It can only fail when nothing is open any more.
-        crate::session::lifecycle::close_normal(
-            &session,
-            session.current_id(),
-            &machine,
-            CloseReason::Quit,
-        )
-        .ok();
-    }
+    crate::session::lifecycle::quit(&session, &machine);
     // An exit with a code is ours, and `main` lets it through.
     app.exit(0);
     Ok(())

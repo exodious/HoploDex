@@ -7,6 +7,8 @@
 use crate::support;
 
 use hoplodex_lib::commands::firearms::ops;
+use hoplodex_lib::commands::import_export::ops as import_ops;
+use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::services::import_matching::FIND_MATCH_SQL;
 use rusqlite::Connection;
 use support::{TestDb, firearm};
@@ -56,4 +58,38 @@ fn the_import_match_and_the_duplicate_checks_use_an_index() {
         ops::NICKNAME_CLASH_SQL,
         "idx_firearms_active_nickname",
     );
+}
+
+// ---- 009 US2: policy names (009 FR-006, FR-007, 009 research.md §2) ----
+
+fn assert_searches_policy_name_index(conn: &Connection, name: &str, sql: &str) {
+    let steps = plan(conn, sql);
+    assert!(
+        steps.iter().any(|s| s.contains("SEARCH insurance_policies USING INDEX")
+            && s.contains("idx_insurance_policies_name")),
+        "{name} should search `idx_insurance_policies_name`, the plan was {steps:?}"
+    );
+    assert!(
+        !steps.iter().any(|s| s.contains("SCAN insurance_policies")),
+        "{name} scans every policy: {steps:?}"
+    );
+}
+
+#[test]
+fn the_policy_name_check_and_import_lookups_use_the_name_index() {
+    let db = TestDb::new();
+    for n in 0..20 {
+        insurance_ops::create_policy(
+            &db.conn,
+            &support::policy(&format!("Policy {n}"), "2020-01-01", "2099-01-01", None),
+        )
+        .unwrap();
+    }
+
+    assert_searches_policy_name_index(
+        &db.conn,
+        "the form's name check",
+        insurance_ops::NAME_CLASH_SQL,
+    );
+    assert_searches_policy_name_index(&db.conn, "import's lookup", import_ops::POLICY_LOOKUP_SQL);
 }

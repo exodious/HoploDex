@@ -65,6 +65,14 @@ CREATE TABLE accessory_kinds (
 
 CREATE TABLE insurance_policies (
     id INTEGER PRIMARY KEY,
+    -- 009 FR-001 (009 research.md §1): a random version 4 UUID, set at
+    -- creation and never changed, as firearms.uid. No IPC output carries it.
+    uid TEXT NOT NULL UNIQUE CHECK (
+        length(uid) = 36
+        AND uid GLOB '????????-????-4???-????-????????????'
+        AND substr(uid, 20, 1) IN ('8', '9', 'a', 'b')
+        AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
+    ),
     name TEXT NOT NULL,
     policy_number TEXT NOT NULL,
     insurance_company TEXT NOT NULL,
@@ -82,6 +90,12 @@ CREATE TABLE insurance_policies (
     updated_at TEXT NOT NULL,
     CHECK (effective_end_date > effective_start_date)
 );
+
+-- 009 FR-007 (009 research.md §2): a policy name means one policy, ignoring
+-- A-Z letter case and surrounding spaces. Names are stored as typed; only
+-- comparisons trim. The form's check and import's lookup use this same
+-- expression, so both use the index; this is the backstop for the check.
+CREATE UNIQUE INDEX idx_insurance_policies_name ON insurance_policies (trim(name) COLLATE NOCASE);
 
 -- References photos(id) below; SQLite resolves FK targets lazily so this
 -- forward reference (created before the photos table) is valid.
@@ -413,6 +427,14 @@ END;
 
 CREATE TABLE photos (
     id INTEGER PRIMARY KEY,
+    -- 009 FR-001 (009 research.md §1): a random version 4 UUID, set at
+    -- creation and never changed, as firearms.uid. No IPC output carries it.
+    uid TEXT NOT NULL UNIQUE CHECK (
+        length(uid) = 36
+        AND uid GLOB '????????-????-4???-????-????????????'
+        AND substr(uid, 20, 1) IN ('8', '9', 'a', 'b')
+        AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
+    ),
     -- Owned by a firearm or by an accessory, never both (006 data-model.md
     -- "Entity: Photo, Document Attachment,
     -- Disposition History").
@@ -432,6 +454,14 @@ CREATE INDEX idx_photos_accessory ON photos (accessory_id) WHERE accessory_id IS
 
 CREATE TABLE document_attachments (
     id INTEGER PRIMARY KEY,
+    -- 009 FR-001 (009 research.md §1): a random version 4 UUID, set at
+    -- creation and never changed, as firearms.uid. No IPC output carries it.
+    uid TEXT NOT NULL UNIQUE CHECK (
+        length(uid) = 36
+        AND uid GLOB '????????-????-4???-????-????????????'
+        AND substr(uid, 20, 1) IN ('8', '9', 'a', 'b')
+        AND NOT (replace(uid, '-', '') GLOB '*[^0-9a-f]*')
+    ),
     firearm_id INTEGER REFERENCES firearms (id) ON DELETE CASCADE,
     accessory_id INTEGER REFERENCES accessories (id) ON DELETE CASCADE,
     file_bytes BLOB NOT NULL,
@@ -443,6 +473,20 @@ CREATE TABLE document_attachments (
 
 CREATE INDEX idx_document_attachments_firearm ON document_attachments (firearm_id);
 CREATE INDEX idx_document_attachments_accessory ON document_attachments (accessory_id) WHERE accessory_id IS NOT NULL;
+
+-- 009 FR-002: the same for policies, photos and documents. Nothing ties these
+-- to the firearms and accessories (009 FR-005), so no *_uid_distinct trigger.
+CREATE TRIGGER insurance_policies_uid_fixed BEFORE UPDATE OF uid ON insurance_policies
+WHEN NEW.uid IS NOT OLD.uid
+BEGIN SELECT RAISE(ABORT, 'a record identifier never changes'); END;
+
+CREATE TRIGGER photos_uid_fixed BEFORE UPDATE OF uid ON photos
+WHEN NEW.uid IS NOT OLD.uid
+BEGIN SELECT RAISE(ABORT, 'a record identifier never changes'); END;
+
+CREATE TRIGGER document_attachments_uid_fixed BEFORE UPDATE OF uid ON document_attachments
+WHEN NEW.uid IS NOT OLD.uid
+BEGIN SELECT RAISE(ABORT, 'a record identifier never changes'); END;
 
 -- 001 FR-033: past dispositions of a firearm that was restored to active, kept
 -- only when the user chose to keep them. Deleted with the firearm.
@@ -561,6 +605,10 @@ CREATE TABLE app_state (
     backup_made_at TEXT,
     -- The database name, for the "backup opened directly" note; set only in backup copies.
     backup_of_name TEXT,
+    -- 009 FR-013 (009 data-model.md): the HoploDex version a backup was made
+    -- before upgrading to; set only in such a backup, NULL everywhere else.
+    -- Cleared with the stamp when the backup is opened or restored.
+    backup_before_upgrade_to TEXT,
     -- 008 FR-015 (008 research.md §16): the HoploDex
     -- version that last saved the database; NULL when none is recorded.
     -- Written by `db::record_saved_version` only, and it is not a change to

@@ -1,14 +1,19 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   OWNER_MARKER,
+  RELEASE_FIXTURE_0_1_0,
   SANDBOX_PREFIX,
   SHADER_CACHE,
+  applySessionSettings,
+  copyReleaseFixture,
   findStaleSandboxes,
   isolateAppData,
   removeSandbox,
+  sha256Of,
   sweepStaleSandboxes,
 } from "./sandbox";
 
@@ -143,5 +148,95 @@ describe("sweeping old sandboxes", () => {
     expect(findStaleSandboxes(parent)).toEqual([dir]);
     const self = sandbox("jjjjjj", `${process.pid}\n`);
     expect(findStaleSandboxes(parent)).not.toContain(self);
+  });
+});
+
+// 009 US3: the session settings the upgrade journeys use.
+describe("the upgrade phase setting", () => {
+  it("sets HOPLODEX_E2E_UPGRADE_PHASE_SECONDS, and clears it when a session doesn't", () => {
+    applySessionSettings({ upgradePhaseSeconds: 4 });
+    expect(process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS).toBe("4");
+
+    applySessionSettings({ upgradePhaseSeconds: 0 });
+    expect(process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS).toBe("0");
+
+    // Whatever the developer's own environment holds never reaches the app.
+    process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS = "99";
+    applySessionSettings();
+    expect(process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS).toBeUndefined();
+  });
+
+  it("is independent of the idle minute", () => {
+    applySessionSettings({ idleMinuteSeconds: 3 });
+    expect(process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS).toBe("3");
+    expect(process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS).toBeUndefined();
+  });
+});
+
+// 009 US3: the stored 0.1.0 database, copied into the sandbox for the
+// upgrade journeys. The source is a parameter; a stand-in file is used here,
+// so these tests don't depend on the real fixture.
+describe("copying the stored release database into the sandbox", () => {
+  let source: string;
+  const bytes = Buffer.from("not really a database, but bytes all the same");
+
+  beforeEach(() => {
+    source = path.join(os.tmpdir(), `hoplodex-fixture-test-${process.pid}-${Date.now()}`);
+    fs.writeFileSync(source, bytes);
+  });
+  afterEach(() => {
+    fs.rmSync(source, { force: true });
+  });
+
+  it("copies the bytes to <folder>/<name>.hoplodex and returns the path and SHA-256", () => {
+    const root = isolateAppData();
+    const folder = path.join(root, "documents", "Older");
+    const copy = copyReleaseFixture(folder, "Older collection", source);
+
+    expect(copy.path).toBe(path.join(folder, "Older collection.hoplodex"));
+    expect(fs.readFileSync(copy.path)).toEqual(bytes);
+    expect(copy.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+    expect(copy.sha256).toBe(sha256Of(copy.path));
+    // The source is left as it was.
+    expect(fs.readFileSync(source)).toEqual(bytes);
+  });
+
+  it("makes two independent copies and never replaces a file", () => {
+    const root = isolateAppData();
+    const first = copyReleaseFixture(path.join(root, "a"), "Same", source);
+    const second = copyReleaseFixture(path.join(root, "b"), "Same", source);
+    expect(second.path).not.toBe(first.path);
+    expect(second.sha256).toBe(first.sha256);
+
+    fs.writeFileSync(first.path, "changed");
+    expect(() => copyReleaseFixture(path.join(root, "a"), "Same", source)).toThrow();
+    expect(fs.readFileSync(first.path, "utf-8")).toBe("changed");
+  });
+
+  it("copies only into the sandbox, under a plain file name", () => {
+    expect(() => copyReleaseFixture(os.tmpdir(), "x", source)).toThrow(/isolateAppData/);
+    const root = isolateAppData();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-outside-test-"));
+    try {
+      expect(() => copyReleaseFixture(outside, "x", source)).toThrow(/not inside the sandbox/);
+      expect(() => copyReleaseFixture(path.join(root, ".."), "x", source)).toThrow(
+        /not inside the sandbox/,
+      );
+      expect(() => copyReleaseFixture(root, "../escape", source)).toThrow(/plain file name/);
+      expect(() => copyReleaseFixture(root, "", source)).toThrow(/plain file name/);
+      expect(fs.readdirSync(outside)).toEqual([]);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults to the 0.1.0 database stored under src-tauri/tests/fixtures/releases", () => {
+    expect(RELEASE_FIXTURE_0_1_0.split(path.sep).slice(-5)).toEqual([
+      "src-tauri",
+      "tests",
+      "fixtures",
+      "releases",
+      "0.1.0.hoplodex",
+    ]);
   });
 });

@@ -54,7 +54,15 @@ e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 # compile it with `custom-protocol` or `e2e` or without debug assertions, and
 # the app (main.rs), examples/human_seed.rs and portable_fixture.rs refuse to
 # run with it.
-test-kdf = []
+test-kdf = ["upgrade-test-steps"]
+# The upgrade's test hooks (009 research.md §14), tests only: test-only upgrade
+# steps, forced failures and interruptions at named points of an upgrade
+# (`db::upgrade::testing`), applied only to databases in a folder a test
+# registers. `test-kdf` turns it on; the release `performance_test` uses it
+# alone. db/upgrade.rs refuses to compile it with `custom-protocol` or `e2e`,
+# so no shipped or E2E build has it, and the app (main.rs) and the examples
+# refuse to run with it.
+upgrade-test-steps = []
 
 [dependencies]
 # `unstable`: `Window::add_child`, the PDF preview's child web view
@@ -202,6 +210,9 @@ windows = { version = "0.61.3", features = ["Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"
+# SHA-256 of a database file, to show a probe or a cancel left its bytes
+# unchanged (009 research.md §18). Already in Cargo.lock.
+sha2 = "0.10"
 
 [[test]]
 name = "integration"
@@ -229,6 +240,12 @@ path = "tests/portability_test.rs"
 [[test]]
 name = "tiff_preview_test"
 path = "tests/tiff_preview_test.rs"
+
+# The stored release databases are keyed with the pinned KDF, which a
+# `test-kdf` build can use only for a whole process (`cipher::test_kdf`).
+[[test]]
+name = "release_upgrade_test"
+path = "tests/release_upgrade_test.rs"
 
 # Distributed notices arrive on the main thread's run loop, and libtest runs
 # each test on a thread of its own, so this one has its own `main`.

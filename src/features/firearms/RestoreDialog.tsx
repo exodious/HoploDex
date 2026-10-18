@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChoiceCards, ConfirmDialog, TextField } from "../../components";
 import { formatDate } from "../../lib/dates";
 import { formatDollars } from "../../lib/money";
@@ -100,6 +100,12 @@ function RestoreDialogBody({
     : undefined;
   const nicknameError = nicknameTooLong ?? failure?.fieldErrors?.nickname;
   const otherError = failure && !nicknameError ? failure.message : undefined;
+
+  // A nickname the backend refused takes the focus, once its field shows (a
+  // clash opens it), as one the dialog's own check refused does.
+  useEffect(() => {
+    if (failure?.fieldErrors?.nickname) nicknameRef.current?.focus();
+  }, [failure]);
 
   async function confirm() {
     if (!history) return;

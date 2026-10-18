@@ -5,8 +5,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use hoplodex_lib::models::database::{ChooserNotice, OperationKind};
+use hoplodex_lib::models::database::{BackupFailureReason, ChooserNotice, OperationKind};
 use hoplodex_lib::models::document_opening::DocumentOpening;
+use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::{
     MachineSettings, UnfinishedBackup, UnfinishedBackupMove,
 };
@@ -174,6 +175,7 @@ fn an_unfinished_backup_survives_a_reload_until_cleared() {
         database_path: "/data/A.hoplodex".into(),
         partial_path: "/data/HoploDex backups/A 2026-09-26 101500 abcd1234.hoplodex.partial".into(),
         started_at: "2026-09-26T10:15:00Z".into(),
+        before_upgrade: false,
     };
 
     settings.set_unfinished_backup(record.clone());
@@ -450,4 +452,282 @@ fn the_hold_returns_to_null_when_the_version_and_the_leftovers_are_both_empty() 
     assert!(settings.pdf_preview_hold().is_none());
     assert!(hold_json(config.path()).is_null());
     assert!(MachineSettings::load(config.path()).unwrap().pdf_preview_hold().is_none());
+}
+
+// --- Reading what a later version wrote (009 research.md §15) -----------------------------
+
+fn backup_failed_notice(database_path: &str) -> ChooserNotice {
+    ChooserNotice::BackupFailed {
+        database_path: database_path.into(),
+        reason: BackupFailureReason::Io,
+    }
+}
+
+/// 009 research.md §15: going back to 0.1.0 after 0.2.0 must not cost the
+/// recent list, so a notice kind, a field and a way of opening documents that
+/// this version does not know are each ignored on their own.
+#[test]
+fn a_file_with_an_unknown_notice_field_and_document_opening_keeps_its_recent_list() {
+    let config = TempDir::new().unwrap();
+    let id = "0123456789abcdef0123456789abcdef";
+    let known = backup_failed_notice("/data/A.hoplodex");
+    let file = serde_json::json!({
+        "version": 1,
+        "machineId": id,
+        "recentDatabases": [
+            {
+                "path": "/data/A.hoplodex", "name": "A", "lastOpenedAt": "2027-01-15T09:30:12Z",
+                "databaseId": "a".repeat(32), "backupFolder": "/data/HoploDex backups",
+                "passphraseSaved": true
+            },
+            {
+                "path": "/data/B.hoplodex", "name": "B", "lastOpenedAt": "2027-01-14T09:30:12Z",
+                "databaseId": null, "backupFolder": null, "passphraseSaved": false
+            }
+        ],
+        "notices": [
+            { "kind": "aKindFromTheFuture", "databasePath": "/data/A.hoplodex" },
+            serde_json::to_value(&known).unwrap(),
+        ],
+        "documentOpening": "aWayFromTheFuture",
+        "aFieldFromTheFuture": { "anything": [1, 2, 3] },
+    });
+    fs::write(config.path().join("machine.json"), file.to_string()).unwrap();
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    assert_eq!(names(&settings), ["A", "B"], "the recent list is as written");
+    assert_eq!(settings.machine_id(), id);
+    assert!(settings.recent()[0].passphrase_saved);
+    assert_eq!(settings.document_opening(), DocumentOpening::Preview, "the default");
+    assert_eq!(settings.take_notices(), vec![known], "the unknown notice is dropped");
+    assert!(!config.path().join("machine.json.bad").exists(), "the file is not set aside");
+}
+
+/// The dropped notice is gone from the file the next write makes, and what is
+/// known stays.
+#[test]
+fn the_next_write_drops_the_unknown_notice_and_keeps_the_known_ones() {
+    let config = TempDir::new().unwrap();
+    let known = backup_failed_notice("/data/A.hoplodex");
+    let file = serde_json::json!({
+        "version": 1,
+        "machineId": "0123456789abcdef0123456789abcdef",
+        "recentDatabases": [],
+        "notices": [
+            { "kind": "aKindFromTheFuture" },
+            serde_json::to_value(&known).unwrap(),
+            "not even an object",
+        ],
+    });
+    fs::write(config.path().join("machine.json"), file.to_string()).unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    settings.touch_recent(Path::new("/x.hoplodex"), "x", &"c".repeat(32), Path::new("/b"));
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&fs::read(config.path().join("machine.json")).unwrap()).unwrap();
+    assert_eq!(json["notices"], serde_json::json!([known]));
+    assert_eq!(MachineSettings::load(config.path()).unwrap().take_notices(), vec![known]);
+}
+
+/// 009 research.md §15: a file with `notices` of the wrong shape altogether is
+/// still the corrupt file it always was, set aside; only entries are lenient.
+#[test]
+fn notices_that_are_not_a_list_still_make_the_file_corrupt() {
+    let config = TempDir::new().unwrap();
+    fs::write(
+        config.path().join("machine.json"),
+        r#"{"version":1,"machineId":"0123456789abcdef0123456789abcdef","recentDatabases":[],"notices":"x"}"#,
+    )
+    .unwrap();
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    assert!(settings.recent().is_empty());
+    assert!(config.path().join("machine.json.bad").exists());
+}
+
+// --- A file of a later version (009 research.md §15, amended 2026-10-17) -------------------
+
+const A_MACHINE_ID: &str = "0123456789abcdef0123456789abcdef";
+
+fn machine_json_of_version(version: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "version": version,
+        "machineId": A_MACHINE_ID,
+        "recentDatabases": [{
+            "path": "/data/A.hoplodex", "name": "A", "lastOpenedAt": "2027-01-15T09:30:12Z",
+            "databaseId": "a".repeat(32), "backupFolder": "/data/HoploDex backups",
+            "passphraseSaved": true
+        }],
+        "documentOpening": "external",
+        "aFieldFromTheFuture": { "anything": [1, 2, 3] },
+    })
+}
+
+/// 009 research.md §15, the owner's decision D2 (2026-10-17): going back to an
+/// earlier release keeps the computer's recent list, so a file with a higher
+/// `version` is read by its known fields and not set aside.
+#[test]
+fn a_file_of_a_later_version_is_read_by_its_known_fields_and_not_set_aside() {
+    let config = TempDir::new().unwrap();
+    let path = config.path().join("machine.json");
+    fs::write(&path, machine_json_of_version(serde_json::json!(2)).to_string()).unwrap();
+    let before = fs::read(&path).unwrap();
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    assert_eq!(names(&settings), ["A"]);
+    assert_eq!(settings.machine_id(), A_MACHINE_ID, "this computer is the same one");
+    assert!(settings.recent()[0].passphrase_saved);
+    assert_eq!(settings.document_opening(), DocumentOpening::External);
+    assert_eq!(files_in(config.path()), ["machine.json"], "nothing is set aside");
+    assert_eq!(fs::read(&path).unwrap(), before, "loading writes nothing");
+}
+
+/// What the first change writes is this version's file: its `version`, not
+/// the later one's, and only the fields it knows (a field it doesn't know has
+/// a meaning only the later version can give it).
+#[test]
+fn a_write_after_reading_a_later_version_keeps_this_versions_number() {
+    let config = TempDir::new().unwrap();
+    let path = config.path().join("machine.json");
+    fs::write(&path, machine_json_of_version(serde_json::json!(7)).to_string()).unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    settings.touch_recent(Path::new("/x.hoplodex"), "x", &"c".repeat(32), Path::new("/b"));
+
+    let json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["machineId"], A_MACHINE_ID);
+    assert!(json.get("aFieldFromTheFuture").is_none());
+    assert_eq!(names(&MachineSettings::load(config.path()).unwrap()), ["x", "A"]);
+}
+
+/// Only a later `version` is read: an earlier one, a version that is not a
+/// number and a bad machine id are the unreadable file they were.
+#[test]
+fn a_lower_or_malformed_version_or_a_bad_machine_id_is_still_set_aside() {
+    let bad_id = {
+        let mut file = machine_json_of_version(serde_json::json!(2));
+        file["machineId"] = serde_json::json!("not-32-hex-digits");
+        file
+    };
+    let cases = [
+        ("version 0", machine_json_of_version(serde_json::json!(0))),
+        ("a text version", machine_json_of_version(serde_json::json!("2"))),
+        ("no version", machine_json_of_version(serde_json::Value::Null)),
+        ("a negative version", machine_json_of_version(serde_json::json!(-1))),
+        ("a bad machine id in a later version", bad_id),
+    ];
+    for (label, file) in cases {
+        let config = TempDir::new().unwrap();
+        fs::write(config.path().join("machine.json"), file.to_string()).unwrap();
+
+        let settings = MachineSettings::load(config.path()).unwrap();
+
+        assert!(settings.recent().is_empty(), "{label}");
+        assert_ne!(settings.machine_id(), A_MACHINE_ID, "{label}");
+        assert!(config.path().join("machine.json.bad").exists(), "{label}: set aside");
+    }
+}
+
+// --- The backup before an upgrade is told apart from a close's (009 research.md §6) ---------
+
+/// 009 research.md §6: a machine.json written before `beforeUpgrade` existed
+/// reads the unfinished backup as an ordinary one.
+#[test]
+fn an_unfinished_backup_without_before_upgrade_reads_as_false() {
+    let config = TempDir::new().unwrap();
+    let file = serde_json::json!({
+        "version": 1,
+        "machineId": "0123456789abcdef0123456789abcdef",
+        "recentDatabases": [],
+        "unfinishedBackup": {
+            "databasePath": "/data/A.hoplodex",
+            "partialPath": "/data/HoploDex backups/A 2026-09-26 101500 abcd1234.hoplodex.partial",
+            "startedAt": "2026-09-26T10:15:00Z"
+        },
+    });
+    fs::write(config.path().join("machine.json"), file.to_string()).unwrap();
+
+    let record = MachineSettings::load(config.path()).unwrap().unfinished_backup().unwrap();
+
+    assert!(!record.before_upgrade);
+    assert_eq!(record.database_path, Path::new("/data/A.hoplodex"));
+}
+
+#[test]
+fn an_unfinished_backup_before_an_upgrade_survives_a_reload_as_one() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let record = UnfinishedBackup {
+        database_path: "/data/A.hoplodex".into(),
+        partial_path: "/data/A 2026-09-26 101500 abcd1234 before 0.2.0.hoplodex.partial".into(),
+        started_at: "2026-09-26T10:15:00Z".into(),
+        before_upgrade: true,
+    };
+
+    settings.set_unfinished_backup(record.clone());
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&fs::read(config.path().join("machine.json")).unwrap()).unwrap();
+    assert_eq!(json["unfinishedBackup"]["beforeUpgrade"], true);
+    assert_eq!(MachineSettings::load(config.path()).unwrap().unfinished_backup(), Some(record));
+}
+
+/// 009 FR-015: a backup before an upgrade cut short is removed at the next
+/// launch with no notice, since the upgrade did not start and the next open
+/// asks again; an ordinary one keeps today's notice.
+#[test]
+fn the_launch_sweep_removes_a_backup_before_an_upgrade_without_a_notice() {
+    let config = TempDir::new().unwrap();
+    let data = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let partial = data.path().join("A 2026-09-26 101500 abcd1234 before 0.2.0.hoplodex.partial");
+    fs::write(&partial, b"half a backup").unwrap();
+    settings.set_unfinished_backup(UnfinishedBackup {
+        database_path: data.path().join("A.hoplodex"),
+        partial_path: partial.clone(),
+        started_at: "2026-09-26T10:15:00Z".into(),
+        before_upgrade: true,
+    });
+
+    backups::sweep_unfinished(&settings);
+
+    assert!(!partial.exists(), "the partial file is removed");
+    assert_eq!(settings.unfinished_backup(), None, "and the record cleared");
+    assert!(settings.take_notices().is_empty(), "with nothing said in the chooser");
+    let reloaded = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(reloaded.unfinished_backup(), None);
+    assert!(reloaded.take_notices().is_empty());
+}
+
+#[test]
+fn the_launch_sweep_still_gives_an_ordinary_unfinished_backup_its_notice() {
+    let config = TempDir::new().unwrap();
+    let data = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let database = data.path().join("A.hoplodex");
+    let partial = data.path().join("A 2026-09-26 101500 abcd1234.hoplodex.partial");
+    fs::write(&partial, b"half a backup").unwrap();
+    settings.set_unfinished_backup(UnfinishedBackup {
+        database_path: database.clone(),
+        partial_path: partial.clone(),
+        started_at: "2026-09-26T10:15:00Z".into(),
+        before_upgrade: false,
+    });
+
+    backups::sweep_unfinished(&settings);
+
+    assert!(!partial.exists());
+    assert_eq!(settings.unfinished_backup(), None);
+    assert_eq!(
+        settings.take_notices(),
+        vec![ChooserNotice::BackupFailed {
+            database_path: database.to_string_lossy().into_owned(),
+            reason: BackupFailureReason::Interrupted,
+        }]
+    );
 }

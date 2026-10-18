@@ -73,6 +73,26 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip <9 extract keeps SUID/SGID: extract is never called; calamine and rust_xlsxwriter don't accept zip 9 yet" },
     { id = "RUSTSEC-2026-0368", reason = "zip <9 extract writes symlinks outside the destination: extract is never called; calamine and rust_xlsxwriter don't accept zip 9 yet" },
     { id = "RUSTSEC-2026-0369", reason = "zip <9 extract applies permissions through symlinks: extract is never called; calamine and rust_xlsxwriter don't accept zip 9 yet" },
+    # zbus_names, zvariant and zvariant_derive were merged into zbus 6.0 and
+    # are no longer maintained as separate crates (RUSTSEC-2026-0370 to
+    # RUSTSEC-2026-0372, published after the last audit run). Unmaintained
+    # notices, no known vulnerability.
+    #
+    # No fix to take yet: zbus 6.0.0 exists, but the tree's zbus 5.18 is also
+    # required by secret-service 5.1 (through keyring's Linux store) and
+    # tauri-plugin-opener 2.5, which a bump of HoploDex's own `zbus`
+    # dependency would not remove, so the three crates stay in the lock file.
+    #
+    # Linux only (HoploDex's `platform/linux.rs`, the keyring's Secret Service
+    # and the opener plugin's D-Bus calls); macOS and Windows builds don't
+    # link them. The advisory is about maintenance, not about code
+    # HoploDex reaches in a harmful way. Checked 2026-10-17 at zbus 5.18.0.
+    #
+    # Review by 2027-01-31, or as soon as secret-service and
+    # tauri-plugin-opener accept zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
 ]
 
 # License audit. HoploDex is released under GPL-3.0-only, so every crate

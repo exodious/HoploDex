@@ -789,8 +789,13 @@ describe("The database's notes (#59)", () => {
   const NOTES: DatabaseStatus["notes"] = {
     diskEncryption: true,
     restoredWithPassphraseOf: "2026-09-20T09:00:00Z",
-    openedBackup: { backupOfName: "Main collection", madeAt: "2026-09-20T09:00:00Z" },
+    openedBackup: {
+      backupOfName: "Main collection",
+      madeAt: "2026-09-20T09:00:00Z",
+      beforeUpgradeTo: null,
+    },
     damagedFileKeptAt: null,
+    upgraded: null,
   };
 
   /** A session that keeps its notes in state, as the provider's status does. */

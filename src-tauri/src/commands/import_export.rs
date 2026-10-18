@@ -1286,6 +1286,15 @@ pub mod ops {
         }
     }
 
+    /// 009 FR-006 (009 research.md §2): a firearm or accessory row's
+    /// `insurance_policy_name` finds its policy ignoring A-Z letter case and
+    /// surrounding spaces, as the policy form's name check does; names are
+    /// unique under that comparison, so there is never more than one match.
+    /// It matches `idx_insurance_policies_name`'s expression, so it uses that
+    /// index (`query_plan_test`).
+    pub const POLICY_LOOKUP_SQL: &str =
+        "SELECT id FROM insurance_policies WHERE trim(name) = trim(:name) COLLATE NOCASE";
+
     /// Parses and validates one raw spreadsheet row into a `FirearmInput`,
     /// resolving `firearm_type`/`insurance_policy_name` by lookup — a
     /// human-readable `Err` message per 001 FR-020, never a panic/abort of the
@@ -1364,11 +1373,9 @@ pub mod ops {
         let insurance_policy_id = match &raw.insurance_policy_name {
             None => None,
             Some(name) => Some(
-                conn.query_row(
-                    "SELECT id FROM insurance_policies WHERE name = :name COLLATE NOCASE",
-                    named_params! { ":name": name },
-                    |row| row.get(0),
-                )
+                conn.query_row(POLICY_LOOKUP_SQL, named_params! { ":name": name }, |row| {
+                    row.get(0)
+                })
                 .optional()
                 .map_err(|e| format!("Database error resolving insurance policy: {e}"))?
                 .ok_or_else(|| format!("Unknown insurance policy: {name}"))?,
@@ -1483,11 +1490,9 @@ pub mod ops {
         let insurance_policy_id = match &raw.insurance_policy_name {
             None => None,
             Some(name) => Some(
-                conn.query_row(
-                    "SELECT id FROM insurance_policies WHERE name = :name COLLATE NOCASE",
-                    named_params! { ":name": name },
-                    |row| row.get(0),
-                )
+                conn.query_row(POLICY_LOOKUP_SQL, named_params! { ":name": name }, |row| {
+                    row.get(0)
+                })
                 .optional()
                 .map_err(|e| format!("Database error resolving insurance policy: {e}"))?
                 .ok_or_else(|| format!("Unknown insurance policy: {name}"))?,
@@ -2096,7 +2101,7 @@ pub mod ops {
 
     /// `cancel_import`: the running import stops if it is still reading.
     pub fn cancel_import(operations: &Operations) {
-        operations.stop_reading_import();
+        operations.stop_by_user(OperationKind::Import);
     }
 
     /// [`resolve_import_conflicts`] against the session's open database, which
@@ -2503,7 +2508,7 @@ pub async fn import_collection(
     // Registered, so a sleep stops it and the idle clock pauses meanwhile.
     let operation = session.session.operations().begin(OperationKind::Import, None)?;
     // The reading is the phase `cancel_import` may stop.
-    operation.set_reading(true);
+    operation.set_user_stoppable(true);
     let files = input
         .files
         .iter()
@@ -2552,7 +2557,7 @@ pub async fn import_collection(
             );
         },
     )?;
-    operation.set_reading(false);
+    operation.set_user_stoppable(false);
     // Phase two: the rows are saved under the session's lock, as before.
     ops::import_in_session(
         &session.session,

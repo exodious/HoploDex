@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
 import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
@@ -195,6 +195,42 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     expect(screen.getByLabelText("Folder")).toHaveAccessibleDescription(
       /HoploDex can't write to this folder\./,
     );
+  });
+
+  // The constitution's UI consistency: a refused field takes the focus, as in every form.
+  it("moves focus to the first field the backend refused", async () => {
+    const user = userEvent.setup();
+    onCreate.mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "Check the new database's details.",
+        fieldErrors: {
+          folder: "HoploDex can't write to this folder.",
+          name: "A name can't end with a space or a dot.",
+        },
+      }),
+    );
+    renderDialog(onCreate);
+    await fillPassphrases(user, PASSPHRASE);
+    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
+    await user.click(createButton());
+
+    await screen.findByText("A name can't end with a space or a dot.");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveFocus());
+  });
+
+  it("moves focus to the name when the file already exists", async () => {
+    const user = userEvent.setup();
+    onCreate.mockRejectedValue(
+      new CommandFailure({ code: "DATABASE_EXISTS", message: "A file with this name exists." }),
+    );
+    renderDialog(onCreate);
+    await fillPassphrases(user, PASSPHRASE);
+    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
+    await user.click(createButton());
+
+    await screen.findByText("A file with this name exists.");
+    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveFocus());
   });
 
   // 003 data-model.md "Validation rules", the create target (the name field takes the

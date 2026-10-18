@@ -144,14 +144,17 @@ describe("003 US3 - Automatic Backups and Restoring From One (was us8-backups)",
     await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
     await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
     await settle();
-    // A wrong passphrase: the backend's field error lands on the field, and
-    // nothing is restored (003 US3-5, contracts/ui-databases.md §9; the dialog's UI side is in
-    // RestoreBackupDialog.test.tsx).
+    // A wrong passphrase: the check before the confirmation puts the backend's
+    // field error on the field, with no confirmation, and nothing is restored
+    // (003 US3-5, 003 contracts/ui-databases.md §9; 009 FR-019, 009
+    // contracts/ui.md §6; the dialog's UI side is in RestoreBackupDialog.test.tsx).
     await fill("Passphrase for this backup", "not the backup's passphrase");
     await clickEl('[role="dialog"] button[type="submit"]');
-    await $('[role="alertdialog"]').waitForExist();
-    await clickEl('[role="alertdialog"] .hd-button--danger');
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    await browser.waitUntil(
+      async () => (await passphraseFieldError("Passphrase for this backup")) !== null,
+      { timeout: 10000, timeoutMsg: "the wrong passphrase showed no field error" },
+    );
+    await expect($('[role="alertdialog"]')).not.toExist();
     const message = await passphraseFieldError("Passphrase for this backup");
     expect(message).toMatch(/^That passphrase didn't open the backup from /);
     expect(backupFiles()).toHaveLength(1);

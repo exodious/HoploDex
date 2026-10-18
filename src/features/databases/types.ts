@@ -15,7 +15,15 @@ export type CloseReason =
   | "takenOver";
 
 export type OperationKind =
-  "backup" | "passphraseChange" | "restore" | "import" | "export" | "deleteBackups" | "moveBackups";
+  | "backup"
+  | "passphraseChange"
+  | "restore"
+  | "import"
+  | "export"
+  | "deleteBackups"
+  | "moveBackups"
+  /** The backup made before an upgrade (009 contracts/tauri-commands.md). */
+  | "upgrade";
 
 export interface RecentDatabase {
   path: string;
@@ -125,12 +133,35 @@ export interface DatabaseStatus {
     /** 003 FR-008, until dismissed. */
     diskEncryption: boolean;
     /** 003 research.md §9, shown once. */
-    openedBackup: { backupOfName: string; madeAt: string } | null;
+    openedBackup: OpenedBackupNote | null;
     /** ISO time of the backup, once after a restore. */
     restoredWithPassphraseOf: string | null;
     /** Where a damaged database was set aside, once after a restore. */
     damagedFileKeptAt: string | null;
+    /** Once, after an open or a restore that upgraded the database
+     * (009 FR-017). */
+    upgraded: UpgradedNote | null;
   };
+}
+
+/** `notes.openedBackup`: a backup opened directly (003 research.md §9). */
+export interface OpenedBackupNote {
+  backupOfName: string;
+  madeAt: string;
+  /** The version a backup made before an upgrade was upgraded for, e.g.
+   * "0.2.0"; `null` for any other (009 FR-013). */
+  beforeUpgradeTo: string | null;
+}
+
+/** `notes.upgraded` (009 FR-017). */
+export interface UpgradedNote {
+  /** The version it was upgraded for. */
+  version: string;
+  /** The backup made before the upgrade; for a restore, the backup restored
+   * from. */
+  backupPath: string;
+  /** False when the backup was saved in a folder the user chose (009 FR-012). */
+  atBackupLocation: boolean;
 }
 
 export interface CloseOutcome {
@@ -143,6 +174,8 @@ export interface BackupInfo {
   fileName: string;
   madeAt: string;
   sizeBytes: number;
+  /** "0.2.0" for a backup made before upgrading to it (009 FR-013). */
+  beforeUpgradeTo: string | null;
 }
 
 /** Where the create dialog suggests putting a new database (003 FR-009). */
@@ -178,7 +211,7 @@ export interface CreateDatabaseInput {
 }
 
 /** A note shown once in the collection (003 contracts/ui-databases.md §10). */
-export type NoteKind = "diskEncryption" | "openedBackup" | "restored";
+export type NoteKind = "diskEncryption" | "openedBackup" | "restored" | "upgraded";
 
 /** `list_backups`: a database's backup folder and what is in it (003 FR-028). */
 export interface BackupList {
@@ -257,7 +290,7 @@ export interface BackupProgress {
 /** `restore:progress` (003 contracts/tauri-commands.md). `checking` and
  * `replacing` are indeterminate, with `total: 0`. */
 export interface RestoreProgress {
-  phase: "copying" | "checking" | "savingCurrent" | "replacing";
+  phase: "copying" | "checking" | "upgrading" | "savingCurrent" | "replacing";
   processed: number;
   total: number;
 }
@@ -293,3 +326,36 @@ export interface CountProgress {
 
 /** `update_lock_settings`'s input (003 FR-034, FR-038). */
 export type LockSettingsInput = CollectionSettings["lock"];
+
+/** `upgrade:progress` (009 contracts/tauri-commands.md): bytes of the backup
+ * made before an upgrade, then the upgrade's steps. `upgrading` is sent once
+ * with `processed = total = 0` and again after each step. */
+export interface UpgradeProgress {
+  phase: "backingUp" | "upgrading";
+  processed: number;
+  total: number;
+  /** The backup is expected to take over a second: show the dialog at once. */
+  showNow: boolean;
+}
+
+/** `check_backup`'s answer (009 FR-019): the version the backup will be
+ * upgraded for when restored, or `null` when it is in the current layout. */
+export interface BackupCheck {
+  upgradeTo: string | null;
+}
+
+/** `UPGRADE_NEEDED`'s details from `open_database`: the database waits, with
+ * nothing written, under `awaitingId` (009 FR-010). A restore's carry only
+ * `version`. */
+export interface UpgradeNeededDetails {
+  awaitingId: number;
+  version: string;
+  backupFolder: string;
+}
+
+/** `UPGRADE_FAILED`'s details (009 FR-015); a `DISK_FULL` from `upgrade_database`
+ * carries them too, beside its `path`. */
+export interface UpgradeFailedDetails {
+  backupPath: string;
+  atBackupLocation: boolean;
+}

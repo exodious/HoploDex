@@ -1,17 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { CLEAR_PASSPHRASE_FIELDS } from "../../components/PassphraseField";
+import { formatBytes } from "../../lib/bytes";
 import { formatDateTime, formatRecentDay, formatRecentMoment } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
 import { SessionContext } from "../session/sessionStore";
 import type { SessionState } from "../session/sessionStore";
 import { DatabaseChooser } from "./DatabaseChooser";
 import * as databasesService from "./databasesService";
-import type { ChooserState, RecentDatabase } from "./types";
+import type { ChooserState, RecentDatabase, UpgradeProgress } from "./types";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./databasesService");
+
+/** The backend's events, sent by the test. */
+const events = vi.hoisted(() => {
+  const listeners = new Map<string, Set<(event: { payload: unknown }) => void>>();
+  return {
+    listen: (name: string, handler: (event: { payload: unknown }) => void) => {
+      const forName = listeners.get(name) ?? new Set();
+      forName.add(handler);
+      listeners.set(name, forName);
+      return Promise.resolve(() => forName.delete(handler));
+    },
+    send: (name: string) => listeners.get(name)?.forEach((handler) => handler({ payload: {} })),
+  };
+});
+vi.mock("@tauri-apps/api/event", () => ({ listen: events.listen }));
 
 function recent(name: string, folder: string, lastOpenedAt: string): RecentDatabase {
   return {
@@ -50,6 +67,7 @@ function renderChooser(session: Partial<SessionState> = {}, selectPath?: string)
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     dismissNote: vi.fn().mockResolvedValue(undefined),
     restoreBackup: vi.fn().mockResolvedValue(undefined),
+    upgradeDatabase: vi.fn().mockResolvedValue(undefined),
     settingsRequested: false,
     requestSettings: vi.fn(),
     clearSettingsRequest: vi.fn(),
@@ -364,7 +382,7 @@ describe("DatabaseChooser (003 US2)", () => {
     ],
     [
       "DATABASE_NEWER_VERSION",
-      "“Main collection” was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed.",
+      "“Main collection” was last used by a newer version of HoploDex, which upgraded it. Update HoploDex to open it. The file has not been changed. A backup saved before that upgrade opens in this version: look for one whose name ends in “before” and a version number, in the “HoploDex backups” folder next to the database, or the backup location you chose for it.",
     ],
     [
       "DATABASE_UNREADABLE",
@@ -1101,5 +1119,410 @@ describe("What the chooser knows about the selected database (003 FR-040)", () =
     const open = await screen.findByRole("button", { name: "Open" });
     const details = screen.getByText("Last opened here").closest("dl") as HTMLElement;
     expect(details.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+// 009 contracts/ui.md §1-§4 and §8. The chooser asks the question and shows
+// the progress; the session (`SessionState.upgradeDatabase`, like
+// `openDatabase`) sends `upgrade_database` and, once it answers, opens the
+// database. Cancelling is `databasesService.cancelUpgrade`, which needs no
+// session.
+describe("DatabaseChooser and an upgrade (009 US3)", () => {
+  const PASSPHRASE = "correct horse battery staple";
+  const BACKUPS = "/home/sam/Documents/HoploDex/HoploDex backups";
+  const WAITING = { awaitingId: 7, version: "0.2.0", backupFolder: BACKUPS };
+  const QUESTION = "Upgrade “Main collection” for HoploDex 0.2.0?";
+
+  let sendProgress: (progress: UpgradeProgress) => void = () => {};
+
+  function upgradeNeeded() {
+    return new CommandFailure({
+      code: "UPGRADE_NEEDED",
+      message: "The database needs to be upgraded.",
+      details: WAITING,
+    });
+  }
+
+  function refusal(code: string, details: Record<string, unknown>) {
+    return new CommandFailure({ code, message: `backend ${code}`, details });
+  }
+
+  beforeEach(() => {
+    vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
+    vi.mocked(databasesService.cancelUpgrade).mockReset().mockResolvedValue(null);
+    vi.mocked(databasesService.onUpgradeProgress)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sendProgress = handler;
+        return () => {};
+      });
+    vi.mocked(openFileDialog).mockReset();
+  });
+
+  /** Opens "Main collection" with a database that waits for its upgrade. */
+  async function openUpgrading(session: Partial<SessionState> = {}) {
+    const user = userEvent.setup();
+    const value = renderChooser({
+      openDatabase: vi.fn().mockRejectedValue(upgradeNeeded()),
+      ...session,
+    });
+    await user.type(
+      await screen.findByLabelText("Passphrase for “Main collection”"),
+      `${PASSPHRASE}{Enter}`,
+    );
+    return { user, session: value };
+  }
+
+  async function question() {
+    return screen.findByRole("alertdialog", { name: QUESTION });
+  }
+
+  async function pressUpgrade(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(within(await question()).getByRole("button", { name: "Upgrade" }));
+  }
+
+  /** Opens it and chooses Upgrade, whose request `upgradeDatabase` answers. */
+  async function upgradeRefusedWith(failure: CommandFailure) {
+    const upgradeDatabase = vi.fn().mockRejectedValueOnce(failure);
+    const opened = await openUpgrading({ upgradeDatabase });
+    await pressUpgrade(opened.user);
+    return { ...opened, upgradeDatabase };
+  }
+
+  // 009 FR-010
+  it("asks before upgrading, in the words of the contract, with Upgrade focused", async () => {
+    const { session } = await openUpgrading();
+
+    const asked = await question();
+    expect(asked).toHaveTextContent(
+      "“Main collection” was made by an earlier version of HoploDex. To open it, this version needs to upgrade it.",
+    );
+    expect(asked).toHaveTextContent(
+      `First, HoploDex saves a backup of it as it is now, in ${BACKUPS}.`,
+    );
+    expect(asked).toHaveTextContent(
+      "After the upgrade, earlier versions of HoploDex can open that backup, but not “Main collection” itself.",
+    );
+    const upgrade = within(asked).getByRole("button", { name: "Upgrade" });
+    expect(upgrade).toHaveClass("hd-button--primary");
+    await waitFor(() => expect(upgrade).toHaveFocus());
+    expect(within(asked).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(session.openDatabase).toHaveBeenCalledTimes(1);
+    expect(databasesService.cancelUpgrade).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row busy while the question is up", async () => {
+    await openUpgrading();
+    await question();
+
+    // The question is modal, so the page behind it is hidden from the tree.
+    const busy = screen.getByRole("button", { name: "Opening…", hidden: true });
+    expect(busy).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeDisabled();
+  });
+
+  // Issue #44: Enter on the focused Upgrade presses it.
+  it("upgrades when Enter is pressed", async () => {
+    const { user, session } = await openUpgrading();
+    const upgrade = within(await question()).getByRole("button", { name: "Upgrade" });
+    await waitFor(() => expect(upgrade).toHaveFocus());
+
+    await user.keyboard("{Enter}");
+
+    expect(session.upgradeDatabase).toHaveBeenCalledExactlyOnceWith(7);
+    expect(databasesService.cancelUpgrade).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog", { name: QUESTION })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("resumes the upgrade question after a take-over of a database open elsewhere", async () => {
+    const user = userEvent.setup();
+    const openDatabase = vi
+      .fn()
+      .mockRejectedValueOnce(
+        refusal("DATABASE_OPEN_ELSEWHERE", {
+          machineName: "Workshop PC",
+          since: "2026-09-25T14:30:05Z",
+        }),
+      )
+      .mockRejectedValueOnce(upgradeNeeded());
+    const session = renderChooser({ openDatabase });
+    await user.type(
+      await screen.findByLabelText("Passphrase for “Main collection”"),
+      `${PASSPHRASE}{Enter}`,
+    );
+    await user.click(await screen.findByRole("button", { name: "Take over…" }));
+    const confirm = await screen.findByRole("alertdialog", {
+      name: "Take over “Main collection”?",
+    });
+    await user.type(within(confirm).getByLabelText("Passphrase for “Main collection”"), PASSPHRASE);
+    await user.click(within(confirm).getByRole("button", { name: "Take over" }));
+
+    expect(openDatabase).toHaveBeenLastCalledWith(main.path, PASSPHRASE, { takeOver: true });
+    await pressUpgrade(user);
+    expect(session.upgradeDatabase).toHaveBeenCalledExactlyOnceWith(7);
+  });
+
+  // 009 FR-010: nothing was written, so cancelling leaves no trace.
+  it.each([
+    [
+      "Cancel",
+      async (user: ReturnType<typeof userEvent.setup>) =>
+        user.click(within(await question()).getByRole("button", { name: "Cancel" })),
+    ],
+    ["Escape", async (user: ReturnType<typeof userEvent.setup>) => user.keyboard("{Escape}")],
+    [
+      "a sleep or screen lock",
+      async () => {
+        // Subscribed once the effects have run.
+        await act(async () => {});
+        await act(async () => events.send(CLEAR_PASSPHRASE_FIELDS));
+      },
+    ],
+  ])("closes the question as Cancel on %s, with no message", async (_how, close) => {
+    const { user, session } = await openUpgrading();
+    await question();
+
+    await close(user);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog", { name: QUESTION })).not.toBeInTheDocument(),
+    );
+    expect(databasesService.cancelUpgrade).toHaveBeenCalledExactlyOnceWith(7);
+    expect(session.upgradeDatabase).not.toHaveBeenCalled();
+    // Back to the chooser with the row selected, ready for another try.
+    const field = screen.getByLabelText("Passphrase for “Main collection”");
+    expect(field).toBeEnabled();
+    expect(field).toHaveValue("");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument();
+  });
+
+  // 009 FR-016
+  it("shows the progress dialog once the backup's first progress says showNow", async () => {
+    const upgradeDatabase = vi.fn(() => new Promise<void>(() => {}));
+    const { user } = await openUpgrading({ upgradeDatabase });
+    await pressUpgrade(user);
+    expect(screen.queryByRole("dialog", { name: "Upgrading “Main collection”" })).toBeNull();
+
+    act(() => sendProgress({ phase: "backingUp", processed: 0, total: 212, showNow: true }));
+
+    const progress = await screen.findByRole("dialog", { name: "Upgrading “Main collection”" });
+    expect(progress).toHaveTextContent("Saving a backup of “Main collection”…");
+    expect(upgradeDatabase).toHaveBeenCalledExactlyOnceWith(7);
+  });
+
+  it("Cancel in the progress dialog stops the backup and returns to the chooser without a message", async () => {
+    let stopped: (failure: CommandFailure) => void = () => {};
+    const upgradeDatabase = vi.fn(
+      () => new Promise<void>((_resolve, reject) => (stopped = reject)),
+    );
+    const { user } = await openUpgrading({ upgradeDatabase });
+    await pressUpgrade(user);
+    act(() => sendProgress({ phase: "backingUp", processed: 10, total: 100, showNow: true }));
+    const progress = await screen.findByRole("dialog", { name: "Upgrading “Main collection”" });
+
+    await user.click(within(progress).getByRole("button", { name: "Cancel" }));
+
+    expect(databasesService.cancelUpgrade).toHaveBeenCalledExactlyOnceWith(7);
+    expect(progress).toHaveTextContent("Stopping…");
+
+    await act(async () => stopped(refusal("OPERATION_STOPPED", { operation: "upgrade" })));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Upgrading “Main collection”" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/stopped/i)).not.toBeInTheDocument();
+  });
+
+  // 009 FR-015
+  it("says in the row that the upgrade failed, that nothing changed, and where the backup is", async () => {
+    const backupPath = `${BACKUPS}/Main collection 2026-10-17 101500 3fa2c9d1 before 0.2.0.hoplodex`;
+    await upgradeRefusedWith(refusal("UPGRADE_FAILED", { backupPath, atBackupLocation: true }));
+
+    const text = `HoploDex couldn't upgrade “Main collection”. It is as it was before, and hasn't been opened. The backup saved before the upgrade is ${backupPath}.`;
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    const field = screen.getByLabelText("Passphrase for “Main collection”");
+    expect(field).toBeEnabled();
+    expect(field).toHaveAccessibleDescription(text);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  // 009 FR-015
+  it("adds where the backup is to the disk-full text when the upgrade ran out of room", async () => {
+    const backupPath = `${BACKUPS}/Main collection 2026-10-17 101500 3fa2c9d1 before 0.2.0.hoplodex`;
+    await upgradeRefusedWith(
+      refusal("DISK_FULL", { path: main.path, backupPath, atBackupLocation: true }),
+    );
+
+    const text = `The disk is full, so HoploDex couldn't open “Main collection”. Free some space on the drive that holds it, then try again. The file has not been changed. The upgrade didn't happen; the backup made before it is at ${backupPath}.`;
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.getByLabelText("Passphrase for “Main collection”")).toHaveAccessibleDescription(
+      text,
+    );
+  });
+
+  it("uses the plain disk-full text when the full disk is not the upgrade's", async () => {
+    await upgradeRefusedWith(refusal("DISK_FULL", { path: main.path }));
+
+    expect(
+      await screen.findByText(
+        "The disk is full, so HoploDex couldn't open “Main collection”. Free some space on the drive that holds it, then try again. The file has not been changed.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // 009 FR-018
+  it("says where to look for the backup from before a newer version's upgrade", async () => {
+    const user = userEvent.setup();
+    renderChooser({
+      openDatabase: vi
+        .fn()
+        .mockRejectedValue(refusal("DATABASE_NEWER_VERSION", { backupFolder: BACKUPS })),
+    });
+
+    await user.type(
+      await screen.findByLabelText("Passphrase for “Main collection”"),
+      `${PASSPHRASE}{Enter}`,
+    );
+
+    expect(
+      await screen.findByText(
+        `“Main collection” was last used by a newer version of HoploDex, which upgraded it. Update HoploDex to open it. The file has not been changed. A backup saved before that upgrade opens in this version: look for one whose name ends in “before” and a version number, in ${BACKUPS}.`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // 009 FR-012
+  describe("when the backup can't be saved at its location", () => {
+    const needed = 420_000_000;
+    const free = 100_000_000;
+
+    it.each([
+      [
+        "missing",
+        refusal("BACKUP_LOCATION_UNAVAILABLE", { path: BACKUPS, reason: "missing" }),
+        BACKUPS,
+        "the folder isn't there; it may be on a drive that isn't connected",
+      ],
+      [
+        "notWritable",
+        refusal("BACKUP_LOCATION_UNAVAILABLE", { path: BACKUPS, reason: "notWritable" }),
+        BACKUPS,
+        "HoploDex isn't allowed to save files there",
+      ],
+      [
+        "INSUFFICIENT_SPACE",
+        refusal("INSUFFICIENT_SPACE", {
+          bytesNeeded: needed,
+          bytesAvailable: free,
+          path: BACKUPS,
+        }),
+        BACKUPS,
+        `there isn't enough free space (it needs ${formatBytes(needed)}; ${formatBytes(free)} is free)`,
+      ],
+      [
+        "UPGRADE_BACKUP_FAILED",
+        refusal("UPGRADE_BACKUP_FAILED", { folder: BACKUPS }),
+        BACKUPS,
+        "saving it failed part way",
+      ],
+    ])("%s: offers a folder of the user's choosing", async (_name, failure, folder, reason) => {
+      await upgradeRefusedWith(failure);
+
+      const asked = await screen.findByRole("dialog", { name: "Save the backup somewhere else?" });
+      expect(asked).toHaveTextContent(
+        `HoploDex couldn't save the backup it makes before upgrading “Main collection” in ${folder}: ${reason}. You can save this one backup in a folder you choose instead, or cancel. “Main collection” isn't upgraded without a backup.`,
+      );
+      const choose = within(asked).getByRole("button", { name: "Choose a folder…" });
+      expect(choose).toHaveClass("hd-button--primary");
+      await waitFor(() => expect(choose).toHaveFocus());
+      expect(within(asked).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    });
+
+    async function askedForAFolder() {
+      const upgradeDatabase = vi
+        .fn()
+        .mockRejectedValueOnce(
+          refusal("BACKUP_LOCATION_UNAVAILABLE", { path: BACKUPS, reason: "missing" }),
+        )
+        .mockResolvedValue(undefined);
+      const opened = await openUpgrading({ upgradeDatabase });
+      await pressUpgrade(opened.user);
+      const asked = await screen.findByRole("dialog", { name: "Save the backup somewhere else?" });
+      return { ...opened, upgradeDatabase, asked };
+    }
+
+    it("upgrades with the folder the OS picker returns", async () => {
+      vi.mocked(openFileDialog).mockResolvedValue("/mnt/usb/Backups");
+      const { user, upgradeDatabase, asked } = await askedForAFolder();
+
+      await user.click(within(asked).getByRole("button", { name: "Choose a folder…" }));
+
+      expect(openFileDialog).toHaveBeenCalledWith(
+        expect.objectContaining({ directory: true, multiple: false }),
+      );
+      await waitFor(() => expect(upgradeDatabase).toHaveBeenCalledTimes(2));
+      expect(upgradeDatabase).toHaveBeenLastCalledWith(7, "/mnt/usb/Backups");
+      expect(databasesService.cancelUpgrade).not.toHaveBeenCalled();
+    });
+
+    it("asks again, naming the chosen folder, when that one is refused too", async () => {
+      vi.mocked(openFileDialog).mockResolvedValue("/mnt/usb/Backups");
+      const upgradeDatabase = vi
+        .fn()
+        .mockRejectedValueOnce(
+          refusal("BACKUP_LOCATION_UNAVAILABLE", { path: BACKUPS, reason: "missing" }),
+        )
+        .mockRejectedValueOnce(
+          refusal("BACKUP_LOCATION_UNAVAILABLE", {
+            path: "/mnt/usb/Backups",
+            reason: "notWritable",
+          }),
+        );
+      const { user } = await openUpgrading({ upgradeDatabase });
+      await pressUpgrade(user);
+      const first = await screen.findByRole("dialog", { name: "Save the backup somewhere else?" });
+
+      await user.click(within(first).getByRole("button", { name: "Choose a folder…" }));
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("dialog", { name: "Save the backup somewhere else?" }),
+        ).toHaveTextContent("in /mnt/usb/Backups: HoploDex isn't allowed to save files there."),
+      );
+    });
+
+    it("stays up when the picker is dismissed", async () => {
+      vi.mocked(openFileDialog).mockResolvedValue(null);
+      const { user, upgradeDatabase, asked } = await askedForAFolder();
+
+      await user.click(within(asked).getByRole("button", { name: "Choose a folder…" }));
+
+      await waitFor(() => expect(openFileDialog).toHaveBeenCalled());
+      expect(
+        screen.getByRole("dialog", { name: "Save the backup somewhere else?" }),
+      ).toBeInTheDocument();
+      expect(upgradeDatabase).toHaveBeenCalledTimes(1);
+      expect(databasesService.cancelUpgrade).not.toHaveBeenCalled();
+    });
+
+    it("Cancel gives up on the upgrade and returns to the chooser with no message", async () => {
+      const { user, upgradeDatabase, asked } = await askedForAFolder();
+
+      await user.click(within(asked).getByRole("button", { name: "Cancel" }));
+
+      expect(databasesService.cancelUpgrade).toHaveBeenCalledExactlyOnceWith(7);
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(upgradeDatabase).toHaveBeenCalledTimes(1);
+      expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeEnabled();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { withIdlePaused } from "../session/useIdleActivity";
@@ -15,6 +15,7 @@ import {
   usePassphraseChecks,
 } from "../../components";
 import type { PassphraseFieldHandle } from "../../components";
+import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { CommandFailure } from "../../services/tauriClient";
 import { joinPath } from "./paths";
 import { DEFAULT_SETTINGS } from "./settings";
@@ -58,6 +59,15 @@ type Errors = Partial<
   Record<"name" | "folder" | "passphrase" | "confirmation" | "acknowledgedUnrecoverable", string>
 >;
 
+/** The order the fields are read in, for the first one refused to take the focus. */
+const FIELD_ORDER = [
+  "name",
+  "folder",
+  "passphrase",
+  "confirmation",
+  "acknowledgedUnrecoverable",
+] as const satisfies readonly (keyof Errors)[];
+
 function CreateDatabaseForm({
   suggested,
   onCreate,
@@ -74,6 +84,16 @@ function CreateDatabaseForm({
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const passphrase = useRef<PassphraseFieldHandle>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  // The field the backend refused, to focus once the form is enabled again
+  // (a disabled field can't take focus).
+  const [refused, setRefused] = useState<keyof Errors | null>(null);
+
+  useEffect(() => {
+    if (submitting || !refused) return;
+    focusFormField(formRef.current, refused);
+    setRefused(null);
+  }, [submitting, refused]);
 
   function clearError(field: keyof Errors) {
     setErrors((current) => ({ ...current, [field]: undefined }));
@@ -146,8 +166,12 @@ function CreateDatabaseForm({
     } catch (e) {
       if (e instanceof CommandFailure && e.fieldErrors) {
         setErrors(e.fieldErrors);
+        // As every form does (the constitution's UI consistency): the first
+        // field the backend refused takes the focus.
+        setRefused(firstRefusedField(FIELD_ORDER, e.fieldErrors) ?? null);
       } else if (e instanceof CommandFailure && e.code === "DATABASE_EXISTS") {
         setErrors({ name: e.message });
+        setRefused("name");
       } else {
         setServerError(
           e instanceof CommandFailure ? e.message : "The database couldn't be created.",
@@ -159,53 +183,58 @@ function CreateDatabaseForm({
   }
 
   return (
-    <form className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
+    <form ref={formRef} className="hd-dialog__form" onSubmit={handleSubmit} noValidate>
       <div className="hd-dialog__body hd-form-section">
         {serverError && (
           <p className="hd-banner hd-banner--error" role="alert">
             {serverError}
           </p>
         )}
-        <TextField
-          label="Name"
-          required
-          value={name}
-          maxLength={120}
-          disabled={submitting}
-          onChange={(e) => {
-            setName(e.target.value);
-            clearError("name");
-          }}
-          hint="This is also the file name."
-          error={errors.name}
-          fieldClassName="hd-field--half"
-        />
-        <TextField
-          label="Folder"
-          required
-          value={folder}
-          disabled={submitting}
-          spellCheck={false}
-          onChange={(e) => {
-            setFolder(e.target.value);
-            clearError("folder");
-          }}
-          hint={target ? `Saved as ${target}` : undefined}
-          error={errors.folder}
-          trailing={
-            <button
-              type="button"
-              className="hd-input__text-action"
-              disabled={submitting}
-              onClick={() => void chooseFolder()}
-            >
-              Choose…
-            </button>
-          }
-        />
+        <div data-field="name">
+          <TextField
+            label="Name"
+            required
+            value={name}
+            maxLength={120}
+            disabled={submitting}
+            onChange={(e) => {
+              setName(e.target.value);
+              clearError("name");
+            }}
+            hint="This is also the file name."
+            error={errors.name}
+            fieldClassName="hd-field--half"
+          />
+        </div>
+        <div data-field="folder">
+          <TextField
+            label="Folder"
+            required
+            value={folder}
+            disabled={submitting}
+            spellCheck={false}
+            onChange={(e) => {
+              setFolder(e.target.value);
+              clearError("folder");
+            }}
+            hint={target ? `Saved as ${target}` : undefined}
+            error={errors.folder}
+            trailing={
+              <button
+                type="button"
+                className="hd-input__text-action"
+                disabled={submitting}
+                onClick={() => void chooseFolder()}
+              >
+                Choose…
+              </button>
+            }
+          />
+        </div>
         <div className="hd-form-grid hd-form-grid--2">
           <PassphraseField
             ref={passphrase}
+            dataField="passphrase"
             label="Passphrase"
             autoComplete="new-password"
             required
@@ -216,6 +245,7 @@ function CreateDatabaseForm({
           />
           <PassphraseField
             ref={confirmation}
+            dataField="confirmation"
             label="Confirm passphrase"
             autoComplete="new-password"
             required
@@ -242,7 +272,7 @@ function CreateDatabaseForm({
             </p>
           </div>
         </section>
-        <div>
+        <div data-field="acknowledgedUnrecoverable">
           <Checkbox
             label={ACKNOWLEDGEMENT}
             checked={acknowledged}

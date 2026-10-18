@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import {
   $,
   E2E_PASSPHRASE,
@@ -16,6 +18,7 @@ import {
   scratchDocuments,
   selectChooserRow,
   selectedChooserRow,
+  settle,
   settleChooserPlate,
   submitPassphrase,
   switchDatabase,
@@ -24,7 +27,9 @@ import {
   waitForChooser,
   waitForCollection,
 } from "../support/ui";
-import { appPid, relaunchApp, waitForAppToQuit } from "../support/app";
+import { appPid, killApp, launchApp, relaunchApp, waitForAppToQuit } from "../support/app";
+import { repoRoot } from "../support/build";
+import { copyReleaseFixture, sha256Of } from "../support/sandbox";
 import {
   chooseMenuBarItem,
   pressCommandQ,
@@ -32,7 +37,7 @@ import {
   sendQuitEvent,
   skipWithoutMacInput,
 } from "../support/macInput";
-import { realClick, skipWithoutRealInput } from "../support/realInput";
+import { HAS_REAL_INPUT, realClick, realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
  * End-to-end coverage of specs/003-database-protection-management's
@@ -513,5 +518,242 @@ describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7
     expect(await asksForPassphrase()).toBe(false);
     await clickButton("Open");
     await waitForCollection();
+  });
+});
+
+// 009 US3: a database the previous release made is stored in the repository
+// (src-tauri/tests/fixtures/releases/0.1.0.hoplodex), and an E2E build has one
+// more step than it (009 research.md §12), so opening a copy asks the question.
+// The dialogs' texts, roles and keys are in 009 contracts/ui.md §1, §3, §5 and
+// §7; their parts are in UpgradeDialogs.test.tsx.
+describe("009 US3 - A Beta Tester's Database Survives an Upgrade", () => {
+  const FIXTURE_PASSPHRASE = "release fixture 0.1.0";
+  const version = (
+    JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
+      version: string;
+    }
+  ).version;
+  const identifier = (
+    JSON.parse(fs.readFileSync(path.join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8")) as {
+      identifier: string;
+    }
+  ).identifier;
+  const olderName = "Older collection";
+  const strandedName = "Older no backups";
+  let older: { path: string; sha256: string; folder: string };
+  let stranded: { path: string; sha256: string; folder: string };
+
+  /** The text of the open dialog or alert dialog, whitespace collapsed. */
+  async function dialogText(selector: string): Promise<string> {
+    return browser.execute(
+      (selector: string) =>
+        (document.querySelector(selector)?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      selector,
+    );
+  }
+
+  /** The text of the button that has focus, or "" when it isn't a button. */
+  async function focusedButton(): Promise<string> {
+    return browser.execute(() => {
+      const active = document.activeElement;
+      return active instanceof HTMLButtonElement ? (active.textContent ?? "").trim() : "";
+    });
+  }
+
+  /** Whether the chooser is up with `name` selected and says nothing about
+   * a failure. */
+  async function chooserIsQuiet(name: string): Promise<boolean> {
+    await waitForChooser();
+    return (
+      (await selectedChooserRow()) === name &&
+      !(await $('nav[aria-label="Sections"]').isExisting()) &&
+      !(await $('.hd-db-row--selected [role="alert"]').isExisting()) &&
+      !(await $("body").getText()).includes("HoploDex couldn't")
+    );
+  }
+
+  /** Puts the two copies on the recent list, which the app reads at start:
+   * the native file picker that would add them can't be driven. */
+  function registerRecent(entries: { path: string; name: string }[]) {
+    const dir = path.join(process.env.HOPLODEX_E2E_CONFIG_HOME!, identifier);
+    const file = path.join(dir, "machine.json");
+    fs.mkdirSync(dir, { recursive: true });
+    const machine = fs.existsSync(file)
+      ? (JSON.parse(fs.readFileSync(file, "utf8")) as { recentDatabases?: unknown[] })
+      : { version: 1, machineId: randomBytes(16).toString("hex"), recentDatabases: [] };
+    machine.recentDatabases = [
+      ...entries.map((entry) => ({
+        ...entry,
+        lastOpenedAt: new Date().toISOString(),
+        databaseId: null,
+        backupFolder: null,
+        passphraseSaved: false,
+        leftModifiedAt: null,
+        located: false,
+      })),
+      ...(machine.recentDatabases ?? []),
+    ];
+    fs.writeFileSync(file, JSON.stringify(machine, null, 2));
+  }
+
+  /** Opens the selected chooser row with the fixture's passphrase, and waits
+   * for the upgrade question. */
+  async function openUntilQuestion() {
+    await submitPassphrase(FIXTURE_PASSPHRASE);
+    await $('[role="alertdialog"]').waitForExist({ timeout: 10000 });
+    await settle();
+  }
+
+  before(async () => {
+    // Leave a database an earlier test left open, as the menu does.
+    if (await $('nav[aria-label="Sections"]').isExisting()) await switchDatabase();
+
+    const documents = scratchDocuments();
+    const first = copyReleaseFixture(path.join(documents, "Older"), olderName);
+    older = { ...first, folder: path.join(documents, "Older") };
+    // Where this copy's "HoploDex backups" folder would be there is a file.
+    const second = copyReleaseFixture(path.join(documents, "Stranded"), strandedName);
+    stranded = { ...second, folder: path.join(documents, "Stranded") };
+    fs.writeFileSync(path.join(stranded.folder, "HoploDex backups"), "not a folder");
+
+    // The app reads machine.json when it starts: end it, add the two
+    // copies to the list, and start it again.
+    await killApp();
+    registerRecent([
+      { path: older.path, name: olderName },
+      { path: stranded.path, name: strandedName },
+    ]);
+    await launchApp();
+    await browser.reloadSession();
+    await browser.waitUntil(
+      async () => (await browser.execute(() => document.readyState)) === "complete",
+      { timeout: 10000, timeoutMsg: "the restarted app never finished loading" },
+    );
+    await waitForChooser();
+  });
+
+  it("asks before upgrading, with Upgrade focused, and Cancel leaves the file as it was (009 FR-010)", async () => {
+    // The first row is selected when the chooser opens, and a selected row has
+    // no button to select it with.
+    if ((await selectedChooserRow()) !== olderName) await selectChooserRow(olderName);
+    await openUntilQuestion();
+
+    const question = await dialogText('[role="alertdialog"]');
+    expect(question).toContain(`Upgrade “${olderName}” for HoploDex ${version}?`);
+    expect(question).toContain(
+      `“${olderName}” was made by an earlier version of HoploDex. To open it, this version needs to upgrade it.`,
+    );
+    expect(question).toContain(
+      `First, HoploDex saves a backup of it as it is now, in ${path.join(older.folder, "HoploDex backups")}.`,
+    );
+    expect(question).toContain(
+      `After the upgrade, earlier versions of HoploDex can open that backup, but not “${olderName}” itself.`,
+    );
+    expect(await focusedButton()).toBe("Upgrade");
+
+    await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    expect(await chooserIsQuiet(olderName)).toBe(true);
+    expect(sha256Of(older.path)).toBe(older.sha256);
+  });
+
+  it("upgrades on Enter, opens the collection with the note, and lists the backup made first (009 FR-017, FR-013)", async () => {
+    await openUntilQuestion();
+    expect(await focusedButton()).toBe("Upgrade");
+    // Enter submits the question's form. The embedded WebDriver's key presses
+    // are synthetic and submit nothing, so where real input exists it is used
+    // (DEVELOPMENT.md, "Real keyboard and mouse input"); elsewhere the button
+    // stands in for it.
+    if (HAS_REAL_INPUT) await realKey("Return");
+    else await clickButton("Upgrade");
+
+    // The copy was locked mid-edit by the earlier version (a policy form half
+    // typed): that change survived the upgrade (009 FR-015) and is offered
+    // before the collection, as 003 FR-039 has it for any open. Discard it
+    // to reach the collection.
+    await $('[role="dialog"]').waitForExist({ timeout: 20000 });
+    await settle();
+    expect(await dialogText('[role="dialog"]')).toContain("Unsaved changes to Range Rider (add)");
+    await clickButton("Discard changes");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Discard changes");
+    await waitForCollection();
+
+    // The note, once, in the notes area (009 contracts/ui.md §5).
+    const note = await browser.execute(
+      () =>
+        [...document.querySelectorAll(".hd-db-note")]
+          .map((n) => (n.textContent ?? "").replace(/\s+/g, " ").trim())
+          .find((text) => text.includes("was upgraded for HoploDex")) ?? "",
+    );
+    expect(note).toContain(`“${olderName}” was upgraded for HoploDex ${version}.`);
+    const named = note.match(
+      /A backup of it from before the upgrade is (.+\.hoplodex)\. Earlier versions of HoploDex can open that backup, but not the upgraded database\./,
+    );
+    expect(named).not.toBeNull();
+    const backup = named![1];
+    // It is the backup the question promised, made before the file changed.
+    expect(path.resolve(path.dirname(backup))).toBe(
+      path.resolve(path.join(older.folder, "HoploDex backups")),
+    );
+    expect(path.basename(backup)).toMatch(
+      new RegExp(`^${olderName} .* before ${version}\\.hoplodex$`),
+    );
+    expect(fs.existsSync(backup)).toBe(true);
+    // The folder is the backup location, so the extra sentence is absent.
+    expect(note).not.toContain("isn't your backup location");
+
+    // The collection is there.
+    await goTo("Collection");
+    expect((await listedNames()).length).toBeGreaterThan(0);
+
+    // The restore dialog lists the backup as one made before the upgrade
+    // (009 contracts/ui.md §7).
+    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+    await $('[role="dialog"] input[type="radio"]').waitForExist();
+    await settle();
+    const listed = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLInputElement>('[role="dialog"] input[type="radio"]')].map(
+        (radio) => (radio.labels?.[0]?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      ),
+    );
+    expect(
+      listed.some((label) => label.endsWith(` — before upgrading to HoploDex ${version}`)),
+    ).toBe(true);
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    // The upgrade changed the file.
+    await switchDatabase();
+    expect(sha256Of(older.path)).not.toBe(older.sha256);
+  });
+
+  it("offers another folder when the backup can't be saved, and Cancel leaves the file as it was (009 FR-012)", async () => {
+    await selectChooserRow(strandedName);
+    await openUntilQuestion();
+    expect(await focusedButton()).toBe("Upgrade");
+    await clickButton("Upgrade");
+
+    await $('[role="dialog"]').waitForExist({ timeout: 10000 });
+    await settle();
+    const refusal = await dialogText('[role="dialog"]');
+    expect(refusal).toContain("Save the backup somewhere else?");
+    expect(refusal).toContain(
+      `HoploDex couldn't save the backup it makes before upgrading “${strandedName}” in ${path.join(stranded.folder, "HoploDex backups")}:`,
+    );
+    expect(refusal).toContain(
+      `You can save this one backup in a folder you choose instead, or cancel. “${strandedName}” isn't upgraded without a backup.`,
+    );
+    expect(await focusedButton()).toBe("Choose a folder…");
+    // Choosing a folder opens the OS's picker, which can't be driven here
+    // (UpgradeDialogs.test.tsx mocks it; upgrade_test.rs covers the command).
+
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    expect(await chooserIsQuiet(strandedName)).toBe(true);
+    expect(sha256Of(stranded.path)).toBe(stranded.sha256);
+    expect(fs.readFileSync(path.join(stranded.folder, "HoploDex backups"), "utf8")).toBe(
+      "not a folder",
+    );
   });
 });

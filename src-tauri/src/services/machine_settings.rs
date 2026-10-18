@@ -82,6 +82,12 @@ pub struct UnfinishedBackup {
     pub database_path: PathBuf,
     pub partial_path: PathBuf,
     pub started_at: String,
+    /// The backup made before an upgrade (009 research.md §6). The launch
+    /// sweep removes its partial file without a chooser notice: an
+    /// interrupted upgrade is not reported (009 FR-015). A file written
+    /// before this field existed reads as `false`.
+    #[serde(default)]
+    pub before_upgrade: bool,
 }
 
 /// A move of backups to a new location that was under way when HoploDex
@@ -123,15 +129,55 @@ struct MachineFile {
     unfinished_backup: Option<UnfinishedBackup>,
     #[serde(default)]
     unfinished_backup_move: Option<UnfinishedBackupMove>,
-    #[serde(default)]
+    /// Read entry by entry (009 research.md §15): a notice this version
+    /// doesn't know is dropped, not the whole file.
+    #[serde(default, deserialize_with = "lenient_notices")]
     notices: Vec<ChooserNotice>,
     /// 007 FR-011. A file written before this field existed reads as Preview, so
-    /// `VERSION` stays 1.
-    #[serde(default)]
+    /// `VERSION` stays 1. A value this version doesn't know reads as Preview
+    /// too (009 research.md §15).
+    #[serde(default, deserialize_with = "lenient_document_opening")]
     document_opening: DocumentOpening,
     /// 007 FR-003a. `None` (JSON `null`) unless a hold or a leftover is recorded.
     #[serde(default)]
     pdf_preview_hold: Option<PdfPreviewHold>,
+}
+
+/// Reads `notices` one entry at a time (009 research.md §15): a file that a
+/// later version wrote may hold a notice kind this version doesn't know, and
+/// going back to this version must not cost the recent list. An entry that
+/// doesn't parse is dropped and logged, without its contents.
+fn lenient_notices<'de, D>(deserializer: D) -> Result<Vec<ChooserNotice>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let entries = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(entries
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, entry)| match serde_json::from_value(entry) {
+            Ok(notice) => Some(notice),
+            Err(_) => {
+                log::warn!(
+                    "dropped notice {index} of {FILE_NAME}: not a notice this version knows"
+                );
+                None
+            }
+        })
+        .collect())
+}
+
+/// Reads `documentOpening`, with the default for a value this version doesn't
+/// know (009 research.md §15).
+fn lenient_document_opening<'de, D>(deserializer: D) -> Result<DocumentOpening, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_else(|_| {
+        log::warn!("{FILE_NAME} names a way of opening documents this version doesn't know");
+        DocumentOpening::default()
+    }))
 }
 
 impl MachineFile {
@@ -148,8 +194,13 @@ impl MachineFile {
         })
     }
 
+    /// Whether this version can use the file: it is this version's layout, or
+    /// a later one, read by the fields this version knows (009 research.md §15,
+    /// the owner's decision of 2026-10-17: going back to an earlier release
+    /// keeps the computer's recent list). An earlier layout (version 0) is
+    /// not one this build wrote.
     fn is_valid(&self) -> bool {
-        self.version == VERSION
+        self.version >= VERSION
             && self.machine_id.len() == 32
             && self.machine_id.chars().all(|c| c.is_ascii_hexdigit())
     }
@@ -173,14 +224,31 @@ pub struct MachineSettings {
 impl MachineSettings {
     /// Loads `machine.json` from `config_dir`, creating the directory and a
     /// new file with a new machine id when there is none. A corrupt or
-    /// unreadable file is set aside as `machine.json.bad` and a new one
-    /// started: that loses the recent list, and nothing else.
+    /// unreadable file, or one of an earlier version, is set aside as
+    /// `machine.json.bad` and a new one started: that loses the recent list,
+    /// and nothing else. A file of a later version is read by the fields this
+    /// version knows (009 research.md §15); the first change written back
+    /// keeps this version's `version` and drops the fields only a later one
+    /// knows.
     pub fn load(config_dir: &Path) -> io::Result<Self> {
         fs::create_dir_all(config_dir)?;
         let path = config_dir.join(FILE_NAME);
         let file = match fs::read(&path) {
             Ok(bytes) => match serde_json::from_slice::<MachineFile>(&bytes) {
-                Ok(file) if file.is_valid() => Some(file),
+                Ok(mut file) if file.is_valid() => {
+                    if file.version > VERSION {
+                        // Not written back by the load. Whatever writes
+                        // next is this version's layout, with only the
+                        // fields it knows, so it says so.
+                        log::info!(
+                            "{} is version {}; reading the fields this version knows",
+                            path.display(),
+                            file.version
+                        );
+                        file.version = VERSION;
+                    }
+                    Some(file)
+                }
                 _ => None,
             },
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
@@ -530,4 +598,61 @@ fn host_display_name() -> String {
     };
     let host: String = host.trim().chars().take(MAX_DISPLAY_NAME_CHARS).collect();
     if host.is_empty() { "another computer".to_owned() } else { host }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 009 research.md §15: a `machine.json` that a later version wrote, with
+    /// a notice kind and a way of opening documents this version doesn't know,
+    /// still has its recent list; the notices it does know are kept.
+    #[test]
+    fn a_later_versions_file_keeps_the_recent_list() {
+        let config = tempfile::TempDir::new().unwrap();
+        let known = serde_json::to_value(ChooserNotice::BackupFailed {
+            database_path: "/data/A.hoplodex".into(),
+            reason: crate::models::database::BackupFailureReason::Io,
+        })
+        .unwrap();
+        let file = serde_json::json!({
+            "version": 1,
+            "machineId": "0123456789abcdef0123456789abcdef",
+            "recentDatabases": [{
+                "path": "/data/A.hoplodex", "name": "A", "lastOpenedAt": "2027-01-15T09:30:12Z",
+                "databaseId": null, "backupFolder": null, "passphraseSaved": false
+            }],
+            "notices": [{ "kind": "somethingNew", "databasePath": "/x" }, known.clone(), 7],
+            "documentOpening": "somethingNew",
+            "somethingElseNew": { "a": 1 },
+        });
+        fs::write(config.path().join(FILE_NAME), file.to_string()).unwrap();
+
+        let settings = MachineSettings::load(config.path()).unwrap();
+
+        assert_eq!(settings.recent().len(), 1);
+        assert_eq!(settings.document_opening(), DocumentOpening::Preview);
+        assert_eq!(
+            settings
+                .take_notices()
+                .into_iter()
+                .map(|n| serde_json::to_value(n).unwrap())
+                .collect::<Vec<_>>(),
+            [known]
+        );
+        assert!(!config.path().join("machine.json.bad").exists(), "the file was not set aside");
+    }
+
+    /// A record written before `beforeUpgrade` existed reads as an ordinary
+    /// unfinished backup.
+    #[test]
+    fn an_unfinished_backup_without_the_flag_is_an_ordinary_one() {
+        let record: UnfinishedBackup = serde_json::from_value(serde_json::json!({
+            "databasePath": "/data/A.hoplodex",
+            "partialPath": "/data/A.hoplodex.partial",
+            "startedAt": "2027-01-15T09:30:12Z",
+        }))
+        .unwrap();
+        assert!(!record.before_upgrade);
+    }
 }

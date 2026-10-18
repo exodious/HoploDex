@@ -145,6 +145,10 @@ describe("RestoreDialog (001 FR-033)", () => {
     await user.click(screen.getByRole("button", { name: "Restore to collection" }));
     const rename = await screen.findByLabelText("New nickname");
     expect(onRestore).toHaveBeenCalledTimes(1);
+    // The backend's refusal opened the field and gave it the focus.
+    expect(rename).toHaveFocus();
+    await user.click(screen.getByRole("radio", { name: /Keep as history/ }));
+    expect(rename).not.toHaveFocus();
 
     // 200 characters are fine; the 201st shows the error without a submit.
     fireEvent.change(rename, { target: { value: "n".repeat(200) } });

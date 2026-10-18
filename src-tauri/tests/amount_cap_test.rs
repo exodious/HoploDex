@@ -331,11 +331,11 @@ fn rows_above_the_cap_from_an_older_database_still_list_and_value() {
     .unwrap_err(); // a limit like that is refused now
     db.conn
         .execute(
-            "INSERT INTO insurance_policies (name, policy_number, insurance_company,
+            "INSERT INTO insurance_policies (uid, name, policy_number, insurance_company,
                  blanket_coverage_limit, effective_start_date, effective_end_date,
                  created_at, updated_at)
-             VALUES ('Old blanket', 'OB-1', 'Acme', ?1, '2020-01-01', '2099-12-31', 'now', 'now')",
-            [i64::MAX],
+             VALUES (?2, 'Old blanket', 'OB-1', 'Acme', ?1, '2020-01-01', '2099-12-31', 'now', 'now')",
+            rusqlite::params![i64::MAX, support::uid()],
         )
         .unwrap();
 

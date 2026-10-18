@@ -26,6 +26,7 @@ function backup(madeAt: string, sizeBytes: number): BackupInfo {
     fileName: `Main collection ${stamp} 3fa2c9d1.hoplodex`,
     madeAt,
     sizeBytes,
+    beforeUpgradeTo: null,
   };
 }
 
@@ -38,6 +39,7 @@ function renderDialog(props: Partial<RestoreBackupDialogProps> = {}) {
   const session: SessionState = {
     status: null,
     openDatabase: vi.fn(),
+    upgradeDatabase: vi.fn(),
     createDatabase: vi.fn(),
     closeDatabase: vi.fn(),
     lockDatabase: vi.fn(),
@@ -91,6 +93,8 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
         sendProgress = handler;
         return () => {};
       });
+    // 009 contracts/ui.md §6: a backup in the current layout needs no upgrade.
+    vi.mocked(databasesService.checkBackup).mockReset().mockResolvedValue({ upgradeTo: null });
   });
 
   it("lists the backups newest first, with date, time and size", async () => {
@@ -222,6 +226,7 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
     for (const [phase, text] of [
       ["copying", "Copying the backup…"],
       ["checking", "Checking the backup…"],
+      ["upgrading", "Upgrading the restored copy…"],
       ["savingCurrent", "Backing up the current database…"],
       ["replacing", "Replacing the database…"],
     ] as const) {
@@ -306,5 +311,208 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
     } else {
       expect(change).not.toBeInTheDocument();
     }
+  });
+});
+
+// 009 contracts/ui.md §6 and §7
+describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)", () => {
+  const WHEN = formatDateTime(older.madeAt);
+  const UPGRADE_SENTENCE =
+    "This backup was made by an earlier version of HoploDex, so it is upgraded for HoploDex 0.2.0 as it is restored. The backup itself stays as it is, and earlier versions can still open it.";
+
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({ folder: FOLDER, available: true, backups: [newer, older] });
+    vi.mocked(databasesService.onRestoreProgress)
+      .mockReset()
+      .mockImplementation((handler) => {
+        sendProgress = handler;
+        return () => {};
+      });
+    vi.mocked(databasesService.checkBackup).mockReset().mockResolvedValue({ upgradeTo: null });
+  });
+
+  /** Chooses `older`, types the passphrase and presses Restore, which checks. */
+  async function pressRestore() {
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("radio", { name: label(older) }));
+    await user.type(screen.getByLabelText("Passphrase for this backup"), PASSPHRASE);
+    await user.click(screen.getByRole("button", { name: "Restore" }));
+    return user;
+  }
+
+  it("checks the backup before it asks, with the button busy meanwhile", async () => {
+    let checked: (answer: { upgradeTo: string | null }) => void = () => {};
+    vi.mocked(databasesService.checkBackup).mockReturnValue(
+      new Promise((resolve) => (checked = resolve)),
+    );
+    const { session } = renderDialog();
+
+    await pressRestore();
+
+    expect(databasesService.checkBackup).toHaveBeenCalledExactlyOnceWith(
+      SCOPE,
+      older.path,
+      PASSPHRASE,
+      undefined,
+    );
+    const busy = screen.getByRole("button", { name: "Restore" });
+    expect(busy).toHaveAttribute("aria-busy", "true");
+    expect(busy).toBeDisabled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(session.restoreBackup).not.toHaveBeenCalled();
+
+    await act(async () => checked({ upgradeTo: null }));
+
+    const confirm = await screen.findByRole("alertdialog");
+    expect(confirm).not.toHaveTextContent("upgraded for HoploDex");
+    expect(session.restoreBackup).not.toHaveBeenCalled();
+  });
+
+  it("checks a damaged database's restore by its path, with no session", async () => {
+    renderDialog({ databasePath: DATABASE });
+
+    await pressRestore();
+
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(databasesService.checkBackup).toHaveBeenCalledExactlyOnceWith(
+      null,
+      older.path,
+      PASSPHRASE,
+      DATABASE,
+    );
+  });
+
+  it("puts a wrong passphrase from the check on the field, with no confirmation", async () => {
+    vi.mocked(databasesService.checkBackup).mockRejectedValue(
+      new CommandFailure({ code: "PASSPHRASE_INCORRECT", message: "The passphrase is incorrect." }),
+    );
+    const { session } = renderDialog();
+
+    await pressRestore();
+
+    expect(
+      await screen.findByText(`That passphrase didn't open the backup from ${WHEN}.`),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(session.restoreBackup).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();
+  });
+
+  it("says above the footer that a newer version made the backup, with no confirmation", async () => {
+    vi.mocked(databasesService.checkBackup).mockRejectedValue(
+      new CommandFailure({
+        code: "DATABASE_NEWER_VERSION",
+        message: "This backup was made by a newer version.",
+      }),
+    );
+    const { session, onOpenChange } = renderDialog();
+
+    await pressRestore();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "This backup was made by a newer version of HoploDex, so this version can't restore it.",
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(session.restoreBackup).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("says above the footer that a backup is damaged, when the check finds it so", async () => {
+    vi.mocked(databasesService.checkBackup).mockRejectedValue(
+      new CommandFailure({ code: "DATABASE_DAMAGED", message: "damaged" }),
+    );
+    renderDialog();
+
+    await pressRestore();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      `The backup from ${WHEN} is damaged and can't be restored. Nothing has been changed.`,
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("adds the upgrade sentence to the confirmation and sends upgrade: true", async () => {
+    vi.mocked(databasesService.checkBackup).mockResolvedValue({ upgradeTo: "0.2.0" });
+    const { session, onOpenChange } = renderDialog();
+    const user = await pressRestore();
+
+    const confirm = await screen.findByRole("alertdialog", {
+      name: `Replace “Main collection” with the backup from ${WHEN}?`,
+    });
+    expect(confirm).toHaveTextContent(
+      `The backup takes its place, after the database is backed up as it is now. ${UPGRADE_SENTENCE}`,
+    );
+    await user.click(within(confirm).getByRole("button", { name: "Restore" }));
+
+    expect(session.restoreBackup).toHaveBeenCalledExactlyOnceWith(
+      older.path,
+      PASSPHRASE,
+      undefined,
+      true,
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("sends upgrade: true for a damaged database's restore too", async () => {
+    vi.mocked(databasesService.checkBackup).mockResolvedValue({ upgradeTo: "0.2.0" });
+    const { session } = renderDialog({ databasePath: DATABASE });
+    const user = await pressRestore();
+
+    const confirm = await screen.findByRole("alertdialog");
+    expect(confirm).toHaveTextContent(
+      `The backup takes its place, and the damaged file is kept beside it. ${UPGRADE_SENTENCE}`,
+    );
+    await user.click(within(confirm).getByRole("button", { name: "Restore" }));
+
+    expect(session.restoreBackup).toHaveBeenCalledExactlyOnceWith(
+      older.path,
+      PASSPHRASE,
+      DATABASE,
+      true,
+    );
+  });
+
+  it("shows why the upgrade of the restored copy failed and stays open", async () => {
+    vi.mocked(databasesService.checkBackup).mockResolvedValue({ upgradeTo: "0.2.0" });
+    const { session, onOpenChange } = renderDialog();
+    vi.mocked(session.restoreBackup).mockRejectedValue(
+      new CommandFailure({
+        code: "UPGRADE_FAILED",
+        message: "The upgrade failed.",
+        details: { backupPath: older.path, atBackupLocation: true },
+      }),
+    );
+    const user = await pressRestore();
+    const confirm = await screen.findByRole("alertdialog");
+    await user.click(within(confirm).getByRole("button", { name: "Restore" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "The backup couldn't be upgraded for this version, so nothing was restored. The database is as it was.",
+    );
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();
+  });
+
+  it("lists a backup made before an upgrade with the version it preceded (009 FR-013)", async () => {
+    const before = {
+      ...backup("2026-09-27T09:30:00", 212_000_000),
+      beforeUpgradeTo: "0.2.0",
+    };
+    vi.mocked(databasesService.listBackups).mockResolvedValue({
+      folder: FOLDER,
+      available: true,
+      backups: [before, newer, older],
+    });
+    renderDialog();
+
+    const radios = await screen.findAllByRole("radio");
+    expect(radios).toHaveLength(3);
+    expect(radios[0]).toHaveAccessibleName(`${label(before)} — before upgrading to HoploDex 0.2.0`);
+    expect(radios[1]).toHaveAccessibleName(label(newer));
+    expect(radios[2]).toHaveAccessibleName(label(older));
   });
 });

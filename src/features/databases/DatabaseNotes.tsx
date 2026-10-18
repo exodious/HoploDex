@@ -20,9 +20,15 @@ export function DatabaseNotes() {
   const [dismissing, setDismissing] = useState<NoteKind | null>(null);
 
   if (!status) return null;
-  const { diskEncryption, openedBackup, restoredWithPassphraseOf, damagedFileKeptAt } =
+  const { diskEncryption, openedBackup, restoredWithPassphraseOf, damagedFileKeptAt, upgraded } =
     status.notes;
-  if (!diskEncryption && !openedBackup && !restoredWithPassphraseOf && !damagedFileKeptAt) {
+  if (
+    !diskEncryption &&
+    !openedBackup &&
+    !restoredWithPassphraseOf &&
+    !damagedFileKeptAt &&
+    !upgraded
+  ) {
     return null;
   }
 
@@ -48,6 +54,10 @@ export function DatabaseNotes() {
     />
   );
 
+  // A restore that upgraded is told after the restored note (009 contracts/ui.md §5).
+  const restored = Boolean(restoredWithPassphraseOf || damagedFileKeptAt);
+  const quoted = `“${status.name}”`;
+
   return (
     <div className="hd-db-notes">
       {(restoredWithPassphraseOf || damagedFileKeptAt) && (
@@ -62,14 +72,32 @@ export function DatabaseNotes() {
           {dismissButton("restored")}
         </section>
       )}
+      {upgraded && (
+        <section className="hd-banner hd-db-note" aria-label="Upgraded">
+          <Icon name="archive" />
+          <p className="hd-banner__text">
+            {restored
+              ? `The backup was made by an earlier version of HoploDex, so ${quoted} was upgraded for HoploDex ${upgraded.version} as it was restored. Earlier versions can still open the backup it came from, ${upgraded.backupPath}.`
+              : `${quoted} was upgraded for HoploDex ${upgraded.version}. A backup of it from before the upgrade is ${upgraded.backupPath}. Earlier versions of HoploDex can open that backup, but not the upgraded database.`}
+            {!restored &&
+              !upgraded.atBackupLocation &&
+              " That folder isn't your backup location, so the backup isn't in the database's list of backups."}
+          </p>
+          {dismissButton("upgraded")}
+        </section>
+      )}
       {openedBackup && (
         <section className="hd-banner hd-db-note" aria-label="A backup">
           <Icon name="archive" />
           <p className="hd-banner__text">
             This is a backup of “{openedBackup.backupOfName}” made on{" "}
-            {formatDateTime(openedBackup.madeAt)}. Changes here aren&apos;t part of “
-            {openedBackup.backupOfName}”. It&apos;s still in the backup folder, where it may be
-            removed when older backups are cleared: move the file elsewhere to keep it.
+            {formatDateTime(openedBackup.madeAt)}
+            {openedBackup.beforeUpgradeTo &&
+              `, before it was upgraded to HoploDex ${openedBackup.beforeUpgradeTo}`}
+            . Changes here aren&apos;t part of “{openedBackup.backupOfName}”.{" "}
+            {openedBackup.beforeUpgradeTo
+              ? "It's still in the backup folder: move the file elsewhere to keep it."
+              : "It's still in the backup folder, where it may be removed when older backups are cleared: move the file elsewhere to keep it."}
           </p>
           {dismissButton("openedBackup")}
         </section>

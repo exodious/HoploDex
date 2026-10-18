@@ -65,6 +65,7 @@ function status(
       openedBackup: null,
       restoredWithPassphraseOf: null,
       damagedFileKeptAt: null,
+      upgraded: null,
     },
   };
 }
@@ -75,6 +76,7 @@ function backup(day: number): BackupInfo {
     fileName: `Main collection 2026-09-${day} 143005 3fa2c9d1.hoplodex`,
     madeAt: `2026-09-${day}T14:30:05`,
     sizeBytes: 212_000_000,
+    beforeUpgradeTo: null,
   };
 }
 
@@ -241,6 +243,39 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
       /Keep between 1 and 100 backups\./,
     );
     expect(props.onOpenChange).not.toHaveBeenCalled();
+  });
+
+  // The constitution's UI consistency: a refused field takes the focus, as in every form.
+  it("moves focus to the field the backend refused, once Save is through", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings).mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "Check the backup settings.",
+        fieldErrors: { keepCount: "Keep between 1 and 100 backups." },
+      }),
+    );
+    renderSettings();
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "500");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await screen.findByText("Keep between 1 and 100 backups.");
+    await waitFor(() => expect(screen.getByLabelText("Keep the latest")).toHaveFocus());
+  });
+
+  it("moves focus to Keep the latest when it isn't a whole number", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await screen.findByText("Enter a whole number of backups.");
+    expect(screen.getByLabelText("Keep the latest")).toHaveFocus();
   });
 });
 

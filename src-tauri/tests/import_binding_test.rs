@@ -37,7 +37,8 @@ fn open_with(db: TestDb) -> World {
 /// or a switch do: the open one is taken out and dropped first.
 fn reopen(session: &Session, path: &std::path::Path) {
     drop(session.take(session.current_id()));
-    let conn = db::open_database(path, &passphrase(), &test_machine(), false).unwrap();
+    let conn =
+        db::open_database(path, &passphrase(), &test_machine(), false).unwrap().expect_ready();
     session.install(OpenDatabase::new(conn, path).unwrap());
 }
 

@@ -2147,3 +2147,123 @@ mod registration_spreadsheet {
         assert_eq!(firearm.registration_form, None);
     }
 }
+
+/// 009 US2-2, 009 US2-3, 009 FR-006: a row names its policy by the rule that
+/// makes policy names unique (009 FR-007): surrounding spaces off, A-Z in
+/// either case.
+mod policy_names {
+    use crate::sheets;
+    use crate::support::{self, TestDb};
+    use hoplodex_lib::commands::import_export::ImportSessionStore;
+    use hoplodex_lib::commands::insurance::ops as insurance_ops;
+    use tempfile::TempDir;
+
+    fn new_policy(db: &TestDb, name: &str) -> i64 {
+        insurance_ops::create_policy(
+            &db.conn,
+            &support::policy(name, "2020-01-01", "2099-01-01", None),
+        )
+        .unwrap()
+        .id
+    }
+
+    /// Imports one firearm row and one accessory row, each naming
+    /// `policy_cell` and scheduled for 1,200 dollars.
+    fn import_both(
+        db: &TestDb,
+        policy_cell: &str,
+    ) -> hoplodex_lib::commands::import_export::ImportResult {
+        let dir = TempDir::new().unwrap();
+        let cells = [("insurance_policy_name", policy_cell), ("scheduled_coverage_amount", "1200")];
+        let firearms = sheets::csv_in(
+            dir.path(),
+            "firearms.csv",
+            &sheets::firearm_table(&[sheets::firearm_cells("Colt", "Python", "V1", &cells)]),
+        );
+        let accessories = sheets::csv_in(
+            dir.path(),
+            "accessories.csv",
+            &sheets::accessory_table(&[sheets::accessory_cells("Optic", &cells)]),
+        );
+        sheets::import(&db.conn, &ImportSessionStore::new(), &[&firearms, &accessories]).unwrap()
+    }
+
+    /// `(insurance_policy_id, scheduled_coverage_amount)` of each row of `table`.
+    fn scheduled(db: &TestDb, table: &str) -> Vec<(Option<i64>, Option<i64>)> {
+        let mut stmt = db
+            .conn
+            .prepare(&format!("SELECT insurance_policy_id, scheduled_coverage_amount FROM {table}"))
+            .unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    fn count(db: &TestDb, table: &str) -> i64 {
+        db.conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+    }
+
+    // 009 US2-2
+    #[test]
+    fn a_name_in_other_case_and_with_spaces_picks_the_one_policy_for_both_tables() {
+        let db = TestDb::new();
+        let range = new_policy(&db, "Range rider");
+        new_policy(&db, "Vault schedule");
+
+        let result = import_both(&db, "  range RIDER ");
+
+        assert_eq!(result.imported_count, 2, "{:?}", result.row_errors);
+        assert!(result.row_errors.is_empty(), "{:?}", result.row_errors);
+        assert_eq!(scheduled(&db, "firearms"), [(Some(range), Some(1200))]);
+        assert_eq!(scheduled(&db, "accessories"), [(Some(range), Some(1200))]);
+    }
+
+    // 009 US2-2: the policy's stored name keeps the spaces it was typed with,
+    // so the lookup trims that side too.
+    #[test]
+    fn a_policy_saved_with_surrounding_spaces_is_found_by_its_trimmed_name() {
+        let db = TestDb::new();
+        let spaced = new_policy(&db, "  Vault SCHEDULE ");
+
+        let result = import_both(&db, "vault schedule");
+
+        assert_eq!(result.imported_count, 2, "{:?}", result.row_errors);
+        assert_eq!(scheduled(&db, "firearms"), [(Some(spaced), Some(1200))]);
+        assert_eq!(scheduled(&db, "accessories"), [(Some(spaced), Some(1200))]);
+    }
+
+    // 009 US2-3
+    #[test]
+    fn an_unknown_name_is_a_row_error_in_both_tables_and_nothing_from_the_row_is_saved() {
+        let db = TestDb::new();
+        new_policy(&db, "Range rider");
+
+        let result = import_both(&db, "Rang rider");
+
+        assert_eq!(result.imported_count, 0);
+        assert_eq!(
+            sheets::entries(&result.row_errors),
+            [
+                ("firearms".to_owned(), 1, "Unknown insurance policy: Rang rider".to_owned()),
+                ("accessories".to_owned(), 1, "Unknown insurance policy: Rang rider".to_owned()),
+            ]
+        );
+        assert_eq!(count(&db, "firearms"), 0);
+        assert_eq!(count(&db, "accessories"), 0);
+    }
+
+    // 009 research.md §2: only U+0020 and A-Z are folded, so a name with an
+    // accent in another case is a different name.
+    #[test]
+    fn other_letters_must_match_exactly() {
+        let db = TestDb::new();
+        new_policy(&db, "\u{c9}glise rider");
+
+        let result = import_both(&db, "\u{e9}glise rider");
+
+        assert_eq!(result.imported_count, 0);
+        assert_eq!(result.row_errors.len(), 2, "{:?}", result.row_errors);
+        assert!(result.row_errors[0].message.starts_with("Unknown insurance policy: "));
+    }
+}

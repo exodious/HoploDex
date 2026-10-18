@@ -4,14 +4,14 @@
 //! and byte to the known values, so on macOS and Windows this is the
 //! cross-platform check, and anywhere it fails if the pinned cipher
 //! settings ever change. Every test here keys with the pinned KDF, in a
-//! `test-kdf` build too (`one_at_a_time`), which is why the pinned settings
-//! are checked here rather than with the rest of the file format.
+//! `test-kdf` build too (`support::one_at_a_time_with_the_real_kdf`), which is
+//! why the pinned settings are checked here rather than with the rest of the
+//! file format.
 
 mod support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
 
 use hoplodex_lib::commands::documents::ops as documents;
 use hoplodex_lib::commands::firearms::ops as firearms;
@@ -28,17 +28,7 @@ use tempfile::TempDir;
 #[path = "../examples/portable_fixture.rs"]
 mod portable_fixture;
 
-/// Held for the whole of each test here, so they run one at a time: one of
-/// them changes the environment, which is only sound while no other thread
-/// (SQLCipher's C code included) might be reading it. It also makes a
-/// `test-kdf` build key with the pinned KDF, which the fixture needs.
-static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
-
-fn one_at_a_time() -> MutexGuard<'static, ()> {
-    #[cfg(feature = "test-kdf")]
-    hoplodex_lib::db::cipher::test_kdf::use_real_kdf();
-    ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
+use support::one_at_a_time_with_the_real_kdf as one_at_a_time;
 
 /// A computer that has never seen the fixture.
 fn stranger() -> MachineIdentity {
@@ -56,6 +46,7 @@ fn copy_of_fixture() -> (TempDir, PathBuf) {
 
 fn open(path: &Path, passphrase: &str) -> Result<Connection, OpenError> {
     db::open_database(path, &Passphrase::from_input(passphrase.to_owned()), &stranger(), false)
+        .map(db::Opened::expect_ready)
 }
 
 #[test]

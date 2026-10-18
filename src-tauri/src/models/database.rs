@@ -36,6 +36,10 @@ text_enum!(OperationKind {
     Export => "export",
     DeleteBackups => "deleteBackups",
     MoveBackups => "moveBackups",
+    // The backup made before an upgrade and the upgrade itself, begun by
+    // `upgrade_database`; only the backup phase can be stopped (009
+    // data-model.md "OperationKind").
+    Upgrade => "upgrade",
 });
 
 text_enum!(DraftKind {
@@ -77,6 +81,25 @@ text_enum!(NoteKind {
     DiskEncryption => "diskEncryption",
     OpenedBackup => "openedBackup",
     Restored => "restored",
+    // 009 FR-017: after an open or a restore that upgraded the database.
+    Upgraded => "upgraded",
+});
+
+// The phases of a restore's `restore:progress` (003 contracts/tauri-commands.md).
+// `Checking`, `Upgrading` and `Replacing` are indeterminate, with `total: 0`
+// (009 contracts/tauri-commands.md "Events").
+text_enum!(RestorePhase {
+    Copying => "copying",
+    Checking => "checking",
+    Upgrading => "upgrading",
+    SavingCurrent => "savingCurrent",
+    Replacing => "replacing",
+});
+
+// The phases of `upgrade:progress` (009 contracts/tauri-commands.md "Events").
+text_enum!(UpgradePhase {
+    BackingUp => "backingUp",
+    Upgrading => "upgrading",
 });
 
 text_enum!(BackupLocationKind {
@@ -313,6 +336,23 @@ pub struct Draft {
 pub struct OpenedBackupNote {
     pub backup_of_name: String,
     pub made_at: String,
+    /// The version a backup made before an upgrade was upgraded for, e.g.
+    /// `0.2.0`, from the backup's stamp (009 FR-013); `None` for any other.
+    pub before_upgrade_to: Option<String>,
+}
+
+/// An open or a restore upgraded the database (009 FR-017), shown once.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpgradedNote {
+    /// `APP_VERSION`, the version it was upgraded for.
+    pub version: String,
+    /// The backup made before the upgrade; for a restore, the backup restored
+    /// from.
+    pub backup_path: String,
+    /// `false` when the backup was saved in a folder the user chose (009
+    /// FR-012), so it is not in the backup list.
+    pub at_backup_location: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -326,6 +366,37 @@ pub struct DatabaseNotes {
     pub restored_with_passphrase_of: Option<String>,
     /// Where a damaged database was set aside, once after a restore.
     pub damaged_file_kept_at: Option<String>,
+    /// 009 FR-017, once after an open or a restore that upgraded the database.
+    pub upgraded: Option<UpgradedNote>,
+}
+
+/// What restoring a backup would do, from `check_backup` (009 FR-019).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCheck {
+    /// The version the backup is upgraded for when restored, or `None` when
+    /// it is in the current layout.
+    pub upgrade_to: Option<String>,
+}
+
+/// The payload of `upgrade:progress` (009 contracts/tauri-commands.md
+/// "Events"): bytes of the backup made before an upgrade, then the upgrade's
+/// steps. `Upgrading` is sent once with `processed = total = 0` and again after
+/// each step.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpgradeProgress {
+    pub phase: UpgradePhase,
+    pub processed: u64,
+    pub total: u64,
+    /// The backup is expected to take over a second: show the dialog at once
+    /// (003 SC-005).
+    pub show_now: bool,
+}
+
+impl UpgradeProgress {
+    /// The event this is sent as.
+    pub const EVENT: &'static str = "upgrade:progress";
 }
 
 /// The open database, as the frontend needs it.
@@ -480,6 +551,9 @@ pub struct BackupInfo {
     pub file_name: String,
     pub made_at: String,
     pub size_bytes: u64,
+    /// `0.2.0` for a backup made before upgrading to it, from its file name
+    /// (009 FR-013).
+    pub before_upgrade_to: Option<String>,
 }
 
 /// Where the create dialog suggests putting a new database (003 FR-009,

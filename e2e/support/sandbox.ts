@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { repoRoot, seedBinary } from "./build";
 
@@ -132,6 +133,10 @@ export function isolateAppData(): string {
 export interface SessionSettings {
   /** How many seconds the idle lock's minute lasts. */
   idleMinuteSeconds?: number;
+  /** How many seconds each phase of an upgrade (the backup before it, and the
+   * upgrade itself) is held, so a screenshot can catch it (009 research.md
+   * §14; an E2E build only). */
+  upgradePhaseSeconds?: number;
 }
 
 /**
@@ -155,6 +160,54 @@ export function applySessionSettings(settings: SessionSettings = {}) {
   } else {
     delete process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS;
   }
+  if (settings.upgradePhaseSeconds !== undefined) {
+    process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS = String(settings.upgradePhaseSeconds);
+  } else {
+    delete process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS;
+  }
+}
+
+/** The database 0.1.0 made, kept in the repository (009 research.md §12),
+ * which the upgrade journeys copy. */
+export const RELEASE_FIXTURE_0_1_0 = path.join(
+  repoRoot,
+  "src-tauri",
+  "tests",
+  "fixtures",
+  "releases",
+  "0.1.0.hoplodex",
+);
+
+/** The SHA-256 of the file at `file`, in hex. */
+export function sha256Of(file: string): string {
+  return createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+/**
+ * Copies the stored 0.1.0 database (`source`, by default
+ * {@link RELEASE_FIXTURE_0_1_0}) into `folder`, which must be inside the
+ * current sandbox, as `<name>.hoplodex` (009 US3), and returns the copy's path
+ * and SHA-256. The folder is made if it isn't there. Nothing is read from or
+ * written outside the sandbox but the source, and an existing file at the
+ * name is never replaced.
+ */
+export function copyReleaseFixture(
+  folder: string,
+  name: string,
+  source: string = RELEASE_FIXTURE_0_1_0,
+): { path: string; sha256: string } {
+  if (!state.dir) throw new Error("copyReleaseFixture() needs isolateAppData() first");
+  if (name === "" || name !== path.basename(name) || name === "." || name === "..") {
+    throw new Error(`"${name}" is not a plain file name`);
+  }
+  const inside = path.relative(state.dir, path.resolve(folder));
+  if (inside.startsWith("..") || path.isAbsolute(inside)) {
+    throw new Error(`${folder} is not inside the sandbox`);
+  }
+  fs.mkdirSync(folder, { recursive: true });
+  const target = path.join(folder, `${name}.hoplodex`);
+  fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+  return { path: target, sha256: sha256Of(target) };
 }
 
 /** Runs the human-testing seed `buildApp` built. */

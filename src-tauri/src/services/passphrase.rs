@@ -16,7 +16,11 @@ pub const MIN_PASSPHRASE_CHARS: usize = 12;
 /// so it cannot end up in a log or an error message, and its memory is
 /// zeroed when it is dropped. Build one as soon as the command receives the
 /// string, and drop it when the command returns: the backend never keeps a
-/// passphrase between commands.
+/// passphrase between commands. The one exception is a typed passphrase an open
+/// will save in the keyring once an upgrade it is waiting for succeeds (009
+/// research.md §4 "The passphrase"): it is cloned into the waiting database and
+/// wiped when that is dropped.
+#[derive(Clone)]
 pub struct Passphrase(Zeroizing<String>);
 
 impl Passphrase {

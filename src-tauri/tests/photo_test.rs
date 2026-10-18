@@ -423,10 +423,10 @@ fn a_photo_row_needs_exactly_one_owner() {
     let insert = |firearm_id: Option<i64>, accessory_id: Option<i64>| {
         db.conn.execute(
             "INSERT INTO photos (
-                firearm_id, accessory_id, original_bytes, original_filename, mime_type,
+                uid, firearm_id, accessory_id, original_bytes, original_filename, mime_type,
                 thumbnail_bytes, sort_order, created_at
-            ) VALUES (?1, ?2, x'00', 'p.png', 'image/png', x'00', 0, datetime('now'))",
-            rusqlite::params![firearm_id, accessory_id],
+            ) VALUES (?3, ?1, ?2, x'00', 'p.png', 'image/png', x'00', 0, datetime('now'))",
+            rusqlite::params![firearm_id, accessory_id, support::uid()],
         )
     };
 

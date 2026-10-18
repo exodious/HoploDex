@@ -505,6 +505,84 @@ fn a_backup_opened_directly_becomes_its_own_database() {
     assert_eq!((stamp, stored_id), (None, new_id));
 }
 
+// --- The upgrade stamp (009 FR-013, 009 data-model.md) ------------------------
+
+/// Sets `app_state.backup_before_upgrade_to` on a backup file by a raw
+/// `UPDATE`, as a backup made before an upgrade would carry it.
+fn mark_as_made_before_an_upgrade(backup: &Path, version: &str) {
+    let conn = rusqlite::Connection::open(backup).expect("could not open the backup");
+    conn.pragma_update(None, "key", support::TEST_PASSPHRASE).unwrap();
+    db::cipher::apply_cipher_settings(&conn, "main").unwrap();
+    let changed = conn
+        .execute("UPDATE app_state SET backup_before_upgrade_to = ?1", [version])
+        .expect("app_state.backup_before_upgrade_to exists");
+    assert_eq!(changed, 1);
+}
+
+fn stored_upgrade_stamp(conn: &rusqlite::Connection) -> Option<String> {
+    conn.query_row("SELECT backup_before_upgrade_to FROM app_state", [], |r| r.get(0)).unwrap()
+}
+
+/// 009 FR-013: the stamp that names the version a backup was made before
+/// upgrading to is set only in such a backup, and is housekeeping once the
+/// file is opened or restored.
+#[test]
+fn the_upgrade_stamp_is_empty_in_a_new_database_and_cleared_when_a_backup_is_opened_directly() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    let in_use = world
+        .session
+        .read(world.session.current_id(), |conn| Ok(stored_upgrade_stamp(conn)))
+        .unwrap();
+    assert_eq!(in_use, None, "a database made now has no stamp");
+    world.change();
+    world.close();
+    let backup = PathBuf::from(&world.backups_in(&world.default_folder(), &id)[0].path);
+    mark_as_made_before_an_upgrade(&backup, "9.9.9");
+    assert_eq!(stored_upgrade_stamp(&peek(&backup)), Some("9.9.9".to_owned()));
+
+    lifecycle::open(&world.session, &world.machine, &backup, &passphrase(), false).unwrap();
+    let opened = world
+        .session
+        .read(world.session.current_id(), |conn| Ok(stored_upgrade_stamp(conn)))
+        .unwrap();
+    assert_eq!(opened, None, "opening the backup directly clears it");
+    world.close();
+    assert_eq!(stored_upgrade_stamp(&peek(&backup)), None, "and the file keeps it cleared");
+}
+
+#[test]
+fn the_upgrade_stamp_is_cleared_when_a_backup_is_restored() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    let backup = world.backups_in(&world.default_folder(), &id).remove(0);
+    mark_as_made_before_an_upgrade(Path::new(&backup.path), "9.9.9");
+
+    world.open();
+    // The backup made before restoring is named for the minute, so it
+    // needs a later one than the backup being restored.
+    world.clock.advance(chrono::Duration::hours(1));
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &backup.path,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+        false,
+    )
+    .unwrap();
+
+    let restored = world
+        .session
+        .read(world.session.current_id(), |conn| Ok(stored_upgrade_stamp(conn)))
+        .unwrap();
+    assert_eq!(restored, None);
+}
+
 // --- Failures, skips and progress -------------------------------------------
 
 fn assert_failed_and_waiting(world: &World, outcome: CloseOutcome, reason: BackupFailureReason) {
@@ -598,6 +676,83 @@ fn a_symlink_at_the_partial_name_is_not_followed_by_the_backup() {
     assert_eq!(fs::read(&victim).unwrap(), b"precious");
     assert!(fs::symlink_metadata(&planted).is_ok(), "the link is not ours to remove");
     assert_failed_and_waiting(&world, outcome, BackupFailureReason::Io);
+}
+
+/// The ways the rename into the final name can go: the OS's no-replace rename,
+/// a hard link (a file system without one), and a check then a rename (one
+/// without links either) (009 research.md §17).
+fn each_rename_mechanism(test: impl Fn(&str)) {
+    test("native");
+    {
+        let _no_native = backups::testing::fail_native_rename();
+        test("hard link");
+        let _no_links = backups::testing::fail_hard_links();
+        test("check then rename");
+    }
+}
+
+#[test]
+fn a_file_at_the_final_name_is_kept_and_the_backup_fails_with_no_partial_left() {
+    // 009 research.md §17: "never ... replacing what is there". The name is
+    // predictable from the clock, so something may be there.
+    each_rename_mechanism(|how| {
+        let world = World::new();
+        world.create();
+        let id = world.database_id();
+        world.change();
+        fs::create_dir_all(world.default_folder()).unwrap();
+        let taken = format!("Mine 2026-09-25 143005 {}.hoplodex", &id[..8]);
+        fs::write(world.default_folder().join(&taken), b"somebody else's backup").unwrap();
+
+        let outcome = world.close();
+
+        let folder = world.default_folder();
+        assert_eq!(fs::read(folder.join(&taken)).unwrap(), b"somebody else's backup", "{how}");
+        assert_eq!(World::file_names(&folder), vec![taken], "{how}: no .partial is left");
+        assert_eq!(world.machine.unfinished_backup(), None, "{how}");
+        assert_failed_and_waiting(&world, outcome, BackupFailureReason::Io);
+    });
+}
+
+#[test]
+fn finalize_never_replaces_a_file_and_otherwise_renames() {
+    // 009 research.md §17, tested at the function every backup and every
+    // copied move goes through.
+    each_rename_mechanism(|how| {
+        let dir = TempDir::new().unwrap();
+        let (partial, taken) = (dir.path().join("a.partial"), dir.path().join("a"));
+        fs::write(&partial, b"the copy").unwrap();
+        fs::write(&taken, b"already there").unwrap();
+
+        let err = backups::finalize(&partial, &taken).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists, "{how}");
+        assert_eq!(fs::read(&taken).unwrap(), b"already there", "{how}");
+        assert_eq!(fs::read(&partial).unwrap(), b"the copy", "{how}: the caller removes it");
+
+        fs::remove_file(&taken).unwrap();
+        backups::finalize(&partial, &taken).unwrap();
+        assert_eq!(fs::read(&taken).unwrap(), b"the copy", "{how}");
+        assert!(!partial.exists(), "{how}: the partial is gone");
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn finalize_does_not_follow_or_replace_a_dangling_link_at_the_final_name() {
+    // 009 research.md §17.
+    each_rename_mechanism(|how| {
+        let dir = TempDir::new().unwrap();
+        let (partial, taken) = (dir.path().join("a.partial"), dir.path().join("a"));
+        fs::write(&partial, b"the copy").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("nowhere"), &taken).unwrap();
+
+        let err = backups::finalize(&partial, &taken).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists, "{how}");
+        assert!(fs::symlink_metadata(&taken).unwrap().is_symlink(), "{how}");
+        assert!(!dir.path().join("nowhere").exists(), "{how}: not followed");
+    });
 }
 
 #[test]
@@ -699,6 +854,7 @@ fn a_backup_left_unfinished_is_swept_at_the_next_launch() {
         database_path: world.path(),
         partial_path: partial.clone(),
         started_at: "2026-09-25T12:30:05Z".into(),
+        before_upgrade: false,
     });
     drop(world.session.take(world.session.current_id()));
 
@@ -943,6 +1099,7 @@ fn every_firearms_identifier_is_equal_in_the_backup_and_after_restoring_it() {
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
 
@@ -1063,6 +1220,7 @@ fn an_accessory_its_photo_and_its_identifier_survive_a_backup_and_a_restore_of_i
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
 
@@ -1162,8 +1320,276 @@ fn a_mount_of_an_accessory_on_a_firearm_and_of_a_firearm_on_an_accessory_survive
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
 
     assert_eq!(world.mount_state(), before, "restoring brings both mounts back, and only them");
+}
+
+// --- Backups made before an upgrade (009 FR-013, FR-014; 009 research.md §6) ----
+
+impl World {
+    /// Makes the backup an upgrade to `version` would make first, as
+    /// `upgrade_database` does: the open database, the clock's time, the
+    /// default folder, no rotation. Returns its path.
+    fn make_before_upgrade(&self, version: &str) -> PathBuf {
+        let made = self
+            .session
+            .inspect(self.session.current_id(), |open| {
+                Ok(backups::make_backup(
+                    &self.machine,
+                    backups::BackupJob {
+                        conn: &open.conn,
+                        database_path: &open.path,
+                        name: &open.name,
+                        database_id: &open.database_id,
+                        folder: &self.default_folder(),
+                        make_folder: true,
+                        now: self.session.clock().now(),
+                        kind: backups::BackupKind::BeforeUpgrade { to_version: version },
+                        cancel: &|| false,
+                        progress: &mut |_, _| {},
+                    },
+                ))
+            })
+            .unwrap();
+        made.unwrap_or_else(|failure| panic!("the backup before an upgrade failed: {failure:?}"))
+    }
+
+    /// One day of a history: a regular backup made by a close with changes,
+    /// or one made before an upgrade. The database is open afterwards.
+    fn day(&self, step: &Step) {
+        self.next_day();
+        match step {
+            Step::Regular => {
+                self.change();
+                assert_eq!(self.close().backup, BackupOutcome::Made);
+                self.open();
+            }
+            Step::BeforeUpgrade(version) => {
+                self.make_before_upgrade(version);
+            }
+        }
+    }
+
+    /// The backups of the database `id` left in the default folder, newest
+    /// first, each as the number of days since the 25th of September it was
+    /// made on, then `R` (regular) or `B` (made before an upgrade): `"4B"` is
+    /// the one made before an upgrade on the fourth [`World::day`].
+    fn labels(&self, id: &str) -> Vec<String> {
+        let start = chrono::NaiveDate::from_ymd_opt(2026, 9, 25).unwrap();
+        self.backups_in(&self.default_folder(), id)
+            .into_iter()
+            .map(|b| {
+                let made = chrono::NaiveDateTime::parse_from_str(&b.made_at, "%Y-%m-%dT%H:%M:%S");
+                let days = (made.unwrap().date() - start).num_days();
+                let kind = if b.before_upgrade_to.is_some() { "B" } else { "R" };
+                format!("{days}{kind}")
+            })
+            .collect()
+    }
+}
+
+enum Step {
+    Regular,
+    BeforeUpgrade(&'static str),
+}
+
+use Step::{BeforeUpgrade as B, Regular as R};
+
+/// "Mine" with `keep` backups kept, one `history` step a day from the 26th of
+/// September, and what is left, as [`World::labels`] gives it.
+fn left_after(keep: i64, history: &[Step]) -> Vec<String> {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.set_backups(true, keep, BackupLocationInput::Default);
+    for step in history {
+        world.day(step);
+    }
+    world.labels(&id)
+}
+
+// 009 FR-013
+#[test]
+fn a_backup_before_an_upgrade_is_named_for_the_version_and_listed_with_it() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    for (second, version) in [(5, "0.2.0"), (6, "1.0.0-beta.1"), (7, "1.0.0+build.5")] {
+        let made = world.make_before_upgrade(version);
+        assert_eq!(
+            made.file_name().unwrap().to_string_lossy(),
+            format!("Mine 2026-09-25 14300{second} {} before {version}.hoplodex", &id[..8]),
+            "named for the database, the local time, its id and the version"
+        );
+        world.clock.advance(chrono::Duration::seconds(1));
+    }
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+
+    let listed = world.backups_in(&world.default_folder(), &id);
+
+    let found: Vec<(&str, Option<&str>)> =
+        listed.iter().map(|b| (b.made_at.as_str(), b.before_upgrade_to.as_deref())).collect();
+    assert_eq!(
+        found,
+        vec![
+            ("2026-09-25T14:30:08", None),
+            ("2026-09-25T14:30:07", Some("1.0.0+build.5")),
+            ("2026-09-25T14:30:06", Some("1.0.0-beta.1")),
+            ("2026-09-25T14:30:05", Some("0.2.0")),
+        ],
+        "beforeUpgradeTo for these, null for the regular one"
+    );
+    for backup in &listed {
+        assert_eq!(
+            stored_upgrade_stamp(&peek(Path::new(&backup.path))),
+            backup.before_upgrade_to,
+            "the stamp in the file says what its name says"
+        );
+    }
+}
+
+// 009 FR-013, 009 research.md §6
+#[test]
+fn a_database_named_like_the_suffix_is_not_taken_for_a_backup_made_before_an_upgrade() {
+    let world = World::new();
+    let path = world.dir.path().join("Guns before 1.0.0.hoplodex");
+    lifecycle::create(&world.session, &world.machine, &path, &passphrase()).unwrap();
+    let id = world.database_id();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    lifecycle::open(&world.session, &world.machine, &path, &passphrase(), false).unwrap();
+    world.clock.advance(chrono::Duration::seconds(1));
+    world.make_before_upgrade("0.2.0");
+
+    let listed = world.backups_in(&world.default_folder(), &id);
+
+    let found: Vec<(String, Option<String>)> =
+        listed.into_iter().map(|b| (b.file_name, b.before_upgrade_to)).collect();
+    assert_eq!(
+        found,
+        vec![
+            (
+                format!("Guns before 1.0.0 2026-09-25 143006 {} before 0.2.0.hoplodex", &id[..8]),
+                Some("0.2.0".to_owned())
+            ),
+            (format!("Guns before 1.0.0 2026-09-25 143005 {}.hoplodex", &id[..8]), None),
+        ],
+        "the regular backup of a database called \"Guns before 1.0.0\" has no version"
+    );
+}
+
+// 009 FR-014
+#[test]
+fn rotation_with_keep_one_leaves_the_newest_backup_before_an_upgrade_outside_the_count() {
+    // The first day's is the only one before an upgrade: it stays whatever its age.
+    assert_eq!(left_after(1, &[B("0.2.0"), R, R, R, R]), ["5R", "1B"]);
+    // An older one is outside the count only while it is the newest; the
+    // fourth day's takes its place, and the first day's rotates as any other.
+    assert_eq!(left_after(1, &[B("0.2.0"), R, R, B("0.3.0"), R]), ["5R", "4B"]);
+}
+
+// 009 FR-014
+#[test]
+fn rotation_with_keep_three_keeps_the_newest_one_before_an_upgrade_besides_the_three() {
+    assert_eq!(left_after(3, &[B("0.2.0"), R, R, B("0.3.0"), R, R]), ["6R", "5R", "4B", "3R"]);
+}
+
+// 009 FR-014
+#[test]
+fn an_older_backup_before_an_upgrade_counts_towards_the_kept_ones_while_they_are_few() {
+    // Four backups, three of them counted: the first day's is among the
+    // counted ones because the third day's, not it, is the newest made before
+    // an upgrade.
+    assert_eq!(left_after(3, &[B("0.2.0"), R, B("0.3.0"), R]), ["4R", "3B", "2R", "1B"]);
+}
+
+// 009 research.md §6
+#[test]
+fn a_backup_before_an_upgrade_is_never_the_days_backup() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 25).unwrap();
+    world.make_before_upgrade("0.2.0");
+    assert!(
+        !backups::has_backup_made_on(&world.default_folder(), &id, today),
+        "the only backup of the day is one made before an upgrade"
+    );
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    assert!(backups::has_backup_made_on(&world.default_folder(), &id, today));
+
+    // The day's regular backup is gone, and only the one before the upgrade
+    // is left: the changes are in no regular backup, so a close makes one.
+    let regular = world.backups_in(&world.default_folder(), &id);
+    let regular = regular.iter().find(|b| b.before_upgrade_to.is_none()).unwrap();
+    fs::remove_file(&regular.path).unwrap();
+    world.open();
+    world.change();
+    assert!(!backups::has_backup_made_on(&world.default_folder(), &id, today));
+
+    assert_eq!(world.close().backup, BackupOutcome::Made, "not AlreadyToday");
+    assert_eq!(world.labels(&id), ["0R", "0B"]);
+}
+
+// 009 FR-013
+#[test]
+fn deleting_all_backups_removes_the_ones_made_before_an_upgrade_too() {
+    let world = World::new();
+    with_three_backups(&world);
+    let id = world.database_id();
+    let before_upgrade = world.make_before_upgrade("0.2.0");
+    assert!(before_upgrade.exists());
+    assert_eq!(world.labels(&id).len(), 4);
+
+    let deleted =
+        backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
+
+    assert_eq!(deleted.deleted_count, 4);
+    assert!(deleted.failed_paths.is_empty());
+    assert!(!before_upgrade.exists());
+    assert!(world.labels(&id).is_empty());
+}
+
+// 009 FR-013
+#[test]
+fn moving_the_backup_location_moves_the_ones_made_before_an_upgrade_too() {
+    let world = World::new();
+    world.create();
+    world.day(&R);
+    // A second later, so the one before the upgrade is the newest.
+    world.clock.advance(chrono::Duration::seconds(1));
+    let before_upgrade = world.make_before_upgrade("0.2.0");
+    let bytes = fs::read(&before_upgrade).unwrap();
+    let id = world.database_id();
+    let elsewhere = world.dir.path().join("Elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+
+    databases::update_backup_settings(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        &BackupSettingsInput {
+            enabled: true,
+            keep_count: 5,
+            location: BackupLocationInput::Custom { path: path_text(&elsewhere) },
+            existing_backups: Some(ExistingBackupsChoice::Move),
+        },
+    )
+    .unwrap();
+
+    assert!(world.backups_in(&world.default_folder(), &id).is_empty(), "none left behind");
+    let moved = backups::list(&elsewhere, &id).unwrap();
+    assert_eq!(moved.len(), 2);
+    assert_eq!(moved[0].before_upgrade_to.as_deref(), Some("0.2.0"));
+    assert_eq!(moved[1].before_upgrade_to, None);
+    assert_eq!(
+        fs::read(elsewhere.join(before_upgrade.file_name().unwrap())).unwrap(),
+        bytes,
+        "byte for byte, under the same name"
+    );
 }

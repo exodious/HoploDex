@@ -10,6 +10,7 @@ use crate::models::database::OperationKind;
 use crate::models::record::RecordRef;
 use crate::services::disk_space;
 use crate::services::import_reader::limits::ImportLimit;
+use crate::session::SessionId;
 
 /// The single error shape returned by every Tauri IPC command, per
 /// 001 contracts/tauri-commands.md. `code` is a stable, machine-matchable
@@ -133,12 +134,115 @@ impl CommandError {
     }
 
     /// 003 FR-014.
-    pub fn database_newer_version() -> Self {
+    ///
+    /// 009 FR-018: `backup_folder` is the backup folder this computer cached
+    /// for the database, when it has one, so the message can point at a backup
+    /// made before the newer version's upgrade.
+    pub fn database_newer_version(backup_folder: Option<&Path>) -> Self {
         Self::new(
             "DATABASE_NEWER_VERSION",
             "This database was last used by a newer version of HoploDex. Update HoploDex to \
              open it.",
         )
+        .with_details(
+            backup_folder.map(|folder| json!({ "backupFolder": folder.to_string_lossy() })),
+        )
+    }
+
+    /// 009 FR-010: `open_database` found steps due. The database waits,
+    /// keyed and locked with nothing written, under `awaiting_id`; `version`
+    /// is the build's `APP_VERSION` and `backup_folder` the backup location
+    /// resolved on this computer.
+    pub fn upgrade_needed_to_open(
+        awaiting_id: SessionId,
+        version: &str,
+        backup_folder: &Path,
+    ) -> Self {
+        Self::new(
+            "UPGRADE_NEEDED",
+            "This database was made by an earlier version of HoploDex. It needs to be upgraded \
+             before it can be opened.",
+        )
+        .with_details(Some(json!({
+            "awaitingId": awaiting_id,
+            "version": version,
+            "backupFolder": backup_folder.to_string_lossy(),
+        })))
+    }
+
+    /// The `awaitingId` of an `UPGRADE_NEEDED` that [`upgrade_needed_to_open`]
+    /// made.
+    ///
+    /// [`upgrade_needed_to_open`]: Self::upgrade_needed_to_open
+    pub fn awaiting_id(&self) -> Option<SessionId> {
+        let raw = self.details.as_ref()?.get("awaitingId")?.as_u64()?;
+        SessionId::from_request(raw)
+    }
+
+    /// 009 FR-019: `restore_backup` without `upgrade: true` for a backup that
+    /// needs one; nothing was copied or written.
+    pub fn upgrade_needed_to_restore(version: &str) -> Self {
+        Self::new(
+            "UPGRADE_NEEDED",
+            "This backup was made by an earlier version of HoploDex. It needs to be upgraded \
+             before it can be restored.",
+        )
+        .with_details(Some(json!({ "version": version })))
+    }
+
+    /// 009 FR-015: the upgrade failed (a step, the link check, the commit) and
+    /// was rolled back, so the database is as it was. `backup_path` is the
+    /// backup made before it; for a restore, the backup restored from.
+    pub fn upgrade_failed(backup_path: &Path, at_backup_location: bool) -> Self {
+        Self::new(
+            "UPGRADE_FAILED",
+            "The database couldn't be upgraded. It is as it was before, and the backup made \
+             before the upgrade is kept.",
+        )
+        .with_details(Some(json!({
+            "backupPath": backup_path.to_string_lossy(),
+            "atBackupLocation": at_backup_location,
+        })))
+    }
+
+    /// A rolled-back upgrade (a step, the link check, the commit) as the command
+    /// reports it: `UPGRADE_FAILED` naming `backup_path` (009 FR-015), or
+    /// `DISK_FULL` naming the file `database_path` when its disk filled, and
+    /// also `backup_path` and `at_backup_location`, since the backup before the
+    /// upgrade was made by then.
+    pub fn upgrade_error(
+        err: crate::db::upgrade::UpgradeError,
+        backup_path: &Path,
+        at_backup_location: bool,
+        database_path: &Path,
+    ) -> Self {
+        log::error!("upgrading {} failed and was rolled back: {err}", database_path.display());
+        let error = Self::from_upgrade(err);
+        if error.code == Self::DISK_FULL {
+            let mut error = error.located_at(database_path);
+            let mut details = match error.details.take().map(|details| *details) {
+                Some(Value::Object(details)) => details,
+                _ => serde_json::Map::new(),
+            };
+            details.insert("backupPath".into(), backup_path.to_string_lossy().into());
+            details.insert("atBackupLocation".into(), at_backup_location.into());
+            error.details = Some(Box::new(Value::Object(details)));
+            error
+        } else {
+            Self::upgrade_failed(backup_path, at_backup_location)
+        }
+    }
+
+    /// 009 FR-012: the backup before the upgrade failed while it was being
+    /// written (I/O) in `folder`. Nothing was upgraded, and the database still
+    /// waits.
+    pub fn upgrade_backup_failed(folder: &Path) -> Self {
+        Self::new(
+            "UPGRADE_BACKUP_FAILED",
+            "The backup before the upgrade couldn't be saved, so the database wasn't upgraded. \
+             Nothing has been changed.",
+        )
+        .with_details(Some(json!({ "folder": folder.to_string_lossy() })))
     }
 
     /// 003 FR-032. `since` is ISO-8601 UTC.
@@ -380,6 +484,22 @@ impl CommandError {
     }
 }
 
+impl CommandError {
+    /// A failed create or upgrade (009 research.md §7), rolled back: the SQLite
+    /// error underneath maps as any other (a full disk, a damaged file), and
+    /// anything else is an internal error, logged with the step's name or the
+    /// link check, never row values.
+    pub fn from_upgrade(err: crate::db::upgrade::UpgradeError) -> Self {
+        match err.into_sqlite() {
+            Ok(sqlite) => Self::from_db(sqlite),
+            Err(other) => {
+                log::error!("upgrade error: {other}");
+                Self::new("INTERNAL_ERROR", "An unexpected error occurred.")
+            }
+        }
+    }
+}
+
 impl std::fmt::Display for CommandError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.code, self.message)
@@ -396,6 +516,7 @@ impl From<DbError> for CommandError {
         match err {
             DbError::Sqlite(err) => Self::from_db(err),
             DbError::Exists(path) => Self::database_exists(&path),
+            DbError::Upgrade(err) => Self::from_upgrade(err),
             DbError::Io(err) => Self::from_io(&err, || {
                 log::error!("db error: {err}");
                 Self::new("INTERNAL_ERROR", "An unexpected error occurred.")
@@ -416,7 +537,7 @@ impl From<OpenError> for CommandError {
             OpenError::Unreadable { path } => Self::database_unreadable(&path),
             OpenError::InUse => Self::database_in_use(),
             OpenError::PassphraseIncorrect => Self::passphrase_incorrect(None, None),
-            OpenError::NewerVersion => Self::database_newer_version(),
+            OpenError::NewerVersion => Self::database_newer_version(None),
             OpenError::OpenElsewhere { machine_name, since } => {
                 Self::database_open_elsewhere(&machine_name, &since)
             }

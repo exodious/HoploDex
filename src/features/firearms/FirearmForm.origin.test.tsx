@@ -446,6 +446,8 @@ describe("FirearmForm origin group disclosure", () => {
 
     expect(originGroupButton()).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Importer is too long.")).toBeInTheDocument();
+    // The collapsed group opened first, so the refused field can take the focus.
+    expect(screen.getByLabelText("Importer")).toHaveFocus();
   });
 
   it("opens and brings Year of manufacture into view on an identity clash with no year", async () => {
@@ -471,6 +473,8 @@ describe("FirearmForm origin group disclosure", () => {
       "data-field",
       "yearOfManufacture",
     );
+    // The place to act takes the focus.
+    expect(screen.getByLabelText("Year of manufacture")).toHaveFocus();
   });
 });
 

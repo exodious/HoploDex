@@ -172,9 +172,11 @@ fn main() {
     // itself must not start in one: a database it made would have the tests'
     // KDF (db/cipher.rs). db/cipher.rs already keeps the feature out of
     // release, E2E and shipped builds; this covers `cargo run` and `tauri dev`.
-    if cfg!(feature = "test-kdf") {
+    // `upgrade-test-steps` (which `test-kdf` turns on) compiles in forced
+    // upgrade failures and test-only steps (009 research.md §14).
+    if cfg!(feature = "test-kdf") || cfg!(feature = "upgrade-test-steps") {
         eprintln!(
-            "HoploDex can't start in a build with the test-kdf feature, which is for the tests only."
+            "HoploDex can't start in a build with the test-kdf feature or the upgrade-test-steps feature, which are for the tests only."
         );
         std::process::exit(1);
     }
@@ -313,6 +315,8 @@ fn main() {
             hoplodex_lib::commands::databases::get_chooser_state,
             hoplodex_lib::commands::databases::create_database,
             hoplodex_lib::commands::databases::open_database,
+            hoplodex_lib::commands::databases::upgrade_database,
+            hoplodex_lib::commands::databases::cancel_upgrade,
             hoplodex_lib::commands::databases::close_database,
             hoplodex_lib::commands::databases::quit_application,
             hoplodex_lib::commands::databases::remove_recent_database,
@@ -333,6 +337,7 @@ fn main() {
             hoplodex_lib::commands::databases::forget_saved_passphrase,
             hoplodex_lib::commands::backups::list_backups,
             hoplodex_lib::commands::backups::restore_backup,
+            hoplodex_lib::commands::backups::check_backup,
             hoplodex_lib::commands::backups::delete_all_backups,
             hoplodex_lib::commands::backups::change_passphrase,
             hoplodex_lib::commands::firearms::create_firearm,

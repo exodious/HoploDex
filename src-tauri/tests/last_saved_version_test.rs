@@ -393,6 +393,7 @@ fn a_restore_names_the_version_that_saved_the_backup_not_this_one() {
         &backup.path,
         &passphrase(),
         Target::Open(world.session.current_id()),
+        false,
     )
     .unwrap();
 

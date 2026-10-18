@@ -20,6 +20,13 @@
 //! documents, with the first suggestion after it within 50ms (003 SC-003;
 //! 004 research.md §5, for 004 SC-004).
 //!
+//! Feature 009 adds (009 SC-007, 009 research.md §16, §14): an open with
+//! nothing due keeps the 1s of 003 SC-003 (the open row below, run with
+//! `upgrade-test-steps` on), and on a database of 10,000 firearms that
+//! `testing::PHOTOS_REBUILD` makes older, the first `upgrade:progress` comes
+//! within 1s of `upgrade_database` being called; the backup's and the
+//! rebuild's times are printed for the pull request.
+//!
 //! Feature 003 adds opening a database, key derivation included, to the 1s
 //! action budget (003 SC-003), the first progress event of a backup, a
 //! passphrase change, a restore and a move of backups to the 100ms feedback
@@ -45,6 +52,7 @@ use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::firearms::{DisposeInput, GroupBy, ListFirearmsInput};
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::commands::mounts::ops as mount_ops;
+use hoplodex_lib::db::upgrade::testing::{self, PHOTOS_REBUILD};
 use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::database::{
     BackupLocationInput, BackupOutcome, BackupSettingsInput, CloseReason, ExistingBackupsChoice,
@@ -735,12 +743,116 @@ fn opening_a_database_of_10k_firearms_takes_at_most_a_second_including_key_deriv
     let started = Instant::now();
     large.open(TEST_PASSPHRASE);
     let elapsed = started.elapsed();
-    eprintln!("003 SC-003: opened {RECORD_COUNT} firearms in {elapsed:?}");
+    eprintln!(
+        "003 SC-003, 009 research.md §16: opened {RECORD_COUNT} firearms, nothing due, in {elapsed:?}"
+    );
 
     assert!(
         elapsed.as_millis() < 1_000,
         "003 SC-003: opening took {}ms at {RECORD_COUNT} records; budget is 1000ms",
         elapsed.as_millis()
+    );
+}
+
+/// Photos on the 10,000-firearm database (one per ten firearms), so that
+/// `PHOTOS_REBUILD` copies real bytes: the rebuild's time is the table's, and
+/// the backup's is the file's (009 research.md §16).
+fn seed_photos(conn: &Connection) {
+    let firearms = firearm_ids(conn);
+    let original = vec![0xA5_u8; 32 * 1024];
+    let thumbnail = vec![0x5A_u8; 4 * 1024];
+    let tx = conn.unchecked_transaction().unwrap();
+    {
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO photos (uid, firearm_id, original_bytes, original_filename,
+                                     mime_type, thumbnail_bytes, sort_order, created_at)
+                 VALUES (?1, ?2, ?3, 'photo.jpg', 'image/jpeg', ?4, 0, datetime('now'))",
+            )
+            .unwrap();
+        for firearm in firearms.iter().step_by(10) {
+            stmt.execute(params![support::uid(), firearm, original, thumbnail]).unwrap();
+        }
+    }
+    tx.commit().unwrap();
+}
+
+/// 009 SC-007, 009 research.md §16: the first `upgrade:progress` arrives
+/// within a second of `upgrade_database` being called on a database of 10,000
+/// firearms (and 1,000 photos) that `PHOTOS_REBUILD` makes older. Run with
+/// `--features upgrade-test-steps`. The backup's and the rebuild's times are
+/// printed (`--nocapture`) for the pull request; the upgrade has no budget of
+/// its own (009 FR-016).
+#[test]
+#[ignore = "release only: see DEVELOPMENT.md"]
+fn the_first_upgrade_progress_comes_within_a_second_at_10k_records_and_the_backup_and_rebuild_are_timed()
+ {
+    let _alone = one_at_a_time();
+    let large = LargeDatabase::new();
+    large
+        .session
+        .write(large.session.current_id(), |conn| {
+            seed_photos(conn);
+            Ok(())
+        })
+        .unwrap();
+    // The seeding was a change, so this close makes a backup (the folder the
+    // upgrade's own backup goes to as well).
+    lifecycle::close_normal(
+        &large.session,
+        large.session.current_id(),
+        &large.machine,
+        CloseReason::Closed,
+    )
+    .unwrap();
+    let file_bytes = std::fs::metadata(large.path()).unwrap().len();
+
+    // The database lacks the step, so it is older: the open stops at the question.
+    let _steps = testing::scope(large.dir.path()).extra_steps(&[PHOTOS_REBUILD]);
+    let refused =
+        lifecycle::open(&large.session, &large.machine, &large.path(), &passphrase(), false)
+            .expect_err("an older database must ask first");
+    assert_eq!(refused.code, "UPGRADE_NEEDED", "{refused:?}");
+    let awaiting_id = refused
+        .details
+        .as_deref()
+        .and_then(|details| details["awaitingId"].as_u64())
+        .expect("UPGRADE_NEEDED carries an awaitingId");
+
+    let started = Arc::new(Mutex::new(None::<Instant>));
+    let seen = Arc::new(Mutex::new(Vec::<(Duration, String, bool)>::new()));
+    let (since, log) = (started.clone(), seen.clone());
+    large.events.on_event(move |name, payload| {
+        if name == "upgrade:progress" {
+            let at = since.lock().unwrap().unwrap().elapsed();
+            let phase = payload["phase"].as_str().unwrap_or_default().to_owned();
+            log.lock().unwrap().push((at, phase, payload["showNow"].as_bool().unwrap_or(false)));
+        }
+    });
+    *started.lock().unwrap() = Some(Instant::now());
+    databases_ops::upgrade_database(&large.session, &large.machine, awaiting_id, None).unwrap();
+    let total = started.lock().unwrap().unwrap().elapsed();
+
+    let seen = seen.lock().unwrap();
+    let first = seen.first().expect("no upgrade:progress event");
+    let first_upgrading =
+        seen.iter().find(|(_, phase, _)| phase == "upgrading").expect("no upgrading event").0;
+    let last_upgrading = seen.iter().rev().find(|(_, phase, _)| phase == "upgrading").unwrap().0;
+    // Printed for the pull request's performance note (`--nocapture`).
+    eprintln!(
+        "009 SC-007: {RECORD_COUNT} firearms, 1000 photos, {file_bytes} bytes: first \
+         upgrade:progress ({}) after {:?} (showNow {}); backup {first_upgrading:?}; \
+         rebuild {:?}; whole call {total:?}",
+        first.1,
+        first.0,
+        first.2,
+        last_upgrading.saturating_sub(first_upgrading),
+    );
+    assert!(
+        first.0.as_millis() < 1_000,
+        "009 SC-007: the first upgrade:progress came {}ms after upgrade_database was called, at \
+         {RECORD_COUNT} records; budget is 1000ms",
+        first.0.as_millis()
     );
 }
 
@@ -795,6 +907,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
             &backup,
             &passphrase(),
             Target::Open(large.session.current_id()),
+            false,
         )
     });
     restored.unwrap();
@@ -1412,8 +1525,8 @@ fn seed_30k_documents(conn: &Connection) {
         let mut stmt = tx
             .prepare(
                 "INSERT INTO document_attachments
-                    (firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
-                 VALUES (?1, ?2, ?3, ?4, 'application/pdf', datetime('now'))",
+                    (uid, firearm_id, accessory_id, file_bytes, original_filename, mime_type, created_at)
+                 VALUES (?5, ?1, ?2, ?3, ?4, 'application/pdf', datetime('now'))",
             )
             .unwrap();
         for i in 0..DOCUMENT_COUNT {
@@ -1432,7 +1545,8 @@ fn seed_30k_documents(conn: &Connection) {
                 (!on_accessory).then_some(owner),
                 on_accessory.then_some(owner),
                 bytes,
-                name
+                name,
+                support::uid()
             ])
             .unwrap();
         }

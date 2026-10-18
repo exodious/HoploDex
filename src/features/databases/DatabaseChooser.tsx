@@ -1,20 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { flushSync } from "react-dom";
 import { Button } from "../../components";
-import { CommandFailure } from "../../services/tauriClient";
+import { CLEAR_PASSPHRASE_FIELDS } from "../../components/PassphraseField";
+import { CommandFailure, listen } from "../../services/tauriClient";
 import { BrandMark } from "../app/BrandMark";
 import { ThemeToggle } from "../app/ThemeToggle";
 import { useSession } from "../session/sessionStore";
 import { withIdlePaused } from "../session/useIdleActivity";
 import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
 import * as databasesService from "./databasesService";
+import { backupProblemOf } from "./backupProblem";
+import type { BackupProblem } from "./backupProblem";
 import { databaseNameOf } from "./paths";
 import { RecentDatabaseRow } from "./RecentDatabaseRow";
 import { CataloguePlate } from "./plate/CataloguePlate";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import type { ChooserRow, OpenElsewhere } from "./RecentDatabaseRow";
 import { TakeOverConfirm } from "./TakeOverConfirm";
-import type { ChooserNotice, ChooserState, OperationKind } from "./types";
+import type {
+  ChooserNotice,
+  ChooserState,
+  OperationKind,
+  UpgradeFailedDetails,
+  UpgradeNeededDetails,
+} from "./types";
+import { UpgradeFolderDialog, UpgradeProgressDialog, UpgradeQuestion } from "./UpgradeDialogs";
 import "../app/AppShell.css";
 import "./databases.css";
 
@@ -42,16 +53,36 @@ function openFailureText(databaseName: string, error: unknown): string {
     case "DATABASE_IN_USE":
       return `${name} is open in another copy of HoploDex, on this computer or another one. Close it there first.`;
     case "DATABASE_NEWER_VERSION":
-      return `${name} was last used by a newer version of HoploDex. Update HoploDex to open it. The file has not been changed.`;
+      return `${name} was last used by a newer version of HoploDex, which upgraded it. Update HoploDex to open it. The file has not been changed. A backup saved before that upgrade opens in this version: look for one whose name ends in “before” and a version number, in ${newerVersionFolder(error)}.`;
+    case "UPGRADE_FAILED": {
+      const { backupPath } = (error.details ?? {}) as Partial<UpgradeFailedDetails>;
+      return `HoploDex couldn't upgrade ${name}. It is as it was before, and hasn't been opened. The backup saved before the upgrade is ${backupPath ?? "not known"}.`;
+    }
     case "DATABASE_DAMAGED":
       return `${name} is damaged and can't be opened.`;
-    case "DISK_FULL":
-      return `The disk is full, so HoploDex couldn't open ${name}. Free some space on the drive that holds it, then try again. The file has not been changed.`;
+    case "DISK_FULL": {
+      const full = `The disk is full, so HoploDex couldn't open ${name}. Free some space on the drive that holds it, then try again. The file has not been changed.`;
+      // A full disk during the upgrade names the backup made before it (009
+      // FR-015); one while opening has no backup to name.
+      const { backupPath } = (error.details ?? {}) as Partial<UpgradeFailedDetails>;
+      return typeof backupPath === "string" && backupPath
+        ? `${full} The upgrade didn't happen; the backup made before it is at ${backupPath}.`
+        : full;
+    }
     case "DATABASE_UNREADABLE":
       return `HoploDex can't read ${name}: it doesn't have permission to open the file, or the drive or network holding it isn't available. The file has not been changed.`;
     default:
       return error.message;
   }
+}
+
+/** Where `DATABASE_NEWER_VERSION` says to look for the backup made before the
+ * newer version's upgrade (009 FR-018, contracts/ui.md §8). */
+function newerVersionFolder(error: CommandFailure): string {
+  const folder = error.details?.backupFolder;
+  return typeof folder === "string" && folder
+    ? folder
+    : "the “HoploDex backups” folder next to the database, or the backup location you chose for it";
 }
 
 const BACKUP_FAILURE: Record<Extract<ChooserNotice, { kind: "backupFailed" }>["reason"], string> = {
@@ -92,6 +123,7 @@ const STOPPED_OPERATION: Record<OperationKind, string> = {
   export: "an export",
   deleteBackups: "the deletion of its backups",
   moveBackups: "the move of its backups",
+  upgrade: "an upgrade",
 };
 
 /** "<n> are still in <folder>, and HoploDex no longer manages them there." */
@@ -166,6 +198,23 @@ type Failure =
   | { path: string; kind: "notFound" }
   | { path: string; kind: "elsewhere"; elsewhere: OpenElsewhere };
 
+/** A database that waits to be upgraded, from `UPGRADE_NEEDED`, while the row
+ * is busy (009 contracts/ui.md §1-§3). */
+interface Upgrade {
+  row: ChooserRow;
+  awaitingId: number;
+  version: string;
+  /** The backup location, unless the user chose another folder. */
+  backupFolder: string;
+  /** `question`: asked, nothing written. `running`: the backup is made, then
+   * the upgrade. `folder`: the backup couldn't be saved, so another folder is
+   * offered. */
+  stage: "question" | "running" | "folder";
+  /** The folder chosen for this one backup, once there is one. */
+  chosenFolder?: string;
+  problem?: BackupProblem;
+}
+
 export interface DatabaseChooserProps {
   /** The database just closed, selected in place of the backend's choice
    * (003 FR-033). */
@@ -193,6 +242,8 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   const [takeOver, setTakeOver] = useState<{ row: ChooserRow; machineName: string } | null>(null);
   /** Rows whose saved passphrase no longer opens them, which ask for it. */
   const [savedFailed, setSavedFailed] = useState<ReadonlySet<string>>(new Set());
+  /** The database waiting for its upgrade, if one is (009 FR-010). */
+  const [upgrade, setUpgrade] = useState<Upgrade | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -248,6 +299,34 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     setFailure(null);
   }
 
+  /** Shows why an open, or an upgrade, failed in the row. */
+  function showFailure(row: ChooserRow, error: unknown) {
+    if (savedPassphraseFailed(error)) {
+      setSavedFailed((current) => new Set(current).add(row.path));
+    }
+    if (error instanceof CommandFailure && error.code === "DATABASE_NOT_FOUND") {
+      markUnavailable(row.path);
+      setFailure({ path: row.path, kind: "notFound" });
+    } else if (error instanceof CommandFailure && error.code === "DATABASE_OPEN_ELSEWHERE") {
+      const details = error.details ?? {};
+      setFailure({
+        path: row.path,
+        kind: "elsewhere",
+        elsewhere: {
+          machineName: String(details.machineName ?? "another computer"),
+          since: String(details.since ?? ""),
+        },
+      });
+    } else {
+      setFailure({
+        path: row.path,
+        kind: "message",
+        message: openFailureText(row.name, error),
+        restore: offersRestore(error),
+      });
+    }
+  }
+
   /** Opens `row` with the typed passphrase, or the saved one when it is
    * `null`. */
   async function openRow(
@@ -258,6 +337,8 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     setOpening(row.path);
     setFailure(null);
     setAnnouncement(`Opening “${row.name}”…`);
+    // The row stays busy while an upgrade is asked about (009 FR-010).
+    let waitingForUpgrade = false;
     try {
       // On success the session replaces this screen with the collection.
       if (options.takingOver) await session.openDatabase(row.path, passphrase, { takeOver: true });
@@ -265,35 +346,87 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
         await session.openDatabase(row.path, passphrase, { rememberPassphrase: true });
       else await session.openDatabase(row.path, passphrase);
     } catch (error) {
-      if (savedPassphraseFailed(error)) {
-        setSavedFailed((current) => new Set(current).add(row.path));
-      }
-      if (error instanceof CommandFailure && error.code === "DATABASE_NOT_FOUND") {
-        markUnavailable(row.path);
-        setFailure({ path: row.path, kind: "notFound" });
-      } else if (error instanceof CommandFailure && error.code === "DATABASE_OPEN_ELSEWHERE") {
-        const details = error.details ?? {};
-        setFailure({
-          path: row.path,
-          kind: "elsewhere",
-          elsewhere: {
-            machineName: String(details.machineName ?? "another computer"),
-            since: String(details.since ?? ""),
-          },
-        });
+      if (error instanceof CommandFailure && error.code === "UPGRADE_NEEDED") {
+        const { awaitingId, version, backupFolder } =
+          error.details as unknown as UpgradeNeededDetails;
+        waitingForUpgrade = true;
+        setUpgrade({ row, awaitingId, version, backupFolder, stage: "question" });
       } else {
-        setFailure({
-          path: row.path,
-          kind: "message",
-          message: openFailureText(row.name, error),
-          restore: offersRestore(error),
-        });
+        showFailure(row, error);
       }
     } finally {
-      setOpening(null);
+      if (!waitingForUpgrade) setOpening(null);
       setAnnouncement("");
     }
   }
+
+  /** Gives up on the waiting database: the backend drops it, with nothing
+   * written, and the chooser is as before, with no message (009 FR-010). */
+  function cancelUpgrade() {
+    if (!upgrade) return;
+    void stopUpgrade(upgrade.awaitingId);
+    setUpgrade(null);
+    setOpening(null);
+  }
+
+  /** Tells the backend to drop the waiting database, or stop its backup. If
+   * it has already gone, there is nothing to do. */
+  async function stopUpgrade(awaitingId: number) {
+    try {
+      await databasesService.cancelUpgrade(awaitingId);
+    } catch {
+      // Gone already, or past the point it can stop.
+    }
+  }
+
+  /** Backs up, then upgrades, the waiting database, in the backup location or
+   * in `folder`, chosen for this one backup (009 FR-011, FR-012). */
+  async function startUpgrade(folder?: string) {
+    if (!upgrade) return;
+    const { row, awaitingId } = upgrade;
+    // The progress dialog listens before the request goes out, so the first
+    // progress isn't missed.
+    flushSync(() =>
+      setUpgrade(
+        (current) =>
+          current && { ...current, stage: "running", chosenFolder: folder, problem: undefined },
+      ),
+    );
+    try {
+      // On success the session replaces this screen with the collection.
+      if (folder) await session.upgradeDatabase(awaitingId, folder);
+      else await session.upgradeDatabase(awaitingId);
+    } catch (error) {
+      const tried = folder ?? upgrade.backupFolder;
+      const problem = backupProblemOf(error, tried);
+      if (problem) {
+        // The database still waits.
+        setUpgrade((current) => current && { ...current, stage: "folder", problem });
+        return;
+      }
+      setUpgrade(null);
+      setOpening(null);
+      // A backup stopped by Cancel says nothing (009 contracts/ui.md §2).
+      if (!(error instanceof CommandFailure && error.code === "OPERATION_STOPPED")) {
+        showFailure(row, error);
+      }
+      return;
+    }
+    setUpgrade(null);
+    setOpening(null);
+  }
+
+  // A sleep or a screen lock drops the waiting database, so its question
+  // closes as Cancel (009 contracts/ui.md §1).
+  const waitingId = upgrade && upgrade.stage !== "running" ? upgrade.awaitingId : null;
+  useEffect(() => {
+    if (waitingId === null) return;
+    return listen<unknown>(CLEAR_PASSPHRASE_FIELDS, () => {
+      void stopUpgrade(waitingId);
+      setUpgrade(null);
+      setOpening(null);
+    });
+  }, [waitingId]);
 
   function markUnavailable(path: string) {
     setState(
@@ -531,6 +664,32 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                     name={restoring.name}
                     databasePath={restoring.path}
                   />
+                )}
+                {upgrade && (
+                  <>
+                    <UpgradeQuestion
+                      open={upgrade.stage === "question"}
+                      name={upgrade.row.name}
+                      version={upgrade.version}
+                      backupFolder={upgrade.backupFolder}
+                      onUpgrade={() => void startUpgrade()}
+                      onCancel={cancelUpgrade}
+                    />
+                    {upgrade.stage === "running" && (
+                      <UpgradeProgressDialog
+                        name={upgrade.row.name}
+                        onCancel={() => void stopUpgrade(upgrade.awaitingId)}
+                      />
+                    )}
+                    {upgrade.stage === "folder" && upgrade.problem && (
+                      <UpgradeFolderDialog
+                        problem={upgrade.problem}
+                        name={upgrade.row.name}
+                        onChoose={(folder) => void startUpgrade(folder)}
+                        onCancel={cancelUpgrade}
+                      />
+                    )}
+                  </>
                 )}
                 <TakeOverConfirm
                   target={

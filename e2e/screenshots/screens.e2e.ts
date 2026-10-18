@@ -26,13 +26,17 @@ import {
   requestQuit,
   selectChooserRow,
   selectedChooserRow,
+  scratchDocuments,
   submitPassphrase,
   settleChooserPlate,
+  switchDatabase,
   unlock,
   waitForChooser,
+  waitForCollection,
 } from "../support/ui";
 import { killApp, relaunchApp } from "../support/app";
-import { sandboxPath, seedCollection } from "../support/sandbox";
+import { repoRoot } from "../support/build";
+import { copyReleaseFixture, sandboxPath, seedCollection } from "../support/sandbox";
 import {
   SCREENSHOT_WINDOW,
   chooseTheme,
@@ -854,6 +858,37 @@ for (const theme of ["Light", "Dark"] as const) {
       await goTo("Collection");
     });
 
+    // 009 contracts/ui.md §9: a policy renamed to another's name is refused at
+    // the Name field, with the focus there.
+    it("the policy form with a name that is already taken", async () => {
+      await goTo("Insurance");
+      await $$(".hd-policy")[0].waitForExist();
+      const names = await browser.execute(() =>
+        [...document.querySelectorAll(".hd-policy__name")].map((n) => n.textContent?.trim() ?? ""),
+      );
+      if (names.length < 2) throw new Error("the seeded collection has fewer than two policies");
+      const [taken, renamed] = names;
+      await browser.execute((wanted: string) => {
+        const card = [...document.querySelectorAll("article.hd-policy")].find(
+          (a) => a.querySelector(".hd-policy__name")?.textContent?.trim() === wanted,
+        );
+        [...(card?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+          .find((b) => b.textContent?.trim() === "Edit")
+          ?.click();
+      }, renamed);
+      await $('[role="dialog"]').waitForExist();
+      await settle();
+      await fill("Policy name", taken);
+      await clickButton("Save changes");
+      await $('[role="dialog"] .hd-field__error').waitForExist({
+        timeout: 5000,
+        timeoutMsg: "the Policy name field shows no error",
+      });
+      await shot(`97-policy-duplicate-name-${suffix}`, { fullPage: true });
+      await discardForm();
+      await goTo("Collection");
+    });
+
     it("import and export", async () => {
       await openDialog("Import");
       await shot(`12-import-${suffix}`);
@@ -1349,6 +1384,196 @@ describe("Screenshots: a note near and over its maximum", () => {
     }
     await chooseTheme("Light");
     await closeDialog();
+  });
+});
+
+// 009 contracts/ui.md §10: the upgrade's screens, from copies of the stored
+// 0.1.0 database (009 research.md §12) on the sandbox's recent list. The app is
+// relaunched with HOPLODEX_E2E_UPGRADE_PHASE_SECONDS set (the harness's
+// `upgradePhaseSeconds`, set here rather than through applySessionSettings,
+// which would also clear the seed's passphrase), so each phase of an upgrade
+// stays up long enough to shoot in both themes (009 research.md §14). The
+// PDF block after this one relaunches the app without it.
+describe("Screenshots: upgrading a database from an earlier version", () => {
+  const FIXTURE_PASSPHRASE = "release fixture 0.1.0";
+  const PHASE_SECONDS = 15;
+  const OLDER = "Older collection";
+  const STRANDED = "Older no backups";
+  const identifier = (
+    JSON.parse(fs.readFileSync(path.join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8")) as {
+      identifier: string;
+    }
+  ).identifier;
+
+  /** Whether the open dialog or alert dialog's text includes `text`. */
+  const dialogHas = (text: string) =>
+    browser.execute(
+      (wanted: string) =>
+        [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].some((d) =>
+          (d.textContent ?? "").replace(/\s+/g, " ").includes(wanted),
+        ),
+      text,
+    );
+
+  async function waitForDialogText(text: string, timeout = 15000) {
+    await browser.waitUntil(() => dialogHas(text), {
+      timeout,
+      timeoutMsg: `no dialog says "${text}"`,
+    });
+  }
+
+  /** Shoots the screen in both themes, ending in light. */
+  async function shotBothThemes(name: string, options: { fullPage?: boolean } = {}) {
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`${name}-${theme.toLowerCase()}`, options);
+    }
+    await chooseTheme("Light");
+  }
+
+  /** While the upgrade call is held open the app counts as busy, and a shot
+   * waits for it to end: report it idle for the shots, as the import's
+   * reading phase does. */
+  async function reportIdle() {
+    await browser.execute(() => {
+      Object.defineProperty(window, "__hoplodexBusy", {
+        configurable: true,
+        get: () => 0,
+        set: () => undefined,
+      });
+    });
+  }
+
+  async function reportBusyAgain() {
+    await browser.execute(() => {
+      delete (window as unknown as { __hoplodexBusy?: number }).__hoplodexBusy;
+    });
+  }
+
+  /** Selects `name` in the chooser and opens it with the fixture's
+   * passphrase, to the upgrade question. */
+  async function openToQuestion(name: string) {
+    await waitForChooser();
+    if ((await selectedChooserRow()) !== name) await selectChooserRow(name);
+    await submitPassphrase(FIXTURE_PASSPHRASE);
+    await $('[role="alertdialog"]').waitForExist({ timeout: 10000 });
+    await settle();
+  }
+
+  before(async () => {
+    process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS = String(PHASE_SECONDS);
+    const documents = scratchDocuments();
+    const older = copyReleaseFixture(path.join(documents, "Older"), OLDER);
+    // Where the second copy's "HoploDex backups" folder would be there is a
+    // file, so its backup location can't be used: the "missing" reason.
+    const stranded = copyReleaseFixture(path.join(documents, "Stranded"), STRANDED);
+    fs.writeFileSync(path.join(documents, "Stranded", "HoploDex backups"), "not a folder");
+
+    // The app reads machine.json when it starts: end it, put the two copies
+    // on the recent list (the native file picker that would can't be driven),
+    // and start it again with the phase hold.
+    await killApp();
+    const file = path.join(process.env.HOPLODEX_E2E_CONFIG_HOME!, identifier, "machine.json");
+    const machine = JSON.parse(fs.readFileSync(file, "utf8")) as { recentDatabases?: unknown[] };
+    machine.recentDatabases = [
+      { path: older.path, name: OLDER },
+      { path: stranded.path, name: STRANDED },
+    ]
+      .map((entry) => ({
+        ...entry,
+        lastOpenedAt: new Date().toISOString(),
+        databaseId: null,
+        backupFolder: null,
+        passphraseSaved: false,
+        leftModifiedAt: null,
+        located: false,
+      }))
+      .concat((machine.recentDatabases ?? []) as never[]);
+    fs.writeFileSync(file, JSON.stringify(machine, null, 2));
+    await relaunchApp();
+    await waitForChooser();
+    await chooseTheme("Light");
+  });
+
+  after(async () => {
+    delete process.env.HOPLODEX_E2E_UPGRADE_PHASE_SECONDS;
+    await reportBusyAgain();
+  });
+
+  // 009 contracts/ui.md §1 and §3: the question, and the refusal when the
+  // backup location can't be used.
+  it("asks before upgrading, and offers another folder for the backup", async () => {
+    await openToQuestion(OLDER);
+    await waitForDialogText(`Upgrade “${OLDER}” for HoploDex`);
+    await shotBothThemes("91-upgrade-question");
+    await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    await waitForChooser();
+
+    await openToQuestion(STRANDED);
+    await clickButton("Upgrade", { settles: false });
+    await $('[role="dialog"]').waitForExist({ timeout: 10000 });
+    await waitForDialogText("Save the backup somewhere else?");
+    await settle();
+    await shotBothThemes("94-upgrade-backup-elsewhere");
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await waitForChooser();
+  });
+
+  // 009 contracts/ui.md §2: each phase of the progress dialog, then the
+  // upgraded note (009 contracts/ui.md §5).
+  it("shows the progress dialog in each phase, then the upgraded note", async () => {
+    await openToQuestion(OLDER);
+    await reportIdle();
+    await clickButton("Upgrade", { settles: false });
+    await waitForDialogText(`Saving a backup of “${OLDER}”…`);
+    await shotBothThemes("92-upgrade-progress-backing-up");
+
+    // The backup's hold ends before this phase begins.
+    await waitForDialogText(
+      `Upgrading “${OLDER}”. This can't be stopped once it has started.`,
+      PHASE_SECONDS * 1000 + 15000,
+    );
+    await shotBothThemes("93-upgrade-progress-upgrading");
+
+    // The copy was locked mid-edit by the earlier version: that change
+    // survived the upgrade and is offered before the collection (003 FR-039).
+    await waitForDialogText("Unsaved changes to Range Rider (add)", PHASE_SECONDS * 1000 + 15000);
+    await reportBusyAgain();
+    await settle();
+    await clickButton("Discard changes");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Discard changes");
+    await waitForCollection();
+
+    await browser.waitUntil(
+      () =>
+        browser.execute(() =>
+          [...document.querySelectorAll(".hd-db-note")].some((n) =>
+            (n.textContent ?? "").includes("was upgraded for HoploDex"),
+          ),
+        ),
+      { timeout: 5000, timeoutMsg: "the upgraded note never showed" },
+    );
+    await shotBothThemes("95-upgraded-note");
+  });
+
+  // 009 contracts/ui.md §6.
+  it("confirms restoring the backup made before the upgrade, naming the upgrade", async () => {
+    await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
+    await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
+    await settle();
+    await fill("Passphrase for this backup", FIXTURE_PASSPHRASE);
+    await clickEl('[role="dialog"] button[type="submit"]');
+    await $('[role="alertdialog"]').waitForExist({ timeout: 10000 });
+    await waitForDialogText("is upgraded for HoploDex");
+    await shotBothThemes("96-restore-upgrade-confirmation");
+    await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    await closeDialog();
+    // Back to the chooser, as the walk's other blocks leave it.
+    await switchDatabase();
   });
 });
 
