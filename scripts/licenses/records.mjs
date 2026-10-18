@@ -44,7 +44,7 @@ const SHAPES = {
   nativeCode: { key: "crate", fields: ["crate", "what", "note"] },
 };
 
-/** The fields an entry must have (data-model.md); a hand-recorded carrier also needs `crate` or `npm`. */
+/** The fields an entry must have (010 data-model.md); a hand-recorded carrier also needs `crate` or `npm`. */
 const REQUIRED = {
   handRecorded: ["name", "version", "license", "kind", "os", "carrier", "texts", "reason"],
   exceptions: ["component", "checkedVersion", "declared", "texts", "from", "reason"],
@@ -236,7 +236,7 @@ function readOpenSslVersion(ctx, subject) {
 }
 
 /**
- * The hand-recorded entries for the target's OS (research.md §7): each with its
+ * The hand-recorded entries for the target's OS (010 research.md §7): each with its
  * texts read and its carrier checked, as `components` ready for the notices.
  * A failure names the entry.
  */
@@ -318,7 +318,7 @@ export function checkHandRecorded(entries, ctx) {
 }
 
 /**
- * The exceptions (research.md §8): a shipped component whose package leaves out
+ * The exceptions (010 research.md §8): a shipped component whose package leaves out
  * its license text, with the text committed. `used` names the entries this
  * target ships; an entry it doesn't ship is only a warning, since the same
  * exception covers several operating systems. `resolved` maps a component to
@@ -365,7 +365,7 @@ export function checkExceptions(entries, ctx) {
 }
 
 /**
- * The clarifications (research.md §8): the files to use in place of what the
+ * The clarifications (010 research.md §8): the files to use in place of what the
  * matcher finds, each with its SHA-256. A file that changed, or is missing,
  * fails so it is reviewed. `resolved` maps a component to its texts, in order.
  */
@@ -443,7 +443,7 @@ function findPrebuilt(folder, relative = "") {
 }
 
 /**
- * The native-code review (research.md §7): a shipped crate with an enabled `cc`
+ * The native-code review (010 research.md §7): a shipped crate with an enabled `cc`
  * or `cmake` build dependency, or carrying a prebuilt library, must be listed.
  * A listed crate this target doesn't ship is a warning; `used` names the listed
  * crates it does ship.
@@ -483,7 +483,7 @@ export function checkNativeCode(entries, ctx) {
 
 /**
  * The `--all-targets` form: an exception, clarification or native-code entry
- * that no target uses fails (research.md §9). `perTarget` holds each target's
+ * that no target uses fails (010 research.md §9). `perTarget` holds each target's
  * `used` lists.
  */
 export function unusedAcrossTargets(records, perTarget) {

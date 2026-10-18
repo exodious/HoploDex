@@ -454,7 +454,7 @@ describe("010 US1 - AboutDialog's components (010 US1-4, 010 US1-5, 010 FR-005)"
   });
 });
 
-describe("010 US1 - AboutDialog's keyboard (contracts/ui.md §3)", () => {
+describe("010 US1 - AboutDialog's keyboard (010 contracts/ui.md §3)", () => {
   it("focuses the license disclosure's button once it opens", async () => {
     renderAbout();
 
@@ -516,7 +516,7 @@ describe("010 US1 - AboutDialog's keyboard (contracts/ui.md §3)", () => {
   });
 });
 
-describe("010 US1 - AboutDialog while it loads (contracts/ui.md §2 items 4 and 5)", () => {
+describe("010 US1 - AboutDialog while it loads (010 contracts/ui.md §2 items 4 and 5)", () => {
   it("fetches the notices file of the app's own origin when it opens, and not before", async () => {
     const { rerender } = render(<AboutDialog open={false} onOpenChange={() => {}} />);
     expect(fetchNotices).not.toHaveBeenCalled();

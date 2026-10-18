@@ -1,5 +1,5 @@
 /** Loads `notices.json` and shapes it for the About HoploDex dialog (010
- * data-model.md, "Notices document"; contracts/notices.md). */
+ * data-model.md, "Notices document"; 010 contracts/notices.md). */
 
 /** The one `notices.json` layout this build reads. Any other value shows as
  * the load failure, not as a wrong screen (010 data-model.md). */
