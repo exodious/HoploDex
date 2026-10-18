@@ -188,6 +188,18 @@ describe("010 research.md §7 - reading the records", () => {
     expect(clarify[0]).toContain("note");
   });
 
+  it("fails an entry with a required field missing, naming the file, the entry and the field", () => {
+    const { failures } = readCase("missing-fields");
+    expect(failures).toHaveLength(3);
+    const has = (file: string, entry: string, field: string) =>
+      failures.some(
+        (f: string) => f.includes(file) && f.includes(entry) && f.includes(`"${field}"`),
+      );
+    expect(has("hand-recorded.json", "SQLite", "texts")).toBe(true);
+    expect(has("hand-recorded.json", "SQLite", "reason")).toBe(true);
+    expect(has("exceptions.json", "crate:needs-exception", "declared")).toBe(true);
+  });
+
   it("fails a native-code entry whose `what` is not one of the four", () => {
     const { failures } = readCase("native-bad-what");
     expect(failures).toHaveLength(1);
@@ -289,7 +301,7 @@ describe("010 US2-4 - hand-recorded components", () => {
     const moved = carrier({ version: "0.39.0" });
     const { failures } = checkHandRecorded(entries(), ctx(LINUX, { crates: [moved] }));
     expect(failures).toContain(
-      'hand-recorded "SQLCipher": its carrier libsqlite3-sys is 0.39.0, recorded 0.38.1. Review the entry (its version, text and carrier) and update it.',
+      'hand-recorded "SQLCipher": its carrier crate libsqlite3-sys is 0.39.0, recorded 0.38.1. Review the entry (its version, text and carrier) and update it.',
     );
   });
 

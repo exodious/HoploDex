@@ -139,6 +139,7 @@ others are absent, which reads as an empty list) and the texts it needs.
 | `hand-unsorted`, `exceptions-unsorted` | an unsorted file |
 | `hand-unknown-field`, `clarify-unknown-field` | a misspelled or unknown key |
 | `native-bad-what` | a `what` that is not one of the four |
+| `missing-fields` | a hand-recorded entry with no `texts` or `reason`, and an exception with no `declared` |
 | `hand-missing-text`, `exception-missing-text` | a listed text file that isn't there |
 | `text-without-source` | a committed text with no `Source:` first line |
 | `exception-stale` | an exception for `ships-license`, which now ships `LICENSE` |
