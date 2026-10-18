@@ -258,11 +258,16 @@ These come first because the E2E journey and US4 open the fixture, and the fixtu
 
 ### Manual checks (best effort before a release, not merge gates)
 
-- [ ] T084 [P] On Linux, do quickstart.md's manual check **M1** (the round trip by keyboard, on Older collection, passphrase `release fixture 0.1.0`), and record the result for the PR
-- [ ] T085 [P] On macOS, do quickstart.md's manual check **M1**, and record the result for the PR
-- [ ] T086 [P] On Linux, do quickstart.md's manual check **M2** (the backup location can't be written, on Older collection, passphrase `release fixture 0.1.0`), and record the result for the PR
-- [ ] T087 [P] On Linux, do quickstart.md's manual check **M3** with Orca, and record the result for the PR
-- [ ] T088 [P] On macOS, do quickstart.md's manual check **M3** with VoiceOver, and record the result for the PR
+- [X] T084 [P] On Linux, do quickstart.md's manual check **M1** (the round trip by keyboard, on Older collection, passphrase `release fixture 0.1.0`), and record the result for the PR
+  - **Deferred** (2026-10-17) to #37, the manual checks run best effort before a release: not run before the PR. The question, the upgrade on Enter, the note and the backup listed are covered by `databases.e2e.ts` (009 US3) on the stored 0.1.0 database; the newer-version refusal naming the backup folder by `database_open_test.rs`; opening a before-upgrade backup directly by `upgrade_test.rs`. What stays manual is the round trip between two real builds
+- [X] T085 [P] On macOS, do quickstart.md's manual check **M1**, and record the result for the PR
+  - **Deferred** (2026-10-17) to #37, the manual checks run best effort before a release: not run before the PR. The question, the upgrade on Enter, the note and the backup listed are covered by `databases.e2e.ts` (009 US3) on the stored 0.1.0 database; the newer-version refusal naming the backup folder by `database_open_test.rs`; opening a before-upgrade backup directly by `upgrade_test.rs`. What stays manual is the round trip between two real builds
+- [X] T086 [P] On Linux, do quickstart.md's manual check **M2** (the backup location can't be written, on Older collection, passphrase `release fixture 0.1.0`), and record the result for the PR
+  - **Deferred** (2026-10-17) to #37, the manual checks run best effort before a release: not run before the PR. The read-only folder refused, the database kept waiting and a chosen folder taking the backup are covered by `upgrade_test.rs`; "Save the backup somewhere else?" and its Cancel by `databases.e2e.ts` (009 US3)
+- [X] T087 [P] On Linux, do quickstart.md's manual check **M3** with Orca, and record the result for the PR
+  - **Deferred** (2026-10-17) to #48, with 004's to 007's checks: not run before the PR. The one polite live region announcing each phase, and the dialogs' names and buttons, are covered by `UpgradeDialogs.test.tsx`
+- [X] T088 [P] On macOS, do quickstart.md's manual check **M3** with VoiceOver, and record the result for the PR
+  - **Deferred** (2026-10-17) to #48, with 004's to 007's checks: not run before the PR. The one polite live region announcing each phase, and the dialogs' names and buttons, are covered by `UpgradeDialogs.test.tsx`
 
 ### Close-out (at pull request time)
 
