@@ -231,8 +231,7 @@ describe("010 US1 - AboutDialog's program block (010 US1-1, 010 FR-002, 010 FR-0
     ).toBeTruthy();
   });
 
-  // 010 US1-6
-  it("gives the source address as selectable text in a monospace span, not a link (010 FR-006)", async () => {
+  it("gives the source address as selectable text in a monospace span, not a link (010 US1-6, 010 FR-006)", async () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     const user = renderAbout();
     await ready();
@@ -256,6 +255,53 @@ describe("010 US1 - AboutDialog's program block (010 US1-1, 010 FR-002, 010 FR-0
     await user.click(address);
     expect(open).not.toHaveBeenCalled();
     open.mockRestore();
+  });
+});
+
+describe("010 US1 - AboutDialog's development line (010 contracts/ui.md §2)", () => {
+  const DEVELOPMENT_LINE = "Development build: these notices aren't checked.";
+
+  it("says in a muted line that a development build's notices aren't checked", async () => {
+    answerWith({ ...DOCUMENT, development: true });
+    renderAbout();
+    await ready();
+
+    const line = screen.getByText(DEVELOPMENT_LINE);
+    expect(line.closest(".hd-about__program")).not.toBeNull();
+    // jsdom applies no style sheet, so the rule is read from the file: muted is
+    // the secondary ink, as the program block's other muted text is.
+    const css = readFileSync("src/features/app/about.css", "utf8");
+    const rule = [...css.matchAll(/\.([\w-]+)\s*\{([^}]*)\}/g)].find(([, name]) =>
+      line.classList.contains(name),
+    );
+    expect(rule?.[2]).toMatch(/color:\s*var\(--ink-2\)/);
+  });
+
+  it("says nothing for a build's document, which has no development field", async () => {
+    renderAbout();
+    await ready();
+
+    expect(screen.queryByText(DEVELOPMENT_LINE)).not.toBeInTheDocument();
+  });
+
+  it("says nothing for a document whose development is false", async () => {
+    answerWith({ ...DOCUMENT, development: false });
+    renderAbout();
+    await ready();
+
+    expect(screen.queryByText(DEVELOPMENT_LINE)).not.toBeInTheDocument();
+  });
+
+  it("says nothing while the notices load or when they fail", async () => {
+    neverAnswer();
+    const { unmount } = render(<Harness />);
+    expect(screen.queryByText(DEVELOPMENT_LINE)).not.toBeInTheDocument();
+    unmount();
+
+    fetchNotices.mockRejectedValue(new TypeError("Failed to fetch"));
+    renderAbout();
+    await screen.findByText(FAILED);
+    expect(screen.queryByText(DEVELOPMENT_LINE)).not.toBeInTheDocument();
   });
 });
 
@@ -436,6 +482,32 @@ describe("010 US1 - AboutDialog's components (010 US1-4, 010 US1-5, 010 FR-005)"
     expect(screen.getByText("No component matches “MIT”.")).toBeInTheDocument();
   });
 
+  it("trims the filter before it matches, and shows the trimmed text in the no-match line", async () => {
+    const user = renderAbout();
+    await ready();
+
+    await user.type(filterField(), " sqlcipher ");
+
+    expect(screen.getByText("1 of 5 components")).toBeInTheDocument();
+    expect(disclosure("SQLCipher")).toBeInTheDocument();
+
+    await user.clear(filterField());
+    await user.type(filterField(), "  zzzz  ");
+
+    expect(screen.getByText("No component matches “zzzz”.")).toBeInTheDocument();
+  });
+
+  it("reads 1 component for a one-component document, and 0 of 1 component when the filter leaves none", async () => {
+    answerWith({ ...DOCUMENT, components: [COMPONENTS[0]] });
+    const user = renderAbout();
+
+    expect(await screen.findByText("1 component")).toBeInTheDocument();
+
+    await user.type(filterField(), "zzzz");
+
+    expect(screen.getByText("0 of 1 component")).toBeInTheDocument();
+  });
+
   it("shows the no-match line in place of the list", async () => {
     const user = renderAbout();
     await ready();
@@ -585,6 +657,18 @@ describe("010 US1 - AboutDialog while it loads (010 contracts/ui.md §2 items 4 
         fetchNotices.mockResolvedValue(new Response(JSON.stringify({ ...DOCUMENT, format: 2 }))),
     ],
     [
+      "a format 1 notices file whose component names an unknown text id",
+      () =>
+        fetchNotices.mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              ...DOCUMENT,
+              components: [{ ...COMPONENTS[0], texts: ["t1", "missing"] }],
+            }),
+          ),
+        ),
+    ],
+    [
       "a notices file that is not JSON",
       () => fetchNotices.mockResolvedValue(new Response("<html>not notices</html>")),
     ],
@@ -633,5 +717,19 @@ describe("010 US1 - AboutDialog sends no command (010 SC-005)", () => {
     await screen.findByText(FAILED);
 
     expect(invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("010 US1 - AboutDialog's narrow layout (010 FR-007)", () => {
+  it("keeps one column at the app's 900 px breakpoint", () => {
+    // jsdom lays nothing out, so the rule is read from the file; screenshot 102
+    // is the narrow layout's visual check (010 plan.md, Test Levels).
+    const css = readFileSync("src/features/app/about.css", "utf8");
+    const narrow = css.match(/@media\s*\(max-width:\s*900px\)\s*\{([\s\S]*)\}\s*$/);
+    expect(narrow, "a rule block at max-width: 900px").not.toBeNull();
+    expect(narrow?.[1]).toMatch(/\.hd-about\s*\{[^}]*gap:/);
+    // The base rule is a single column, and no rule makes it a grid or a row.
+    expect(css).toMatch(/\.hd-about\s*\{[^}]*flex-direction:\s*column/);
+    expect(css).not.toMatch(/grid-template-columns|flex-direction:\s*row/);
   });
 });

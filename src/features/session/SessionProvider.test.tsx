@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -1432,6 +1432,41 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
     act(() => aboutRequested());
 
     expect(await findAbout()).toBeInTheDocument();
+  });
+
+  it("stays open when the chooser appears after the starting phase, and closes on the next phase change (010 contracts/ui.md §1)", async () => {
+    let finishStart: (error: unknown) => void = () => {};
+    vi.mocked(sessionService.getDatabaseStatus).mockReturnValue(
+      new Promise((_resolve, reject) => {
+        finishStart = reject;
+      }),
+    );
+    let finishOpen: (opened: DatabaseStatus) => void = () => {};
+    vi.mocked(databasesService.openDatabase).mockReturnValue(
+      new Promise((resolve) => {
+        finishOpen = resolve;
+      }),
+    );
+    renderProvider();
+    act(() => aboutRequested());
+    await findAbout();
+
+    await act(async () => finishStart(closed));
+    // The chooser is behind the dialog, which hides it from the accessibility tree.
+    const field = await screen.findByLabelText("Passphrase for “Main collection”", {
+      selector: "input",
+    });
+    expect(aboutDialog()).toBeInTheDocument();
+
+    // The next change of phase (an open) closes it. The dialog makes the chooser
+    // inert to the pointer, so the form is driven by events.
+    fireEvent.change(field, { target: { value: PASSPHRASE } });
+    fireEvent.submit(field.closest("form")!);
+    await waitFor(() => expect(databasesService.openDatabase).toHaveBeenCalled());
+    await act(async () => finishOpen(status(false)));
+
+    expect(await screen.findByText("Collection shell")).toBeInTheDocument();
+    expect(aboutDialog()).not.toBeInTheDocument();
   });
 
   it("opens from the menu bar's event in the chooser phase", async () => {

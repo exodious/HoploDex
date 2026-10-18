@@ -164,5 +164,8 @@ any phase change (open, lock, close, switch) ──▶ closed
   empty and every row closed.
 - **The filter**: a case-insensitive substring of `name`, trimmed. A filter
   with no match shows the no-match line.
+- **A development build's document** (`development: true`): the program block
+  ends with the muted line "Development build: these notices aren't checked."
+  A build's document has no such field, and `false` shows nothing.
 - **Ready**'s focus: on the license disclosure's button, once the notices
   have loaded (the button doesn't exist while loading).

@@ -18,12 +18,25 @@ pub fn requested_event(menu_id: &str) -> Option<&'static str> {
     (menu_id == ABOUT_MENU_ID).then_some(ABOUT_REQUESTED)
 }
 
+/// The text of the predefined About item in Tauri's default macOS menu:
+/// "About <name>", with `name` the package name `Menu::default` gives it
+/// (`app.package_info().name`, the product name). The only way to tell that
+/// item from another predefined one, since a `PredefinedMenuItem` exposes its
+/// id and text and no kind (tauri 2.11.5, `menu/predefined.rs`).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn default_about_text(app_name: &str) -> String {
+    format!("About {app_name}")
+}
+
 /// Tauri's default macOS menu, with the application submenu's predefined
 /// About item replaced, at the same position, by an item of id
-/// [`ABOUT_MENU_ID`]. Every other item is left as Tauri builds it.
+/// [`ABOUT_MENU_ID`]. Every other item is left as Tauri builds it. The first
+/// item is replaced only when it is the predefined About (a predefined item
+/// whose text is [`default_about_text`]); otherwise a warning is logged and
+/// the default menu is returned as it is.
 #[cfg(target_os = "macos")]
 pub fn build<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
-    use tauri::menu::{Menu, MenuItem, MenuItemKind};
+    use tauri::menu::{Menu, MenuItem};
 
     /// Where `Menu::default` puts About: first in the first submenu.
     const ABOUT_POSITION: usize = 0;
@@ -35,17 +48,23 @@ pub fn build<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<taur
         log::warn!("the default menu has no application submenu; left as is");
         return Ok(menu);
     };
-    let about = MenuItem::with_id(app, ABOUT_MENU_ID, "About HoploDex", true, None::<&str>)?;
-    match application.remove_at(ABOUT_POSITION)? {
-        Some(MenuItemKind::Predefined(_)) => application.insert(&about, ABOUT_POSITION)?,
-        // Not the predefined About (a Tauri update moved things): put back
-        // what was taken out and leave the default menu as it is.
-        Some(other) => {
-            application.insert(&other, ABOUT_POSITION)?;
-            log::warn!("the default menu's first item is not the predefined About; left as is");
-        }
-        None => log::warn!("the default menu's application submenu is empty; left as is"),
+    let expected = default_about_text(&app.package_info().name);
+    let is_about = match application.items()?.get(ABOUT_POSITION) {
+        Some(kind) => match kind.as_predefined_menuitem() {
+            Some(item) => item.text()? == expected,
+            None => false,
+        },
+        None => false,
+    };
+    if !is_about {
+        log::warn!(
+            "the default menu's first item is not the predefined \"{expected}\"; left as is"
+        );
+        return Ok(menu);
     }
+    let about = MenuItem::with_id(app, ABOUT_MENU_ID, &expected, true, None::<&str>)?;
+    application.remove_at(ABOUT_POSITION)?;
+    application.insert(&about, ABOUT_POSITION)?;
     Ok(menu)
 }
 
@@ -59,6 +78,13 @@ mod tests {
     fn about_item_and_event_names_are_the_contracts() {
         assert_eq!(ABOUT_MENU_ID, "about");
         assert_eq!(ABOUT_REQUESTED, "app:about-requested");
+    }
+
+    // 010 US1-7: the replaced item is recognised by the text Tauri's default
+    // menu gives its About item.
+    #[test]
+    fn the_default_about_item_text_names_the_app() {
+        assert_eq!(default_about_text("HoploDex"), "About HoploDex");
     }
 
     #[test]

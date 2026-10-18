@@ -63,8 +63,13 @@
   user-select: all;
 }
 
-.hd-about__status {
+.hd-about__status,
+.hd-about__development {
   color: var(--ink-2);
+}
+
+.hd-about__development {
+  font-size: var(--text-sm);
 }
 
 .hd-about__components {

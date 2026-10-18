@@ -34,8 +34,15 @@ export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
 }
 
 /** The program block compiled in with the build (010 data-model.md, "Program
- * block"). */
-function ProgramBlock({ permission }: { permission: string | null }) {
+ * block"), and, for a development build's document, the line saying its notices
+ * aren't checked (010 contracts/ui.md §2). */
+function ProgramBlock({
+  permission,
+  development,
+}: {
+  permission: string | null;
+  development: boolean;
+}) {
   const program = __HOPLODEX_PROGRAM__;
   return (
     <div className="hd-about__program">
@@ -55,6 +62,9 @@ function ProgramBlock({ permission }: { permission: string | null }) {
       <p>
         Source code: <span className="hd-about__source">{program.sourceUrl}</span>
       </p>
+      {development && (
+        <p className="hd-about__development">Development build: these notices aren't checked.</p>
+      )}
     </div>
   );
 }
@@ -173,7 +183,10 @@ function AboutContent() {
 
   return (
     <div className="hd-about" ref={body}>
-      <ProgramBlock permission={notices ? notices.additionalPermission : null} />
+      <ProgramBlock
+        permission={notices ? notices.additionalPermission : null}
+        development={notices?.development === true}
+      />
 
       {load.state === "loading" && late && (
         <p className="hd-about__status">Loading the license notices…</p>

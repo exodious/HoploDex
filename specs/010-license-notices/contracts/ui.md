@@ -46,6 +46,11 @@ From top to bottom:
    - "Source code:", then `https://github.com/exodious/HoploDex` in a
      monospace span with `user-select: all`, as export's paths are shown
      (`.hd-paths dd`). Not a link, and nothing opens it (FR-006).
+   - When the notices document has `development: true` (the development
+     server's, never a release or E2E build's), a muted line in the smaller
+     text style: "Development build: these notices aren't checked." It comes
+     with the document, so it isn't shown while the notices load or when they
+     fail.
 2. **The license**: a `Disclosure` (`headingLevel={3}`), titled "GNU General
    Public License, version 3", with the summary "The full text of the license
    HoploDex is under." Opened, it shows `notices.json`'s `gpl` in a `pre`

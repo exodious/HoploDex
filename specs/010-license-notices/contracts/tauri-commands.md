@@ -18,14 +18,17 @@ unchanged, and `acl_manifest_test.rs` has nothing new to check.
 
 - **Emitted by** `main.rs`'s `on_menu_event`, which asks `app_menu::requested_event`
   for the event of the chosen item's id (`about` gives `app:about-requested`,
-  any other id none) and emits it with `app.emit(name, ())`, beside
-  `request_quit`'s `app:quit-requested`.
+  any other id none) and emits it with `app.emit_to("main", name, ())`, as
+  `request_quit` does `app:quit-requested`. Both go to the main web view only,
+  not to the PDF preview's child web view (010 tasks.md T072).
 - **The menu**: on macOS, `setup()` sets the menu `app_menu::build` makes
   (`src-tauri/src/app_menu.rs`): `Menu::default(app)` with the application
   submenu's predefined About item replaced, at the same position, by
-  `MenuItem::with_id(app, "about", "About HoploDex", true, None)`. If the
-  default menu isn't shaped as expected (the first item isn't the predefined
-  About), it is left as Tauri builds it and a warning is logged. On Linux and
+  `MenuItem::with_id(app, "about", "About HoploDex", true, None)`. The item
+  replaced is recognised as a predefined item whose text is "About " and the
+  package name (a `PredefinedMenuItem` exposes no kind). If the default menu
+  isn't shaped as expected (the first item isn't that), it is left as Tauri
+  builds it and a warning is logged. On Linux and
   Windows the app sets no menu, as today. The item id and event names, and the
   mapping between them, compile on every OS and are unit-tested there.
 - **Permissions**: listening needs `core:event:allow-listen`, which

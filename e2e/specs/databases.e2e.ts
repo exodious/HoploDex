@@ -900,7 +900,7 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     await waitForChooser();
   });
 
-  it("opens from the chooser in one action, with the statements, the version, the source address and every component (010 US1-1, SC-001, SC-003, SC-004)", async () => {
+  it("opens from the chooser in one action, with the statements, the version, the source address and every component (010 US1-1, US1-6, SC-001, SC-003, SC-004)", async () => {
     // One action: the chooser's button. The list is timed from the click to
     // the first frame that holds it, the notices' first load included.
     const opened = await browser.execute(async () => {
@@ -1068,7 +1068,7 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     console.log(`010 SC-004: longest of ${frames} scroll frames ${longest.toFixed(0)} ms`);
   });
 
-  it("clears the filter with the first Escape, closes with the second, and returns focus to the button (010 US1-5)", async () => {
+  it("clears the filter with the first Escape, closes with the second, and returns focus to the button (010 contracts/ui.md §3)", async () => {
     await browser.execute((field: string) => {
       const label = [...document.querySelectorAll('[role="dialog"] label')].find(
         (l) => l.textContent?.trim() === field,

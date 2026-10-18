@@ -43,6 +43,10 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuil
 /// §17).
 const QUIT_REQUESTED: &str = "app:quit-requested";
 
+/// The label of the main window, the only web view the frontend's events go to
+/// (the PDF preview's child web view has no listener and gets none; 010 T072).
+const MAIN_WINDOW: &str = "main";
+
 /// The OS is shutting down or ending the application, so its exit request
 /// is let through rather than asked about (003 research.md §17).
 static OS_ENDING: AtomicBool = AtomicBool::new(false);
@@ -50,7 +54,7 @@ static OS_ENDING: AtomicBool = AtomicBool::new(false);
 /// Asks the frontend to quit: the unsaved-changes question first, then
 /// `quit_application` (003 research.md §17).
 fn request_quit(app: &AppHandle) {
-    if let Err(err) = app.emit(QUIT_REQUESTED, ()) {
+    if let Err(err) = app.emit_to(MAIN_WINDOW, QUIT_REQUESTED, ()) {
         log::warn!("could not emit {QUIT_REQUESTED}: {err}");
     }
 }
@@ -286,7 +290,7 @@ fn main() {
             let origins = main_navigation::app_origins(cfg!(windows), dev_url.as_ref());
             #[cfg(windows)]
             let filter_origins = origins.clone();
-            let _main = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+            let _main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::default())
                 .on_navigation(move |url| main_navigation::navigation_allowed(&origins, url))
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .title("HoploDex")
@@ -321,7 +325,7 @@ fn main() {
             // Only the About item is the app's own; the predefined items act
             // by themselves (010 contracts/tauri-commands.md).
             if let Some(name) = app_menu::requested_event(event.id().as_ref())
-                && let Err(err) = app.emit(name, ())
+                && let Err(err) = app.emit_to(MAIN_WINDOW, name, ())
             {
                 log::warn!("could not emit {name}: {err}");
             }

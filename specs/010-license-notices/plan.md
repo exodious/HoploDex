@@ -168,7 +168,9 @@ plan departs from these defaults.*
     among them, and the list's count equal to the build's `notices.json`;
   - the database file and `machine.json` left unchanged;
   - scrolling the whole list without a long frame;
-  - the walk.
+  - the walk, whose shot 102 is the narrow layout's visual check (Vitest reads
+    `about.css` for the one-column rule at `max-width: 900px`, as jsdom lays
+    nothing out).
 - **Security**: About's "no network, no database" is enforced by the CSP and
   by calling no command. `csp_test.rs` already guards the first. The E2E
   journey's SHA-256s and Vitest's "no `invoke`" assertion guard the second.
