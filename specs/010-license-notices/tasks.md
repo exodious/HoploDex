@@ -206,7 +206,7 @@ Existing Tauri desktop app: React/TypeScript frontend in `src/`, Rust backend in
 - [X] T041 [US1] In `specs/003-database-protection-management/spec.md`, beside FR-030, add `_Amended by [spec 010](../010-license-notices/spec.md): About HoploDex (010 FR-001) is a separate screen; "About databases and security" stays the guide._`, and add `AboutDialog` to CLAUDE.md's list of forms and dialogs that share patterns ("UI consistency is a constitution principle")
 - [X] T042 [US1] On Linux, run `scripts/dev-container.sh bash -c 'npm test && npm run lint && npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts && npm run screenshots'`; all must pass. Look at every new shot in both themes for layout, contrast and the narrow width, and keep them for the PR (with "before" shots of the chooser's top bar and the database menu from `main`)
 - [X] T043 [P] [US1] On macOS, in the macOS 26 VM, run `cargo test --manifest-path src-tauri/Cargo.toml --features test-kdf app_menu` and `cargo clippy --all-targets -- -D warnings` (the menu code is compiled only here), then `npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts`, which chooses the menu bar's **About HoploDex**; all must pass
-- [ ] T044 [P] [US1] On Windows, on the Windows test machine, run `npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts`, with its Windows-only OpenSSL and WebView2 loader steps; it must pass
+- [X] T044 [P] [US1] On Windows, on the Windows test machine, run `npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts`, with its Windows-only OpenSSL and WebView2 loader steps; it must pass
 
 **Checkpoint**: About HoploDex works from all three ways in, on every OS, with notices that match the build.
 
