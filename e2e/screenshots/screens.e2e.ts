@@ -1577,6 +1577,74 @@ describe("Screenshots: upgrading a database from an earlier version", () => {
   });
 });
 
+// 010 contracts/ui.md §5: About HoploDex, from the chooser and (at the narrow
+// width) from the database menu, in both themes. The chooser's shots come
+// first, with nothing open.
+describe("Screenshots: About HoploDex", () => {
+  const FILTER = "Find a component";
+
+  /** Shoots the screen in both themes, ending in light. */
+  async function shotBothThemes(name: string) {
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`${name}-${theme.toLowerCase()}`);
+    }
+    await chooseTheme("Light");
+  }
+
+  /** Opens or closes the disclosure titled `title` in the open dialog. */
+  async function toggleDisclosure(title: string) {
+    const clicked = await browser.execute((wanted: string) => {
+      const trigger = [
+        ...document.querySelectorAll<HTMLElement>('[role="dialog"] .hd-disclosure__trigger'),
+      ].find((t) => t.querySelector(".hd-disclosure__title")?.textContent?.trim() === wanted);
+      trigger?.click();
+      return Boolean(trigger);
+    }, title);
+    if (!clicked) throw new Error(`no disclosure "${title}"`);
+    await settle();
+  }
+
+  it("the chooser's About, its license, a component and no match", async () => {
+    await waitForChooser();
+    await chooseTheme("Light");
+    await settleChooserPlate();
+    await clickButton("About HoploDex");
+    await $('[role="dialog"] .hd-about__list').waitForExist({ timeout: 10000 });
+    await settle();
+    await shotBothThemes("98-about-chooser");
+
+    await toggleDisclosure("GNU General Public License, version 3");
+    await $('[role="region"][aria-label="GNU General Public License text"]').waitForExist();
+    await shotBothThemes("99-about-license");
+    await toggleDisclosure("GNU General Public License, version 3");
+
+    await fill(FILTER, "sqlcipher");
+    await toggleDisclosure("SQLCipher");
+    await $('[role="region"][aria-label="SQLCipher license text"]').waitForExist();
+    await shotBothThemes("100-about-component");
+
+    await fill(FILTER, "zzzz");
+    await shotBothThemes("101-about-no-match");
+    await closeDialog();
+  });
+
+  it("at the narrow width, from the database menu", async () => {
+    await selectChooserRow("Main collection");
+    await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+    await chooseMenuItem("button.hd-db-menu", "About HoploDex");
+    await $('[role="dialog"] .hd-about__list').waitForExist({ timeout: 10000 });
+    await settle();
+    // The app's narrow breakpoint (900px) and the window's minimum width.
+    await resizeWindow(800, SCREENSHOT_WINDOW.height);
+    await shotBothThemes("102-about-narrow");
+    await resizeWindow(SCREENSHOT_WINDOW.width, SCREENSHOT_WINDOW.height);
+    await closeDialog();
+    // Back to the chooser, as the walk's other blocks leave it.
+    await switchDatabase();
+  });
+});
+
 // 007 FR-003a: a computer whose PDF viewer can't be
 // used safely. HOPLODEX_E2E_PDF_PREVIEW=off is an E2E-only switch the app reads
 // when it starts, so this one relaunches it (last in the walk: nothing after it

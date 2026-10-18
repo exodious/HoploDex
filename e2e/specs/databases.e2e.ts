@@ -14,6 +14,7 @@ import {
   goTo,
   isButtonDisabled,
   listedNames,
+  pressEscape,
   requestQuit,
   scratchDocuments,
   selectChooserRow,
@@ -755,5 +756,355 @@ describe("009 US3 - A Beta Tester's Database Survives an Upgrade", () => {
     expect(fs.readFileSync(path.join(stranded.folder, "HoploDex backups"), "utf8")).toBe(
       "not a folder",
     );
+  });
+});
+
+// 010 US1: About HoploDex, from the chooser and from an open database. It reads
+// no database or setting (010 SC-005), so the journey takes the SHA-256 of a
+// database file and of machine.json around it. The notices are the
+// `dist/notices.json` the E2E build embedded (the generator writes it for this
+// build's own target), so the component counts and the per-OS components are
+// checked against what this OS ships (010 SC-001, 010 FR-009).
+describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is Built From", () => {
+  const SOURCE_URL = "https://github.com/exodious/HoploDex";
+  const FILTER = "Find a component";
+  const DATABASE = "About";
+  const version = (
+    JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
+      version: string;
+    }
+  ).version;
+  const identifier = (
+    JSON.parse(fs.readFileSync(path.join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8")) as {
+      identifier: string;
+    }
+  ).identifier;
+  // Read in `before`, so a build without notices fails this journey alone.
+  let notices: { components: { name: string }[] };
+  let total = 0;
+  const lockKeys = {
+    key: "l",
+    ctrlKey: process.platform !== "darwin",
+    metaKey: process.platform === "darwin",
+  };
+
+  /** The count line the dialog shows when `query` leaves `shown` of the
+   * components (010 contracts/ui.md §2). */
+  function countLine(query: string): string {
+    const needle = query.trim().toLowerCase();
+    const shown = notices.components.filter((c) => c.name.toLowerCase().includes(needle)).length;
+    const noun = total === 1 ? "component" : "components";
+    return shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`;
+  }
+
+  /** The visible text of the open dialog, whitespace collapsed. */
+  async function aboutText(): Promise<string> {
+    return browser.execute(() =>
+      (document.querySelector('[role="dialog"]')?.textContent ?? "").replace(/\s+/g, " ").trim(),
+    );
+  }
+
+  /** Waits for About's component list: the notices have loaded. */
+  async function waitForAbout() {
+    await $('[role="dialog"] .hd-about__list').waitForExist({ timeout: 10000 });
+    await settle();
+  }
+
+  /** The listed components' titles and summaries, in order. */
+  async function listed(): Promise<{ name: string; summary: string }[]> {
+    return browser.execute(() =>
+      [...document.querySelectorAll('[role="dialog"] .hd-about__list .hd-disclosure')].map(
+        (row) => ({
+          name: row.querySelector(".hd-disclosure__title")?.textContent?.trim() ?? "",
+          summary: row.querySelector(".hd-disclosure__summary")?.textContent?.trim() ?? "",
+        }),
+      ),
+    );
+  }
+
+  /** The text of the button that has focus, or "" when it isn't a button. */
+  async function focusedButton(): Promise<string> {
+    return browser.execute(() => {
+      const active = document.activeElement;
+      return active instanceof HTMLButtonElement ? (active.textContent ?? "").trim() : "";
+    });
+  }
+
+  /** Types `query` into the filter in one input event, as a paste would, and
+   * returns the milliseconds until the count line shows the result (010
+   * SC-004), measured in the page, or -1 when it never did. */
+  async function filterBy(query: string): Promise<number> {
+    const elapsed = await browser.execute(
+      async (query: string, expected: string, field: string) => {
+        const label = [...document.querySelectorAll('[role="dialog"] label')].find(
+          (l) => l.textContent?.trim() === field,
+        ) as HTMLLabelElement;
+        const input = document.getElementById(label.htmlFor) as HTMLInputElement;
+        const started = performance.now();
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          query,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return new Promise<number>((resolve) => {
+          const check = () => {
+            const shown = document.querySelector(".hd-about__count")?.textContent?.trim();
+            if (shown === expected) resolve(performance.now() - started);
+            else if (performance.now() - started > 5000) resolve(-1);
+            else requestAnimationFrame(check);
+          };
+          check();
+        });
+      },
+      query,
+      countLine(query),
+      FILTER,
+    );
+    await settle();
+    expect(elapsed).toBeGreaterThanOrEqual(0);
+    expect(elapsed).toBeLessThan(500);
+    return elapsed;
+  }
+
+  /** Opens or closes the disclosure titled `title` in the open dialog, with
+   * one click on its button. */
+  async function toggleDisclosure(title: string) {
+    const clicked = await browser.execute((wanted: string) => {
+      const trigger = [
+        ...document.querySelectorAll<HTMLElement>('[role="dialog"] .hd-disclosure__trigger'),
+      ].find((t) => t.querySelector(".hd-disclosure__title")?.textContent?.trim() === wanted);
+      trigger?.click();
+      return Boolean(trigger);
+    }, title);
+    if (!clicked) throw new Error(`no disclosure "${title}"`);
+    await settle();
+  }
+
+  /** Presses Ctrl/⌘+L on whatever has focus, as the user would. */
+  async function pressLockShortcut() {
+    await browser.execute((keys) => {
+      (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent("keydown", { ...keys, bubbles: true, cancelable: true }),
+      );
+    }, lockKeys);
+  }
+
+  before(async () => {
+    // The notices the E2E build embedded (the build writes them for its own
+    // target), as they are in the repository's dist/.
+    notices = JSON.parse(fs.readFileSync(path.join(repoRoot, "dist", "notices.json"), "utf8"));
+    total = notices.components.length;
+    // The chooser, whatever an earlier journey left.
+    if (await $('nav[aria-label="Sections"]').isExisting()) await switchDatabase();
+    await waitForChooser();
+  });
+
+  it("opens from the chooser in one action, with the statements, the version, the source address and every component (010 US1-1, SC-001, SC-003, SC-004)", async () => {
+    // One action: the chooser's button. The list is timed from the click to
+    // the first frame that holds it, the notices' first load included.
+    const opened = await browser.execute(async () => {
+      const button = [...document.querySelectorAll("button")].find(
+        (b) => b.textContent?.trim() === "About HoploDex",
+      );
+      if (!button) return -2;
+      const started = performance.now();
+      button.click();
+      return new Promise<number>((resolve) => {
+        const check = () => {
+          if (document.querySelector('[role="dialog"] .hd-about__list .hd-disclosure')) {
+            resolve(performance.now() - started);
+          } else if (performance.now() - started > 5000) resolve(-1);
+          else requestAnimationFrame(check);
+        };
+        check();
+      });
+    });
+    expect(opened).toBeGreaterThanOrEqual(0);
+    expect(opened).toBeLessThan(1000); // 010 SC-004
+    await waitForAbout();
+    await expect($('[role="dialog"] .hd-dialog__title')).toHaveText("About HoploDex");
+
+    // Focus lands on the license disclosure's button once the notices load.
+    expect(await focusedButton()).toContain("GNU General Public License, version 3");
+
+    const text = await aboutText();
+    expect(text).toContain("HoploDex");
+    expect(text).toContain(`Version ${version}`);
+    expect(text).toMatch(/Copyright © 2026(–\d{4})? exodious and the HoploDex contributors/);
+    expect(text).toContain(
+      "HoploDex is free software: you can share it and change it under the terms of the GNU General Public License, version 3 only, as published by the Free Software Foundation.",
+    );
+    expect(text).toContain(
+      "It comes with no warranty, to the extent permitted by law. See the license for details.",
+    );
+    expect(text).toContain("Additional permission under GNU GPL version 3 section 7");
+
+    // The source address is one selection: a click on it selects all of it
+    // (`user-select: all`), and it is the address, as text, not a link.
+    expect(await $(".hd-about__source").getText()).toBe(SOURCE_URL);
+    await $(".hd-about__source").click();
+    expect(await browser.execute(() => window.getSelection()?.toString().trim())).toBe(SOURCE_URL);
+    expect(await $('[role="dialog"] a[href]').isExisting()).toBe(false);
+
+    // Every component of the build's notices, and no more (010 SC-001).
+    expect(await $(".hd-about__count").getText()).toBe(`${total} components`);
+    expect((await listed()).map((row) => row.name)).toEqual(
+      notices.components.map((component) => component.name),
+    );
+  });
+
+  it("shows the license in a second action, and SQLCipher's notice with Zetetic's copyright (010 US1-3, US1-4, SC-003)", async () => {
+    await toggleDisclosure("GNU General Public License, version 3");
+    const gpl = await $('[role="region"][aria-label="GNU General Public License text"]');
+    await gpl.waitForExist();
+    expect((await gpl.getText()).trim().startsWith("GNU GENERAL PUBLIC LICENSE")).toBe(true);
+    await toggleDisclosure("GNU General Public License, version 3");
+
+    await filterBy("sqlcipher");
+    const rows = await listed();
+    expect(rows.length).toBeGreaterThan(0);
+    const sqlcipher = rows.find((row) => row.name.toLowerCase() === "sqlcipher");
+    expect(sqlcipher).toBeDefined();
+    await toggleDisclosure(sqlcipher!.name);
+    const region = await $(`[role="region"][aria-label="${sqlcipher!.name} license text"]`);
+    await region.waitForExist();
+    expect(await region.getText()).toContain("Zetetic LLC");
+    await toggleDisclosure(sqlcipher!.name);
+
+    await filterBy("zzzz");
+    expect(await $("[role='dialog']").getText()).toContain("No component matches “zzzz”.");
+    expect(await $('[role="dialog"] .hd-about__list').isExisting()).toBe(false);
+
+    await filterBy("");
+    expect(await $(".hd-about__count").getText()).toBe(`${total} components`);
+    expect((await listed()).length).toBe(total);
+  });
+
+  it("lists the components this OS ships, and not another's (010 SC-001, FR-009)", async () => {
+    const none = async (query: string) => {
+      await filterBy(query);
+      expect(await aboutText()).toContain(`No component matches “${query}”.`);
+    };
+    const found = async (query: string) => {
+      await filterBy(query);
+      const rows = await listed();
+      expect(rows.length).toBeGreaterThan(0);
+      return rows;
+    };
+
+    if (process.platform === "linux") {
+      expect((await found("webkit2gtk")).map((row) => row.name)).toContain("webkit2gtk");
+      await none("objc2");
+    } else if (process.platform === "darwin") {
+      expect((await found("objc2")).map((row) => row.name)).toContain("objc2");
+      await none("webkit2gtk");
+    } else {
+      const openssl = (await found("openssl")).find((row) => row.name.toLowerCase() === "openssl");
+      expect(openssl).toBeDefined();
+      expect(openssl!.summary).toMatch(/^3\./);
+      expect(openssl!.summary).toContain("Apache-2.0");
+      const loader = (await found("webview2")).find(
+        (row) => row.name === "Microsoft WebView2 loader",
+      );
+      expect(loader).toBeDefined();
+      expect(loader!.summary).toContain("BSD-3-Clause");
+      await none("webkit2gtk");
+    }
+  });
+
+  it("scrolls the whole list with no frame over 100 ms (010 SC-004)", async () => {
+    await filterBy("");
+    expect((await listed()).length).toBe(total);
+    // One viewport height per animation frame, from the top to the bottom.
+    const { longest, frames } = await browser.execute(async () => {
+      const body = document.querySelector<HTMLElement>(".hd-dialog__body")!;
+      body.scrollTop = 0;
+      return new Promise<{ longest: number; frames: number }>((resolve) => {
+        let last = performance.now();
+        let longest = 0;
+        let frames = 0;
+        const step = () => {
+          const now = performance.now();
+          longest = Math.max(longest, now - last);
+          last = now;
+          frames += 1;
+          if (body.scrollTop + body.clientHeight >= body.scrollHeight - 1) {
+            resolve({ longest, frames });
+            return;
+          }
+          body.scrollTop += body.clientHeight;
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      });
+    });
+    expect(frames).toBeGreaterThan(1);
+    expect(longest).toBeLessThan(100);
+  });
+
+  it("clears the filter with the first Escape, closes with the second, and returns focus to the button (010 US1-5)", async () => {
+    await browser.execute((field: string) => {
+      const label = [...document.querySelectorAll('[role="dialog"] label')].find(
+        (l) => l.textContent?.trim() === field,
+      ) as HTMLLabelElement;
+      document.getElementById(label.htmlFor)!.focus();
+    }, FILTER);
+    await filterBy("zzzz");
+
+    await pressEscape();
+    await expect($(".hd-about__count")).toHaveText(`${total} components`);
+    expect(await $('[role="dialog"]').isExisting()).toBe(true);
+
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    expect(await focusedButton()).toBe("About HoploDex");
+  });
+
+  it("opens from the database menu without reading or writing the database or machine.json, and Ctrl/⌘+L locks with it open (010 US1-2, SC-005)", async () => {
+    await createDatabase({ name: DATABASE });
+    const database = path.join(scratchDocuments(), "HoploDex", `${DATABASE}.hoplodex`);
+    const machine = path.join(process.env.HOPLODEX_E2E_CONFIG_HOME!, identifier, "machine.json");
+    // Opening and locking a database write both files themselves, so the
+    // hashes are taken just around About.
+    const before = { database: sha256Of(database), machine: sha256Of(machine) };
+
+    await chooseMenuItem("button.hd-db-menu", "About HoploDex");
+    await waitForAbout();
+    expect(await focusedButton()).toContain("GNU General Public License, version 3");
+    expect(await $(".hd-about__count").getText()).toBe(`${total} components`);
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    expect(sha256Of(database)).toBe(before.database);
+    expect(sha256Of(machine)).toBe(before.machine);
+
+    // Open again: a lock ends the session, and About with it, without asking.
+    await chooseMenuItem("button.hd-db-menu", "About HoploDex");
+    await waitForAbout();
+    await pressLockShortcut();
+    await waitForChooser();
+    expect(await $('[role="dialog"]').isExisting()).toBe(false);
+    expect(await $('[role="alertdialog"]').isExisting()).toBe(false);
+  });
+
+  it("opens from the macOS menu bar, from the chooser and with a database open, in HoploDex's own window (010 US1-7)", async function () {
+    skipWithoutMacInput(this);
+    chooseMenuBarItem(appPid(), "About HoploDex");
+    await waitForAbout();
+    // The app's own About, not the system's panel: the dialog is the page's,
+    // and the app has no other window.
+    expect(await $('[role="dialog"] .hd-dialog__title').getText()).toBe("About HoploDex");
+    expect((await browser.getWindowHandles()).length).toBe(1);
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+
+    await selectChooserRow(DATABASE);
+    await unlock(E2E_PASSPHRASE);
+    chooseMenuBarItem(appPid(), "About HoploDex");
+    await waitForAbout();
+    expect(await $('[role="dialog"] .hd-dialog__title').getText()).toBe("About HoploDex");
+    expect((await browser.getWindowHandles()).length).toBe(1);
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 });
