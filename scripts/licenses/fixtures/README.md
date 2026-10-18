@@ -32,6 +32,7 @@ fixtures/
   records/<case>/licenses/ a red case: the same shape as project/licenses/, only what the case needs
   cargo/                   recorded cargo output (below)
   openssl/<version>/include/openssl/opensslv.h
+  vite-app/                the tiny app vitePlugin.test.ts builds (below)
 ```
 
 A case's repository root is the folder above its `licenses/`; a record's
@@ -85,6 +86,7 @@ trees (`L` Linux, `W` Windows, `M` macOS).
 | `dual-by-content` 1.0.0 | no | MIT in `LICENSE`, Apache in `COPYING`: placed by content |
 | `ships-license` 1.0.0 | no | ships `LICENSE`: a stale exception |
 | `changed-license` 1.0.0 | no | declares "MIT OR Apache-2.0" where an exception recorded "MIT" |
+| `quux` 2.0.0 | `gpl-crate` variant | "GPL-2.0-only" (below, "Recorded cargo output") |
 
 Crate folders have a `Cargo.toml` naming the `license`. Texts are short but keep
 each license's real opening lines, which is what the matcher reads. Every
@@ -125,6 +127,24 @@ Variants (`cargo/variants/<name>/`, each replacing only the files it has):
 | `no-sqlcipher-feature` | all trees | the carrier with only `default`, without `bundled-sqlcipher` |
 | `extra-crate` | the Linux tree | `extra v1.0.0` added: its notice appears, and only on Linux |
 | `path-package` | the Linux tree | a path package that isn't `hoplodex` (`rogue`): must fail |
+| `gpl-crate` | the Linux tree and metadata | `quux` 2.0.0 under GPL-2.0-only (`registry/quux-2.0.0`): not an allowed license |
+
+## The tiny Vite app (`vite-app/`)
+
+`vitePlugin.test.ts` builds these with Vite's `build()` and `hoplodexNotices()`.
+The packages are `project/modules/{shipped-mit,@scope/shipped-scoped,dev-tool}`,
+each with an `index.js` (`export const name = "<package>"`, which no license
+rule reads); the test aliases each package name to its folder, since `modules/`
+stands for `node_modules`. The marker below is passed to the plugin as a
+withdrawn entry, not read from `policy.mjs`.
+
+| Entry | Imports | Shows |
+| --- | --- | --- |
+| `main.js` (+ `worker.js`) | `shipped-mit`, `@scope/shipped-scoped`; the worker imports `shipped-mit` | the good build; reads `__HOPLODEX_PROGRAM__` |
+| `main-dev.js` | `dev-tool` (marked `dev` in `project/lock.json`) | a bundled package outside the shipped set, in the main bundle |
+| `main-dev-worker.js` (+ `dev-worker.js`) | the worker imports `dev-tool` | the same, only in the worker's bundle |
+| `main-withdrawn.js` | `withdrawn.json` | the marker `fixture-withdrawn-marker-7Qz` in the main bundle |
+| `main-withdrawn-worker.js` (+ `withdrawn-worker.js`) | the worker imports `withdrawn.json` | the marker only in the worker's bundle |
 
 ## Records (`project/licenses/`, `records/<case>/licenses/`)
 
