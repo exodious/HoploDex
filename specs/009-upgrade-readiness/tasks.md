@@ -299,7 +299,7 @@ Done when the pull request is opened, not before (CLAUDE.md; plan.md "Close-out 
 - [X] T106 [US1] (LOW, doc drift; CLAUDE.md "Keep those references accurate") Fix `src-tauri/tests/record_identifier_test.rs`'s citations: the refusals of a missing, malformed or reused `uid` (near :441 and :556) cite `009 US1-1, 009 FR-001`; backup, restore and passphrase change (near :730) cite `009 US1-3, 009 FR-002, 009 SC-001`; a new record after deleting the newest (near :788) cites `009 US1-4, 009 SC-002`
 - [ ] T107 On Linux, run the whole Rust suite (with `test-kdf`, and the `mock-keyring` run of T100), `npm test`, clippy, fmt, citations, and `npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts`; all must pass
 - [ ] T108 [P] On macOS, in the macOS 26 VM, run `cargo test --features test-kdf`, the `mock-keyring` run and `npm test` after T098–T106
-- [ ] T109 [P] On Windows, on the Windows test machine, run `cargo test --features test-kdf`, the `mock-keyring` run and `npm test` after T098–T106 (T102's rename is the Windows-specific part)
+- [X] T109 [P] On Windows, on the Windows test machine, run `cargo test --features test-kdf`, the `mock-keyring` run and `npm test` after T098–T106 (T102's rename is the Windows-specific part)
 
 ---
 
