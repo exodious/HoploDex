@@ -12,15 +12,18 @@
 
 ### Session 2026-10-18
 
-- Q: Where does each release publish the Flatpak? → A: Flathub, which gives users updates and a store listing and installs the runtime from Flathub with its source (010 FR-017). The project also builds a `.flatpak` locally for its own testing, but doesn't publish it (FR-020).
+- Q: Where does each release publish the Flatpak? → A: Flathub, which gives users updates and a store listing and installs the runtime from Flathub with its source (010 FR-017). The project also builds a `.flatpak` locally for its own testing, but doesn't publish it (FR-020). _Narrowed by a later answer below: this feature publishes nothing; the 0.1.0 release goes to Flathub._
 - Q: How much of the filesystem may the Flatpak reach? → A: The user's home folder and removable drives (`/media`, `/run/media`, `/mnt`), so every location inside them that works on a `.deb` install works here, typed paths included; anything else only as a single file picked through the desktop's file chooser or dropped, with FR-004's message for whatever needs a folder outside them (FR-003).
 - Q: How does the Flatpak reach the keyring for saved passphrases? → A: Through the desktop's Secret Service, as the `.deb` does, with the same entries. The sandbox doesn't narrow what the keyring lets HoploDex reach, which this feature's research records with the permissions (FR-002, FR-006).
+- Q: Flathub can't keep an app hidden before its release (a merged submission is published within hours, the submission is a public pull request, and the only unlisting is end-of-life), so how does this feature deliver the Flatpak? → A: It makes the Flatpak buildable and ready for Flathub, and publishes nothing: no Flathub submission, no Flathub test build, no `.flatpak` with a release. The 0.1.0 release goes to Flathub, and that submission is the release process's (#19), when the owner chooses to release (Story 4, FR-020).
+- Q: Which processor architectures does the Flatpak build for? → A: x86-64 only, limited in what Flathub is given so it doesn't build ARM64 either; ARM64 can come later with the other Linux bundles (#19) (FR-025).
+- Q: When does the automated Flatpak check run? → A: Ordinary testing makes no release build or bundle today (the E2E suite builds the `e2e` profile and packages nothing), so it doesn't run with every test run. It is required before each release, and for any pull request that changes the Flatpak recipe, its permissions, the offline source lists, or code the sandbox affects: the Linux OS notices, the keyring, file replacement, backups, drops, document opening and the helpers (FR-021).
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their Collection in It (Priority: P1)
 
-A collector on Linux installs HoploDex as a Flatpak, from the place releases are published (FR-018), and starts it from their desktop's application list. Everything they do on any other Linux install works the same: they create a database in the suggested `HoploDex` folder in Documents or a folder of their own, open one they already have, on a removable drive too, and the backups appear in `HoploDex backups` beside it or in the folder they chose. They change the passphrase, restore a backup, import and export a spreadsheet, attach photos and documents by choosing them or dropping them from the file manager, preview a document, and open one in its usual application. They save a passphrase so the database opens without asking. Nothing tells them they are in a sandbox unless something they asked for is outside what the sandbox lets HoploDex reach, and then it says what and how to fix it.
+A collector on Linux installs HoploDex as a Flatpak (from Flathub once 0.1.0 is released; until then, from the project's own build) and starts it from their desktop's application list. Everything they do on any other Linux install works the same: they create a database in the suggested `HoploDex` folder in Documents or a folder of their own, open one they already have, on a removable drive too, and the backups appear in `HoploDex backups` beside it or in the folder they chose. They change the passphrase, restore a backup, import and export a spreadsheet, attach photos and documents by choosing them or dropping them from the file manager, preview a document, and open one in its usual application. They save a passphrase so the database opens without asking. Nothing tells them they are in a sandbox unless something they asked for is outside what the sandbox lets HoploDex reach, and then it says what and how to fix it.
 
 **Why this priority**: It is the feature. 010 FR-017 made the Flatpak the published self-contained Linux bundle, in place of the AppImage, so a Linux user who can't or won't use a `.deb` or `.rpm` has no other release to install. A Flatpak that starts but can't keep backups beside the database, or loses the recent list, is worse than none, because it fails at the moment the user needs it.
 
@@ -63,7 +66,7 @@ A collector relies on HoploDex locking the database when the computer sleeps, th
 
 The maintainer runs one command beside `npm run bundle:linux` and gets a Flatpak built from the project's own source, with no network during the build, as Flathub requires. The lists of downloaded dependencies the offline build needs are made from the lockfiles, and a check fails when they fall behind. The bundle carries the plain-text notices beside the program (010 FR-011, #19), its desktop entry, AppStream metadata and icon, and none of the runtime it runs on. The dependency and license audit covers what it ships, and the build runs in the dev container where the tools work there, with the development instructions saying how.
 
-**Why this priority**: Without it there is nothing to publish, but it is the maintainer's journey, not the collector's, and Stories 1 and 2 decide what the build must contain.
+**Why this priority**: Without it there is nothing to release, but it is the maintainer's journey, not the collector's, and Stories 1 and 2 decide what the build must contain.
 
 **Independent Test**: In the dev container, run the Flatpak build command from a clean checkout with the network cut off after the dependency sources are fetched: it produces an installable Flatpak. Change a dependency in a lockfile without updating the offline source lists: the check fails and names them. Open the bundle: the notices file, desktop entry, AppStream metadata and icon are there and pass their validators, and no runtime library is inside.
 
@@ -78,20 +81,22 @@ The maintainer runs one command beside `npm run bundle:linux` and gets a Flatpak
 
 ---
 
-### User Story 4 - Linux Users Get HoploDex and Its Updates Through Flathub (Priority: P2)
+### User Story 4 - The Flatpak Is Ready to Submit to Flathub When the Owner Releases (Priority: P2)
 
-A Linux user finds HoploDex on Flathub, installs it with their desktop's software centre or one command, and receives each new release as an update, with the same version, release notes and license as every other bundle of that release. The release process (#19) says how each release reaches Flathub.
+When the owner decides to release 0.1.0, everything Flathub asks of a new app is already there and already checked: a build recipe that builds from the project's public source with no network, the AppStream metadata for its listing (name, summary, description, license, source address, release notes, screenshots and content rating), the reason for each permission it asks for, and written steps for the submission. Until then nothing reaches Flathub or anyone else: no submission, no test build on Flathub's servers, no bundle with a release. An installed copy updating to a newer build works, shown with the project's own builds.
 
-**Why this priority**: Updates are one of the issue's reasons for a Flatpak. It follows Story 3 because publishing needs a build, and Flathub's review of a new app runs on its own timetable.
+**Why this priority**: The 0.1.0 release goes to Flathub, and a Flathub submission can't be withdrawn from view once merged, so it has to be right the first time, at a moment the owner picks. Preparing and checking it here keeps the release itself to one step. It follows Story 3 because it needs the build.
 
-**Independent Test**: Take a release candidate through Flathub's build of the app's submission or update (its test build), install that build, then publish the next version and confirm the installed copy updates to it.
+**Independent Test**: Run Flathub's own checks (its manifest and metadata linter, its AppStream validation) locally against the recipe and the built Flatpak: they pass. Follow the written submission steps up to, and not including, opening the submission: each step's inputs exist. Install one build of the Flatpak from a local repository, build the next version into that repository, and confirm the installed copy offers and takes the update, after which its database opens as before. Confirm nothing was sent to Flathub.
 
 **Acceptance Scenarios**:
 
-1. **Given** a release, **When** the release process is followed, **Then** the Flatpak of that version is published on Flathub with the other bundles, under the app id `io.github.exodious.HoploDex`.
-2. **Given** a user with the previous release installed as a Flatpak, **When** the next release is published, **Then** their install offers it as an update, and after it the database they had open opens as before (009's upgrade question if its layout is older).
-3. **Given** the Flatpak's Flathub listing, **When** a user reads it, **Then** it names the license as GPL-3.0-only, links the source, and describes what the app is and that it keeps everything on the computer, with screenshots taken from the app.
-4. **Given** the published Flatpak, **When** a user installs it, **Then** its runtime comes from Flathub with its source (010 FR-017), not from a copy packed into what HoploDex publishes.
+1. **Given** the build recipe, the AppStream metadata and the built Flatpak, **When** Flathub's linter and validators run on them locally, **Then** they pass, or every exception they report is one Flathub documents as allowed, with its reason recorded for the submission.
+2. **Given** the written release steps (#19), **When** the owner releases 0.1.0, **Then** they say how to submit the app to Flathub under the app id `io.github.exodious.HoploDex`, verify the app id, and publish later releases as updates, and the recipe they submit is the one the project builds with.
+3. **Given** the AppStream metadata, **When** it is read, **Then** it names the license as GPL-3.0-only, links the source, and describes what the app is and that it keeps everything on the computer, with screenshots taken from the app.
+4. **Given** a Flatpak installed from a local repository, **When** a newer build is added to that repository, **Then** the installed copy offers it as an update, and after it the database it had open opens as before (009's upgrade question if its layout is older).
+5. **Given** the built Flatpak, **When** it is installed, **Then** its runtime comes from Flathub with its source (010 FR-017), not from a copy packed into the bundle.
+6. **Given** this feature's work, **When** it is complete, **Then** no submission, pull request, test build or bundle of HoploDex has been sent to Flathub or attached to a release.
 
 ---
 
@@ -105,9 +110,10 @@ The maintainer runs an automated check of the Flatpak in its sandbox, which driv
 
 **Acceptance Scenarios**:
 
-1. **Given** the automated Flatpak check, **When** it runs, **Then** it starts the Flatpak build in its sandbox with the permissions it ships with and covers at least: create, close with a backup, reopen from the recent list, change passphrase, restore, a file dropped onto a record, a document opened in another application, a saved passphrase, and a sleep and a screen-lock notice locking the database.
-2. **Given** the automated Flatpak check, **When** it runs, **Then** it uses a throwaway Flatpak installation, home, config, Documents and keyring, and leaves the developer's own untouched (constitution II).
-3. **Given** the manual procedures (#37), **When** a release is prepared, **Then** they include the Flatpak's steps the automated check can't take (a real sleep, a real screen lock, a drop from the desktop's own file manager), naming the database and passphrase each step uses.
+1. **Given** a release, or a pull request that changes the Flatpak recipe, its permissions, the offline source lists or code the sandbox affects, **When** its checks run, **Then** the automated Flatpak check is among them; ordinary test runs skip it.
+2. **Given** the automated Flatpak check, **When** it runs, **Then** it starts the Flatpak build in its sandbox with the permissions it ships with and covers at least: create, close with a backup, reopen from the recent list, change passphrase, restore, a file dropped onto a record, a document opened in another application, a saved passphrase, and a sleep and a screen-lock notice locking the database.
+3. **Given** the automated Flatpak check, **When** it runs, **Then** it uses a throwaway Flatpak installation, home, config, Documents and keyring, and leaves the developer's own untouched (constitution II).
+4. **Given** the manual procedures (#37), **When** a release is prepared, **Then** they include the Flatpak's steps the automated check can't take (a real sleep, a real screen lock, a drop from the desktop's own file manager), naming the database and passphrase each step uses.
 
 ---
 
@@ -156,11 +162,13 @@ The maintainer runs an automated check of the Flatpak in its sandbox, which driv
 
 **Publishing it**
 
-- **FR-020**: Each release MUST publish the Flatpak on Flathub, built there from the same recipe and source as the project's own build, at the same version as the other bundles, and the release process (#19) MUST say how, including the first submission and Flathub's verification of the app id. A `.flatpak` bundle built locally MUST NOT be published with a release.
+- **FR-020**: This feature MUST NOT publish the Flatpak anywhere: no Flathub submission or pull request, no build on Flathub's servers, no `.flatpak` attached to a release. It MUST leave the app ready for the 0.1.0 release to submit to Flathub: the recipe Flathub would build from is the one the project builds with; Flathub's linter and AppStream validation pass locally (or each documented exception is recorded with its reason); the permission reasons (FR-002) are written for the submission; and the release process (#19) gains the steps to submit the app, verify its app id and publish later releases as updates, taken when the owner chooses to release. A `.flatpak` built locally MUST NOT be published with a release.
+- **FR-024**: Updating an installed Flatpak to a newer build MUST be shown to work with the project's own builds, from a local repository, keeping the user's settings, recent list and saved passphrases, and opening the database as before (009 if its layout is older).
+- **FR-025**: The Flatpak MUST be built for x86-64 only, and what is prepared for Flathub (FR-020) MUST limit Flathub's builds to x86-64, so no ARM64 build is made or published untested.
 
 **Testing it**
 
-- **FR-021**: An automated check MUST run the Flatpak build, with the permissions it ships with, in a throwaway Flatpak installation with throwaway home, config, Documents and keyring, and cover Story 5's journey. It MUST NOT read, write or delete the developer's real databases, backups, config, keyring entries or Flatpak installation (constitution II; CLAUDE.md, "Never touch the real databases").
+- **FR-021**: An automated check MUST run the Flatpak build, with the permissions it ships with, in a throwaway Flatpak installation with throwaway home, config, Documents and keyring, and cover Story 5's journey. It MUST be required before each release and for every pull request that changes the Flatpak recipe, its permissions, the offline source lists, or code the sandbox affects (the Linux OS notices, the keyring, file replacement, backups, drops, document opening, the helpers); the development instructions MUST list which paths those are. Ordinary test runs MAY skip it. It MUST NOT read, write or delete the developer's real databases, backups, config, keyring entries or Flatpak installation (constitution II; CLAUDE.md, "Never touch the real databases").
 - **FR-022**: The manual procedures run before each release (#37) MUST include the Flatpak steps the automated check can't take, naming the database and passphrase each step uses.
 - **FR-023**: The development instructions MUST describe how to build, install into a throwaway installation, run and test the Flatpak, and how to regenerate the offline source lists; CLAUDE.md MUST point to them.
 
@@ -182,17 +190,19 @@ The maintainer runs an automated check of the Flatpak in its sandbox, which driv
 - **SC-005**: The built Flatpak's metadata and desktop entry pass Flathub's validators with 0 errors, and the bundle carries 0 runtime libraries.
 - **SC-006**: Interactive actions stay within the constitution's budgets in the Flatpak (search ≤500 ms and actions ≤1 s at 10,000 items), and a cold start reaches the chooser within 1 second of a `.deb` install's cold start on the same computer.
 - **SC-007**: After the automated Flatpak check runs on a machine with real data, 0 files, settings, keyring entries or installed apps of the developer's own have changed.
-- **SC-008**: A user with the previous Flatpak release installed receives the next release as an update with 0 manual steps beyond their desktop's usual update.
+- **SC-008**: A Flatpak installed from a local repository takes a newer build as an update with 0 manual steps beyond the usual update command, keeping 100% of its settings, recent list and saved passphrases.
+- **SC-009**: When this feature is complete, 0 submissions, pull requests, test builds or bundles of HoploDex have been sent to Flathub or attached to a release.
 
 ## Assumptions
 
-- **Replaces the AppImage as the published self-contained bundle**: 010 FR-017 decided this; the AppImage stays buildable and unpublished, and nothing here changes it. The `.deb` and `.rpm` are unchanged.
+- **Replaces the AppImage as the published self-contained bundle**, from the 0.1.0 release on (this feature publishes nothing, FR-020): 010 FR-017 decided this; the AppImage stays buildable and unpublished, and nothing here changes it. The `.deb` and `.rpm` are unchanged.
 - **The runtime**: GNOME's Flathub runtime is the likely fit, since it carries WebKitGTK 4.1 and GTK 3; the plan confirms the branch and the web view version against what HoploDex needs (FR-016).
 - **Built from source**: Flathub requires a build from source with no network, so the plan builds from source rather than repackaging the `.deb`. The recipe the project builds with is the one Flathub builds from (FR-020).
-- **Linux on x86-64 first**: other architectures are in scope only if the release process (#19) builds other Linux bundles for them.
+- **x86-64 only**: the machines the sandbox and the helpers' confinement are tested on are x86-64; ARM64 waits for the other Linux bundles (#19) (FR-025).
 - **No change to the database format, IPC or the frontend's behaviour** beyond the out-of-reach messages (FR-004) and the guide's note (FR-009). If those messages change a dialog, the dialog patterns and screenshots follow (constitution III).
 - **Sleep and shutdown notices keep coming from logind** with the permission to talk to it on the system bus, since the desktop portal reports a session ending but offers no delay before sleep; the plan confirms the store accepts the permission and records it (FR-002).
 - **Signing, installers and the rest of the release** are #19's; this feature supplies the Flatpak and its part of the written release process.
+- **Publishing is the release's, not this feature's**: Flathub offers no way to keep a merged app hidden or to schedule when it appears ([submission](https://docs.flathub.org/docs/for-app-authors/submission) and [maintenance](https://docs.flathub.org/docs/for-app-authors/maintenance) docs, read 2026-10-18), and its beta remote is meant to be temporary. So the first submission waits for the owner's decision to release 0.1.0 (FR-020).
 - **Automating the OS event checks generally** is #36's; this feature's automated check sends the notices the Flatpak needs to see (Story 5) and reuses whatever #36 has built by then.
 - **Testing**: the sandbox-specific behaviour (out-of-reach checks, path forms for drops, keyring and notice availability) is tested at the cheapest level that shows it; the journey under the real sandbox by the automated Flatpak check (FR-021), which runs where Flatpak tooling is available and is documented where it isn't (constitution II).
 
