@@ -863,6 +863,7 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     await settle();
     expect(elapsed).toBeGreaterThanOrEqual(0);
     expect(elapsed).toBeLessThan(500);
+    console.log(`010 SC-004: filter "${query}" shown ${elapsed.toFixed(0)} ms after typing`);
     return elapsed;
   }
 
@@ -907,6 +908,9 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
         (b) => b.textContent?.trim() === "About HoploDex",
       );
       if (!button) return -2;
+      // A real click focuses the button where the OS focuses buttons on a
+      // click (not macOS); the dialog gives focus back to it on close.
+      button.focus();
       const started = performance.now();
       button.click();
       return new Promise<number>((resolve) => {
@@ -921,6 +925,7 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     });
     expect(opened).toBeGreaterThanOrEqual(0);
     expect(opened).toBeLessThan(1000); // 010 SC-004
+    console.log(`010 SC-004: About's list shown ${opened.toFixed(0)} ms after the click`);
     await waitForAbout();
     await expect($('[role="dialog"] .hd-dialog__title')).toHaveText("About HoploDex");
 
@@ -939,11 +944,31 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     );
     expect(text).toContain("Additional permission under GNU GPL version 3 section 7");
 
-    // The source address is one selection: a click on it selects all of it
-    // (`user-select: all`), and it is the address, as text, not a link.
+    // The source address is one selection (`user-select: all`), and it is the
+    // address, as text, not a link. Only a real pointer press makes the
+    // selection, which WebDriver's click doesn't on WebKitGTK, macOS WebKit
+    // or WebView2; so Linux clicks with the X server's pointer, and the other
+    // OSes (no real-input helper there) check the style that does it and
+    // that the one text node selects whole.
     expect(await $(".hd-about__source").getText()).toBe(SOURCE_URL);
-    await $(".hd-about__source").click();
-    expect(await browser.execute(() => window.getSelection()?.toString().trim())).toBe(SOURCE_URL);
+    if (HAS_REAL_INPUT) {
+      await realClick(".hd-about__source");
+      expect(await browser.execute(() => window.getSelection()?.toString().trim())).toBe(
+        SOURCE_URL,
+      );
+    } else {
+      const { style, selected } = await browser.execute(() => {
+        const el = document.querySelector(".hd-about__source")!;
+        const css = getComputedStyle(el);
+        window.getSelection()?.selectAllChildren(el);
+        return {
+          style: css.userSelect || css.getPropertyValue("-webkit-user-select"),
+          selected: window.getSelection()?.toString().trim(),
+        };
+      });
+      expect(style).toBe("all");
+      expect(selected).toBe(SOURCE_URL);
+    }
     expect(await $('[role="dialog"] a[href]').isExisting()).toBe(false);
 
     // Every component of the build's notices, and no more (010 SC-001).
@@ -1040,6 +1065,7 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     });
     expect(frames).toBeGreaterThan(1);
     expect(longest).toBeLessThan(100);
+    console.log(`010 SC-004: longest of ${frames} scroll frames ${longest.toFixed(0)} ms`);
   });
 
   it("clears the filter with the first Escape, closes with the second, and returns focus to the button (010 US1-5)", async () => {

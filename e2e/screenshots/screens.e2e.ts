@@ -1605,6 +1605,21 @@ describe("Screenshots: About HoploDex", () => {
     await settle();
   }
 
+  /** The database menu open, in both themes, for the before/after pair. */
+  async function shotOpenDatabaseMenu() {
+    const trigger = await $("button.hd-db-menu");
+    await browser.execute((element: HTMLElement) => {
+      element.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+      );
+    }, trigger);
+    await $('[role="menu"]').waitForExist({ timeout: 5000 });
+    await settle();
+    await shotBothThemes("103-database-menu");
+    await pressEscape();
+    await $('[role="menu"]').waitForExist({ reverse: true });
+  }
+
   it("the chooser's About, its license, a component and no match", async () => {
     await waitForChooser();
     await chooseTheme("Light");
@@ -1622,6 +1637,14 @@ describe("Screenshots: About HoploDex", () => {
     await fill(FILTER, "sqlcipher");
     await toggleDisclosure("SQLCipher");
     await $('[role="region"][aria-label="SQLCipher license text"]').waitForExist();
+    // The opened row sits below the dialog's fold: bring it to the top.
+    await browser.execute(() => {
+      document
+        .querySelector('[role="region"][aria-label="SQLCipher license text"]')
+        ?.closest(".hd-disclosure")
+        ?.scrollIntoView({ block: "start" });
+    });
+    await settle();
     await shotBothThemes("100-about-component");
 
     await fill(FILTER, "zzzz");
@@ -1632,6 +1655,7 @@ describe("Screenshots: About HoploDex", () => {
   it("at the narrow width, from the database menu", async () => {
     await selectChooserRow("Main collection");
     await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
+    await shotOpenDatabaseMenu();
     await chooseMenuItem("button.hd-db-menu", "About HoploDex");
     await $('[role="dialog"] .hd-about__list').waitForExist({ timeout: 10000 });
     await settle();
