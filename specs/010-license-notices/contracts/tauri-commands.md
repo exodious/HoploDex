@@ -25,8 +25,11 @@ unchanged, and `acl_manifest_test.rs` has nothing new to check.
   (`src-tauri/src/app_menu.rs`): `Menu::default(app)` with the application
   submenu's predefined About item replaced, at the same position, by
   `MenuItem::with_id(app, "about", "About HoploDex", true, None)`. The item
-  replaced is recognised as a predefined item whose text is "About " and the
-  package name (a `PredefinedMenuItem` exposes no kind). If the default menu
+  replaced is recognised as a predefined item whose text is "About" or starts
+  with "About " (`app_menu::is_default_about_text`; a `PredefinedMenuItem`
+  exposes no kind, and on macOS muda names it after the running application's
+  localized name, which is "hoplodex" for the bare E2E binary, not the
+  package name). If the default menu
   isn't shaped as expected (the first item isn't that), it is left as Tauri
   builds it and a warning is logged. On Linux and
   Windows the app sets no menu, as today. The item id and event names, and the
