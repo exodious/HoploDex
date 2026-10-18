@@ -1421,6 +1421,7 @@ container keeps the data in `~/human-testing` in its home volume (via
 ```bash
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
 cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml --features test-kdf -- -D warnings
+cargo clippy --lib --bins --examples --manifest-path src-tauri/Cargo.toml -- -D warnings   # the build without the test hooks
 npm run lint             # eslint, --max-warnings 0
 npm run format:check     # prettier
 ```
