@@ -1098,7 +1098,8 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     await pressEscape();
     await $('[role="dialog"]').waitForExist({ reverse: true });
 
-    await selectChooserRow(DATABASE);
+    // A lock leaves the database's row selected, asking for its passphrase.
+    if ((await selectedChooserRow()) !== DATABASE) await selectChooserRow(DATABASE);
     await unlock(E2E_PASSPHRASE);
     chooseMenuBarItem(appPid(), "About HoploDex");
     await waitForAbout();
