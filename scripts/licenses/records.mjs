@@ -4,20 +4,21 @@
 // The checks take what a target ships as a parameter (`ctx`), so the tests need
 // neither `cargo` nor the real `node_modules`:
 //
-//   ctx = { root, triple, allTargets?, openSslDir?,
+//   ctx = { root, triple, allTargets?, env?,
 //           crates: [{ name, version, folder, license, features?, nativeBuild? }],
 //           npm:    [{ name, version, folder, license }] }
 //
 // `root` is the repository root (a `licenses/texts/...` path resolves against
-// it), the operating system comes from `triple`, `features` are the carrier's
-// enabled features, and `nativeBuild` lists the `cc`/`cmake` build dependencies
-// enabled for the triple.
+// it), the operating system comes from `triple`, `env` holds the variables a
+// Windows check finds OpenSSL's headers through (`openSslIncludeDir`),
+// `features` are the carrier's enabled features, and `nativeBuild` lists the
+// `cc`/`cmake` build dependencies enabled for the triple.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { isAllowed } from "./policy.mjs";
-import { findTexts } from "./licenseFiles.mjs";
+import { alternativesOf, findTextsAmong } from "./licenseFiles.mjs";
 import { choose } from "./spdx.mjs";
 
 const FILES = {
@@ -52,6 +53,16 @@ const REQUIRED = {
   nativeCode: ["crate", "what", "note"],
 };
 
+/** What a hand-recorded entry's `os` and `kind` may hold (010 data-model.md, "Hand-recorded entry"). */
+const OSES = ["linux", "windows", "macos"];
+const KINDS = ["compiled-in", "linked", "data"];
+/** The list fields that must hold at least one item, per file. */
+const NEEDS_ONE = {
+  handRecorded: ["os", "texts"],
+  exceptions: ["texts"],
+  clarifications: ["files"],
+};
+
 const CARRIER_FIELDS = ["crate", "npm", "version", "feature"];
 const FILE_FIELDS = ["path", "sha256", "text"];
 const WHAT = /^(?:hand-recorded:.+|own-code|import-libraries|system-library)$/;
@@ -69,32 +80,44 @@ function osOf(triple) {
 }
 
 function readJson(file, name, failures) {
-  if (!existsSync(file)) return [];
+  if (!existsSync(file)) {
+    failures.push(
+      `${name}: the file is missing; every record file must exist (write an empty list as []).`,
+    );
+    return undefined;
+  }
   let value;
   try {
     value = JSON.parse(readFileSync(file, "utf8"));
   } catch (error) {
     failures.push(`${name}: can't be read as JSON (${error.message}).`);
-    return [];
+    return undefined;
   }
   if (!Array.isArray(value)) {
     failures.push(`${name}: must hold a list of entries.`);
-    return [];
+    return undefined;
   }
   return value;
 }
 
 /**
- * The four record files as written. An absent file is `[]`. A file not sorted
- * by its first field, or an entry with a field it doesn't have, is a failure
- * naming the file and the entry (the data model: "The JSON files are sorted by
- * their first field"), so a hand edit can't quietly misspell a key.
+ * The four record files as written. An absent file is a failure (an empty list
+ * is written `[]`), so deleting a file can't quietly drop its notices. A file
+ * not sorted by its first field, or an entry with a field it doesn't have, is a
+ * failure naming the file and the entry (the data model: "The JSON files are
+ * sorted by their first field"), so a hand edit can't quietly misspell a key.
+ * An entry that would drop out of the notices without a word fails too: an
+ * `os` or `kind` outside the known values, an empty `os`, `texts` or `files`,
+ * and a native-code `what: hand-recorded:<name>` naming no hand-recorded entry.
  */
 export function readRecords(licensesDir) {
   const failures = [];
   const records = {};
+  const unreadable = new Set();
   for (const [which, name] of Object.entries(FILES)) {
-    const entries = readJson(path.join(licensesDir, name), name, failures);
+    const read = readJson(path.join(licensesDir, name), name, failures);
+    if (read === undefined) unreadable.add(which);
+    const entries = read ?? [];
     records[which] = entries;
     const { key, fields } = SHAPES[which];
     let previous;
@@ -112,6 +135,33 @@ export function readRecords(licensesDir) {
       for (const field of REQUIRED[which]) {
         if (entry[field] === undefined) {
           failures.push(`${name}: entry "${label}" has no "${field}".`);
+        }
+      }
+      for (const field of NEEDS_ONE[which] ?? []) {
+        const value = entry[field];
+        if (value === undefined) continue;
+        if (!Array.isArray(value)) {
+          failures.push(`${name}: entry "${label}" has "${field}", but it isn't a list.`);
+        } else if (value.length === 0) {
+          failures.push(
+            field === "os"
+              ? `${name}: entry "${label}" has no "os"; list at least one of ${OSES.join(", ")}.`
+              : `${name}: entry "${label}" has no ${field}; list at least one.`,
+          );
+        }
+      }
+      if (which === "handRecorded") {
+        for (const value of Array.isArray(entry.os) ? entry.os : []) {
+          if (!OSES.includes(value)) {
+            failures.push(
+              `${name}: entry "${label}" has os "${value}"; each must be ${OSES.slice(0, -1).join(", ")} or ${OSES.at(-1)}.`,
+            );
+          }
+        }
+        if (entry.kind !== undefined && !KINDS.includes(entry.kind)) {
+          failures.push(
+            `${name}: entry "${label}" has kind "${entry.kind}"; it must be ${KINDS.slice(0, -1).join(", ")} or ${KINDS.at(-1)}.`,
+          );
         }
       }
       if (which === "handRecorded" && entry.carrier && typeof entry.carrier === "object") {
@@ -139,6 +189,14 @@ export function readRecords(licensesDir) {
               failures.push(`${name}: entry "${label}" has an unknown file field "${field}".`);
             }
           }
+          if (
+            typeof file?.text !== "string" &&
+            !(typeof file?.path === "string" && typeof file?.sha256 === "string")
+          ) {
+            failures.push(
+              `${name}: entry "${label}" has a file that is neither { path, sha256 } nor { text }.`,
+            );
+          }
         }
       }
       if (which === "nativeCode" && !WHAT.test(String(entry.what))) {
@@ -156,6 +214,16 @@ export function readRecords(licensesDir) {
         }
       }
       previous = label;
+    }
+  }
+  // A hand-recorded file that couldn't be read has said so; its names aren't missing one by one.
+  const handNames = new Set(records.handRecorded.map((e) => e?.name));
+  for (const entry of unreadable.has("handRecorded") ? [] : records.nativeCode) {
+    const named = /^hand-recorded:(.+)$/.exec(String(entry?.what))?.[1];
+    if (named !== undefined && !handNames.has(named)) {
+      failures.push(
+        `${FILES.nativeCode}: entry "${entry.crate}" has what "${entry.what}", but ${FILES.handRecorded} has no entry "${named}".`,
+      );
     }
   }
   return { ...records, failures };
@@ -209,15 +277,43 @@ function chosenLicense(component) {
   }
 }
 
+/**
+ * The folder with `openssl/opensslv.h` that the Windows build compiles against,
+ * found the way `libsqlite3-sys` 0.38.1's `build.rs` finds it (010 research.md
+ * §7): each variable is read as `<TARGET>_<name>` first (`TARGET` upper-cased,
+ * dashes to underscores), then as `<name>`, and a variable that is set counts
+ * even when empty. When both `OPENSSL_LIB_DIR` and `OPENSSL_INCLUDE_DIR` are set
+ * the include path is `OPENSSL_INCLUDE_DIR`; otherwise `OPENSSL_DIR` is required
+ * (the build panics without it), and the include path is `OPENSSL_INCLUDE_DIR`
+ * if set, else `<OPENSSL_DIR>/include`. Returns `{ dir, variable }` (the
+ * variable that decided it, as spelled), or undefined when the build would stop.
+ */
+function openSslIncludeDir(env, triple) {
+  const prefix = triple.toUpperCase().replaceAll("-", "_");
+  const read = (name) => {
+    for (const variable of [`${prefix}_${name}`, name]) {
+      if (env[variable] !== undefined) return { variable, value: env[variable] };
+    }
+    return undefined;
+  };
+  const lib = read("OPENSSL_LIB_DIR");
+  const include = read("OPENSSL_INCLUDE_DIR");
+  const root = read("OPENSSL_DIR");
+  if (include && (lib || root)) return { dir: include.value, variable: include.variable };
+  if (root) return { dir: path.join(root.value, "include"), variable: root.variable };
+  return undefined;
+}
+
 function readOpenSslVersion(ctx, subject) {
-  if (!ctx.openSslDir) {
+  const found = openSslIncludeDir(ctx.env ?? {}, ctx.triple);
+  if (!found) {
     return {
-      failure: `${subject}: OPENSSL_DIR isn't set, so the OpenSSL version the Windows build links can't be read.`,
+      failure: `${subject}: the OpenSSL version the Windows build links can't be read; set OPENSSL_DIR, or both OPENSSL_LIB_DIR and OPENSSL_INCLUDE_DIR (libsqlite3-sys's build.rs reads them, as ${ctx.triple.toUpperCase().replaceAll("-", "_")}_<name> first).`,
     };
   }
-  const header = path.join(ctx.openSslDir, "include", "openssl", "opensslv.h");
+  const header = path.join(found.dir, "openssl", "opensslv.h");
   if (!existsSync(header)) {
-    return { failure: `${subject}: ${header} (opensslv.h) doesn't exist.` };
+    return { failure: `${subject}: ${header} (opensslv.h, from ${found.variable}) doesn't exist.` };
   }
   const source = readFileSync(header, "utf8");
   // OpenSSL 3 has OPENSSL_VERSION_STR; 1.1.x only OPENSSL_VERSION_TEXT ("OpenSSL 1.1.1w  11 Sep 2023").
@@ -225,11 +321,13 @@ function readOpenSslVersion(ctx, subject) {
     source.match(/^\s*#\s*define\s+OPENSSL_VERSION_STR\s+"([^"]+)"/m)?.[1] ??
     source.match(/^\s*#\s*define\s+OPENSSL_VERSION_TEXT\s+"OpenSSL\s+(\S+)/m)?.[1];
   if (version === undefined) {
-    return { failure: `${subject}: opensslv.h (${header}) names no OpenSSL version.` };
+    return {
+      failure: `${subject}: opensslv.h (${header}, from ${found.variable}) names no OpenSSL version.`,
+    };
   }
   if (Number.parseInt(version, 10) < OPENSSL_MIN_MAJOR) {
     return {
-      failure: `${subject}: the Windows build links OpenSSL ${version}; HoploDex needs OpenSSL 3 (its license is compatible with GPLv3, 1.1's isn't).`,
+      failure: `${subject}: the Windows build links OpenSSL ${version} (headers from ${found.variable}); HoploDex needs OpenSSL 3 (its license is compatible with GPLv3, 1.1's isn't).`,
     };
   }
   return { version };
@@ -243,9 +341,11 @@ function readOpenSslVersion(ctx, subject) {
 export function checkHandRecorded(entries, ctx) {
   const failures = [];
   const components = [];
+  const used = [];
   const os = osOf(ctx.triple);
   for (const entry of entries) {
-    if (!(entry.os ?? []).includes(os)) continue;
+    if (!Array.isArray(entry.os) || !entry.os.includes(os)) continue;
+    used.push(entry.name);
     const subject = `hand-recorded "${entry.name}"`;
     const before = failures.length;
     const carrierIsCrate = entry.carrier?.crate !== undefined;
@@ -314,7 +414,7 @@ export function checkHandRecorded(entries, ctx) {
       },
     });
   }
-  return { failures, components };
+  return { failures, components, used };
 }
 
 /**
@@ -343,15 +443,27 @@ export function checkExceptions(entries, ctx) {
         `${subject}: it now declares "${component.license}", recorded "${entry.declared}". Review the exception.`,
       );
     }
-    const found = findTexts(component.folder, chosenLicense(component), {
-      declared: component.license,
-      label: `${component.kind} ${component.name} ${component.version}`,
-    });
-    if (!found.failure && found.texts.length > 0) {
-      const word = component.kind === "crate" ? "crate" : "package";
+    if (!existsSync(component.folder)) {
+      // Nothing to look in for the stale check; the text itself is still the exception's.
       failures.push(
-        `${subject}: the ${word} now ships ${found.texts[0].file}; remove the exception.`,
+        `${subject}: its folder ${component.folder} doesn't exist${component.kind === "crate" ? " (cargo fetch should have fetched it)" : " (run npm ci)"}.`,
       );
+    } else {
+      // Stale when the package ships a text of any allowed alternative, as the notices look.
+      const found = findTextsAmong(
+        component.folder,
+        alternativesOf(component.license, chosenLicense(component), component.name),
+        {
+          declared: component.license,
+          label: `${component.kind} ${component.name} ${component.version}`,
+        },
+      );
+      if (found.failure === null && found.texts.length > 0) {
+        const word = component.kind === "crate" ? "crate" : "package";
+        failures.push(
+          `${subject}: the ${word} now ships ${found.texts[0].file}; remove the exception.`,
+        );
+      }
     }
     const texts = [];
     for (const recorded of entry.texts ?? []) {
@@ -385,9 +497,14 @@ export function checkClarifications(entries, ctx) {
     used.push(id);
     const texts = [];
     let ok = true;
-    for (const item of entry.files ?? []) {
+    for (const item of Array.isArray(entry.files) ? entry.files : []) {
       if (item.text !== undefined) {
         texts.push({ text: item.text });
+        continue;
+      }
+      if (typeof item.path !== "string") {
+        // readRecords has said what is wrong with the entry.
+        ok = false;
         continue;
       }
       // A path under licenses/ is a committed text; any other is inside the package.
@@ -482,13 +599,20 @@ export function checkNativeCode(entries, ctx) {
 }
 
 /**
- * The `--all-targets` form: an exception, clarification or native-code entry
- * that no target uses fails (010 research.md §9). `perTarget` holds each target's
+ * The `--all-targets` form: a hand-recorded, exception, clarification or
+ * native-code entry that no target uses fails (010 research.md §9). `perTarget` holds each target's
  * `used` lists.
  */
 export function unusedAcrossTargets(records, perTarget) {
   const failures = [];
   const usedBy = (which, name) => perTarget.some((target) => (target[which] ?? []).includes(name));
+  for (const entry of records.handRecorded ?? []) {
+    if (!usedBy("handRecorded", entry.name)) {
+      failures.push(
+        `hand-recorded "${entry.name}": no target ships it; remove the entry (licenses/hand-recorded.json).`,
+      );
+    }
+  }
   for (const entry of records.exceptions ?? []) {
     if (!usedBy("exceptions", entry.component)) {
       failures.push(

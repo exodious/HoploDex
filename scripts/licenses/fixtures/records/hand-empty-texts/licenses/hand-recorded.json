@@ -1,0 +1,19 @@
+[
+  {
+    "name": "SQLite",
+    "version": "3.51.3",
+    "license": "blessing",
+    "kind": "compiled-in",
+    "os": [
+      "linux",
+      "windows",
+      "macos"
+    ],
+    "carrier": {
+      "crate": "libsqlite3-sys",
+      "version": "0.38.1"
+    },
+    "texts": [],
+    "reason": "C code compiled inside libsqlite3-sys"
+  }
+]

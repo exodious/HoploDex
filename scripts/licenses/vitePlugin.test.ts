@@ -11,7 +11,7 @@
 //   hoplodexNotices(options) -> { main, worker }   (two Vite plugins sharing
 //        one collector: `main` goes in `plugins`, `worker` in `worker.plugins`)
 //        options: what notices.mjs's buildNotices takes (root, lockFile,
-//        modulesDir, licensesDir, licenseFile, cargo, git, now, openSslDir),
+//        modulesDir, licensesDir, licenseFile, cargo, git, now, env),
 //        plus `target` (default: targetTriple()) and `withdrawn`
 //        ([{ file, marker, reason }], default: policy.mjs's list; a test passes
 //        the fixture's own entry). `modulesDir` also maps a module id to its
@@ -75,7 +75,7 @@ function options(over: Record<string, unknown> = {}) {
     cargo: fakeCargo(),
     git: () => "2026-10-18\n",
     now: new Date("2026-10-18T12:00:00Z"),
-    openSslDir: path.join(fixtures, "openssl", "3.5.4"),
+    env: { OPENSSL_DIR: path.join(fixtures, "openssl", "3.5.4") },
     withdrawn: WITHDRAWN,
     ...over,
   };
@@ -199,6 +199,21 @@ describe("010 FR-012 - the bundle may hold only packages the audit counts as shi
       error = e as Error;
     }
     expect(error?.message.split(message("dev-tool")).length).toBe(2);
+  });
+
+  it("fails a bundled package the lockfile doesn't list at all, in the contract's second form", async () => {
+    await expect(
+      bundle("main.js", { lockFile: path.join(fixtures, "lock-unlisted", "lock.json") }),
+    ).rejects.toThrow(
+      "bundle: package shipped-mit is bundled into the app but isn't in the audit's shipped set (package-lock.json doesn't list it). Check its dependency type.",
+    );
+  });
+
+  it("fails an unreadable lockfile, naming it", async () => {
+    const lockFile = path.join(fixtures, "no-such-lock", "lock.json");
+    await expect(bundle("main.js", { lockFile })).rejects.toThrow(
+      `bundle: can't read ${lockFile} to check the bundled packages (`,
+    );
   });
 
   it("passes a scoped package that is in the shipped set", async () => {

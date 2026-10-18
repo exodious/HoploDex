@@ -12,8 +12,15 @@
 | `node scripts/licenses/notices.mjs --out <dir> [--target <triple>]` | Writes `notices.json` and `NOTICES.txt` to `<dir>` without building, for inspection | As `--check` |
 | `npm run audit:licenses` | As today, plus `notices.mjs --check --all-targets` | As today, or the above |
 
-`--all-targets` can't read the OpenSSL version, since `OPENSSL_DIR` exists
-only on a Windows build machine. It checks the entry's text and carrier only.
+`--all-targets` can't read the OpenSSL version, since the variables that point
+the Windows build at OpenSSL's headers exist only on a Windows build machine.
+It checks the entry's text and carrier only. On Windows the header is found as
+`libsqlite3-sys` 0.38.1's `build.rs` finds it (research.md §7): each of
+`OPENSSL_LIB_DIR`, `OPENSSL_INCLUDE_DIR` and `OPENSSL_DIR` is read as
+`<TARGET>_<name>` first (`X86_64_PC_WINDOWS_MSVC_OPENSSL_DIR`), then plain; with
+both `OPENSSL_LIB_DIR` and `OPENSSL_INCLUDE_DIR` set, the headers are in
+`OPENSSL_INCLUDE_DIR`; otherwise `OPENSSL_DIR` is required, and the headers are
+in `OPENSSL_INCLUDE_DIR` if set, else `<OPENSSL_DIR>/include`.
 
 **The command line** is run as `node scripts/licenses/notices.mjs` (the file
 has no shebang: Vite's config bundler can't load one).
@@ -44,14 +51,73 @@ crate foo 1.2.0: can't tell which of LICENSE, LICENSE.txt is the MIT text. Add a
 hand-recorded "SQLCipher": its carrier crate libsqlite3-sys is 0.39.0, recorded 0.38.1. Review the entry (its version, text and carrier) and update it.
 hand-recorded "SQLCipher": carrier libsqlite3-sys is shipped without feature bundled-sqlcipher.
 hand-recorded "SQLCipher": its carrier crate libsqlite3-sys isn't shipped on windows.
-hand-recorded "OpenSSL": the Windows build links OpenSSL 1.1.1w; HoploDex needs OpenSSL 3 (its license is compatible with GPLv3, 1.1's isn't).
+hand-recorded "OpenSSL": the Windows build links OpenSSL 1.1.1w (headers from OPENSSL_DIR); HoploDex needs OpenSSL 3 (its license is compatible with GPLv3, 1.1's isn't).
+hand-recorded "OpenSSL": the OpenSSL version the Windows build links can't be read; set OPENSSL_DIR, or both OPENSSL_LIB_DIR and OPENSSL_INCLUDE_DIR (libsqlite3-sys's build.rs reads them, as X86_64_PC_WINDOWS_MSVC_<name> first).
+hand-recorded "OpenSSL": C:\vcpkg\include\openssl\opensslv.h (opensslv.h, from OPENSSL_DIR) doesn't exist.
+hand-recorded "OpenSSL": opensslv.h (C:\vcpkg\include\openssl\opensslv.h, from OPENSSL_DIR) names no OpenSSL version.
+hand-recorded "SQLite": no target ships it; remove the entry (licenses/hand-recorded.json).
 exception npm:react-remove-scroll-bar: the package now ships LICENSE; remove the exception.
+exception npm:react-remove-scroll-bar: its folder /…/node_modules/react-remove-scroll-bar doesn't exist (run npm ci).
+exception crate:foo: no target ships it; remove the exception (licenses/exceptions.json).
 clarification crate:bar: LICENSE changed (sha256 …). Review it.
 native code: crate baz-sys 0.1.0 (x86_64-pc-windows-msvc) builds C (cc) and isn't in licenses/native-code.json. Review what it compiles or links and record it.
+native code: crate baz-sys: no target ships it; remove the entry (licenses/native-code.json).
 bundle: package qux is bundled into the app but isn't in the audit's shipped set (package-lock.json marks it dev). Check its dependency type.
 bundle: package qux is bundled into the app but isn't in the audit's shipped set (package-lock.json doesn't list it). Check its dependency type.
 withdrawn: @zxcvbn-ts/language-en/dist/wikipedia.json is in the build (CC BY-SA 3.0 / GFDL, 010 research.md §2).
 license: crate quux 2.0.0 is under GPL-2.0-only, which isn't allowed.
+license: crate quux 2.0.0 declares no license expression.
+crate quux 2.0.0 (x86_64-unknown-linux-gnu): its folder /…/quux-2.0.0 doesn't exist (cargo fetch should have fetched it).
+npm quux 2.0.0: its folder /…/node_modules/quux doesn't exist (run npm ci).
+crate quux 2.0.0 (x86_64-unknown-linux-gnu): no license text to show; a notice needs at least one. Check its record (licenses/clarify.json).
+hand-recorded "SQLite": no license text to show; a notice needs at least one. Check its record (licenses/hand-recorded.json).
+crates (x86_64-unknown-linux-gnu): cargo failed (<cargo's own message, on one line>).
+crate quux 2.0.0 (x86_64-unknown-linux-gnu): not in cargo metadata's package list.
+crate quux 2.0.0 (x86_64-unknown-linux-gnu): a path package ships in the app; only crates from a registry may.
+npm packages: can't read /…/package-lock.json (<reason>).
+npm package quux (node_modules/quux): package-lock.json records no version for it. Run npm install to repair the lockfile.
+bundle: can't read /…/package-lock.json to check the bundled packages (<reason>).
+LICENSE: can't be read (<reason>).
+licenses/additional-permission.txt: can't be read (<reason>).
+```
+
+The record files add these, each naming the file and the entry (`<file>` is
+one of the four JSON files; a `licenses/texts/…` file's own forms are in the
+first lines above):
+
+```text
+<file>: the file is missing; every record file must exist (write an empty list as []).
+<file>: can't be read as JSON (<parser's reason>).
+<file>: must hold a list of entries.
+<file>: an entry isn't an object.
+<file>: entry "SQLite" appears twice.
+<file>: entry "SQLite" is out of order after "OpenSSL"; sort the file by name.
+<file>: entry "SQLite" has an unknown field "licence".
+<file>: entry "SQLite" has no "reason".
+<file>: entry "SQLite" has "texts", but it isn't a list.
+<file>: entry "SQLite" has no texts; list at least one.
+<file>: entry "crate:foo" has no files; list at least one.
+hand-recorded.json: entry "SQLite" has no "os"; list at least one of linux, windows, macos.
+hand-recorded.json: entry "SQLite" has os "freebsd"; each must be linux, windows or macos.
+hand-recorded.json: entry "SQLite" has kind "bundled"; it must be compiled-in, linked or data.
+hand-recorded.json: entry "SQLite" carrier must name exactly one of crate and npm.
+hand-recorded.json: entry "SQLite" carrier has no "version".
+hand-recorded.json: entry "SQLite" has an unknown carrier field "features".
+clarify.json: entry "crate:foo" has an unknown file field "note".
+clarify.json: entry "crate:foo" has a file that is neither { path, sha256 } nor { text }.
+native-code.json: entry "libsqlite3-sys" has what "tool"; it must be hand-recorded:<entry name>, own-code, import-libraries or system-library.
+native-code.json: entry "libsqlite3-sys" has what "hand-recorded:SQLCipher", but hand-recorded.json has no entry "SQLCipher".
+```
+
+The command line adds, each followed by the usage line:
+
+```text
+notices: --target needs a value
+notices: --check takes no value
+notices: unknown option --frobnicate
+notices: give --check or --out <dir>
+notices: --all-targets can't be combined with --out or --target
+notices: can't tell the target (<reason>); give --target.
 ```
 
 ## `dist/notices.json`
@@ -173,10 +239,16 @@ any one component's notice can be read in isolation.
 | `licenses/native-code.json` | Native-code review | `[{ crate, what, note }]` |
 | `licenses/texts/<component>/…` | Committed texts | As taken. Each has a first line `Source: <url>` that the generator strips |
 
-The JSON files are sorted by their first field. A test fails on an unsorted
-file, an unknown field or a missing required field, and on a hand-recorded
-`carrier` that doesn't name exactly one of `crate` and `npm` (or has no
-`version`), so a hand edit can't quietly misspell or drop a key.
+All four JSON files must exist; an empty list is written `[]`. The JSON files
+are sorted by their first field. A test fails on an unsorted file, an unknown
+field or a missing required field, and on a hand-recorded `carrier` that
+doesn't name exactly one of `crate` and `npm` (or has no `version`), so a hand
+edit can't quietly misspell or drop a key. A hand-recorded `os` is a non-empty
+list of `linux`, `windows` and `macos`, and its `kind` is `compiled-in`,
+`linked` or `data`; `texts` (hand-recorded, exception) and `files`
+(clarification) hold at least one item; a native-code `what: hand-recorded:<name>`
+names an entry in `hand-recorded.json`. None of these drops out silently: each
+is a failure.
 
 ## The Vite plugin (`scripts/licenses/vitePlugin.mjs`)
 

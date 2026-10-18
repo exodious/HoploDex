@@ -57,7 +57,7 @@ function textOf(item) {
 
 /**
  * `options` is what `buildNotices` takes (root, lockFile, modulesDir,
- * licensesDir, licenseFile, cargo, git, now, openSslDir), plus `target`
+ * licensesDir, licenseFile, cargo, git, now, env), plus `target`
  * (default: `targetTriple()`) and `withdrawn` (default: policy.mjs's list).
  */
 export function hoplodexNotices(options = {}) {

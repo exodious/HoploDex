@@ -17,7 +17,7 @@
 //        The year is from `git log -1 --format=%cs`.
 //
 //   buildNotices({ target, root, lockFile, modulesDir, licensesDir,
-//                  licenseFile, cargo, git, now, openSslDir, allTargets?,
+//                  licenseFile, cargo, git, now, env, allTargets?,
 //                  development?, program? })
 //     -> { document, failures: string[], warnings: string[] }
 //        Never throws for a check that fails: every failure is a string in
@@ -26,7 +26,7 @@
 //        npm lockfile, `modulesDir` stands for node_modules, `licenseFile` is
 //        LICENSE; a `licenses/texts/...` path in a record resolves against
 //        the folder above `licensesDir`. `cargo(args)` returns stdout, `target`
-//        is a triple, `openSslDir` defaults to OPENSSL_DIR. `allTargets` is the
+//        is a triple, `env` (default: process.env) holds the OpenSSL variables. `allTargets` is the
 //        --all-targets check of one target (OpenSSL's version isn't read).
 //        `development: true` adds `"development": true` to the document.
 //
@@ -95,7 +95,7 @@ function inputs(over: Record<string, unknown> = {}) {
     cargo: fakeCargo(),
     git: () => "2026-10-18\n",
     now: new Date("2026-10-18T12:00:00Z"),
-    openSslDir: path.join(fixtures, "openssl", "3.5.4"),
+    env: { OPENSSL_DIR: path.join(fixtures, "openssl", "3.5.4") },
     ...over,
   };
 }
@@ -316,7 +316,92 @@ describe("010 US2-2 - an exception's license is the alternative its text is a te
   });
 });
 
+/** A cargo runner whose `cargo metadata` has `edit` applied to the package named `name`. */
+function withMetadata(name: string, edit: (pkg: Record<string, unknown>) => unknown) {
+  const inner = fakeCargo();
+  return (args: string[]) => {
+    const out = inner(args);
+    if (args[0] !== "metadata") return out;
+    const metadata = JSON.parse(out);
+    metadata.packages = metadata.packages.flatMap((pkg: { name: string }) => {
+      if (pkg.name !== name) return [pkg];
+      const edited = edit(pkg);
+      return edited === undefined ? [] : [edited];
+    });
+    return JSON.stringify(metadata);
+  };
+}
+
 describe("010 US2-2 - a failed check names the component and every failure is collected", () => {
+  it("fails a failing cargo call, saying what cargo said (010 FR-008)", () => {
+    const cargo = () => {
+      throw new Error("error: could not find `Cargo.toml`\nin the folder");
+    };
+    expect(build(LINUX, { cargo }).failures).toContain(
+      `crates (${LINUX}): cargo failed (error: could not find \`Cargo.toml\` / in the folder).`,
+    );
+  });
+
+  it("fails a shipped crate that cargo metadata doesn't list, naming it (010 FR-008)", () => {
+    const built = build(LINUX, { cargo: withMetadata("single", () => undefined) });
+    expect(built.failures).toEqual([
+      `crate single 1.0.0 (${LINUX}): not in cargo metadata's package list.`,
+    ]);
+  });
+
+  it("fails a crate whose folder is missing, saying cargo fetch should have made it (010 FR-008)", () => {
+    const folder = path.join(PROJECT, "registry", "single-1.0.0-gone");
+    const cargo = withMetadata("single", (pkg) => ({
+      ...pkg,
+      manifest_path: path.join(folder, "Cargo.toml"),
+    }));
+    expect(build(LINUX, { cargo }).failures).toEqual([
+      `crate single 1.0.0 (${LINUX}): its folder ${folder} doesn't exist (cargo fetch should have fetched it).`,
+    ]);
+  });
+
+  it("fails an npm package whose folder is missing, saying to run npm ci (010 FR-008)", () => {
+    const modulesDir = path.join(fixtures, "no-such-modules");
+    const failures = build(LINUX, { modulesDir }).failures;
+    expect(failures).toContain(
+      `npm shipped-mit 1.0.0: its folder ${path.join(modulesDir, "shipped-mit")} doesn't exist (run npm ci).`,
+    );
+    // an exception's package too: the stale check has nothing to look in, and must not throw
+    expect(failures).toContain(
+      `exception npm:no-license-file: its folder ${path.join(modulesDir, "no-license-file")} doesn't exist (run npm ci).`,
+    );
+  });
+
+  it("fails a crate that declares no license expression, naming it (010 FR-009)", () => {
+    const cargo = withMetadata("single", (pkg) => ({ ...pkg, license: null }));
+    expect(build(LINUX, { cargo }).failures).toEqual([
+      "license: crate single 1.0.0 declares no license expression.",
+    ]);
+  });
+
+  it("fails an npm package that declares no license, naming it (010 FR-009)", () => {
+    const lockFile = path.join(fixtures, "lock-no-license", "lock.json");
+    expect(build(LINUX, { lockFile }).failures).toEqual([
+      "license: npm shipped-mit 1.0.0 declares no license expression.",
+    ]);
+  });
+
+  it("fails an unreadable lockfile, naming it (010 FR-008)", () => {
+    const lockFile = path.join(fixtures, "no-such-lock", "lock.json");
+    const failures = build(LINUX, { lockFile }).failures;
+    const read = failures.filter((f) => f.startsWith("npm packages: "));
+    expect(read).toHaveLength(1);
+    expect(read[0].startsWith(`npm packages: can't read ${lockFile} (`)).toBe(true);
+    expect(read[0].endsWith(").")).toBe(true);
+  });
+
+  it("fails an unreadable LICENSE, naming it (010 FR-008)", () => {
+    const licenseFile = path.join(fixtures, "no-such-license");
+    const failures = build(LINUX, { licenseFile }).failures;
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatch(/^LICENSE: can't be read \(.+\)\.$/);
+  });
+
   it("fails a license the policy doesn't allow, in the contract's words", () => {
     const built = build(LINUX, { cargo: fakeCargo({ variant: "gpl-crate" }) });
     expect(built.failures).toContain(
@@ -354,6 +439,35 @@ describe("010 US2-2 - a failed check names the component and every failure is co
     expect(find(built.document, "single")).toBeDefined();
   });
 
+  it("fails a record file that is missing, word for word (010 FR-009)", () => {
+    const built = build(LINUX, { licensesDir: record("absent-files") });
+    expect(built.failures).toContain(
+      "hand-recorded.json: the file is missing; every record file must exist (write an empty list as []).",
+    );
+  });
+
+  it("fails a shipped lockfile package with no version, naming it (010 FR-009)", () => {
+    const built = build(LINUX, { lockFile: path.join(fixtures, "lock-no-version", "lock.json") });
+    expect(built.failures).toEqual([
+      "npm package versionless (node_modules/versionless): package-lock.json records no version for it. Run npm install to repair the lockfile.",
+    ]);
+  });
+
+  it("fails a notice that would show no text, whichever record emptied it (010 FR-010)", () => {
+    const empty = (name: string) => build(LINUX, { licensesDir: record(name) }).failures;
+    const message = (subject: string, file: string) =>
+      `${subject}: no license text to show; a notice needs at least one. Check its record (${file}).`;
+    expect(empty("exception-empty-texts")).toContain(
+      message("crate needs-exception 1.0.0 (x86_64-unknown-linux-gnu)", "licenses/exceptions.json"),
+    );
+    expect(empty("clarify-no-files")).toContain(
+      message("crate unplaceable 1.0.0 (x86_64-unknown-linux-gnu)", "licenses/clarify.json"),
+    );
+    expect(empty("hand-empty-texts")).toContain(
+      message('hand-recorded "SQLite"', "licenses/hand-recorded.json"),
+    );
+  });
+
   it("fails a hand-recorded entry whose carrier changed version", () => {
     const built = build(LINUX, { cargo: fakeCargo({ variant: "carrier-0.39.0" }) });
     expect(built.failures).toContain(
@@ -369,16 +483,18 @@ describe("010 US2-2 - a failed check names the component and every failure is co
   });
 
   it("fails a Windows build that links OpenSSL 1.1, in the contract's words", () => {
-    const built = build(WINDOWS, { openSslDir: path.join(fixtures, "openssl", "1.1.1w") });
+    const built = build(WINDOWS, {
+      env: { OPENSSL_DIR: path.join(fixtures, "openssl", "1.1.1w") },
+    });
     expect(built.failures).toContainEqual(
       expect.stringContaining(
-        'hand-recorded "OpenSSL": the Windows build links OpenSSL 1.1.1w; HoploDex needs OpenSSL 3',
+        'hand-recorded "OpenSSL": the Windows build links OpenSSL 1.1.1w (headers from OPENSSL_DIR); HoploDex needs OpenSSL 3',
       ),
     );
   });
 
   it("fails a Windows build with no OPENSSL_DIR, naming it", () => {
-    const built = build(WINDOWS, { openSslDir: undefined, env: {} });
+    const built = build(WINDOWS, { env: {} });
     expect(built.failures.some((f) => f.includes("OPENSSL_DIR"))).toBe(true);
   });
 
@@ -388,7 +504,7 @@ describe("010 US2-2 - a failed check names the component and every failure is co
   });
 
   it("under --all-targets reads no OpenSSL version and doesn't need OPENSSL_DIR", () => {
-    const built = build(WINDOWS, { openSslDir: undefined, allTargets: true });
+    const built = build(WINDOWS, { env: {}, allTargets: true });
     expect(built.failures).toEqual([]);
     expect(find(built.document, "OpenSSL")?.version).toBe(
       "3.x (the version the Windows build links)",
@@ -810,6 +926,7 @@ describe("010 US2-5 - the command line", () => {
         return `${file} ${statSync(file).mtimeMs} ${statSync(file).size}`;
       })
       .sort();
+  const openSsl3 = { OPENSSL_DIR: path.join(fixtures, "openssl", "3.5.4") };
   const tmp = () => mkdtempSync(path.join(os.tmpdir(), "hoplodex-notices-"));
 
   it("--check passes on the good fixtures, says so and writes nothing", async () => {
@@ -839,7 +956,7 @@ describe("010 US2-5 - the command line", () => {
 
   it("--out writes notices.json and NOTICES.txt, the renderings of the same build", async () => {
     const dir = tmp();
-    const result = await run(["--out", dir, "--target", WINDOWS]);
+    const result = await run(["--out", dir, "--target", WINDOWS], { env: openSsl3 });
     expect(result.code).toBe(0);
     const doc = build(WINDOWS).document;
     expect(readdirSync(dir).sort()).toEqual(["NOTICES.txt", "notices.json"]);
@@ -864,18 +981,20 @@ describe("010 US2-5 - the command line", () => {
     };
     expect(await builtFor([], {})).toBe(LINUX);
     expect(await builtFor([], { TAURI_ENV_TARGET_TRIPLE: MACOS })).toBe(MACOS);
-    expect(await builtFor(["--target", WINDOWS], { TAURI_ENV_TARGET_TRIPLE: MACOS })).toBe(WINDOWS);
+    expect(
+      await builtFor(["--target", WINDOWS], { ...openSsl3, TAURI_ENV_TARGET_TRIPLE: MACOS }),
+    ).toBe(WINDOWS);
   });
 
   it("reads OPENSSL_DIR from the environment when it isn't given", async () => {
     const env = { OPENSSL_DIR: path.join(fixtures, "openssl", "1.1.1w") };
-    const result = await run(["--check", "--target", WINDOWS], { env, openSslDir: undefined });
+    const result = await run(["--check", "--target", WINDOWS], { env });
     expect(result.code).toBe(1);
     expect(result.err).toContain("OpenSSL 1.1.1w");
   });
 
   it("--check --all-targets checks the three triples and prints the counts", async () => {
-    const result = await run(["--check", "--all-targets"], { openSslDir: undefined });
+    const result = await run(["--check", "--all-targets"]);
     expect(result.err).toBe("");
     expect(result.code).toBe(0);
     expect(result.out).toBe(
@@ -891,7 +1010,6 @@ describe("010 US2-5 - the command line", () => {
     ]) {
       const result = await run(["--check", "--all-targets"], {
         licensesDir: record(name),
-        openSslDir: undefined,
       });
       expect(result.code, name).toBe(1);
       const line = result.err.split("\n").find((l) => l.includes(text));
@@ -915,6 +1033,59 @@ describe("010 US2-5 - the command line", () => {
     });
     expect(result.code).toBe(1);
     expect(result.err).toContain("native code: crate baz-sys 0.1.0");
+  });
+
+  const USAGE =
+    "usage: notices.mjs --check [--all-targets | --target <triple>] | --out <dir> [--target <triple>]";
+
+  it("fails an option without its value, naming the option and printing the usage", async () => {
+    for (const argv of [["--check", "--target"], ["--check", "--target="], ["--out"]]) {
+      const result = await run(argv);
+      const name = argv.at(-1)?.replace(/=$/, "");
+      expect(result.code, argv.join(" ")).toBe(1);
+      expect(result.err, argv.join(" ")).toBe(`notices: ${name} needs a value\n${USAGE}\n`);
+      expect(result.out).toBe("");
+    }
+  });
+
+  it("fails a flag given a value", async () => {
+    const result = await run(["--check=yes"]);
+    expect(result.code).toBe(1);
+    expect(result.err).toBe(`notices: --check takes no value\n${USAGE}\n`);
+  });
+
+  it("fails --all-targets combined with --out or --target, and writes nothing", async () => {
+    for (const argv of [
+      ["--check", "--all-targets", "--target", LINUX],
+      ["--check", "--all-targets", "--out", tmp()],
+      ["--all-targets", "--out", tmp()],
+    ]) {
+      const result = await run(argv);
+      expect(result.code, argv.join(" ")).toBe(1);
+      expect(result.err, argv.join(" ")).toBe(
+        `notices: --all-targets can't be combined with --out or --target\n${USAGE}\n`,
+      );
+    }
+  });
+
+  it("fails neither --check nor --out, saying to give one", async () => {
+    for (const argv of [[], ["--target", LINUX], ["--all-targets"]]) {
+      const result = await run(argv);
+      expect(result.code, argv.join(" ")).toBe(1);
+      expect(result.err, argv.join(" ")).toBe(`notices: give --check or --out <dir>\n${USAGE}\n`);
+    }
+  });
+
+  it("fails when the target can't be told, asking for --target", async () => {
+    const result = await run(["--check"], {
+      hostTriple: () => {
+        throw new Error("rustc -vV printed no host triple");
+      },
+    });
+    expect(result.code).toBe(1);
+    expect(result.err).toBe(
+      "notices: can't tell the target (rustc -vV printed no host triple); give --target.\n",
+    );
   });
 
   it("fails an option it doesn't know, naming it", async () => {

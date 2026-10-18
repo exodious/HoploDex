@@ -1509,7 +1509,9 @@ record, with what was checked, how and when, is
   feature, build and proc-macro crates included.
 - **Notices**: `node scripts/licenses/notices.mjs --check --all-targets` builds
   the third-party notices for Linux, Windows and macOS from any machine and
-  fails when one can't be made correctly. See [License notices](#license-notices).
+  fails when one can't be made correctly. It can't read the Windows build's
+  OpenSSL version; a Windows build does, from the headers named by the
+  variables `libsqlite3-sys` reads (see [License notices](#license-notices)).
 
 The first two use the same allow list of GPLv3-compatible SPDX licenses
 (`ALLOWED` in `scripts/licenses/policy.mjs`, `allow` in `deny.toml`; a test
@@ -1556,11 +1558,15 @@ before a release:
   MPL-2.0 crate turns up (`cargo deny --manifest-path src-tauri/Cargo.toml list -l license`),
   grep its sources in `~/.cargo/registry/src/` for that phrase, leaving out
   the `LICENSE` file, which quotes it.
-- **Exceptions that are behind**: a version bump doesn't fail an exception
-  (see [License notices](#license-notices)), so before a release, list the
-  entries in `licenses/exceptions.json` whose `checkedVersion` is behind the
-  version that ships, and compare the new version's license file with the
-  committed text.
+- **Exceptions and clarifications that are behind**: a version bump doesn't
+  fail an exception or a clarification (see
+  [License notices](#license-notices)), so before a release, list the entries
+  in `licenses/exceptions.json` whose `checkedVersion` is behind the version
+  that ships, and those in `licenses/clarify.json` whose `version` is behind,
+  and compare the new version's license files with the committed text (an
+  exception) or with the files the clarification names (a clarification: a
+  file that changed fails its SHA-256, but a new file the clarification
+  doesn't name does not).
 - **New assets and data lists**: the type drawings
   (`src/features/browse/typeDrawings.ts`), the icon set
   (`src/components/Icon.tsx`), the chooser's catalogue plate
@@ -1621,8 +1627,16 @@ start `warning:`, such as an entry the target doesn't ship (not printed under
 `--all-targets`, where an entry no target ships fails instead). It needs
 `cargo` and the registry's sources: it runs `cargo fetch` for the target
 first, as the `cargo build` that follows would. Under `--all-targets` it can't
-read the OpenSSL version, since `OPENSSL_DIR` exists only on a Windows build
-machine, so it checks that entry's text and carrier only.
+read the OpenSSL version, since the variables that point a Windows build at
+OpenSSL's headers exist only on a Windows build machine, so it checks that
+entry's text and carrier only. On Windows the version is read from the
+`openssl/opensslv.h` that `libsqlite3-sys`'s `build.rs` compiles against,
+found as it finds it: each of `OPENSSL_LIB_DIR`, `OPENSSL_INCLUDE_DIR` and
+`OPENSSL_DIR` is read as `<TARGET>_<name>` (for `x86_64-pc-windows-msvc`,
+`X86_64_PC_WINDOWS_MSVC_OPENSSL_DIR`) first and then plain; the headers are in
+`OPENSSL_INCLUDE_DIR` when it is set together with `OPENSSL_LIB_DIR` or
+`OPENSSL_DIR`, else in `<OPENSSL_DIR>/include`, and without `OPENSSL_DIR` or
+that pair the check fails, as the build does.
 
 **What ships** is defined once, in `scripts/licenses/shipped.mjs`, and the
 audit and the notices both use it:
@@ -1744,8 +1758,11 @@ generator strips.
 - **`bundle: package … is bundled into the app but isn't in the audit's shipped
   set`**: the lockfile marks it `dev` or `devOptional`, yet Vite bundled it.
   Check its dependency type in `package.json`.
-- **`the Windows build links OpenSSL 1.1.1w`**: build against OpenSSL 3. 1.1.x
-  and older use the OpenSSL/SSLeay license, which isn't GPLv3-compatible.
+- **`the Windows build links OpenSSL 1.1.1w (headers from …)`**: build against
+  OpenSSL 3. 1.1.x and older use the OpenSSL/SSLeay license, which isn't
+  GPLv3-compatible. The message names the variable the headers came from; a
+  `<TARGET>_OPENSSL_DIR` or an `OPENSSL_INCLUDE_DIR` set to an older OpenSSL
+  overrides `OPENSSL_DIR`, so check them before `OPENSSL_DIR`.
 - **`remove the exception`, `remove the clarification`, `remove the entry`**:
   the record is stale, either because the package now ships its own license
   file or declares another license, or (under `--all-targets`) because no

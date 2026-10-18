@@ -20,7 +20,7 @@
 //   checkNativeCode(entries, ctx)   -> { failures, warnings, used }
 //   unusedAcrossTargets(records, perTarget) -> string[]   (failures)
 //
-//   ctx = { root, triple, allTargets?, openSslDir?,
+//   ctx = { root, triple, allTargets?, env?,
 //           crates: [{ name, version, folder, license, features?, nativeBuild? }],
 //           npm:    [{ name, version, folder, license }] }
 //     root: the repository root (a `licenses/texts/...` path resolves against it);
@@ -31,7 +31,8 @@
 //     component to its [{ file?, text }].
 //   perTarget = [{ exceptions: used[], clarifications: used[], nativeCode: used[] }, ...]
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -152,13 +153,61 @@ describe("010 research.md §7 - reading the records", () => {
     ]);
   });
 
-  it("reads an absent file as no entries", () => {
+  it("fails each record file that is absent, naming it (010 FR-009, 010 research.md §5)", () => {
     const records = readCase("absent-files");
-    expect(records.handRecorded).toEqual([]);
+    expect(records.nativeCode).toHaveLength(4);
+    expect(records.failures).toEqual(
+      ["hand-recorded.json", "exceptions.json", "clarify.json"].map(
+        (name) =>
+          `${name}: the file is missing; every record file must exist (write an empty list as []).`,
+      ),
+    );
+  });
+
+  it("reads a present file holding [] as no entries, with no failure", () => {
+    const records = readCase("hand-empty-os");
     expect(records.exceptions).toEqual([]);
     expect(records.clarifications).toEqual([]);
-    expect(records.nativeCode).toHaveLength(4);
-    expect(records.failures).toEqual([]);
+    expect(records.nativeCode).toEqual([]);
+  });
+
+  it("fails a hand-recorded `os` that is empty, naming the file and the entry (010 FR-009)", () => {
+    expect(readCase("hand-empty-os").failures).toEqual([
+      'hand-recorded.json: entry "SQLite" has no "os"; list at least one of linux, windows, macos.',
+    ]);
+  });
+
+  it("fails a hand-recorded `os` outside linux, windows and macos, naming the value (010 FR-009)", () => {
+    expect(readCase("hand-unknown-os").failures).toEqual([
+      'hand-recorded.json: entry "SQLite" has os "freebsd"; each must be linux, windows or macos.',
+    ]);
+  });
+
+  it("fails a hand-recorded `kind` outside compiled-in, linked and data (010 FR-009)", () => {
+    expect(readCase("hand-unknown-kind").failures).toEqual([
+      'hand-recorded.json: entry "SQLite" has kind "bundled"; it must be compiled-in, linked or data.',
+    ]);
+  });
+
+  it("fails a hand-recorded entry or an exception with no texts (010 FR-009, 010 FR-010)", () => {
+    expect(readCase("hand-empty-texts").failures).toEqual([
+      'hand-recorded.json: entry "SQLite" has no texts; list at least one.',
+    ]);
+    expect(readCase("exception-empty-texts").failures).toEqual([
+      'exceptions.json: entry "crate:needs-exception" has no texts; list at least one.',
+    ]);
+  });
+
+  it("fails a clarification with no files (010 FR-009, 010 FR-010)", () => {
+    expect(readCase("clarify-no-files").failures).toEqual([
+      'clarify.json: entry "crate:unplaceable" has no files; list at least one.',
+    ]);
+  });
+
+  it("fails a native-code `what: hand-recorded:<name>` that names no hand-recorded entry (010 FR-009)", () => {
+    expect(readCase("native-hand-unknown").failures).toEqual([
+      'native-code.json: entry "libsqlite3-sys" has what "hand-recorded:No such entry", but hand-recorded.json has no entry "No such entry".',
+    ]);
   });
 
   it("fails a hand-recorded file that isn't sorted, naming the file and the entry", () => {
@@ -206,6 +255,103 @@ describe("010 research.md §7 - reading the records", () => {
     expect(failures[0]).toContain("native-code.json");
     expect(failures[0]).toContain("baz-sys");
     expect(failures[0]).toContain("something-else");
+  });
+});
+
+// Shape failures that need only one malformed entry are written to a scratch folder
+// (fixtures/README.md, "Records"): a string is written as it is, anything else as JSON.
+function scratchRecords(files: Record<string, unknown>) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "hoplodex-records-"));
+  const all: Record<string, unknown> = {
+    "hand-recorded.json": [],
+    "exceptions.json": [],
+    "clarify.json": [],
+    "native-code.json": [],
+    ...files,
+  };
+  for (const [name, value] of Object.entries(all)) {
+    writeFileSync(path.join(dir, name), typeof value === "string" ? value : JSON.stringify(value));
+  }
+  return readRecords(dir);
+}
+
+describe("010 research.md §7 - the shape of a record file", () => {
+  const sqlite = () => good().handRecorded.find((e: { name: string }) => e.name === "SQLite");
+  const withCarrier = (carrier: Record<string, unknown>) => ({ ...sqlite(), carrier });
+  const hand = (entry: unknown) => scratchRecords({ "hand-recorded.json": [entry] }).failures;
+
+  it("fails a carrier that names both crate and npm (010 FR-009)", () => {
+    expect(hand(withCarrier({ crate: "libsqlite3-sys", npm: "other", version: "0.38.1" }))).toEqual(
+      ['hand-recorded.json: entry "SQLite" carrier must name exactly one of crate and npm.'],
+    );
+  });
+
+  it("fails a carrier that names neither crate nor npm (010 FR-009)", () => {
+    expect(hand(withCarrier({ version: "0.38.1" }))).toEqual([
+      'hand-recorded.json: entry "SQLite" carrier must name exactly one of crate and npm.',
+    ]);
+  });
+
+  it("fails a carrier with no version (010 FR-009)", () => {
+    expect(hand(withCarrier({ crate: "libsqlite3-sys" }))).toEqual([
+      'hand-recorded.json: entry "SQLite" carrier has no "version".',
+    ]);
+  });
+
+  it("fails an unknown carrier field, naming it", () => {
+    expect(
+      hand(withCarrier({ crate: "libsqlite3-sys", version: "0.38.1", features: "x" })),
+    ).toEqual(['hand-recorded.json: entry "SQLite" has an unknown carrier field "features".']);
+  });
+
+  it("fails an unknown field of a clarification's file, naming it", () => {
+    const entry = {
+      ...good().clarifications[0],
+      files: [{ path: "LICENSE", sha256: "0".repeat(64), note: "x" }],
+    };
+    expect(scratchRecords({ "clarify.json": [entry] }).failures).toEqual([
+      'clarify.json: entry "crate:unplaceable" has an unknown file field "note".',
+    ]);
+  });
+
+  it("fails a clarification's file that is neither { path, sha256 } nor { text }", () => {
+    const entry = { ...good().clarifications[0], files: [{ path: "LICENSE" }] };
+    expect(scratchRecords({ "clarify.json": [entry] }).failures).toEqual([
+      'clarify.json: entry "crate:unplaceable" has a file that is neither { path, sha256 } nor { text }.',
+    ]);
+  });
+
+  it("fails an entry that appears twice, naming it", () => {
+    expect(scratchRecords({ "hand-recorded.json": [sqlite(), sqlite()] }).failures).toEqual([
+      'hand-recorded.json: entry "SQLite" appears twice.',
+    ]);
+  });
+
+  it("fails an entry that isn't an object", () => {
+    expect(scratchRecords({ "native-code.json": ["baz-sys"] }).failures).toEqual([
+      "native-code.json: an entry isn't an object.",
+    ]);
+  });
+
+  it("fails a list field that isn't a list, naming the field", () => {
+    expect(hand({ ...sqlite(), os: "linux" })).toEqual([
+      'hand-recorded.json: entry "SQLite" has "os", but it isn\'t a list.',
+    ]);
+    expect(hand({ ...sqlite(), texts: "licenses/texts/sqlite/blessing.txt" })).toEqual([
+      'hand-recorded.json: entry "SQLite" has "texts", but it isn\'t a list.',
+    ]);
+  });
+
+  it("fails a file that isn't valid JSON, naming the file and the parser's reason", () => {
+    const { failures } = scratchRecords({ "exceptions.json": "[{ not json" });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatch(/^exceptions\.json: can't be read as JSON \(.+\)\.$/);
+  });
+
+  it("fails a file that holds something other than a list, naming the file", () => {
+    expect(scratchRecords({ "clarify.json": {} }).failures).toEqual([
+      "clarify.json: must hold a list of entries.",
+    ]);
   });
 });
 
@@ -261,6 +407,19 @@ describe("010 US2-4 - hand-recorded components", () => {
     });
   });
 
+  it("reports the entries it applied for the OS as `used`, for the --all-targets check", () => {
+    const names = (triple: string) =>
+      [...checkHandRecorded(entries(), ctx(triple, { allTargets: true })).used].sort();
+    expect(names(MACOS)).toEqual([
+      "EFF Large Wordlist for Passphrases",
+      "OpenSubtitles 2024 word frequencies",
+      "SQLCipher",
+      "SQLite",
+    ]);
+    expect(names(WINDOWS)).toContain("OpenSSL");
+    expect(names(WINDOWS)).toHaveLength(6);
+  });
+
   it("gives a package: text from the carrier's folder, in the record's order", () => {
     const { components } = checkHandRecorded(entries(), ctx(LINUX));
     const subtitles = components.find((c: { name: string }) => c.name.startsWith("OpenSubtitles"));
@@ -284,8 +443,8 @@ describe("010 US2-4 - hand-recorded components", () => {
       checkHandRecorded(entries(), ctx(triple, over)).components.map(
         (c: { name: string }) => c.name,
       );
-    const openSslDir = path.join(fixtures, "openssl", "3.5.4");
-    expect(names(WINDOWS, { openSslDir })).toEqual([
+    const env = { OPENSSL_DIR: path.join(fixtures, "openssl", "3.5.4") };
+    expect(names(WINDOWS, { env })).toEqual([
       "EFF Large Wordlist for Passphrases",
       "Microsoft WebView2 loader",
       "OpenSSL",
@@ -332,9 +491,9 @@ describe("010 US2-4 - hand-recorded components", () => {
   });
 
   it("fails a Windows entry whose carrier isn't shipped on Windows", () => {
-    const openSslDir = path.join(fixtures, "openssl", "3.5.4");
+    const env = { OPENSSL_DIR: path.join(fixtures, "openssl", "3.5.4") };
     const crates = shipped(WINDOWS).crates.filter((c) => c.name !== "webview2-com-sys");
-    const { failures } = checkHandRecorded(entries(), ctx(WINDOWS, { crates, openSslDir }));
+    const { failures } = checkHandRecorded(entries(), ctx(WINDOWS, { crates, env }));
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('hand-recorded "Microsoft WebView2 loader"');
     expect(failures[0]).toContain("webview2-com-sys");
@@ -382,38 +541,147 @@ describe("010 research.md §7 - the OpenSSL version comes from the build", () =>
   const entries = () => good().handRecorded;
   const v3 = path.join(fixtures, "openssl", "3.5.4");
   const v1 = path.join(fixtures, "openssl", "1.1.1w");
+  const none = path.join(fixtures, "openssl", "no-version");
+  const include = (dir: string) => path.join(dir, "include");
   const openssl = (result: { components: { name: string }[] }) =>
     result.components.find((c) => c.name === "OpenSSL") as { version: string } | undefined;
+  const windows = (env: Record<string, string>) =>
+    checkHandRecorded(entries(), ctx(WINDOWS, { env }));
+  const refused = (env: Record<string, string>) => windows(env).failures;
+  const PREFIX = "X86_64_PC_WINDOWS_MSVC_";
+  const linksOpenSsl1 = (variable: string) =>
+    `hand-recorded "OpenSSL": the Windows build links OpenSSL 1.1.1w (headers from ${variable}); HoploDex needs OpenSSL 3 (its license is compatible with GPLv3, 1.1's isn't).`;
 
   it("reads OPENSSL_VERSION_STR on a Windows check, and the version becomes the component's", () => {
-    const result = checkHandRecorded(entries(), ctx(WINDOWS, { openSslDir: v3 }));
+    const result = windows({ OPENSSL_DIR: v3 });
     expect(result.failures).toEqual([]);
     expect(openssl(result)?.version).toBe("3.5.4");
   });
 
-  it("fails OpenSSL 1.1.1w with the contract's message", () => {
-    const { failures } = checkHandRecorded(entries(), ctx(WINDOWS, { openSslDir: v1 }));
+  it("fails OpenSSL 1.1.1w naming the variable it came from", () => {
+    expect(refused({ OPENSSL_DIR: v1 })).toEqual([linksOpenSsl1("OPENSSL_DIR")]);
+  });
+
+  // libsqlite3-sys 0.38.1's build.rs, `env()` (lines 312-321): each name is read as
+  // <TARGET>_<name> first, then <name>. Its include path (lines 159-189): both
+  // OPENSSL_LIB_DIR and OPENSSL_INCLUDE_DIR set -> the include variable's value;
+  // else OPENSSL_DIR is required, and the include path is OPENSSL_INCLUDE_DIR if
+  // set, else <OPENSSL_DIR>/include. 010 research.md §7 has the same account.
+  describe.each([
+    ["OPENSSL_DIR", { OPENSSL_DIR: v3 }, "OPENSSL_DIR"],
+    [
+      "<TARGET>_OPENSSL_DIR over OPENSSL_DIR",
+      { [`${PREFIX}OPENSSL_DIR`]: v3, OPENSSL_DIR: v1 },
+      `${PREFIX}OPENSSL_DIR`,
+    ],
+    [
+      "OPENSSL_INCLUDE_DIR over OPENSSL_DIR",
+      { OPENSSL_DIR: v1, OPENSSL_INCLUDE_DIR: include(v3) },
+      "OPENSSL_INCLUDE_DIR",
+    ],
+    [
+      "<TARGET>_OPENSSL_INCLUDE_DIR over OPENSSL_INCLUDE_DIR",
+      {
+        OPENSSL_DIR: v1,
+        [`${PREFIX}OPENSSL_INCLUDE_DIR`]: include(v3),
+        OPENSSL_INCLUDE_DIR: include(v1),
+      },
+      `${PREFIX}OPENSSL_INCLUDE_DIR`,
+    ],
+    [
+      "OPENSSL_LIB_DIR and OPENSSL_INCLUDE_DIR without OPENSSL_DIR",
+      { OPENSSL_LIB_DIR: "unread", OPENSSL_INCLUDE_DIR: include(v3) },
+      "OPENSSL_INCLUDE_DIR",
+    ],
+    [
+      "<TARGET>_OPENSSL_LIB_DIR completing the pair",
+      { [`${PREFIX}OPENSSL_LIB_DIR`]: "unread", OPENSSL_INCLUDE_DIR: include(v3) },
+      "OPENSSL_INCLUDE_DIR",
+    ],
+    [
+      "OPENSSL_INCLUDE_DIR with OPENSSL_DIR but no OPENSSL_LIB_DIR",
+      { OPENSSL_DIR: v1, OPENSSL_INCLUDE_DIR: include(v3) },
+      "OPENSSL_INCLUDE_DIR",
+    ],
+    [
+      "OPENSSL_LIB_DIR with OPENSSL_DIR but no OPENSSL_INCLUDE_DIR",
+      { OPENSSL_LIB_DIR: "unread", OPENSSL_DIR: v3 },
+      "OPENSSL_DIR",
+    ],
+    [
+      "another target's prefix",
+      { AARCH64_PC_WINDOWS_MSVC_OPENSSL_DIR: v1, OPENSSL_DIR: v3 },
+      "OPENSSL_DIR",
+    ],
+  ])("takes the headers from %s", (_name, env, variable) => {
+    it(`reads 3.5.4 through ${variable}`, () => {
+      const result = windows(env as Record<string, string>);
+      expect(result.failures).toEqual([]);
+      expect(openssl(result)?.version).toBe("3.5.4");
+    });
+  });
+
+  describe.each([
+    [
+      "a 1.1.1w OPENSSL_INCLUDE_DIR over a 3.x OPENSSL_DIR",
+      { OPENSSL_DIR: v3, OPENSSL_INCLUDE_DIR: include(v1) },
+      "OPENSSL_INCLUDE_DIR",
+    ],
+    [
+      "a 1.1.1w <TARGET>_OPENSSL_DIR over a 3.x OPENSSL_DIR",
+      { [`${PREFIX}OPENSSL_DIR`]: v1, OPENSSL_DIR: v3 },
+      `${PREFIX}OPENSSL_DIR`,
+    ],
+    [
+      "a 1.1.1w <TARGET>_OPENSSL_INCLUDE_DIR over a 3.x pair",
+      {
+        [`${PREFIX}OPENSSL_INCLUDE_DIR`]: include(v1),
+        OPENSSL_LIB_DIR: "unread",
+        OPENSSL_INCLUDE_DIR: include(v3),
+      },
+      `${PREFIX}OPENSSL_INCLUDE_DIR`,
+    ],
+    [
+      "a 1.1.1w OPENSSL_INCLUDE_DIR beside OPENSSL_LIB_DIR",
+      { OPENSSL_LIB_DIR: "unread", OPENSSL_INCLUDE_DIR: include(v1) },
+      "OPENSSL_INCLUDE_DIR",
+    ],
+  ])("refuses %s", (_name, env, variable) => {
+    it(`names ${variable}`, () => {
+      expect(refused(env as Record<string, string>)).toEqual([linksOpenSsl1(variable)]);
+    });
+  });
+
+  it("fails a Windows check where no variable gives the build its headers, naming them", () => {
+    const expected =
+      "hand-recorded \"OpenSSL\": the OpenSSL version the Windows build links can't be read; set OPENSSL_DIR, or both OPENSSL_LIB_DIR and OPENSSL_INCLUDE_DIR (libsqlite3-sys's build.rs reads them, as X86_64_PC_WINDOWS_MSVC_<name> first).";
+    expect(refused({})).toEqual([expected]);
+    // build.rs needs OPENSSL_DIR or both of the pair: a lone include or lib variable stops it
+    expect(refused({ OPENSSL_INCLUDE_DIR: include(v3) })).toEqual([expected]);
+    expect(refused({ OPENSSL_LIB_DIR: "unread" })).toEqual([expected]);
+    // another target's variable doesn't count
+    expect(refused({ AARCH64_PC_WINDOWS_MSVC_OPENSSL_DIR: v3 })).toEqual([expected]);
+  });
+
+  it("fails a variable whose folder has no opensslv.h, naming the entry and the variable", () => {
+    const failures = refused({ OPENSSL_DIR: fixtures });
     expect(failures).toEqual([
-      "hand-recorded \"OpenSSL\": the Windows build links OpenSSL 1.1.1w; HoploDex needs OpenSSL 3 (its license is compatible with GPLv3, 1.1's isn't).",
+      `hand-recorded "OpenSSL": ${path.join(fixtures, "include", "openssl", "opensslv.h")} (opensslv.h, from OPENSSL_DIR) doesn't exist.`,
     ]);
   });
 
-  it("fails a Windows check with no OPENSSL_DIR, naming it", () => {
-    const { failures } = checkHandRecorded(entries(), ctx(WINDOWS));
-    expect(failures).toHaveLength(1);
-    expect(failures[0]).toContain('hand-recorded "OpenSSL"');
-    expect(failures[0]).toContain("OPENSSL_DIR");
-  });
-
-  it("fails an OPENSSL_DIR with no opensslv.h, naming the entry", () => {
-    const { failures } = checkHandRecorded(entries(), ctx(WINDOWS, { openSslDir: fixtures }));
-    expect(failures).toHaveLength(1);
-    expect(failures[0]).toContain('hand-recorded "OpenSSL"');
-    expect(failures[0]).toContain("opensslv.h");
+  it("fails an opensslv.h that names no OpenSSL version, naming the file and the variable", () => {
+    const header = path.join(none, "include", "openssl", "opensslv.h");
+    expect(refused({ OPENSSL_DIR: none })).toEqual([
+      `hand-recorded "OpenSSL": opensslv.h (${header}, from OPENSSL_DIR) names no OpenSSL version.`,
+    ]);
   });
 
   it("doesn't read the version under --all-targets: the text and the carrier only", () => {
-    const result = checkHandRecorded(entries(), ctx(WINDOWS, { allTargets: true, openSslDir: v1 }));
+    const result = checkHandRecorded(
+      entries(),
+      ctx(WINDOWS, { allTargets: true, env: { OPENSSL_DIR: v1 } }),
+    );
     expect(result.failures).toEqual([]);
     expect(openssl(result)?.version).toBe("3.x (the version the Windows build links)");
     expect(
@@ -427,9 +695,10 @@ describe("010 research.md §7 - the OpenSSL version comes from the build", () =>
     expect(failures.some((f: string) => f.includes('hand-recorded "OpenSSL"'))).toBe(true);
   });
 
-  it("ignores OPENSSL_DIR on Linux and macOS", () => {
+  it("ignores the OpenSSL variables on Linux and macOS", () => {
     for (const triple of [LINUX, MACOS]) {
-      expect(checkHandRecorded(entries(), ctx(triple, { openSslDir: v1 })).failures).toEqual([]);
+      const env = { OPENSSL_DIR: v1, OPENSSL_INCLUDE_DIR: include(v1) };
+      expect(checkHandRecorded(entries(), ctx(triple, { env })).failures).toEqual([]);
     }
   });
 });
@@ -475,6 +744,30 @@ describe("010 US2-3 - notice exceptions", () => {
     expect(failures[0]).toMatch(
       /^exception crate:ships-license: the (?:package|crate) now ships LICENSE; remove the exception\.$/,
     );
+  });
+
+  it("fails when the component ships the text of an alternative that isn't the chosen one (010 FR-018)", () => {
+    // "MIT OR Apache-2.0" is chosen as MIT, but the crate ships only LICENSE-APACHE: the
+    // notices would use that text, so the exception is stale all the same.
+    const alternative = crate("ships-alternative", "1.0.0", "MIT OR Apache-2.0");
+    const { failures } = checkExceptions(
+      readCase("exception-stale-alternative").exceptions,
+      ctx(LINUX, { root: caseRoot("exception-stale-alternative"), crates: [alternative] }),
+    );
+    expect(failures).toEqual([
+      "exception crate:ships-alternative: the crate now ships LICENSE-APACHE; remove the exception.",
+    ]);
+  });
+
+  it("fails an exception whose package folder is missing, without reading it (010 FR-008)", () => {
+    const gone = {
+      ...npm("no-license-file", "1.0.0"),
+      folder: path.join(fixtures, "no-such-folder"),
+    };
+    const { failures } = checkExceptions(entries(), ctx(LINUX, { npm: [gone] }));
+    expect(failures).toEqual([
+      `exception npm:no-license-file: its folder ${gone.folder} doesn't exist (run npm ci).`,
+    ]);
   });
 
   it("fails when the declared license changed, naming both expressions", () => {
@@ -645,8 +938,11 @@ describe("010 research.md §7 - native code", () => {
 
 describe("010 research.md §9 - an entry no target uses fails the --all-targets audit", () => {
   const everything = (
-    over: Partial<Record<"exceptions" | "clarifications" | "nativeCode", string[]>> = {},
+    over: Partial<
+      Record<"exceptions" | "clarifications" | "nativeCode" | "handRecorded", string[]>
+    > = {},
   ) => ({
+    handRecorded: good().handRecorded.map((e: { name: string }) => e.name),
     exceptions: ["crate:needs-exception", "npm:no-license-file", "npm:spdx-only"],
     clarifications: ["crate:unplaceable", "npm:@fontsource-variable/example-font"],
     nativeCode: ["baz-sys", "libsqlite3-sys", "prebuilt-lib-sys", "webview2-com-sys"],
@@ -660,6 +956,25 @@ describe("010 research.md §9 - an entry no target uses fails the --all-targets 
       { exceptions: [], clarifications: [], nativeCode: [] },
     ];
     expect(unusedAcrossTargets(good(), perTarget)).toEqual([]);
+  });
+
+  it("fails a hand-recorded entry no target ships, naming it (010 FR-009, 010 FR-010)", () => {
+    const perTarget = [
+      everything({ handRecorded: ["SQLCipher", "SQLite"] }),
+      everything({ handRecorded: ["SQLCipher"] }),
+    ];
+    const failures = unusedAcrossTargets(good(), perTarget);
+    expect(failures).toEqual(
+      [
+        "EFF Large Wordlist for Passphrases",
+        "Microsoft WebView2 loader",
+        "OpenSSL",
+        "OpenSubtitles 2024 word frequencies",
+      ].map(
+        (name) =>
+          `hand-recorded "${name}": no target ships it; remove the entry (licenses/hand-recorded.json).`,
+      ),
+    );
   });
 
   it("fails an exception no target uses, naming it", () => {

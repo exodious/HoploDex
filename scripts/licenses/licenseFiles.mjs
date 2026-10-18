@@ -5,6 +5,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { PREFERENCE, isAllowed } from "./policy.mjs";
 
 /** A license file smaller than this that no name places is a pointer, not a text. */
 const POINTER_BYTES = 400;
@@ -165,6 +166,26 @@ export function findTexts(folder, chosen, { declared, label }) {
     ],
     failure: null,
   };
+}
+
+/**
+ * The licenses to look for a text of, best first: `chosen`, then the other
+ * allowed alternatives of a plain choice (`A OR B`) in the shared preference
+ * order, since a package may ship only a less preferred alternative's text.
+ * `name` is the package or crate, for `isAllowed`'s scoped exceptions. The
+ * notices and the stale-exception check both look through this list.
+ */
+export function alternativesOf(declared, chosen, name) {
+  if (/[()]|\sAND\s/.test(declared)) return [chosen];
+  const rank = (id) => {
+    const index = PREFERENCE.indexOf(id);
+    return index === -1 ? PREFERENCE.length : index;
+  };
+  const others = declared
+    .split(/\s+OR\s+/)
+    .filter((id) => id !== chosen && isAllowed(id, { package: name }))
+    .sort((a, b) => rank(a) - rank(b));
+  return [chosen, ...others];
 }
 
 /**

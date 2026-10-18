@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { findTexts, findTextsAmong } from "./licenseFiles.mjs";
+import { alternativesOf, findTexts, findTextsAmong } from "./licenseFiles.mjs";
 
 const project = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "project");
 const crate = (name: string, version = "1.0.0") =>
@@ -261,5 +261,29 @@ describe("010 research.md §5 - a choice uses the alternative whose text the pac
     const found = among(crate("authors-only"), ["MIT", "Apache-2.0"]);
     expect(found.failure).toMatch(/^crate fixture 1\.0\.0: no license text for MIT/);
     expect(found.texts).toEqual([]);
+  });
+});
+
+describe("010 research.md §8 - the alternatives to look for a text of", () => {
+  it("lists the chosen license first, then the other allowed alternatives in preference order", () => {
+    expect(alternativesOf("Apache-2.0 OR MIT", "MIT", "x")).toEqual(["MIT", "Apache-2.0"]);
+    expect(alternativesOf("Zlib OR MIT OR Apache-2.0", "MIT", "x")).toEqual([
+      "MIT",
+      "Apache-2.0",
+      "Zlib",
+    ]);
+  });
+
+  it("leaves out an alternative the policy doesn't allow", () => {
+    expect(alternativesOf("MIT OR GPL-2.0-only", "MIT", "x")).toEqual(["MIT"]);
+  });
+
+  it("is only the chosen license for a conjunction or a parenthesised expression", () => {
+    expect(alternativesOf("MIT AND Apache-2.0", "MIT AND Apache-2.0", "x")).toEqual([
+      "MIT AND Apache-2.0",
+    ]);
+    expect(
+      alternativesOf("(MIT OR Apache-2.0) AND Unicode-3.0", "MIT AND Unicode-3.0", "x"),
+    ).toEqual(["MIT AND Unicode-3.0"]);
   });
 });

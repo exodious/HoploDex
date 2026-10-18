@@ -12,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { PREFERENCE, isAllowed } from "./policy.mjs";
+import { isAllowed } from "./policy.mjs";
 import {
   checkClarifications,
   checkExceptions,
@@ -21,7 +21,7 @@ import {
   readRecords,
   unusedAcrossTargets,
 } from "./records.mjs";
-import { findTextsAmong, placeTexts } from "./licenseFiles.mjs";
+import { alternativesOf, findTextsAmong, placeTexts } from "./licenseFiles.mjs";
 import { crateShipped, npmShipped, runCargo, targetTriple } from "./shipped.mjs";
 import { choose } from "./spdx.mjs";
 
@@ -99,7 +99,6 @@ export function resolveInputs(options = {}) {
     git: options.git ?? realGit(root),
     now: options.now ?? new Date(),
     env,
-    openSslDir: options.openSslDir ?? env.OPENSSL_DIR,
   };
 }
 
@@ -109,24 +108,6 @@ export function resolveInputs(options = {}) {
  */
 const spdxOf = (license) =>
   typeof license === "string" ? license.replace(/\s*\/\s*/g, " OR ") : license;
-
-/**
- * The licenses to look for a text of, best first: `chosen`, then the other
- * allowed alternatives of a plain choice (`A OR B`) in the shared preference
- * order, since a package may ship only a less preferred alternative's text.
- */
-function alternativesOf(declared, chosen, name) {
-  if (/[()]|\sAND\s/.test(declared)) return [chosen];
-  const rank = (id) => {
-    const index = PREFERENCE.indexOf(id);
-    return index === -1 ? PREFERENCE.length : index;
-  };
-  const others = declared
-    .split(/\s+OR\s+/)
-    .filter((id) => id !== chosen && isAllowed(id, { package: name }))
-    .sort((a, b) => rank(a) - rank(b));
-  return [chosen, ...others];
-}
 
 /**
  * Whether the package or crate in `item.folder` ships a text for its license.
@@ -156,12 +137,22 @@ function oneLine(error) {
   return flat.length > 600 ? `${flat.slice(0, 600)}...` : flat;
 }
 
-/** The npm packages that ship, each with its folder in `modulesDir`; one per name and version. */
+/**
+ * The npm packages that ship, each with its folder in `modulesDir`; one per
+ * name and version. A shipped package the lockfile gives no version is a
+ * failure, never skipped: its notice would drop out silently.
+ */
 function shippedNpm(lock, modulesDir) {
   const seen = new Set();
   const packages = [];
+  const failures = [];
   for (const pkg of npmShipped(lock)) {
-    if (pkg.version === undefined) continue;
+    if (pkg.version === undefined) {
+      failures.push(
+        `npm package ${pkg.name} (${pkg.location}): package-lock.json records no version for it. Run npm install to repair the lockfile.`,
+      );
+      continue;
+    }
     const key = `${pkg.name}@${pkg.version}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -172,8 +163,12 @@ function shippedNpm(lock, modulesDir) {
       license: pkg.license,
     });
   }
-  return packages;
+  return { packages, failures };
 }
+
+/** A notice with nothing to show fails: it would otherwise drop out of the document silently. */
+const noText = (subject, file) =>
+  `${subject}: no license text to show; a notice needs at least one. Check its record (${file}).`;
 
 /** The text of a record's text entry (`{ file, text }` or `{ text }`). */
 const textOf = (entry) => entry.text;
@@ -187,7 +182,8 @@ const textOf = (entry) => entry.text;
  *
  * `allTargets` is the `--all-targets` check of one target (OpenSSL's version
  * isn't read); `development: true` marks the document, for the development
- * server; `env` is where `OPENSSL_DIR` comes from when `openSslDir` isn't given.
+ * server; `env` holds the variables a Windows check finds OpenSSL's headers
+ * through (default: the process's; see `openSslIncludeDir` in records.mjs).
  */
 export function buildNotices(options = {}) {
   const inputs = resolveInputs(options);
@@ -202,7 +198,9 @@ export function buildNotices(options = {}) {
 
   let npm = [];
   try {
-    npm = shippedNpm(JSON.parse(readFileSync(lockFile, "utf8")), modulesDir);
+    const shipped = shippedNpm(JSON.parse(readFileSync(lockFile, "utf8")), modulesDir);
+    npm = shipped.packages;
+    failures.push(...shipped.failures);
   } catch (error) {
     failures.push(`npm packages: can't read ${lockFile} (${oneLine(error)}).`);
   }
@@ -221,7 +219,7 @@ export function buildNotices(options = {}) {
     root: path.dirname(licensesDir),
     triple: target,
     allTargets: options.allTargets === true,
-    openSslDir: inputs.openSslDir,
+    env: inputs.env,
     crates,
     npm,
   };
@@ -312,6 +310,15 @@ export function buildNotices(options = {}) {
       source = "package";
     }
     if (texts === undefined) return;
+    if (texts.length === 0) {
+      failures.push(
+        noText(
+          label,
+          source === "clarified" ? "licenses/clarify.json" : "licenses/exceptions.json",
+        ),
+      );
+      return;
+    }
 
     const component = {
       name: item.name,
@@ -336,6 +343,10 @@ export function buildNotices(options = {}) {
       failures.push(
         `license: hand-recorded "${entry.name}" is under ${entry.license}, which isn't allowed.`,
       );
+      continue;
+    }
+    if (entry.texts.length === 0) {
+      failures.push(noText(`hand-recorded "${entry.name}"`, "licenses/hand-recorded.json"));
       continue;
     }
     components.push({ ...entry, texts: entry.texts.map(textOf) });
@@ -401,6 +412,7 @@ export function buildNotices(options = {}) {
     failures: [...new Set(failures)],
     warnings: [...new Set(warnings)],
     used: {
+      handRecorded: hand.used,
       exceptions: exceptions.used,
       clarifications: clarifications.used,
       nativeCode: native.used,

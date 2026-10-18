@@ -39,7 +39,7 @@ the `e2e` build's WebDriver plugin don't ship.
 | **Licenses that need a second look** | Licenses other than MIT, Apache-2.0 and BSD among the shipped crates | `cargo tree … -f '{p} {l}'`, rerun for each OS | Unicode-3.0 (16 across the OSes, 15 on Windows and macOS: the `icu_*`/`zerovec` families, `unicode-ident`; one is `(MIT OR Apache-2.0) AND Unicode-3.0`). Zlib (16 across the OSes, 11 on Linux and Windows, 16 on macOS, mostly one choice among several; Zlib alone for `foldhash` and `zlib-rs`). BSL-1.0 (`ryu`, with Apache-2.0 as the other choice). MPL-2.0 (`option-ext` only). CC0-1.0 or MIT-0 (`dunce`). 0BSD (`adler2`). Apache-2.0 WITH LLVM-exception (`rustix`, `linux-raw-sys`). All GPLv3-compatible on the FSF's list. The macOS `objc2` crates (MIT, or Zlib, Apache-2.0 or MIT) are derived from Apple SDKs and their repository says it is unclear whether distributing them is allowed; the owner accepted that on 2026-10-18 (§8). No OpenSSL or SSLeay license anywhere in the tree |
 | **MPL-2.0 Exhibit B** | Whether any MPL-2.0 file says "Incompatible With Secondary Licenses" | `grep -rli 'Incompatible With Secondary Licenses' --exclude='LICENSE*'` in the registry source of every MPL-2.0 crate in `cargo metadata` (rerun 2026-10-18, T049): `option-ext` 0.2.0 (the one shipped, on all three OSes), and `cssparser` 0.36.0, `cssparser-macros` 0.6.1, `dtoa-short` 0.3.5, `selectors` 0.36.1 (build-only, not shipped) | None, in any of the five |
 | **C code compiled inside a crate** | Shipped crates whose build compiles bundled C, or links a library the crate carries | The shipped trees, each crate's `build.rs` and package contents (§7) | `libsqlite3-sys` 0.38.1 (`bundled-sqlcipher`) compiles SQLCipher 4.14.0 community (BSD-3-Clause, "Copyright (c) 2008-2020 Zetetic LLC", `sqlcipher/LICENSE` in the crate) on SQLite 3.51.3 (public domain, the blessing at `sqlcipher/sqlite3.c:64`). `libdbus-sys` 0.2.7 is built without `vendored`, so it links the system's `libdbus` and compiles nothing. On macOS, `objc2-exception-helper` compiles its own small Objective-C file, under its crate's license. On Windows, `webview2-com-sys` 0.38.2 links Microsoft's `WebView2LoaderStatic.lib` (§3). The guard (§7, `licenses/native-code.json`) lists the four crates the three real trees need: `libsqlite3-sys`, `objc2-exception-helper`, `webview2-com-sys` and `windows_x86_64_msvc`; no other shipped crate builds C or carries a prebuilt file, and `--check --all-targets` passes |
-| **SQLCipher's crypto library** | Which library each OS's build links, and under what license | `libsqlite3-sys`'s `build.rs`; `scripts/windows/setup-system.ps1` | Linux: the system's OpenSSL `libcrypto`, dynamically, a system library. macOS: CommonCrypto (`SQLCIPHER_CRYPTO_CC`, the Security and CoreFoundation frameworks), a system library. Windows: OpenSSL from vcpkg (`x64-windows-static-md`), linked statically, so it ships inside the program. OpenSSL 3.x is Apache-2.0, which is compatible with GPLv3. 1.1.x and older use the OpenSSL/SSLeay license, which isn't, so the version decides. Today only `setup-system.ps1` checks the version (`OPENSSL_VERSION_MAJOR >= 3`), when a machine is set up. The notices build now reads the version the program is linked against and refuses anything older than 3 (§7). On the Windows test machine it read OpenSSL 3.6.5 from `opensslv.h` (T025), and refused a scratch copy of the headers that said 1.1.1w. `openssl-sys` isn't in the tree on any target |
+| **SQLCipher's crypto library** | Which library each OS's build links, and under what license | `libsqlite3-sys`'s `build.rs`; `scripts/windows/setup-system.ps1` | Linux: the system's OpenSSL `libcrypto`, dynamically, a system library. macOS: CommonCrypto (`SQLCIPHER_CRYPTO_CC`, the Security and CoreFoundation frameworks), a system library. Windows: OpenSSL from vcpkg (`x64-windows-static-md`), linked statically, so it ships inside the program. OpenSSL 3.x is Apache-2.0, which is compatible with GPLv3. 1.1.x and older use the OpenSSL/SSLeay license, which isn't, so the version decides. Today only `setup-system.ps1` checks the version (`OPENSSL_VERSION_MAJOR >= 3`), when a machine is set up. The notices build now reads the version from the `opensslv.h` that `libsqlite3-sys` 0.38.1's `build.rs` compiles against, found through the same environment variables in the same order (not from `OPENSSL_DIR` alone), and refuses anything older than 3 (§7). On the Windows test machine it read OpenSSL 3.6.5 from `opensslv.h` (T025), and refused a scratch copy of the headers that said 1.1.1w. `openssl-sys` isn't in the tree on any target |
 | **Binary libraries a crate links in** | Shipped crates that carry and link a prebuilt library | Package contents (`*.lib`, `*.a`, `*.dll`, `*.dylib`, `*.so`) and `link` attributes | `webview2-com-sys` links `WebView2LoaderStatic.lib` statically under MSVC (`src/lib.rs`, `link(name = "WebView2LoaderStatic", kind = "static")`). It is Microsoft's, under the WebView2 SDK's BSD-3-Clause license, with no source published: `Microsoft.Web.WebView2` 1.0.3650.58, whose loader matches the one in `webview2-com-sys` 0.38.2 by SHA-256. §3 settles it. The `windows_*_msvc` crates carry import libraries generated by the `windows-rs` project, under that crate's own license, which name system DLLs |
 | **System libraries** | What the program uses from the OS without shipping it | The bundle configuration, and §4 | Linux: WebKitGTK, GTK and their stack (LGPL), `libcrypto`, `libdbus`, the Secret Service. Windows: WebView2 (the Evergreen runtime). macOS: WKWebView, CommonCrypto, the Keychain. None ships in a published bundle (§4) |
 | **Fonts** | The font files Vite emits | `src/main.tsx` imports; the `dist/assets/*.woff2` output (seven files, rechecked 2026-10-18 in this branch's build) | Atkinson Hyperlegible Mono and Next (latin, latin-ext) and Big Shoulders Display (latin, latin-ext, vietnamese): seven `woff2` files under OFL-1.1, shipped as separate font files (the recorded exception). The `@fontsource-variable/big-shoulders-display` 5.3.0 package's `LICENSE` names the copyright holder as "Google Inc.". The upstream project's `OFL.txt` names "The Big Shoulders Project Authors". The notice uses the text the font files themselves carry (§12) |
@@ -361,13 +361,31 @@ None of them is allowed for a package or crate in general.
 - the entry's text file is missing.
 
 **The OpenSSL version** comes from the build. On Windows the notices read
-`OPENSSL_VERSION_STR` from `$OPENSSL_DIR/include/openssl/opensslv.h`, the
-headers SQLCipher is compiled against. They refuse a major version below 3,
-because 1.1.x's license isn't compatible (§1), so that rule is now a build
-check, not only a note. The check with `--all-targets` (§9) runs on Linux, with
-no `OPENSSL_DIR`, so it can't read a version. There the entry reads "3.x (the
-version the Windows build links)", and the check confirms only the text and
-the carrier.
+`OPENSSL_VERSION_STR` (or, for 1.1.x, `OPENSSL_VERSION_TEXT`) from the
+`openssl/opensslv.h` that SQLCipher is compiled against, and they find that
+header the way `libsqlite3-sys` 0.38.1's `build.rs` does (its `env()`, lines
+312-321, and the include path, lines 159-189; confirmed against the source in
+the Cargo registry, 2026-10-18; a new `libsqlite3-sys` version needs the
+reading checked again, which the carrier-version check prompts):
+- each variable is read as `<TARGET>_<name>` first (the triple upper-cased,
+  dashes to underscores: `X86_64_PC_WINDOWS_MSVC_OPENSSL_DIR`), then as
+  `<name>`, and a variable that is set counts even when it is empty;
+- when `OPENSSL_LIB_DIR` and `OPENSSL_INCLUDE_DIR` are both set, the headers
+  are in `OPENSSL_INCLUDE_DIR`;
+- otherwise `OPENSSL_DIR` is required (the build panics without it on
+  Windows), and the headers are in `OPENSSL_INCLUDE_DIR` if that is set, else
+  in `<OPENSSL_DIR>/include`.
+
+The failure names the variable that decided it, so a 3.x `OPENSSL_DIR` with a
+1.1.1w `OPENSSL_INCLUDE_DIR` override is refused as 1.1.1w, naming
+`OPENSSL_INCLUDE_DIR`. A Windows check where none of these gives the build its
+headers fails, naming the variables. Only the headers are read: a library
+directory that holds a different OpenSSL than its headers isn't seen. They
+refuse a major version below 3, because 1.1.x's license isn't compatible (§1),
+so that rule is now a build check, not only a note. The check with
+`--all-targets` (§9) runs on Linux, where the Windows build's variables don't
+exist, so it can't read a version. There the entry reads "3.x (the version the
+Windows build links)", and the check confirms only the text and the carrier.
 
 **A guard for new native code**: `licenses/native-code.json` lists every
 shipped crate that compiles code with `cc` or `cmake` (an enabled build

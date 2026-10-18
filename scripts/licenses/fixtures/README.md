@@ -30,6 +30,10 @@ fixtures/
     registry/<crate>-<version>/   stands for the cargo registry's crate folders
     licenses/              the good records: four JSON files, additional-permission.txt, texts/
   records/<case>/licenses/ a red case: the same shape as project/licenses/, only what the case needs
+                           (all four JSON files, `[]` for the unused ones)
+  lock-no-version/         project/lock.json plus a shipped package with no version
+  lock-no-license/         project/lock.json with `shipped-mit` declaring no license
+  lock-unlisted/           project/lock.json without `shipped-mit`, which the vite app bundles
   cargo/                   recorded cargo output (below)
   openssl/<version>/include/openssl/opensslv.h
   vite-app/                the tiny app vitePlugin.test.ts builds (below)
@@ -86,6 +90,7 @@ trees (`L` Linux, `W` Windows, `M` macOS).
 | `dual-by-content` 1.0.0 | no | MIT in `LICENSE`, Apache in `COPYING`: placed by content |
 | `ships-license` 1.0.0 | no | ships `LICENSE`: a stale exception |
 | `changed-license` 1.0.0 | no | declares "MIT OR Apache-2.0" where an exception recorded "MIT" |
+| `ships-alternative` 1.0.0 | no | declares "MIT OR Apache-2.0" and ships only `LICENSE-APACHE`, the text of the alternative that isn't chosen: a stale exception |
 | `zlib-only` 1.0.0 | `zlib-exception` variant | "MIT OR Apache-2.0 OR Zlib" with no license file: `records/exception-zlib` commits Zlib's text (and a statement that only names Apache-2.0 and MIT), so its notice is under Zlib; `records/exception-unplaced` commits a text of none, which fails |
 | `quux` 2.0.0 | `gpl-crate` variant | "GPL-2.0-only" (below, "Recorded cargo output") |
 
@@ -157,8 +162,9 @@ clarifications (`crate:unplaceable`, the example font, one `{ text }` and one
 committed path), four native-code entries, and `texts/`, whose files each begin
 with `Source: <url>`. The hand-recorded names are the six that policy.mjs's
 entry-scoped exceptions use. Every JSON file is sorted by its first field
-(code-unit order). A red case folder holds only the files it changes (the
-others are absent, which reads as an empty list) and the texts it needs.
+(code-unit order). Every record file must exist (an empty list is `[]`), so a
+red case folder holds all four JSON files, the unused ones as `[]`, and the
+texts it needs. Only `absent-files` leaves files out, on purpose.
 
 | Case | Shows |
 | --- | --- |
@@ -174,7 +180,17 @@ others are absent, which reads as an empty list) and the texts it needs.
 | `clarify-hash-changed` | a clarification whose recorded SHA-256 is of an older `LICENSE` |
 | `clarify-missing-file` | a clarification naming a file the package doesn't have |
 | `native-unlisted` | an empty native-code list, so every native crate is unlisted |
-| `absent-files` | a `licenses/` folder with `native-code.json` only |
+| `absent-files` | a `licenses/` folder with `native-code.json` only: each of the other three files is a failure |
+| `hand-empty-os`, `hand-unknown-os`, `hand-unknown-kind` | a hand-recorded `os` that is `[]`, one that names `freebsd`, and a `kind` of `bundled` |
+| `hand-empty-texts`, `exception-empty-texts`, `clarify-no-files` | an entry with `texts: []`, an exception with `texts: []`, a clarification with `files: []`: a failure of the record and of the notice it would drop |
+| `native-hand-unknown` | a native-code `what: hand-recorded:No such entry` that no hand-recorded entry has |
+| `exception-stale-alternative` | an exception for `ships-alternative`, which ships the text of the alternative that isn't the chosen one |
+
+The shape failures that need one malformed entry (a carrier naming both or
+neither of `crate` and `npm`, a carrier with no `version` or with an unknown
+field, an unknown field of a clarification's file, a duplicate entry, a file
+that isn't valid JSON or isn't a list) have no folder: `records.test.ts` writes
+the malformed file to a scratch folder, with `[]` for the other three.
 
 Cases that need a crate's declared license, features or build dependencies get
 them from the test, which builds the check's input by hand from the registry
@@ -186,3 +202,11 @@ folders; `cargo/` serves the generator's own tests.
 `openssl/1.1.1w/include/openssl/opensslv.h` is like the real 1.1.1 header: it
 has `OPENSSL_VERSION_TEXT "OpenSSL 1.1.1w  11 Sep 2023"` and no
 `OPENSSL_VERSION_STR`, which came with OpenSSL 3.
+`openssl/no-version/include/openssl/opensslv.h` names no version at all.
+
+`records.test.ts` points the Windows check at these through each variable
+`libsqlite3-sys`'s `build.rs` reads (`OPENSSL_DIR`, `OPENSSL_INCLUDE_DIR` and
+`OPENSSL_LIB_DIR`, each also as `X86_64_PC_WINDOWS_MSVC_<name>`), setting two
+at once with a 3.x header on one and 1.1.1w on the other, so the one that wins
+decides: a 3.x `OPENSSL_DIR` with a 1.1.1w `OPENSSL_INCLUDE_DIR` fails and names
+`OPENSSL_INCLUDE_DIR`.

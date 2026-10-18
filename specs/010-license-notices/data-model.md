@@ -8,7 +8,8 @@ added. This feature's data is build output and committed files:
 - **Generated, not committed** (git ignores `dist/`): `dist/notices.json` and
   `dist/NOTICES.txt`, one pair per build, for that build's target.
 - **Committed records**: the files under `licenses/`, which the build reads to
-  produce them.
+  produce them. All four JSON files must exist; an empty list is written `[]`,
+  so a deleted file fails instead of dropping its notices.
 - **Constants compiled into the interface**: the program block.
 
 contracts/notices.md gives the exact formats. This file describes the
@@ -69,17 +70,18 @@ Cases).
 
 | Field | Rule |
 |---|---|
-| `name`, `version`, `license`, `kind` | As a component notice. `version` may be `"from-build"` (OpenSSL) |
-| `os` | One or more of `linux`, `windows`, `macos` |
+| `name`, `version`, `license`, `kind` | As a component notice, with `kind` one of `compiled-in`, `linked` or `data`. `version` may be `"from-build"` (OpenSSL) |
+| `os` | One or more of `linux`, `windows`, `macos` (never empty) |
 | `carrier` | `{ "npm" \| "crate": name, version, feature? }`: exactly one of `npm` and `crate`, and a `version` |
-| `texts` | Paths: `licenses/texts/…` (committed), or `package:<path>` inside the carrier's folder |
+| `texts` | At least one path: `licenses/texts/…` (committed), or `package:<path>` inside the carrier's folder |
 | `reason` | Why the tools can't see it |
 
 **Check** (research.md §7) fails, naming the entry, when:
 - the carrier isn't shipped on a listed OS;
 - the carrier's version differs from the recorded one;
 - the feature isn't enabled;
-- a text file is missing;
+- a text file is missing, or `texts` is empty;
+- `os` is empty or names another operating system, or `kind` is another value;
 - for OpenSSL on Windows, the version read from the build is below 3.
 
 ### Notice exception (`licenses/exceptions.json`; spec FR-010)
@@ -89,7 +91,7 @@ Cases).
 | `component` | `crate:<name>` or `npm:<name>` |
 | `checkedVersion` | The version the text was checked at |
 | `declared` | The license expression declared at that version |
-| `texts` | Committed files under `licenses/texts/` |
+| `texts` | At least one committed file under `licenses/texts/` |
 | `from` | URL of the file taken, at that version's tag or commit |
 | `reason` | e.g. "the published crate leaves out its license file" |
 
@@ -97,7 +99,7 @@ Cases).
 - the declared expression changes;
 - the component now ships a usable license file of its own (the exception is
   stale; remove it);
-- a text file is missing.
+- a text file is missing, or `texts` is empty.
 
 When the component isn't shipped by any target, the check only warns: the
 same exception covers several OSes, and one OS's build has nothing to say
@@ -110,18 +112,18 @@ target uses.
 |---|---|
 | `component` | As above |
 | `version` | The version it was written for |
-| `files` | `{ path, sha256 }` in the package, or committed `licenses/texts/` paths, used in place of what the matcher finds |
+| `files` | At least one `{ path, sha256 }` in the package, or committed `licenses/texts/` paths, or `{ text }`, used in place of what the matcher finds |
 | `reason` | |
 
-**Check** fails when a listed file's SHA-256 differs, or a listed file is
-missing.
+**Check** fails when a listed file's SHA-256 differs, a listed file is
+missing, or `files` is empty.
 
 ### Native-code review (`licenses/native-code.json`; research.md §7)
 
 | Field | Rule |
 |---|---|
 | `crate` | Crate name |
-| `what` | `hand-recorded:<entry name>`, `own-code`, `import-libraries` or `system-library` |
+| `what` | `hand-recorded:<entry name>` (an entry in `hand-recorded.json`), `own-code`, `import-libraries` or `system-library` |
 | `note` | One line |
 
 **Check** fails, naming the crate, when a shipped crate:
