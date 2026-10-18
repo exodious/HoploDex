@@ -8,10 +8,18 @@ has the full forms, including single files.
 
 ```sh
 scripts/dev-container.sh bash -c 'cd src-tauri && cargo test --features test-kdf'
+scripts/dev-container.sh bash -c "cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf,mock-keyring -E 'test(/^keyring_test::/) | test(/^passphrase_protection_test::.*::create_and_open_write_nothing_to_the_keyring$/) | test(/^upgrade_test::remembering::/) | binary(portability_test)'"
 scripts/dev-container.sh npm test
 scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts --spec e2e/specs/value-insurance.e2e.ts'
 scripts/dev-container.sh bash -c 'npm run build && npm run screenshots'
 ```
+
+`cargo test --features test-kdf` runs the `integration` program and, as a
+program of its own, `release_upgrade_test` (it keys with the pinned KDF, which
+a `test-kdf` build can choose only for a whole process; `Cargo.toml`'s
+`[[test]]`). The second line is the `mock-keyring` run, for the tests that need
+a keyring (DEVELOPMENT.md, "Test isolation": the one nextest filter that
+`scripts/tart-vm.sh` and the Windows scripts run).
 
 Expected: every test passes, and the screenshot walk shows contracts/ui.md
 §10's new screens.
@@ -32,34 +40,46 @@ build's extra step (research.md §14) makes it older than the app.
 
 | Scenario / criterion | Test | Level |
 |---|---|---|
-| 009 US1-1, US1-2, US1-4, SC-001, SC-002 (identifiers: distinct, refused when reused or missing or malformed, unchanged by edit, reorder, disposal and reversal of the owner, new after the highest id is deleted) | `tests/record_identifier_test.rs` | Rust, real database |
-| 009 US1-3, SC-001 (same identifiers after backup, restore, passphrase change and upgrade) | `tests/record_identifier_test.rs`, `tests/release_upgrade_test.rs` | Rust |
+| 009 US1-1, US1-2, US1-4, FR-001, SC-001, SC-002 (identifiers: distinct, refused when reused or missing or malformed, unchanged by edit, reorder, disposal and reversal of the owner, new after the highest id is deleted) | `tests/record_identifier_test.rs` | Rust, real database |
+| 009 US1-3, FR-002, SC-001 (same identifiers after backup, restore, passphrase change and upgrade) | `tests/record_identifier_test.rs` (`a_backup_a_restore_and_a_passphrase_change_keep_every_identifier`), `tests/backup_test.rs` (identifiers equal in the backup and after restoring it); `tests/release_upgrade_test.rs` (its own program) | Rust |
 | 009 FR-003 (no identifier in any IPC type or export) | `tests/record_identifier_test.rs` (serializes every policy, photo and document type and an export and finds no `uid`) | Rust |
 | 009 US2-1, SC-003 (a duplicate name, in any A–Z case and with spaces, refused at the name field; the edited policy itself not counted; expired and future policies counted) | `tests/insurance_policy_test.rs`; `InsurancePolicyForm.test.tsx` shows the field error | Rust, Vitest |
 | 009 US2-1 journey | `value-insurance.e2e.ts`: rename a policy to another's name in other letter case, see the error at Name, then save a distinct name | E2E |
 | 009 US2-2, US2-3, FR-006, SC-003 (import resolves a name in other letter case and with spaces to its one policy; an unknown name is a row error) | `tests/import_export_test.rs`, for firearm and accessory rows | Rust |
 | 009 FR-007 backstop (the index refuses what ops would) | `tests/insurance_policy_test.rs` (a raw insert) | Rust |
 | 009 US3-1, FR-009 to FR-011 (asked first; nothing written before the answer; Cancel leaves the file's bytes unchanged; backup at the location before any write) | `tests/upgrade_test.rs` | Rust |
-| 009 US3-2, FR-015, FR-017 (every value intact; the note; pending changes kept) | `tests/release_upgrade_test.rs`, `tests/upgrade_test.rs` | Rust |
-| 009 US3-3, SC-005 (failure forced at each point; interruption simulated at each point; the next open asks again; no partial backup left or taken for a complete one) | `tests/upgrade_test.rs` | Rust |
+| 009 US3-2, FR-015, FR-017 (every value intact; the note; pending changes kept) | `tests/release_upgrade_test.rs` (its own program), `tests/upgrade_test.rs` (`upgrade_makes_the_backup_first_then_upgrades_in_one_transaction_and_opens`, `the_upgraded_note_is_shown_once_and_dismissed_for_the_session`) | Rust |
+| 009 US3-3, SC-005 (failure forced at each point; interruption simulated at each point; the next open asks again; no partial backup left or taken for a complete one) | `tests/upgrade_test.rs`; the runner's own points in `tests/upgrade_steps_test.rs` | Rust |
+| 009 FR-015 (a full disk during the upgrade is `DISK_FULL` naming the backup made before it; owner's decision D1) | `tests/upgrade_test.rs` (`a_full_disk_during_the_upgrade_is_disk_full_naming_the_backup_made_before_it`); `DatabaseChooser.test.tsx` (the text with the backup's place, and the plain text when the full disk isn't the upgrade's) | Rust, Vitest |
 | 009 US3-4, FR-018 (a newer database refused unchanged, with the backup folder; its wording) | `tests/database_open_test.rs`; `DatabaseChooser.test.tsx` | Rust, Vitest |
-| 009 US3-5 (backups off, and already one today: the backup is still made, and the backup record untouched) | `tests/upgrade_test.rs` | Rust |
+| 009 US3-5 (backups off, and already one today: the backup is still made, and the backup record untouched) | `tests/upgrade_test.rs` (`with_automatic_backups_off_…`, `the_backup_before_an_upgrade_does_not_count_as_the_days_backup`) | Rust |
+| 009 FR-009 to FR-011 for a remembered passphrase (saved only when the upgrade succeeds; never after a cancel or a failure; a stale one refreshed) | `tests/upgrade_test.rs`, module `remembering` (compiled only with `mock-keyring`; the second gate line above) | Rust |
 | 009 FR-012 (location missing, not writable, full; a chosen folder; a chosen folder that also fails; the waiting database kept) | `tests/upgrade_test.rs`; `DatabaseChooser.test.tsx` | Rust, Vitest |
-| 009 FR-013, FR-014 (the name and stamp; listed with `beforeUpgradeTo`; rotation keeps the newest and doesn't count it; the once-a-day rule ignores it; delete all removes it) | `tests/backup_test.rs` | Rust |
-| 009 FR-016 (cancel during the backup removes the partial file and leaves the file unchanged; a stop during the upgrade is ignored) | `tests/upgrade_test.rs` | Rust |
-| 009 FR-019 (restoring an older backup: `check_backup`, refused without `upgrade`, upgraded copy, a failure leaves the database as it was) | `tests/restore_test.rs`; `RestoreBackupDialog.test.tsx` | Rust, Vitest |
+| 009 FR-013, FR-014 (the name and stamp; listed with `beforeUpgradeTo`; rotation keeps the newest and doesn't count it; the once-a-day rule ignores it; delete all and moving the location take it too) | `tests/backup_test.rs`; the restore list's wording in `RestoreBackupDialog.test.tsx` | Rust, Vitest |
+| 009 research.md §17 (a backup is never written over a file at its final name: `finalize` renames without replacing, also past a dangling link; a symlink or file at the partial name is not followed or overwritten) | `tests/backup_test.rs` (`finalize_never_replaces_a_file_and_otherwise_renames`, `a_file_at_the_final_name_is_kept_and_the_backup_fails_with_no_partial_left`, `finalize_does_not_follow_or_replace_a_dangling_link_at_the_final_name`, `a_symlink_at_the_partial_name_is_not_followed_by_the_backup`); `tests/upgrade_test.rs` (`an_existing_file_of_the_backups_name_is_never_overwritten`) | Rust |
+| 009 FR-016 (cancel during the backup removes the partial file and leaves the file unchanged; a stop during the upgrade is ignored) | `tests/upgrade_test.rs` (`cancel_between_backup_chunks_…`, `cancel_once_the_upgrade_has_begun_is_ignored`) | Rust |
+| 009 FR-010, FR-016, research.md §4 "the slot's life" (a sleep, screen lock or shutdown always drops a waiting database, also during the open's key derivation and while a location refusal is on its way back; a sleep or shutdown in the backup phase stops the upgrade, with no partial and the file unchanged; in the upgrading phase it finishes, returns `OPERATION_STOPPED`, clears this computer's open marker and leaves the database closed) | `tests/upgrade_test.rs` (`sleep_screen_lock_and_shutdown_drop_the_waiting_database`, `an_event_during_the_opens_key_derivation_leaves_no_waiting_database`, `an_event_while_a_location_refusal_returns_leaves_no_waiting_database`, `a_shutdown_during_the_backup_stops_the_upgrade_the_same_way`, `a_sleep_during_the_backup_stops_the_upgrade`, `a_sleep_or_shutdown_during_the_upgrade_lets_it_finish_and_leaves_it_closed`) | Rust |
+| 009 FR-019 (restoring an older backup: `check_backup`, refused without `upgrade`, upgraded copy before the current database is saved, so a failed upgrade leaves the database as it was and makes no "before restoring" backup) | `tests/restore_test.rs` (`check_backup_…`, `restoring_an_older_backup_with_upgrade_…`, `a_failure_in_the_copys_upgrade_leaves_the_database_as_it_was`); `RestoreBackupDialog.test.tsx`, `describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)")` | Rust, Vitest |
 | 009 US4-1, FR-020 (a test-only rebuild of `photos` and a new required unique value: rows, identifiers and links kept; an orphan abandons the upgrade) | `tests/upgrade_steps_test.rs` | Rust |
 | 009 US4-2, FR-021, SC-006 (an altered, removed or reordered released step fails) | `tests/released_migrations_test.rs` (checks a doctored manifest as well as the real one) | Rust |
 | 009 US4-3, FR-023, SC-004 (the stored 0.1.0 database opens upgraded with every value; the backup equals it) | `tests/release_upgrade_test.rs` | Rust |
 | 009 FR-022, research.md §7 and §13 (no forbidden statement in any step; the columns an older layout must keep) | `tests/upgrade_steps_test.rs` | Rust |
-| 009 US3 journey (open the 0.1.0 database, see the question, upgrade, see the note, find the backup in the restore list) | `databases.e2e.ts` | E2E |
-| 009 SC-007 (progress within 1 s; the upgrade's time at 10,000 items) | `tests/performance_test.rs` | Rust |
-| research.md §15 (an unknown notice kind or field in `machine.json` keeps the recent list) | `tests/machine_settings_test.rs` | Rust |
+| 009 US3 journey (open the 0.1.0 database, see the question, Cancel, upgrade with Enter, see the note, find the backup in the restore list; the backup folder that can't be written and the folder chosen instead) | `databases.e2e.ts`, `describe("009 US3 - A Beta Tester's Database Survives an Upgrade")` (Enter is pressed with real input on Linux only) | E2E |
+| 009 US3 dialogs (the question's words and focus; the progress dialog on `showNow`; Cancel; the failure row; the disk-full text; the newer-version words; the folder offer and the OS picker) | `DatabaseChooser.test.tsx`, `describe("DatabaseChooser and an upgrade (009 US3)")` | Vitest |
+| 009 SC-007 (progress within 1 s; the upgrade's time at 10,000 items; an open with nothing due within 1 s) | `tests/performance_test.rs` (`the_first_upgrade_progress_comes_within_a_second_…`, `opening_a_database_of_10k_firearms_takes_at_most_a_second_…`). The interface staying responsive rests on `upgrade_database` being `async` (research.md §16); no test measures it | Rust (release, `#[ignore]`d) |
+| research.md §15 (an unknown notice kind or field in `machine.json` keeps the recent list) | `tests/machine_settings_test.rs` (`a_file_with_an_unknown_notice_field_and_document_opening_keeps_its_recent_list`, `the_next_write_drops_the_unknown_notice_…`) | Rust |
+| data-model.md "`machine.json`" (owner's decision D2: a file of a later `version` is read by its known fields and not set aside; a write keeps this build's `version`; a lower or malformed version or a bad `machine_id` is still set aside) | `tests/machine_settings_test.rs` (`a_file_of_a_later_version_is_read_…`, `a_write_after_reading_a_later_version_keeps_this_versions_number`, `a_lower_or_malformed_version_or_a_bad_machine_id_is_still_set_aside`) | Rust |
+| 009 research.md §5 (the unfinished-backup record of a backup before an upgrade; the launch sweep removes it without a notice) | `tests/machine_settings_test.rs` (`an_unfinished_backup_before_an_upgrade_survives_a_reload_as_one`, `the_launch_sweep_removes_a_backup_before_an_upgrade_without_a_notice`) | Rust |
 | Edge: several steps skipped are one upgrade (two test-only steps, a failure in the second leaves neither) | `tests/upgrade_test.rs` | Rust |
 | Edge: a backup opened directly that needs an upgrade (Cancel leaves it a backup; Upgrade gives it its own id and backup) | `tests/upgrade_test.rs` | Rust |
 | Edge: the database open on another computer (the take-over comes first; a marker set during the question refuses the upgrade) | `tests/upgrade_test.rs` | Rust |
 
 ## Manual checks (best effort before a release, not merge gates)
+
+Passphrases: **Older collection** opens with `release fixture 0.1.0`, and so
+does every backup made of it. **Main collection** and **Shared collection**
+open with the passphrase `scripts/human-testing.sh` prints when it starts; none
+of these checks needs them.
 
 ### Setup S1 (Linux or macOS)
 
@@ -105,8 +125,9 @@ build's extra step (research.md §14) makes it older than the app.
 3. Run `scripts/human-testing.sh --release`.
 4. Select **Older collection**, type `release fixture 0.1.0`, press
    **Open**, then press **Upgrade**. Expected: "Save the backup somewhere
-   else?", saying HoploDex isn't allowed to save files in
-   …/Older/HoploDex backups.
+   else?", naming …/Older/HoploDex backups and saying HoploDex isn't allowed to
+   save files there. (Run as root, the folder stays writable despite the
+   `chmod`; use an ordinary user.)
 5. Press **Choose a folder…** and choose `.human-testing/HoploDex`.
    Expected: the collection opens, and its note names the backup in
    `.human-testing/HoploDex` and says it isn't in the database's list of
