@@ -519,6 +519,24 @@ the authoritative one. The implementation reads ID 0 from each of the seven
 shipped `woff2` files. If the Atkinson files disagree with their packages'
 `LICENSE` too, they get the same treatment.
 
+_Amended 2026-10-18 (010 T010):_ the seven files, read by a script using only
+`node:zlib`'s Brotli (a build's `dist/assets/` copies are byte-identical to the
+packages' `files/*-wght-normal.woff2`, 5.3.0). Every file has the one `name`
+ID 0 record (platform 3, English US):
+
+| Package | Files (latin, latin-ext, vietnamese where shipped) | Copyright string (ID 0) |
+|---|---|---|
+| `@fontsource-variable/atkinson-hyperlegible-mono` | latin, latin-ext | `Copyright 2020-2024 The Atkinson Hyperlegible Mono Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next-mono)` |
+| `@fontsource-variable/atkinson-hyperlegible-next` | latin, latin-ext | `Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next)` |
+| `@fontsource-variable/big-shoulders-display` | latin, latin-ext, vietnamese | `Copyright 2019 The Big Shoulders Project Authors (https://github.com/xotypeco/big_shoulders)` |
+
+The latin and latin-ext files of a family carry the same string. Neither
+Atkinson family disagrees with its package's `LICENSE`: that file's first line
+is the same string (it also lists the italic file's name before a second copy
+of it, which the notice need not repeat), so the Atkinson notices need no
+`clarify.json` entry. Only Big Shoulders does: its package `LICENSE` says
+"Google Inc.".
+
 ## §13 Version, copyright years and source address (FR-002)
 
 **Decision**:
