@@ -303,7 +303,28 @@ fn main() {
             if let Err(err) = window_controls::apply(&_main, false) {
                 log::error!("the native browser controls could not be installed: {err}");
             }
+            // The macOS application menu, with its About item opening
+            // HoploDex's own About screen (010 research.md §11). Linux and
+            // Windows set no menu. A failure leaves Tauri's default menu.
+            #[cfg(target_os = "macos")]
+            match app_menu::build(app.handle()) {
+                Ok(menu) => {
+                    if let Err(err) = app.set_menu(menu) {
+                        log::error!("the application menu could not be set: {err}");
+                    }
+                }
+                Err(err) => log::error!("the application menu could not be built: {err}"),
+            }
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            // Only the About item is the app's own; the predefined items act
+            // by themselves (010 contracts/tauri-commands.md).
+            if let Some(name) = app_menu::requested_event(event.id().as_ref())
+                && let Err(err) = app.emit(name, ())
+            {
+                log::warn!("could not emit {name}: {err}");
+            }
         })
         .on_window_event(|window, event| {
             // Closing the window is a request: unsaved changes are asked
