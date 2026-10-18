@@ -280,6 +280,29 @@ Done when the pull request is opened, not before (CLAUDE.md; plan.md "Close-out 
 
 ---
 
+## Phase 8: Convergence
+
+**Purpose**: The gaps the convergence assessment (2026-10-17, at 303384e) found between the spec, plan and contracts and what is built. No HIGH findings.
+
+**Owner's decisions (2026-10-17)**:
+- A full disk during an upgrade (D1): the chooser says the upgrade didn't happen and where the backup made before it is (FR-015), not only the generic `DISK_FULL` text.
+- `machine.json`'s version (D2): a build reads a file with a newer `version` leniently, by its known fields, instead of setting it aside, so going back to an earlier release keeps the computer's recent list.
+
+- [ ] T098 [US3] (MEDIUM, partial; research.md §4 "the slot's life", §17; FR-010) Make a sleep, screen lock or shutdown that comes while the waiting slot is empty still win: a drop generation (a counter `drop_awaiting_upgrade` raises, under the slot's mutex) that `upgrade::wait_for_answer` reads before key derivation and checks before filling the slot, and that `put_back_for_upgrade` checks before putting a database back; a stale generation drops the connection (zeroizing the passphrase to be saved) and returns `DATABASE_CLOSED` (from open) or `OPERATION_STOPPED` (from `wait_again` once the operation was stopped). Test both windows in `src-tauri/tests/upgrade_test.rs`: a `will_sleep` during an open's key derivation (a test hook between derivation and the slot) leaves no waiting database and no lock; a `will_sleep` while a location refusal is on its way back leaves none either
+- [ ] T099 [US3] (MEDIUM, untested; FR-016; the accepted sleep and shutdown rule) Add tests to `src-tauri/tests/upgrade_test.rs`: `will_sleep` during the `backingUp` phase stops the upgrade (`OPERATION_STOPPED`, no `.partial`, the file's SHA-256 unchanged, the slot empty); a sleep and a shutdown during the `upgrading` phase let the upgrade finish, return `OPERATION_STOPPED`, and leave the database upgraded and closed
+- [ ] T100 (MEDIUM, untested; T035; constitution II) Make a gate run `upgrade_test::remembering` (compiled only with `mock-keyring`): widen the `test-kdf,mock-keyring` run in DEVELOPMENT.md, `scripts/tart-vm.sh` and the Windows scripts that run it to every test that needs `mock-keyring`, or move those four tests into `keyring_test.rs`; run them on Linux
+- [ ] T101 [US3] (LOW, partial; 003 FR-032, FR-040) When a sleep or shutdown stops an upgrade that then finishes (`session/upgrade.rs`'s `is_cancelled` return), clear this computer's open marker before dropping the connection, so another computer doesn't see the database as open here; test it in `upgrade_test.rs` (T099's upgrading-phase test reads `app_state.open_machine_id` afterwards)
+- [ ] T102 (LOW, contradicts; research.md §17 "never … replacing what is there") Make `services::backups::finalize` rename without replacing: no check-then-`rename` window (a hard link to the final name, which fails if it exists, then removing the partial; or `renameat2(RENAME_NOREPLACE)` / `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`), on every OS; test that a file created at the final name before the rename is kept and the partial removed
+- [ ] T103 [US3] (LOW, decision D1; FR-015; contracts/ui.md §4) A `DISK_FULL` from `upgrade_database` during the upgrading phase carries `backupPath` and `atBackupLocation` in its details (contracts/tauri-commands.md), and the chooser shows the existing `DISK_FULL` text followed by "The upgrade didn't happen; the backup made before it is at <backupPath>." Amend contracts/ui.md §4 and contracts/tauri-commands.md with dated notes; test in `upgrade_test.rs` (a forced `SQLITE_FULL` in a step) and `DatabaseChooser.test.tsx`
+- [ ] T104 (LOW, decision D2; data-model.md "`machine.json`"; research.md §15) Read a `machine.json` whose `version` is higher than this build's leniently, by its known fields (the recent list, settings, notices), instead of setting it aside; a file with a lower or malformed version, or a bad `machine_id`, is handled as today. Never write a higher version back as this build's (writing keeps this build's `version`). Add a dated amendment to data-model.md; test in `src-tauri/tests/machine_settings_test.rs`
+- [ ] T105 (LOW, doc drift; research.md §5, data-model.md state diagram) Add `_Amended 2026-10-17:_` notes: a sleep stops the backup before an upgrade (as a shutdown does), and a sleep or shutdown during the upgrade lets it finish and leaves the database closed
+- [ ] T106 [US1] (LOW, doc drift; CLAUDE.md "Keep those references accurate") Fix `src-tauri/tests/record_identifier_test.rs`'s citations: the refusals of a missing, malformed or reused `uid` (near :441 and :556) cite `009 US1-1, 009 FR-001`; backup, restore and passphrase change (near :730) cite `009 US1-3, 009 FR-002, 009 SC-001`; a new record after deleting the newest (near :788) cites `009 US1-4, 009 SC-002`
+- [ ] T107 On Linux, run the whole Rust suite (with `test-kdf`, and the `mock-keyring` run of T100), `npm test`, clippy, fmt, citations, and `npm run build && npm run test:e2e -- --spec e2e/specs/databases.e2e.ts`; all must pass
+- [ ] T108 [P] On macOS, in the macOS 26 VM, run `cargo test --features test-kdf`, the `mock-keyring` run and `npm test` after T098–T106
+- [ ] T109 [P] On Windows, on the Windows test machine, run `cargo test --features test-kdf`, the `mock-keyring` run and `npm test` after T098–T106 (T102's rename is the Windows-specific part)
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
