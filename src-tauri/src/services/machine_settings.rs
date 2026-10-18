@@ -194,8 +194,13 @@ impl MachineFile {
         })
     }
 
+    /// Whether this version can use the file: it is this version's layout, or
+    /// a later one, read by the fields this version knows (009 research.md §15,
+    /// the owner's decision of 2026-10-17: going back to an earlier release
+    /// keeps the computer's recent list). An earlier layout (version 0) is
+    /// not one this build wrote.
     fn is_valid(&self) -> bool {
-        self.version == VERSION
+        self.version >= VERSION
             && self.machine_id.len() == 32
             && self.machine_id.chars().all(|c| c.is_ascii_hexdigit())
     }
@@ -219,14 +224,31 @@ pub struct MachineSettings {
 impl MachineSettings {
     /// Loads `machine.json` from `config_dir`, creating the directory and a
     /// new file with a new machine id when there is none. A corrupt or
-    /// unreadable file is set aside as `machine.json.bad` and a new one
-    /// started: that loses the recent list, and nothing else.
+    /// unreadable file, or one of an earlier version, is set aside as
+    /// `machine.json.bad` and a new one started: that loses the recent list,
+    /// and nothing else. A file of a later version is read by the fields this
+    /// version knows (009 research.md §15); the first change written back
+    /// keeps this version's `version` and drops the fields only a later one
+    /// knows.
     pub fn load(config_dir: &Path) -> io::Result<Self> {
         fs::create_dir_all(config_dir)?;
         let path = config_dir.join(FILE_NAME);
         let file = match fs::read(&path) {
             Ok(bytes) => match serde_json::from_slice::<MachineFile>(&bytes) {
-                Ok(file) if file.is_valid() => Some(file),
+                Ok(mut file) if file.is_valid() => {
+                    if file.version > VERSION {
+                        // Not written back by the load. Whatever writes
+                        // next is this version's layout, with only the
+                        // fields it knows, so it says so.
+                        log::info!(
+                            "{} is version {}; reading the fields this version knows",
+                            path.display(),
+                            file.version
+                        );
+                        file.version = VERSION;
+                    }
+                    Some(file)
+                }
                 _ => None,
             },
             Err(err) if err.kind() == io::ErrorKind::NotFound => {

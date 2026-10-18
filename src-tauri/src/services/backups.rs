@@ -402,19 +402,118 @@ fn remove_journal(path: &Path) {
 }
 
 /// Flushes a finished copy to disk and renames it to its final name, which
-/// must not be taken. Opened for writing because Windows flushes a file only
-/// through a handle with write access.
+/// must not be taken: it fails with `AlreadyExists`, leaving what is there
+/// and the partial file, and never replaces anything (009 research.md §17).
+/// Opened for writing because Windows flushes a file only through a handle
+/// with write access.
 pub fn finalize(partial: &Path, final_path: &Path) -> io::Result<()> {
     OpenOptions::new().write(true).open(partial)?.sync_all()?;
-    if fs::symlink_metadata(final_path).is_ok() {
-        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "a backup has that name already"));
-    }
-    fs::rename(partial, final_path)?;
+    rename_new(partial, final_path)?;
     #[cfg(unix)]
     if let Some(folder) = final_path.parent() {
         let _ = File::open(folder).and_then(|dir| dir.sync_all());
     }
     Ok(())
+}
+
+/// Renames `from` to `to`, failing with `AlreadyExists` if anything is at
+/// `to`, with no moment between the check and the rename in which something
+/// could appear there and be replaced. The OS does the check where it can:
+/// `renameat2(RENAME_NOREPLACE)` on Linux, `renamex_np(RENAME_EXCL)` on macOS,
+/// `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING` on Windows. A folder on a
+/// file system that doesn't offer that (some network and removable drives)
+/// gets a hard link to `to`, which fails if it exists, and `from` removed.
+/// Only where links fail too does it check and then rename.
+fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+    if !testing::native_rename_fails() {
+        match rename_new_natively(from, to) {
+            Err(err) if is_unsupported(&err) => {
+                log::info!("renaming {} by linking it: {err}", from.display());
+            }
+            done => return done,
+        }
+    }
+    if !testing::hard_links_fail() {
+        match fs::hard_link(from, to) {
+            Ok(()) => {
+                // The same file under two names: taking the new one away
+                // again undoes it.
+                if let Err(err) = fs::remove_file(from) {
+                    let _ = fs::remove_file(to);
+                    return Err(err);
+                }
+                return Ok(());
+            }
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => return Err(err),
+            Err(err) => {
+                log::info!("renaming {} after checking, not linking: {err}", from.display())
+            }
+        }
+    }
+    if fs::symlink_metadata(to).is_ok() {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "a backup has that name already"));
+    }
+    fs::rename(from, to)
+}
+
+/// Whether the file system or the OS lacks the no-replace rename, as opposed
+/// to the rename failing.
+fn is_unsupported(err: &io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        // (ENOTSUP and EOPNOTSUPP are one value on Linux, two on macOS.)
+        let unsupported = [libc::EINVAL, libc::ENOSYS, libc::ENOTSUP, libc::EOPNOTSUPP];
+        err.raw_os_error().is_some_and(|code| unsupported.contains(&code))
+    }
+    #[cfg(not(unix))]
+    {
+        err.kind() == io::ErrorKind::Unsupported
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn rename_new_natively(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let (from, to) = (cstring(from.as_os_str().as_bytes())?, cstring(to.as_os_str().as_bytes())?);
+    // SAFETY: both are NUL-terminated and outlive the call.
+    let rc = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if rc == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+}
+
+#[cfg(target_os = "macos")]
+fn rename_new_natively(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let (from, to) = (cstring(from.as_os_str().as_bytes())?, cstring(to.as_os_str().as_bytes())?);
+    // SAFETY: both are NUL-terminated and outlive the call.
+    let rc = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+    if rc == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+}
+
+#[cfg(unix)]
+fn cstring(bytes: &[u8]) -> io::Result<std::ffi::CString> {
+    std::ffi::CString::new(bytes)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "a NUL in a path"))
+}
+
+#[cfg(windows)]
+fn rename_new_natively(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
+    let wide = |path: &Path| path.as_os_str().encode_wide().chain([0]).collect::<Vec<u16>>();
+    let (from, to) = (wide(from), wide(to));
+    // Without MOVEFILE_REPLACE_EXISTING it fails with ERROR_ALREADY_EXISTS (or
+    // ERROR_FILE_EXISTS), which `io::Error` reads as `AlreadyExists`.
+    // SAFETY: both are NUL-terminated and outlive the call.
+    let ok = unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), MOVEFILE_WRITE_THROUGH) };
+    if ok != 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 
 /// Keeps the newest `keep` backups of the database in `folder` and securely
@@ -1017,6 +1116,7 @@ fn sync_folder(path: &Path) {
 type AfterCopy = Box<dyn Fn(&Path)>;
 
 thread_local! {
+    static NATIVE_RENAME_FAILS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static HARD_LINKS_FAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static AFTER_COPY: std::cell::RefCell<Option<AfterCopy>> = const { std::cell::RefCell::new(None) };
 }
@@ -1045,6 +1145,27 @@ pub mod testing {
 
     pub(super) fn hard_links_fail() -> bool {
         HARD_LINKS_FAIL.with(|fail| fail.get())
+    }
+
+    /// Undoes [`fail_native_rename`] when dropped.
+    pub struct NativeRenameFailsGuard(());
+
+    impl Drop for NativeRenameFailsGuard {
+        fn drop(&mut self) {
+            NATIVE_RENAME_FAILS.with(|fail| fail.set(false));
+        }
+    }
+
+    /// Until the guard is dropped, [`finalize`] on this thread behaves as on
+    /// a file system without a no-replace rename, and takes the fallbacks
+    /// (009 research.md §17).
+    pub fn fail_native_rename() -> NativeRenameFailsGuard {
+        NATIVE_RENAME_FAILS.with(|fail| fail.set(true));
+        NativeRenameFailsGuard(())
+    }
+
+    pub(super) fn native_rename_fails() -> bool {
+        NATIVE_RENAME_FAILS.with(|fail| fail.get())
     }
 
     /// Undoes [`after_each_copy`] when dropped.

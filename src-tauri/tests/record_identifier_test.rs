@@ -438,7 +438,7 @@ const NEW_PASSPHRASE: &str = "a much longer passphrase of several words";
 const NEW_KINDS: [&str; 3] = ["insurance_policies", "photos", "document_attachments"];
 
 /// What is not a valid identifier, for a raw insert: uppercase, a wrong version
-/// digit, a wrong variant digit, 35 characters (009 FR-001, US1-3).
+/// digit, a wrong variant digit, 35 characters (009 US1-1, 009 FR-001).
 const MALFORMED: [&str; 4] = [
     "3F2A9C1E-5B7D-4E8A-9C0F-1A2B3C4D5E6F",
     "3f2a9c1e-5b7d-1e8a-9c0f-1a2b3c4d5e6f",
@@ -553,7 +553,7 @@ fn every_photo_and_document_made_through_ops_has_a_stored_identifier() {
     }
 }
 
-// 009 US1-3, 009 FR-001
+// 009 US1-1, 009 FR-001
 #[test]
 fn the_database_refuses_a_missing_malformed_or_used_identifier_on_each_new_kind() {
     for table in NEW_KINDS {
@@ -727,7 +727,7 @@ impl World {
     }
 }
 
-// 009 US1-2, 009 FR-002, 009 SC-002
+// 009 US1-3, 009 FR-002, 009 SC-001
 #[test]
 fn a_backup_a_restore_and_a_passphrase_change_keep_every_identifier() {
     let world = World::new();
@@ -785,7 +785,7 @@ fn a_backup_a_restore_and_a_passphrase_change_keep_every_identifier() {
     assert_eq!(world.identifiers(), before, "after a passphrase change");
 }
 
-// 009 US1-4, 009 SC-001
+// 009 US1-4, 009 SC-002
 #[test]
 fn a_new_record_after_deleting_the_newest_gets_a_new_identifier() {
     let (db, firearm) = db_with_owner();

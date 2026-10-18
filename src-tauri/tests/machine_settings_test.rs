@@ -548,6 +548,91 @@ fn notices_that_are_not_a_list_still_make_the_file_corrupt() {
     assert!(config.path().join("machine.json.bad").exists());
 }
 
+// --- A file of a later version (009 research.md §15, amended 2026-10-17) -------------------
+
+const A_MACHINE_ID: &str = "0123456789abcdef0123456789abcdef";
+
+fn machine_json_of_version(version: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "version": version,
+        "machineId": A_MACHINE_ID,
+        "recentDatabases": [{
+            "path": "/data/A.hoplodex", "name": "A", "lastOpenedAt": "2027-01-15T09:30:12Z",
+            "databaseId": "a".repeat(32), "backupFolder": "/data/HoploDex backups",
+            "passphraseSaved": true
+        }],
+        "documentOpening": "external",
+        "aFieldFromTheFuture": { "anything": [1, 2, 3] },
+    })
+}
+
+/// 009 research.md §15, the owner's decision D2 (2026-10-17): going back to an
+/// earlier release keeps the computer's recent list, so a file with a higher
+/// `version` is read by its known fields and not set aside.
+#[test]
+fn a_file_of_a_later_version_is_read_by_its_known_fields_and_not_set_aside() {
+    let config = TempDir::new().unwrap();
+    let path = config.path().join("machine.json");
+    fs::write(&path, machine_json_of_version(serde_json::json!(2)).to_string()).unwrap();
+    let before = fs::read(&path).unwrap();
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    assert_eq!(names(&settings), ["A"]);
+    assert_eq!(settings.machine_id(), A_MACHINE_ID, "this computer is the same one");
+    assert!(settings.recent()[0].passphrase_saved);
+    assert_eq!(settings.document_opening(), DocumentOpening::External);
+    assert_eq!(files_in(config.path()), ["machine.json"], "nothing is set aside");
+    assert_eq!(fs::read(&path).unwrap(), before, "loading writes nothing");
+}
+
+/// What the first change writes is this version's file: its `version`, not
+/// the later one's, and only the fields it knows (a field it doesn't know has
+/// a meaning only the later version can give it).
+#[test]
+fn a_write_after_reading_a_later_version_keeps_this_versions_number() {
+    let config = TempDir::new().unwrap();
+    let path = config.path().join("machine.json");
+    fs::write(&path, machine_json_of_version(serde_json::json!(7)).to_string()).unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+
+    settings.touch_recent(Path::new("/x.hoplodex"), "x", &"c".repeat(32), Path::new("/b"));
+
+    let json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["machineId"], A_MACHINE_ID);
+    assert!(json.get("aFieldFromTheFuture").is_none());
+    assert_eq!(names(&MachineSettings::load(config.path()).unwrap()), ["x", "A"]);
+}
+
+/// Only a later `version` is read: an earlier one, a version that is not a
+/// number and a bad machine id are the unreadable file they were.
+#[test]
+fn a_lower_or_malformed_version_or_a_bad_machine_id_is_still_set_aside() {
+    let bad_id = {
+        let mut file = machine_json_of_version(serde_json::json!(2));
+        file["machineId"] = serde_json::json!("not-32-hex-digits");
+        file
+    };
+    let cases = [
+        ("version 0", machine_json_of_version(serde_json::json!(0))),
+        ("a text version", machine_json_of_version(serde_json::json!("2"))),
+        ("no version", machine_json_of_version(serde_json::Value::Null)),
+        ("a negative version", machine_json_of_version(serde_json::json!(-1))),
+        ("a bad machine id in a later version", bad_id),
+    ];
+    for (label, file) in cases {
+        let config = TempDir::new().unwrap();
+        fs::write(config.path().join("machine.json"), file.to_string()).unwrap();
+
+        let settings = MachineSettings::load(config.path()).unwrap();
+
+        assert!(settings.recent().is_empty(), "{label}");
+        assert_ne!(settings.machine_id(), A_MACHINE_ID, "{label}");
+        assert!(config.path().join("machine.json.bad").exists(), "{label}: set aside");
+    }
+}
+
 // --- The backup before an upgrade is told apart from a close's (009 research.md §6) ---------
 
 /// 009 research.md §6: a machine.json written before `beforeUpgrade` existed

@@ -1077,9 +1077,14 @@ of it:
   and the production cipher settings. Tests never mock the database, and
   take every path (database, config directory) as a parameter.
   `MachineSettings::load` starts with the keyring off, so they never reach the
-  OS keyring. The saved-passphrase tests in `tests/keyring_test.rs` run only
-  with `--features mock-keyring`, against keyring-core's in-memory store:
-  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf,mock-keyring -E 'test(/^keyring_test::/)'`.
+  OS keyring. The tests that need a keyring run only with
+  `--features mock-keyring`, against keyring-core's in-memory store:
+  `tests/keyring_test.rs`, `create_and_open_write_nothing_to_the_keyring` in
+  `tests/passphrase_protection_test.rs`, the `remembering` module of
+  `tests/upgrade_test.rs`, and `portability_test` (which checks the keyring
+  stays empty). One filter runs them all; a test that gains
+  `#[cfg(feature = "mock-keyring")]` joins it, here and in `scripts/tart-vm.sh`:
+  `cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf,mock-keyring -E 'test(/^keyring_test::/) | test(/^passphrase_protection_test::.*::create_and_open_write_nothing_to_the_keyring$/) | test(/^upgrade_test::remembering::/) | binary(portability_test)'`.
 - `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
   own) a throwaway sandbox (`e2e/support/sandbox.ts`, which `npm run session`
   uses too). An E2E build takes its config and cache

@@ -539,7 +539,7 @@ step cargo fmt --check --manifest-path src-tauri/Cargo.toml
 step cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml --features test-kdf -- -D warnings
 step npm test
 step cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf
-step cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf,mock-keyring -E 'test(/^keyring_test::/)'
+step cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf,mock-keyring -E 'test(/^keyring_test::/) | test(/^passphrase_protection_test::.*::create_and_open_write_nothing_to_the_keyring$/) | test(/^upgrade_test::remembering::/) | binary(portability_test)'
 step npm run build
 step npm run audit
 if [ ${#failures[@]} -gt 0 ]; then

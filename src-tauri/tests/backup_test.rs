@@ -678,6 +678,83 @@ fn a_symlink_at_the_partial_name_is_not_followed_by_the_backup() {
     assert_failed_and_waiting(&world, outcome, BackupFailureReason::Io);
 }
 
+/// The ways the rename into the final name can go: the OS's no-replace rename,
+/// a hard link (a file system without one), and a check then a rename (one
+/// without links either) (009 research.md §17).
+fn each_rename_mechanism(test: impl Fn(&str)) {
+    test("native");
+    {
+        let _no_native = backups::testing::fail_native_rename();
+        test("hard link");
+        let _no_links = backups::testing::fail_hard_links();
+        test("check then rename");
+    }
+}
+
+#[test]
+fn a_file_at_the_final_name_is_kept_and_the_backup_fails_with_no_partial_left() {
+    // 009 research.md §17: "never ... replacing what is there". The name is
+    // predictable from the clock, so something may be there.
+    each_rename_mechanism(|how| {
+        let world = World::new();
+        world.create();
+        let id = world.database_id();
+        world.change();
+        fs::create_dir_all(world.default_folder()).unwrap();
+        let taken = format!("Mine 2026-09-25 143005 {}.hoplodex", &id[..8]);
+        fs::write(world.default_folder().join(&taken), b"somebody else's backup").unwrap();
+
+        let outcome = world.close();
+
+        let folder = world.default_folder();
+        assert_eq!(fs::read(folder.join(&taken)).unwrap(), b"somebody else's backup", "{how}");
+        assert_eq!(World::file_names(&folder), vec![taken], "{how}: no .partial is left");
+        assert_eq!(world.machine.unfinished_backup(), None, "{how}");
+        assert_failed_and_waiting(&world, outcome, BackupFailureReason::Io);
+    });
+}
+
+#[test]
+fn finalize_never_replaces_a_file_and_otherwise_renames() {
+    // 009 research.md §17, tested at the function every backup and every
+    // copied move goes through.
+    each_rename_mechanism(|how| {
+        let dir = TempDir::new().unwrap();
+        let (partial, taken) = (dir.path().join("a.partial"), dir.path().join("a"));
+        fs::write(&partial, b"the copy").unwrap();
+        fs::write(&taken, b"already there").unwrap();
+
+        let err = backups::finalize(&partial, &taken).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists, "{how}");
+        assert_eq!(fs::read(&taken).unwrap(), b"already there", "{how}");
+        assert_eq!(fs::read(&partial).unwrap(), b"the copy", "{how}: the caller removes it");
+
+        fs::remove_file(&taken).unwrap();
+        backups::finalize(&partial, &taken).unwrap();
+        assert_eq!(fs::read(&taken).unwrap(), b"the copy", "{how}");
+        assert!(!partial.exists(), "{how}: the partial is gone");
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn finalize_does_not_follow_or_replace_a_dangling_link_at_the_final_name() {
+    // 009 research.md §17.
+    each_rename_mechanism(|how| {
+        let dir = TempDir::new().unwrap();
+        let (partial, taken) = (dir.path().join("a.partial"), dir.path().join("a"));
+        fs::write(&partial, b"the copy").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("nowhere"), &taken).unwrap();
+
+        let err = backups::finalize(&partial, &taken).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists, "{how}");
+        assert!(fs::symlink_metadata(&taken).unwrap().is_symlink(), "{how}");
+        assert!(!dir.path().join("nowhere").exists(), "{how}: not followed");
+    });
+}
+
 #[test]
 fn a_full_backup_location_fails_the_backup() {
     let world = World::new();
