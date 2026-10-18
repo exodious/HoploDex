@@ -1,0 +1,22 @@
+[
+  {
+    "crate": "baz-sys",
+    "what": "own-code",
+    "note": "compiles baz.c, the crate's own code"
+  },
+  {
+    "crate": "libsqlite3-sys",
+    "what": "hand-recorded:SQLCipher",
+    "note": "compiles SQLCipher"
+  },
+  {
+    "crate": "prebuilt-lib-sys",
+    "what": "import-libraries",
+    "note": "import libraries for system DLLs"
+  },
+  {
+    "crate": "webview2-com-sys",
+    "what": "hand-recorded:Microsoft WebView2 loader",
+    "note": "carries the loader's static library"
+  }
+]

@@ -1,0 +1,5 @@
+[package]
+name = "webview2-com-sys"
+version = "0.38.2"
+edition = "2021"
+license = "MIT"

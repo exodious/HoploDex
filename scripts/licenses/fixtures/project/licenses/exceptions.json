@@ -1,0 +1,32 @@
+[
+  {
+    "component": "crate:needs-exception",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/needs-exception/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/needs-exception/blob/v1.0.0/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  },
+  {
+    "component": "npm:no-license-file",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/no-license-file/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/no-license-file/blob/v1.0.0/LICENSE",
+    "reason": "the published package leaves out its license file"
+  },
+  {
+    "component": "npm:spdx-only",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/spdx-only/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/spdx-only/blob/v1.0.0/LICENSE",
+    "reason": "the package ships only LICENSE.spdx, metadata with no license text"
+  }
+]

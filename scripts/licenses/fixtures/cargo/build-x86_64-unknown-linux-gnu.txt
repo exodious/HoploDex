@@ -1,0 +1,4 @@
+cc v1.2.0
+baz-sys v0.1.0
+libsqlite3-sys v0.38.1
+buildtool-sys v0.2.0

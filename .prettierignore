@@ -10,3 +10,7 @@ package-lock.json
 e2e/screenshots-out/
 .wdio/
 src-tauri/vendor/*/permissions/schemas/
+
+# Fixtures keep byte-exact license texts and recorded tool output; only the
+# helper beside the README is formatted (010 T011)
+scripts/licenses/fixtures/*/

@@ -1,0 +1,12 @@
+[
+  {
+    "component": "crate:ships-license",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/ships-license/LICENSE.txt"
+    ],
+    "from": "https://example.invalid/ships-license/blob/v1.0.0/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  }
+]

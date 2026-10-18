@@ -1,0 +1,13 @@
+hoplodex v0.1.0 (@ROOT@/src-tauri)
+baz-sys v0.1.0
+both-in-one v0.4.42
+baz-sys v0.1.0 (*)
+dual v1.0.0
+libsqlite3-sys v0.39.0
+licenses-dir v1.0.0
+linux-only v1.0.0
+needs-exception v1.0.0
+pointer-and-license v1.0.0
+single v1.0.0
+unplaceable v1.0.0
+with-notice v1.0.0

@@ -1,0 +1,5 @@
+[package]
+name = "libsqlite3-sys"
+version = "0.39.0"
+edition = "2021"
+license = "MIT"

@@ -1,0 +1,12 @@
+[
+  {
+    "component": "crate:needs-exception",
+    "checkedVersion": "1.0.0",
+    "declared": "MIT",
+    "texts": [
+      "licenses/texts/needs-exception/missing.txt"
+    ],
+    "from": "https://example.invalid/needs-exception/blob/v1.0.0/LICENSE",
+    "reason": "the published crate leaves out its license file"
+  }
+]

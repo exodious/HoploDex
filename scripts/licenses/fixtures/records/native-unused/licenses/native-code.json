@@ -1,0 +1,7 @@
+[
+  {
+    "crate": "gone-sys",
+    "what": "own-code",
+    "note": "no target ships this"
+  }
+]

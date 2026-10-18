@@ -1,0 +1,226 @@
+{
+  "packages": [
+    {
+      "name": "hoplodex",
+      "version": "0.1.0",
+      "id": "path+file://@ROOT@/src-tauri#hoplodex@0.1.0",
+      "source": null,
+      "license": "GPL-3.0-only",
+      "manifest_path": "@ROOT@/src-tauri/Cargo.toml"
+    },
+    {
+      "name": "single",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#single@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/single-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "dual",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#dual@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "manifest_path": "@ROOT@/registry/dual-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "both-in-one",
+      "version": "0.4.42",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#both-in-one@0.4.42",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "manifest_path": "@ROOT@/registry/both-in-one-0.4.42/Cargo.toml"
+    },
+    {
+      "name": "licenses-dir",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#licenses-dir@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "manifest_path": "@ROOT@/registry/licenses-dir-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "with-notice",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#with-notice@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "Apache-2.0",
+      "manifest_path": "@ROOT@/registry/with-notice-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "needs-exception",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#needs-exception@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/needs-exception-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "unplaceable",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#unplaceable@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "manifest_path": "@ROOT@/registry/unplaceable-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "pointer-and-license",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#pointer-and-license@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "manifest_path": "@ROOT@/registry/pointer-and-license-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "pointer-only",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#pointer-only@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "manifest_path": "@ROOT@/registry/pointer-only-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "baz-sys",
+      "version": "0.1.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#baz-sys@0.1.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/baz-sys-0.1.0/Cargo.toml"
+    },
+    {
+      "name": "prebuilt-lib-sys",
+      "version": "0.1.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#prebuilt-lib-sys@0.1.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/prebuilt-lib-sys-0.1.0/Cargo.toml"
+    },
+    {
+      "name": "windows-only",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#windows-only@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/windows-only-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "linux-only",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#linux-only@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/linux-only-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "libsqlite3-sys",
+      "version": "0.38.1",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#libsqlite3-sys@0.38.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/libsqlite3-sys-0.38.1/Cargo.toml"
+    },
+    {
+      "name": "webview2-com-sys",
+      "version": "0.38.2",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#webview2-com-sys@0.38.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/webview2-com-sys-0.38.2/Cargo.toml"
+    },
+    {
+      "name": "no-license",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#no-license@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/no-license-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "authors-only",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#authors-only@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/authors-only-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "dotted",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#dotted@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "Apache-2.0 OR MIT",
+      "manifest_path": "@ROOT@/registry/dotted-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "zlib-named",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#zlib-named@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "Zlib OR Apache-2.0 OR MIT",
+      "manifest_path": "@ROOT@/registry/zlib-named-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "content-matching",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#content-matching@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "Unicode-3.0 OR Zlib OR BSD-3-Clause",
+      "manifest_path": "@ROOT@/registry/content-matching-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "dual-by-content",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#dual-by-content@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "manifest_path": "@ROOT@/registry/dual-by-content-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "license-folder",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#license-folder@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/license-folder-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "ships-license",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#ships-license@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/ships-license-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "changed-license",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#changed-license@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "manifest_path": "@ROOT@/registry/changed-license-1.0.0/Cargo.toml"
+    },
+    {
+      "name": "extra",
+      "version": "1.0.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#extra@1.0.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "manifest_path": "@ROOT@/registry/extra-1.0.0/Cargo.toml"
+    }
+  ],
+  "resolve": {
+    "nodes": [
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#libsqlite3-sys@0.38.1",
+        "features": [
+          "default"
+        ]
+      }
+    ]
+  },
+  "workspace_members": [
+    "path+file://@ROOT@/src-tauri#hoplodex@0.1.0"
+  ],
+  "version": 1
+}

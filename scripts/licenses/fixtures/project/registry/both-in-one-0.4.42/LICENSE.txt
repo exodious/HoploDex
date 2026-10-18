@@ -1,0 +1,12 @@
+Rust-both is dual-licensed under The MIT License [1] and
+Apache 2.0 License [2]. Copyright (c) 2014, Example Authors and contributors.
+
+Dual licensed under the MIT license and the Apache License, Version 2.0.
+
+[1]: Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction.
+
+[2]:                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
