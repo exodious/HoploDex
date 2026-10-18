@@ -2,12 +2,20 @@
 import { availableParallelism } from "node:os";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { hoplodexNotices } from "./scripts/licenses/vitePlugin.mjs";
 
 const host = process.env.TAURI_DEV_HOST;
 
+// Defines __HOPLODEX_PROGRAM__, checks the bundled packages, and writes
+// dist/notices.json and dist/NOTICES.txt (010 contracts/notices.md). One
+// collector serves the main build and the strength worker's.
+const notices = hoplodexNotices();
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [react(), notices.main],
+
+  worker: { plugins: () => [notices.worker] },
 
   test: {
     environment: "jsdom",

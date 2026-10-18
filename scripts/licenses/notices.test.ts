@@ -323,7 +323,7 @@ describe("010 US2-2 - a failed check names the component and every failure is co
   it("fails a hand-recorded entry whose carrier changed version", () => {
     const built = build(LINUX, { cargo: fakeCargo({ variant: "carrier-0.39.0" }) });
     expect(built.failures).toContain(
-      'hand-recorded "SQLCipher": its carrier libsqlite3-sys is 0.39.0, recorded 0.38.1. Review the entry (its version, text and carrier) and update it.',
+      'hand-recorded "SQLCipher": its carrier crate libsqlite3-sys is 0.39.0, recorded 0.38.1. Review the entry (its version, text and carrier) and update it.',
     );
   });
 
@@ -344,7 +344,7 @@ describe("010 US2-2 - a failed check names the component and every failure is co
   });
 
   it("fails a Windows build with no OPENSSL_DIR, naming it", () => {
-    const built = build(WINDOWS, { openSslDir: undefined });
+    const built = build(WINDOWS, { openSslDir: undefined, env: {} });
     expect(built.failures.some((f) => f.includes("OPENSSL_DIR"))).toBe(true);
   });
 
@@ -782,7 +782,10 @@ describe("010 US2-5 - the command line", () => {
     const before = listing(PROJECT);
     const result = await run(["--check", "--target", LINUX]);
     expect(result.code).toBe(0);
-    expect(result.err).toBe("");
+    // The good records list entries for other targets (the WebView2 loader): warnings, not failures
+    const lines = result.err.split("\n").filter(Boolean);
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(line).toMatch(/^warning: /);
     expect(result.out).toBe(`notices: ${LINUX} ${COUNT[LINUX]} components; 0 failures\n`);
     expect(listing(PROJECT)).toEqual(before);
   });
@@ -862,11 +865,22 @@ describe("010 US2-5 - the command line", () => {
     }
   });
 
-  it("a single-target --check leaves an entry no target uses alone", async () => {
+  it("a single-target --check warns of an entry this target doesn't ship", async () => {
+    // this case folder has no other records, so the run also fails: the warning doesn't decide that
     const result = await run(["--check", "--target", LINUX], {
       licensesDir: record("exception-unused"),
     });
-    expect(result.err).not.toContain("gone-crate");
+    expect(result.err.split("\n")).toContainEqual(
+      expect.stringMatching(/^warning: exception crate:gone-crate: .*doesn't ship it/),
+    );
+  });
+
+  it("a warning leaves a failure to decide the exit code", async () => {
+    const result = await run(["--check", "--target", LINUX], {
+      licensesDir: record("native-unlisted"),
+    });
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("native code: crate baz-sys 0.1.0");
   });
 
   it("fails an option it doesn't know, naming it", async () => {

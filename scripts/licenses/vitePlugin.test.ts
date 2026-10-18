@@ -85,7 +85,11 @@ const alias = ["shipped-mit", "@scope/shipped-scoped", "dev-tool"].map((name) =>
   replacement: path.join(modules, name, "index.js"),
 }));
 
-async function bundle(entry: string, over: Record<string, unknown> = {}): Promise<Emitted[]> {
+async function bundle(
+  entry: string,
+  over: Record<string, unknown> = {},
+  warnings: string[] = [],
+): Promise<Emitted[]> {
   const { main: mainPlugin, worker } = hoplodexNotices(options(over));
   const config: InlineConfig = {
     configFile: false,
@@ -98,7 +102,10 @@ async function bundle(entry: string, over: Record<string, unknown> = {}): Promis
       write: false,
       minify: false,
       reportCompressedSize: false,
-      rollupOptions: { input: path.join(appDir, entry) },
+      rollupOptions: {
+        input: path.join(appDir, entry),
+        onwarn: (warning) => void warnings.push(warning.message),
+      },
     },
   };
   const result = await build(config);
@@ -153,6 +160,14 @@ describe("010 FR-008 - the build writes the notices", () => {
     const a = asText(named(await bundle("main.js"), "notices.json"));
     const b = asText(named(await bundle("main.js"), "notices.json"));
     expect(a).toBe(b);
+  });
+
+  it("passes the generator's warnings on to the build, and still builds", async () => {
+    const warnings: string[] = [];
+    const output = await bundle("main.js", {}, warnings);
+    expect(named(output, "notices.json")).toBeDefined();
+    // the good records list the WebView2 loader, which the Linux target doesn't ship
+    expect(warnings.join("\n")).toContain("native code: crate webview2-com-sys");
   });
 
   it("writes notices for the plugin's target", async () => {
