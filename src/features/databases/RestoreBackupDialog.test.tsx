@@ -49,6 +49,7 @@ function renderDialog(props: Partial<RestoreBackupDialogProps> = {}) {
     settingsRequested: false,
     requestSettings: vi.fn(),
     clearSettingsRequest: vi.fn(),
+    showAbout: vi.fn(),
   };
   const onOpenChange = vi.fn();
   const dialog = (

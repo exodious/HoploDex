@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactNode } from "react";
 import { LockContext, ToastProvider } from "../../components";
 import { CommandFailure, setWindowTitle } from "../../services/tauriClient";
+import { AboutDialog } from "../app/AboutDialog";
 import { ClosingScreen } from "./ClosingScreen";
 import { CollectionFault, FaultBoundary } from "./FaultScreen";
 import { DatabaseChooser } from "../databases/DatabaseChooser";
@@ -68,6 +69,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [question, setQuestion] = useState<Question | null>(null);
   const [settingsRequested, setSettingsRequested] = useState(false);
   const [resume, setResume] = useState<Resume>(NOT_RESUMING);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const openPath = useRef<string | null>(null);
   openPath.current = phase.kind === "open" ? phase.status.path : null;
 
@@ -329,6 +331,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [opened],
   );
 
+  const showAbout = useCallback(() => setAboutOpen(true), []);
+
+  // About closes, without asking, on any change of session phase: an open, a
+  // lock, a close, a switch, the closing screen (010 research.md §11). Moving
+  // from the starting phase to the chooser is no change of session, so About
+  // opened from the menu bar while the window starts stays. Before paint, so
+  // it never shows over the next phase.
+  const phaseKey = `${phase.kind}:${phase.kind === "open" || phase.kind === "closing" ? phase.opens : 0}`;
+  const previousPhaseKey = useRef(phaseKey);
+  useLayoutEffect(() => {
+    const previous = previousPhaseKey.current;
+    previousPhaseKey.current = phaseKey;
+    if (previous === phaseKey || (previous === "starting:0" && phase.kind === "chooser")) return;
+    setAboutOpen(false);
+  }, [phaseKey, phase.kind]);
+
+  // The macOS application menu's About item, for the provider's whole life,
+  // the starting phase included (010 contracts/ui.md §4).
+  useEffect(() => sessionService.onAboutRequested(showAbout), [showAbout]);
+
   const requestSettings = useCallback(() => setSettingsRequested(true), []);
   const clearSettingsRequest = useCallback(() => setSettingsRequested(false), []);
 
@@ -363,6 +385,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       settingsRequested,
       requestSettings,
       clearSettingsRequest,
+      showAbout,
     }),
     [
       phase,
@@ -377,6 +400,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       settingsRequested,
       requestSettings,
       clearSettingsRequest,
+      showAbout,
     ],
   );
 
@@ -421,6 +445,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           </Inert>
         )}
         {phase.kind === "closing" && <ClosingScreen name={phase.name} />}
+        <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
         <UnsavedChangesPrompt
           label={question?.label ?? null}
           onSave={async () => {
