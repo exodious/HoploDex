@@ -285,6 +285,147 @@ export function uninstallCheck(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Bundle files and installing over (011 US4-3, 011 FR-024)
+// ---------------------------------------------------------------------------
+
+/** The check variant's repository and build directory, which
+ * {@link buildAndInstallCheck} made under the state volume. */
+function checkBuild(): { repo: string; buildDir: string; bundles: string } {
+  const { state } = requireCheckEnvironment();
+  const checkDir = path.join(state, "check");
+  return {
+    repo: path.join(checkDir, "repo"),
+    buildDir: path.join(checkDir, "build-dir"),
+    bundles: path.join(checkDir, "bundles"),
+  };
+}
+
+/** Runs one `flatpak` command for the bundle steps, logged like the build's;
+ * throws with the output when it fails. */
+function flatpakLogged(label: string, args: string[]): string {
+  return runLogged(label, "flatpak", args);
+}
+
+/** The installed check variant's ref (`app/<id>/<arch>/<branch>`). */
+export function installedRef(): string {
+  const result = spawnSync("flatpak", ["info", "--user", "--show-ref", FLATPAK_APP_ID], {
+    encoding: "utf-8",
+  });
+  const ref = result.stdout.trim();
+  if (result.status !== 0 || !ref.startsWith("app/")) {
+    throw new Error(`${FLATPAK_APP_ID} is not installed (flatpak info: ${result.stderr.trim()})`);
+  }
+  return ref;
+}
+
+/** The installed check variant's commit. */
+export function installedCommit(): string {
+  const result = spawnSync("flatpak", ["info", "--user", "--show-commit", FLATPAK_APP_ID], {
+    encoding: "utf-8",
+  });
+  const commit = result.stdout.trim();
+  if (result.status !== 0 || !/^[0-9a-f]{64}$/.test(commit)) {
+    throw new Error(`no commit for ${FLATPAK_APP_ID}: ${result.stderr.trim()}`);
+  }
+  return commit;
+}
+
+/**
+ * Writes the check build's current commit to `<name>.flatpak`, as the release
+ * process writes the shipped one (`flatpak build-bundle` of the repository the
+ * build made). Returns the file's path.
+ */
+export function makeBundle(name: string): string {
+  const { repo, bundles } = checkBuild();
+  const [, , arch, branch] = installedRef().split("/");
+  fs.mkdirSync(bundles, { recursive: true });
+  const file = path.join(bundles, `${name}.flatpak`);
+  fs.rmSync(file, { force: true });
+  flatpakLogged(`build-bundle ${name}`, [
+    "build-bundle",
+    `--arch=${arch}`,
+    repo,
+    file,
+    FLATPAK_APP_ID,
+    branch,
+  ]);
+  if (!fs.existsSync(file) || fs.statSync(file).size === 0) {
+    throw new Error(`flatpak build-bundle wrote no ${file}`);
+  }
+  return file;
+}
+
+/**
+ * Exports the same build directory into the repository again under a new
+ * subject: a new commit of the same app with the same contents, as a new
+ * version's build would be (the data folder is keyed by the app id, not by the
+ * commit).
+ */
+export function exportNewCommit(subject: string): void {
+  const { repo, buildDir } = checkBuild();
+  const [, , arch, branch] = installedRef().split("/");
+  flatpakLogged(`build-export ${subject}`, [
+    "build-export",
+    `--arch=${arch}`,
+    `--subject=${subject}`,
+    repo,
+    buildDir,
+    branch,
+  ]);
+}
+
+/**
+ * Installs a bundle file the way a user does (`flatpak install --user
+ * --bundle`), over the installed app when there is one. The app must not be
+ * running. A bundle adds a remote of its own named for the app (the origin);
+ * {@link removeBundleOrigin} drops what is left of it.
+ */
+export function installBundle(file: string): void {
+  requireCheckEnvironment();
+  flatpakLogged(`install --bundle ${path.basename(file)}`, [
+    "install",
+    "--user",
+    "--noninteractive",
+    "--assumeyes",
+    "--bundle",
+    file,
+  ]);
+}
+
+/** Uninstalls the app, whatever installed it, so a bundle can be the first install. */
+export function uninstallApp(): void {
+  requireCheckEnvironment();
+  flatpakLogged("uninstall the installed build", [
+    "uninstall",
+    "--user",
+    "--noninteractive",
+    FLATPAK_APP_ID,
+  ]);
+}
+
+/** Drops the remote a bundle install added, if one is left (`<app id>-origin`).
+ * Flatpak removes it with the app's last ref, so this is a safeguard. */
+export function removeBundleOrigin(): void {
+  requireCheckEnvironment();
+  const listed = spawnSync("flatpak", ["remotes", "--user", "--columns=name"], {
+    encoding: "utf-8",
+  });
+  for (const name of listed.stdout.split("\n").map((line) => line.trim())) {
+    if (name.endsWith("-origin")) {
+      spawnSync("flatpak", ["remote-delete", "--user", "--force", name], { stdio: "ignore" });
+    }
+  }
+}
+
+/** The name of the remote the installed app came from (`flatpak info --show-origin`). */
+export function installedOrigin(): string {
+  const result = spawnSync("flatpak", ["info", "--user", "--show-origin", FLATPAK_APP_ID], {
+    encoding: "utf-8",
+  });
+  return result.stdout.trim();
+}
+
+// ---------------------------------------------------------------------------
 // The run: the throwaway home, the buses and the stand-in services
 // ---------------------------------------------------------------------------
 

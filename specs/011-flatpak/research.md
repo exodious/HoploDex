@@ -228,6 +228,28 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     each warning kept only by a recorded exception. The exact flag
     (`--user-exceptions`) and the file's format are confirmed when the
     linter is first run.
+    _Amended 2026-10-19 (011 T066):_ confirmed on the linter from
+    `org.flatpak.Builder` (stable). The flag is `--user-exceptions <file>`
+    **together with `--exceptions`**: without `--exceptions` the linter reads no
+    exceptions at all and reports both rules, and with `--exceptions` and a
+    `--user-exceptions` file it asks Flathub for nothing. The file is JSON keyed
+    by the app id, and the linter takes the rule names from it with
+    `set(exceptions.get(appid, []))`, so `{appid: {rule: reason}}` (the shape of
+    `flatpak/linter-exceptions.json`) and `{appid: [rule, ...]}` both work; the
+    reasons are for people. `build.sh` runs it on the manifest and on the
+    repository, which it must be allowed to see (`flatpak run
+    --filesystem=<state>:ro`, since the linter's own sandbox does not see the
+    state volume). The manifest passes with exactly the two exceptions. The
+    repository passes with them plus two screenshot rules,
+    `appstream-missing-screenshots` and
+    `appstream-screenshots-not-mirrored-in-ostree`: Flathub's pipeline mirrors
+    the metainfo's screenshots into the repository (`flatpak-builder
+    --mirror-screenshots-url`, which downloads each address), and the addresses
+    are at the release's tag (§13), which does not exist while the release is
+    being made. `build.sh` therefore adds those two, for the repository lint
+    only, in a file it writes under the state volume; the committed file stays at
+    two (`manifest.test.ts`). A submission to Flathub gets the screenshots
+    mirrored by its own pipeline (§19, item 7).
 - **Rationale**: the spec settled the reach (Clarifications, FR-003) and the
   keyring route (FR-006). The others are what the existing code already
   uses on Linux, kept so the Flatpak runs the same code as the `.deb`.
@@ -683,6 +705,21 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
   - **x86-64 only** (FR-025): the build passes `--arch=x86_64`, and
     `flatpak/flathub.json` holds `{"only-arches": ["x86_64"]}` for a later
     submission.
+  - **Review that nothing publishes** (011 US4-6, 011 SC-009; 011 T069,
+    2026-10-19): a search of `scripts/flatpak/`, `package.json`'s scripts,
+    `.github/workflows/` (`audit.yml` and `codeql.yml`, neither of which
+    mentions Flatpak or a release), `flatpak/`, `e2e/support/flatpak.ts` and
+    `e2e/specs/flatpak.e2e.ts` for `gh release`, `gh pr`, `gh api`,
+    `flat-manager`, `--gpg-sign`, `--sign`, `git push`, `curl`, `wget`,
+    `upload` and `publish` found none. `flathub` appears only as the runtime
+    repository's address (`env.sh`'s `remote-add`, `build.sh`'s `--runtime-repo`
+    and the installs of the runtime, the SDK, its extensions and the linter
+    from it, and `check.sh --fresh-install`'s expectation that the bundle adds
+    it), all downloads. The linter is run with `--exceptions --user-exceptions
+    <file>`, which reads the committed file and makes no lookup of Flathub's
+    exceptions (§4). The three commands write only under `flatpak/out/`, the
+    state volume and the container's own installation. Nothing was attached to
+    a release or sent to Flathub by T062-T069 (no `gh` command was run).
 - **Alternatives considered**: a repository of our own on GitHub Pages,
   which would give `flatpak update`, but is a publishing channel the spec
   doesn't ask for and HoploDex would have to sign and keep.

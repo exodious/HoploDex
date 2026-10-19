@@ -514,12 +514,19 @@ naming it:
    make from the same lockfiles (`011 FR-019`); only the copyright years may
    differ, because `git` isn't in the build.
 7. Installs the build into the container's Flatpak installation.
+8. Installs Flathub's linter (`org.flatpak.Builder`, network, only if missing)
+   and runs `flatpak-builder-lint` on the manifest and on the repository with
+   `flatpak/linter-exceptions.json` (`--exceptions --user-exceptions`; the
+   repository also gets the two screenshot rules a local build cannot satisfy,
+   `011 research.md` §4).
+9. Writes `flatpak/out/HoploDex-<version>-x86_64.flatpak` with
+   `flatpak build-bundle --runtime-repo=<Flathub's>` and prints its path. It
+   attaches and publishes nothing (`011 SC-009`).
 
 The build is of the checkout as it is, uncommitted changes included, except
 `node_modules`, `dist`, `src-tauri/target`, `.git`, `.claude`, `flatpak/out`,
-`.human-testing` and `.wdio`. It doesn't yet run Flathub's linter or write
-the `.flatpak` file (`011 T066`); the output folder for that is `flatpak/out/`
-(git-ignored, so the host can reach it).
+`.human-testing` and `.wdio`. `flatpak/out/` is git-ignored, so the host can
+reach the `.flatpak` file there.
 
 **Where it runs.** Only in the dev container started with `--flatpak`
 (`011 FR-023`). `flatpak-builder` and a running Flatpak use `bwrap`, which
@@ -851,8 +858,21 @@ sandbox is on and what the helpers are confined with, see `src-tauri/src/logging
 `lock-times.log` has each lock's time from the signal (`011 SC-002`) and
 `webkit-sandbox.txt` the `flatpak-spawn --sandbox` command line, what the web
 process sees of its sandbox and what a process started with WebKit's flags
-reaches (`011 research.md` §9). `--fresh-install` is not implemented yet (`011 tasks.md T067`) and the
-script rejects it.
+reaches (`011 research.md` §9).
+
+`-- --fresh-install` runs a different check (`011 US4-2`, `011 SC-010`; it needs
+the network and the file `npm run bundle:flatpak` wrote). It installs that file
+into a second, empty installation with no remotes under the state volume
+(`flatpak install --user --bundle`), shows that the installation gained the
+`flathub` remote and `org.gnome.Platform//51` and that the installed app's
+`files/` pass `contents.mjs` (no runtime library came from the file), starts the
+shipped build once under a throwaway home on a virtual display with the stand-in
+buses, and finds where it keeps its own data: `machine.json` and the main web
+view's data folder under `~/.var/app/io.github.exodious.HoploDex/`, and nothing
+under the home's own `.config` or `.cache` (`011 FR-009`). The second
+installation is removed whatever happened; the shipped build has no WebDriver
+and no log line for its window, so the check waits for the log line that says it
+runs in a Flatpak and for the two folders.
 
 Run it before each release and for a pull request that changes any of these
 paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,

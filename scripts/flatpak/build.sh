@@ -120,9 +120,61 @@ flatpak install --user --reinstall --noninteractive --assumeyes hoplodex-local "
 echo "installed: $app_id (from $local_repo)"
 
 # ---------------------------------------------------------------------------
-# 011 T066 (011 US4) goes here: Flathub's linter on the manifest and the repository,
-# then `flatpak build-bundle` into flatpak/out/. Nothing below this line yet.
+# 011 T066 (011 US4): Flathub's linter on the manifest and the repository, then the
+# .flatpak file (011 research.md §4, §14, §15; 011 FR-020, 011 FR-025, 011 FR-026).
 # ---------------------------------------------------------------------------
 
+linter=(flatpak run --command=flatpak-builder-lint org.flatpak.Builder)
+exceptions="$repo/flatpak/linter-exceptions.json"
+
+step "install Flathub's linter, org.flatpak.Builder (network, only if missing)"
+if flatpak info --user org.flatpak.Builder >/dev/null 2>&1; then
+  echo "org.flatpak.Builder: installed"
+else
+  flatpak install --user --noninteractive --assumeyes flathub org.flatpak.Builder
+fi
+
+# The linter reads only the exceptions its --exceptions flag turns on, from the file
+# --user-exceptions names: {"<app id>": {"<rule>": "<reason>"}} (the linter uses the
+# rule names, which are the object's keys; a list of rule names is read the same way).
+step "flatpak-builder-lint: the manifest, with flatpak/linter-exceptions.json (011 FR-026)"
+"${linter[@]}" --exceptions --user-exceptions "$exceptions" manifest "$manifest"
+echo "flatpak-builder-lint manifest: ok"
+
+# The repository is linted as Flathub's pipeline would lint it, except for two
+# screenshot rules. Flathub's pipeline mirrors the metainfo's screenshots (it builds
+# with --mirror-screenshots-url, which downloads each address); the addresses are at
+# the release's tag (011 research.md §13), which does not exist while the release is
+# being made, so a local build cannot mirror them. These two are added here, for the
+# repository only, and the recorded exceptions in the committed file stay at two.
+screenshot_rules='["appstream-missing-screenshots","appstream-screenshots-not-mirrored-in-ostree"]'
+repo_exceptions="$state/linter-exceptions-repo.json"
+node -e '
+  const fs = require("node:fs");
+  const [source, target, extra] = process.argv.slice(1);
+  const all = JSON.parse(fs.readFileSync(source, "utf-8"));
+  for (const [id, rules] of Object.entries(all)) {
+    all[id] = { ...rules, ...Object.fromEntries(JSON.parse(extra).map((rule) => [rule, "not mirrored by a local build"])) };
+  }
+  fs.writeFileSync(target, JSON.stringify(all, null, 2));
+' "$exceptions" "$repo_exceptions" "$screenshot_rules"
+
+# The linter runs in its own sandbox, which does not see the state volume.
+step "flatpak-builder-lint: the repository, with those exceptions and the screenshot mirror's two"
+flatpak run --filesystem="$state:ro" --command=flatpak-builder-lint org.flatpak.Builder \
+  --exceptions --user-exceptions "$repo_exceptions" repo "$local_repo"
+echo "flatpak-builder-lint repo: ok"
+
+step "flatpak build-bundle (011 research.md §14)"
+version="$(node -p "require('./package.json').version")"
+bundle="$repo/flatpak/out/HoploDex-$version-$arch.flatpak"
+rm -f "$bundle"
+flatpak build-bundle --arch="$arch" \
+  --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+  "$local_repo" "$bundle" "$app_id"
+[ -s "$bundle" ] || { echo "build-bundle wrote no file" >&2; false; }
+echo "bundle: $bundle ($(du -h "$bundle" | cut -f1))"
+
 echo
-echo "build.sh: ok (installed build; the linter and the .flatpak file are not made yet)"
+echo "build.sh: ok"
+echo "$bundle"

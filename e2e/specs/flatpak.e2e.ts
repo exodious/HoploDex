@@ -34,11 +34,17 @@ import {
   emitActiveChanged,
   emitPrepareForShutdown,
   emitPrepareForSleep,
+  exportNewCommit,
   flatpakLauncher,
   inhibitors,
+  installBundle,
+  installedCommit,
+  installedOrigin,
   lockProbe,
+  makeBundle,
   processGone,
   processView,
+  removeBundleOrigin,
   removeLogindSession,
   resourceLimit,
   runInSandbox,
@@ -46,6 +52,7 @@ import {
   startScreenSavers,
   stopScreenSavers,
   terminateApp,
+  uninstallApp,
 } from "../support/flatpak";
 import { importFile, tally } from "../support/importExport";
 import { writeTableWorkbook } from "../support/spreadsheets";
@@ -56,6 +63,7 @@ import {
   ACKNOWLEDGEMENT,
   addFirearm,
   browser,
+  choose,
   chooseMenuItem,
   chooserNames,
   chooserSays,
@@ -1187,6 +1195,141 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
       "Not available: this computer doesn't tell applications when the screen locks.",
     );
     await clickButton("Cancel");
+    await switchDatabase();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 011 US4
+// ---------------------------------------------------------------------------
+
+/** Opens Database settings, runs `inside`, and closes them again with Cancel. */
+async function inDatabaseSettings<T>(inside: () => Promise<T>): Promise<T> {
+  await chooseMenuItem("button.hd-db-menu", "Database settings…");
+  await $('[role="dialog"]').waitForExist();
+  await settle();
+  try {
+    return await inside();
+  } finally {
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  }
+}
+
+/** Whether the "Open documents" radio labelled `label` is the checked one. */
+function openingChecked(label: string): Promise<boolean> {
+  return browser.execute((wanted: string) => {
+    const input = [
+      ...document.querySelectorAll<HTMLInputElement>(
+        '[role="dialog"] [role="radiogroup"] input[type="radio"]',
+      ),
+    ].find((r) => r.closest("label")?.textContent?.trim() === wanted);
+    return Boolean(input?.checked);
+  }, label);
+}
+
+describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Runtime From Flathub", () => {
+  const folder = () => path.join(currentRun().documents, "HoploDex");
+  const database = () => path.join(folder(), "Upgrade.hoplodex");
+  /** This computer's settings and recent list (011 FR-009). */
+  const machineJson = () =>
+    path.join(appDataDir(currentRun().home), "config", FLATPAK_APP_ID, "machine.json");
+  let firstCommit = "";
+
+  before(async () => {
+    await waitForChooser();
+  });
+
+  after(() => {
+    // What the bundle installs left behind: their remote (the next runs of the
+    // check install from the check's own).
+    removeBundleOrigin();
+  });
+
+  it("011 US4-3, 011 FR-024, 011 SC-008: a newer file installed over the first keeps the setting, the recent entry and the saved passphrase, and the database opens without typing it", async function () {
+    this.timeout(600000);
+    // The check variant, installed from a bundle file as a user installs one:
+    // the app is stopped, the build the check installed is removed, and the
+    // file goes in. The app's data (under the run's home, keyed by the app id)
+    // is not touched by any of it.
+    const first = makeBundle("first");
+    await killApp();
+    uninstallApp();
+    installBundle(first);
+    expect(installedOrigin()).toMatch(/-origin$/);
+    firstCommit = installedCommit();
+    await relaunchApp();
+    await waitForChooser();
+
+    // A database, its passphrase saved, a per-computer setting changed, then closed.
+    await clickButton("Create a new database…");
+    await $('[role="dialog"]').waitForExist();
+    await fill("Name", "Upgrade");
+    await fill("Passphrase", E2E_PASSPHRASE);
+    await fill("Confirm passphrase", E2E_PASSPHRASE);
+    await toggle(ACKNOWLEDGEMENT);
+    await clickButton("Create database");
+    await waitForCollection();
+    expect(fs.existsSync(database())).toBe(true);
+    await addFirearm({
+      make: "UpgradeGlock",
+      model: "17",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "UPG-001",
+    });
+
+    await inDatabaseSettings(async () => {
+      expect(await openingChecked("Preview in HoploDex")).toBe(true);
+      await choose("Open in another app");
+      await browser.waitUntil(() => openingChecked("Open in another app"), {
+        timeout: 10000,
+        timeoutMsg: "the setting never took",
+      });
+    });
+    await switchDatabase();
+
+    await ensureSelected("Upgrade");
+    await toggle("Remember on this computer");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Remember passphrase");
+    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    await unlock(E2E_PASSPHRASE);
+    await switchDatabase();
+    expect(fs.existsSync(machineJson())).toBe(true);
+    const before = JSON.parse(fs.readFileSync(machineJson(), "utf-8"));
+    expect(JSON.stringify(before.recentDatabases)).toContain("Upgrade.hoplodex");
+    expect(before.documentOpening).toBe("external");
+
+    // The next version's file: a new commit of the same app, installed over.
+    exportNewCommit("011 US4-3: the next version");
+    const second = makeBundle("second");
+    await killApp();
+    installBundle(second);
+    const secondCommit = installedCommit();
+    expect(secondCommit).not.toBe(firstCommit);
+    await relaunchApp();
+    await waitForChooser();
+
+    // Everything is where the first version left it.
+    // (the file is this computer's: its id, setting and recent list are the first version's)
+    const after = JSON.parse(fs.readFileSync(machineJson(), "utf-8"));
+    expect(after.machineId).toBe(before.machineId);
+    expect(after.documentOpening).toBe("external");
+    expect(after.recentDatabases).toEqual(before.recentDatabases);
+    expect(await chooserNames()).toContain("Upgrade");
+    expect(await selectedChooserRow()).toBe("Upgrade");
+    await expect($(".hd-db-row--selected .hd-db-row__saved")).toHaveText(
+      "Opens without a passphrase on this computer",
+    );
+    expect(await $(".hd-db-row--selected input").isExisting()).toBe(false);
+    await clickButton("Open");
+    await waitForCollection();
+    await goTo("Collection");
+    expect(await listedNames()).toContain("UpgradeGlock 17");
+    await inDatabaseSettings(async () => {
+      expect(await openingChecked("Open in another app")).toBe(true);
+    });
     await switchDatabase();
   });
 });

@@ -22,6 +22,11 @@
 #   5. uninstalls the check variant whatever happened (a trap), and fails unless the
 #      installation lists the same apps as before.
 #
+# `--fresh-install` (network; before each release) runs a different check instead
+# (011 US4-2, 011 SC-010, 011 FR-009): the shipped .flatpak file that `npm run
+# bundle:flatpak` wrote, installed into a second, empty installation with no remotes,
+# then started once under a throwaway home.
+#
 # Logs: flatpak/out/check/. The run's HOME is a throwaway: nothing here makes a
 # ~/.var/app in the container user's real home (011 SC-007).
 set -euo pipefail
@@ -31,16 +36,13 @@ repo="$(cd "$here/../.." && pwd)"
 cd "$repo"
 
 guard_args=()
+fresh_install=0
 for arg in "$@"; do
   case "$arg" in
-    --fresh-install)
-      # The shipped .flatpak into an empty installation (011 tasks.md T067).
-      echo "check.sh: --fresh-install is not yet implemented." >&2
-      exit 2
-      ;;
+    --fresh-install) fresh_install=1 ;;
     --i-know-this-is-a-host) guard_args+=("$arg") ;;
     *)
-      echo "check.sh: unknown argument '$arg' (use --fresh-install, once implemented, or --i-know-this-is-a-host)." >&2
+      echo "check.sh: unknown argument '$arg' (use --fresh-install or --i-know-this-is-a-host)." >&2
       exit 2
       ;;
   esac
@@ -130,46 +132,6 @@ sandbox_run() {
     flatpak run "$@"
 }
 
-# ---------------------------------------------------------------------------
-step "the installation before the check"
-# Whatever HoploDex build is installed (build.sh leaves one) is replaced by the check
-# variant and removed at the end, so it is not part of "before".
-if flatpak info --user "$app_id" >/dev/null 2>&1; then
-  echo "a build of $app_id is installed in this installation; the check replaces and removes it"
-  flatpak uninstall --user --noninteractive "$app_id"
-fi
-installed_before="$(list_apps)"
-echo "apps installed: $(printf '%s' "${installed_before:-none}" | tr '\n' ' ')"
-
-# ---------------------------------------------------------------------------
-step "build and install the check variant (011 research.md §16)"
-node --import tsx --input-type=module -e '
-  const checkout = await import("./e2e/support/flatpak.ts");
-  checkout.buildAndInstallCheck();
-'
-# The E2E run installs nothing of its own.
-export HOPLODEX_FLATPAK_CHECK_INSTALLED=1
-
-# ---------------------------------------------------------------------------
-step "the private session bus and the stand-in services"
-cat >"$scratch/session.conf" <<CONF
-<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
-  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig>
-  <type>session</type>
-  <listen>unix:path=$scratch/session_bus_socket</listen>
-  <auth>EXTERNAL</auth>
-  <policy context="default">
-    <allow send_destination="*" eavesdrop="true"/>
-    <allow eavesdrop="true"/>
-    <allow own="*"/>
-  </policy>
-</busconfig>
-CONF
-bus_out="$(dbus-daemon --config-file="$scratch/session.conf" --fork --print-address --print-pid)"
-check_session_bus="$(printf '%s\n' "$bus_out" | sed -n 1p)"
-check_bus_pid="$(printf '%s\n' "$bus_out" | sed -n 2p)"
-
 name_owned() { # bus-address name
   gdbus call --address "$1" --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
     --method org.freedesktop.DBus.NameHasOwner "$2" 2>/dev/null | grep -q true
@@ -193,16 +155,192 @@ start_mock() {
   echo "stand-in up: $name"
 }
 
-system_bus="$DBUS_SYSTEM_BUS_ADDRESS"
-start_mock "$system_bus" --system org.freedesktop.login1 -t logind
-gdbus call --address "$system_bus" --dest org.freedesktop.login1 --object-path /org/freedesktop/login1 \
-  --method org.freedesktop.DBus.Mock.AddSession auto seat0 "$(id -u)" "$(id -un)" true >/dev/null
-start_mock "$check_session_bus" --session org.freedesktop.secrets org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service
-secrets_pid="$last_mock_pid"
-start_mock "$check_session_bus" --session org.gnome.ScreenSaver org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver
-start_mock "$check_session_bus" --session org.freedesktop.ScreenSaver org.freedesktop.ScreenSaver /org/freedesktop/ScreenSaver org.freedesktop.ScreenSaver
-start_mock "$check_session_bus" --session org.freedesktop.portal.Desktop org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.OpenURI
-start_mock "$check_session_bus" --session org.example.NotGranted org.example.NotGranted /org/example/NotGranted org.example.NotGranted
+# The private session bus and the stand-in services both checks start the app against.
+start_standins() {
+  cat >"$scratch/session.conf" <<CONF
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:path=$scratch/session_bus_socket</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+CONF
+  bus_out="$(dbus-daemon --config-file="$scratch/session.conf" --fork --print-address --print-pid)"
+  check_session_bus="$(printf '%s\n' "$bus_out" | sed -n 1p)"
+  check_bus_pid="$(printf '%s\n' "$bus_out" | sed -n 2p)"
+
+  system_bus="$DBUS_SYSTEM_BUS_ADDRESS"
+  start_mock "$system_bus" --system org.freedesktop.login1 -t logind
+  gdbus call --address "$system_bus" --dest org.freedesktop.login1 --object-path /org/freedesktop/login1 \
+    --method org.freedesktop.DBus.Mock.AddSession auto seat0 "$(id -u)" "$(id -un)" true >/dev/null
+  start_mock "$check_session_bus" --session org.freedesktop.secrets org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service
+  secrets_pid="$last_mock_pid"
+  start_mock "$check_session_bus" --session org.gnome.ScreenSaver org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver
+  start_mock "$check_session_bus" --session org.freedesktop.ScreenSaver org.freedesktop.ScreenSaver /org/freedesktop/ScreenSaver org.freedesktop.ScreenSaver
+  start_mock "$check_session_bus" --session org.freedesktop.portal.Desktop org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.OpenURI
+  start_mock "$check_session_bus" --session org.example.NotGranted org.example.NotGranted /org/example/NotGranted org.example.NotGranted
+}
+
+# ---------------------------------------------------------------------------
+# --fresh-install (011 US4-2, 011 SC-010, 011 FR-009)
+# ---------------------------------------------------------------------------
+fresh_dir="$state/fresh-flatpak"
+xvfb_pid=""
+shipped_pid=""
+
+fresh_cleanup() {
+  local status=$?
+  trap - EXIT ERR
+  set +e
+  if [ -n "$shipped_pid" ]; then kill "$shipped_pid" 2>/dev/null; fi
+  FLATPAK_USER_DIR="$fresh_dir" flatpak kill "$app_id" >/dev/null 2>&1
+  stop_standins
+  if [ -n "$xvfb_pid" ]; then kill "$xvfb_pid" 2>/dev/null; fi
+  # The throwaway installation goes whatever happened; the container's own is not touched.
+  rm -rf "$fresh_dir"
+  if [ -e "$fresh_dir" ]; then
+    echo "check.sh: could not remove $fresh_dir" >&2
+    status=1
+  else
+    echo "removed: the throwaway installation $fresh_dir"
+  fi
+  rm -rf "$scratch"
+  hoplodex_flatpak_stop_bus
+  if [ "$status" -ne 0 ]; then
+    echo "check.sh: FAILED (step: ${current_step:-none}); logs are in flatpak/out/check/" >&2
+  fi
+  exit "$status"
+}
+
+# The shipped file into an empty installation with no remotes, as a user's computer
+# without Flathub gets it (the network is used: the runtime comes from Flathub).
+fresh_install_check() {
+  trap fresh_cleanup EXIT
+  local version bundle
+  version="$(node -p "require('./package.json').version")"
+  bundle="$repo/flatpak/out/HoploDex-$version-x86_64.flatpak"
+
+  step "the shipped file"
+  [ -s "$bundle" ] || fail "$bundle is missing: run 'npm run bundle:flatpak' first"
+  echo "file: $bundle ($(du -h "$bundle" | cut -f1))"
+
+  step "an empty installation with no remotes"
+  # env.sh has added Flathub to the container's installation (its default); the second
+  # one is made after that, so it stays empty. The guard accepts it all the same.
+  rm -rf "$fresh_dir"
+  mkdir -p "$fresh_dir"
+  FLATPAK_USER_DIR="$fresh_dir" node "$here/guard.mjs" >/dev/null ||
+    fail "the guard does not accept $fresh_dir"
+  export FLATPAK_USER_DIR="$fresh_dir"
+  [ -z "$(flatpak remotes --user --columns=name)" ] || fail "the new installation has remotes"
+  [ -z "$(flatpak list --user --columns=ref)" ] || fail "the new installation is not empty"
+  echo "installation: $fresh_dir (no remotes, nothing installed)"
+
+  step "flatpak install --user --bundle (network)"
+  flatpak install --user --noninteractive --assumeyes --bundle "$bundle"
+  echo
+  echo "remotes now: $(flatpak remotes --user --columns=name | tr '\n' ' ')"
+  flatpak remotes --user --columns=name | grep -qx flathub || fail "the installation did not gain the flathub remote"
+  echo "installed refs:"
+  flatpak list --user --columns=ref,origin | sed 's/^/  /'
+  flatpak list --user --runtime --columns=ref | grep -q '^org\.gnome\.Platform/x86_64/51$' ||
+    fail "the installation did not gain org.gnome.Platform//51"
+  flatpak info --user "$app_id" >/dev/null || fail "$app_id is not installed"
+  echo "the installation gained the flathub remote and org.gnome.Platform//51"
+
+  step "no runtime library came from the file (011 FR-018)"
+  local location
+  location="$(flatpak info --user --show-location "$app_id")"
+  node "$here/contents.mjs" --installed "$location/files" || fail "the installed app's files are not what contents.mjs allows"
+
+  step "start the shipped build under a throwaway home and the stand-in buses"
+  # A display of its own (the container has none), as the E2E run has.
+  Xvfb -displayfd 5 -screen 0 1280x1024x24 -nolisten tcp -ac 5>"$scratch/display" >"$log_dir/xvfb.log" 2>&1 &
+  xvfb_pid="$!"
+  local tries=0
+  until [ -s "$scratch/display" ]; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 100 ] || fail "Xvfb did not start (flatpak/out/check/xvfb.log)"
+    sleep 0.05
+  done
+  local display=":$(tr -d '\n' <"$scratch/display")"
+  start_standins
+  local app_log="$log_dir/shipped-start.log"
+  env -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_STATE_HOME -u WAYLAND_DISPLAY \
+    HOME="$check_home" DBUS_SESSION_BUS_ADDRESS="$check_session_bus" DISPLAY="$display" \
+    flatpak run "$app_id" >"$app_log" 2>&1 &
+  shipped_pid="$!"
+
+  # Its log line that tells where it runs (the log reaches standard error, 011 research.md §16),
+  # then the folders startup makes: machine.json when the settings are loaded, and the main
+  # web view's data folder when the main window is built.
+  local data="$check_home/.var/app/$app_id"
+  local config="$data/config/$app_id/machine.json"
+  local webview="$data/cache/$app_id/main-webview"
+  tries=0
+  until grep -q '^\[INFO\] running in a Flatpak; reach: ' "$app_log" 2>/dev/null && [ -f "$config" ] && [ -d "$webview" ]; do
+    tries=$((tries + 1))
+    kill -0 "$shipped_pid" 2>/dev/null || fail "the shipped build exited before its window was up (flatpak/out/check/shipped-start.log)"
+    [ "$tries" -lt 1200 ] || fail "the shipped build's window did not come up in 60 s (flatpak/out/check/shipped-start.log)"
+    sleep 0.05
+  done
+  # The page is loading into that web view; give it a moment before it is killed.
+  sleep 3
+  kill -0 "$shipped_pid" 2>/dev/null || fail "the shipped build exited while starting (flatpak/out/check/shipped-start.log)"
+  echo "started: the shipped build is running and logged: $(grep '^\[INFO\] running in a Flatpak' "$app_log" | head -n 1)"
+  FLATPAK_USER_DIR="$fresh_dir" flatpak kill "$app_id"
+  wait "$shipped_pid" 2>/dev/null || true
+  shipped_pid=""
+
+  step "where the shipped build keeps its own data (011 FR-009, 011 research.md §11)"
+  [ -f "$config" ] || fail "no machine.json at $config"
+  echo "exists: ~/.var/app/$app_id/config/$app_id/machine.json"
+  [ -d "$webview" ] || fail "no main web view data folder at $webview"
+  echo "exists: ~/.var/app/$app_id/cache/$app_id/main-webview"
+  for outside in ".config/$app_id" ".cache/$app_id"; do
+    [ ! -e "$check_home/$outside" ] || fail "~/$outside exists: the Flatpak wrote outside its own data folder"
+    echo "does not exist: ~/$outside"
+  done
+
+  echo
+  echo "check.sh: ok (--fresh-install; the throwaway installation is removed next)"
+}
+
+if [ "$fresh_install" = 1 ]; then
+  fresh_install_check
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+step "the installation before the check"
+# Whatever HoploDex build is installed (build.sh leaves one) is replaced by the check
+# variant and removed at the end, so it is not part of "before".
+if flatpak info --user "$app_id" >/dev/null 2>&1; then
+  echo "a build of $app_id is installed in this installation; the check replaces and removes it"
+  flatpak uninstall --user --noninteractive "$app_id"
+fi
+installed_before="$(list_apps)"
+echo "apps installed: $(printf '%s' "${installed_before:-none}" | tr '\n' ' ')"
+
+# ---------------------------------------------------------------------------
+step "build and install the check variant (011 research.md §16)"
+node --import tsx --input-type=module -e '
+  const checkout = await import("./e2e/support/flatpak.ts");
+  checkout.buildAndInstallCheck();
+'
+# The E2E run installs nothing of its own.
+export HOPLODEX_FLATPAK_CHECK_INSTALLED=1
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+step "the private session bus and the stand-in services"
+start_standins
 
 # ---------------------------------------------------------------------------
 step "the bus checks, from inside the sandbox with the shipped permissions (011 research.md §16)"

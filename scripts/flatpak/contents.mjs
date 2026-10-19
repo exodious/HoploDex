@@ -5,6 +5,11 @@
 // and the runtime for the three inputs.
 //
 //   node scripts/flatpak/contents.mjs <build directory>/files
+//   node scripts/flatpak/contents.mjs --installed <installed app's deploy directory>/files
+//
+// `--installed` is for an app Flatpak installed (`flatpak info --show-location`'s
+// `files/`): installing adds `files/.ref` and a launcher script, `export/bin/<app id>`,
+// which Flatpak writes and the bundle does not carry; those two are set aside.
 //
 // prints `contents: ok`, or each problem, naming the path, and exits 1.
 
@@ -137,18 +142,24 @@ function runtimeLibraryNames() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const filesDir = process.argv[2];
+  const args = process.argv.slice(2);
+  const installed = args.includes("--installed");
+  const filesDir = args.find((arg) => !arg.startsWith("--"));
   if (!filesDir || !fs.existsSync(path.join(filesDir, "bin"))) {
     process.stderr.write(
-      "usage: node scripts/flatpak/contents.mjs <build directory>/files (the built app's folder)\n",
+      "usage: node scripts/flatpak/contents.mjs [--installed] <build or deploy directory>/files (the app's folder)\n",
     );
     process.exit(2);
   }
   try {
     // The exported copies sit beside files/, in the build directory's export/.
     const exported = listFiles(path.join(filesDir, "..", "export")).map((p) => `export/${p}`);
+    // What installing adds (see above).
+    const addedByInstall = new Set([".ref", `export/bin/${APP_ID}`]);
     const problems = checkContents({
-      files: [...listFiles(filesDir), ...exported],
+      files: [...listFiles(filesDir), ...exported].filter(
+        (file) => !(installed && addedByInstall.has(file)),
+      ),
       readelf: run("readelf", ["-d", path.join(filesDir, "bin", "hoplodex")]),
       runtimeLibraries: runtimeLibraryNames(),
     });
