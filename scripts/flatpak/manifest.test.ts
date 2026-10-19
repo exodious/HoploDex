@@ -6,12 +6,15 @@
 // network anywhere, and one module with three sources, is what lets the
 // license audit (011 FR-019) and the offline build (011 SC-004) rest on the
 // manifest instead of on a promise. Fixtures under `fixtures/manifest-*/` are
-// small manifests, each wrong in one way.
+// small manifests, each wrong in one way. The check variant (011 US5-2,
+// 011 FR-021; 011 data-model.md "The check manifest", 011 research.md §16) is
+// the shipped manifest with three allowed changes and nothing else.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 import { describe, expect, it } from "vitest";
+import * as checkManifest from "./checkManifest.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
@@ -288,5 +291,147 @@ describe("011 US3-5 - the manifest's build rules", () => {
           "cd src-tauri && cargo build --release --features custom-protocol --bin hoplodex",
       ]);
     });
+  });
+});
+
+/** What `checkManifest.mjs` exports (011 T029): a pure derivation of the check manifest. */
+const deriveCheckManifest = (manifest: Manifest): Manifest => {
+  const derive = (checkManifest as { deriveCheckManifest?: (m: Manifest) => Manifest })
+    .deriveCheckManifest;
+  if (typeof derive !== "function") {
+    throw new Error("checkManifest.mjs does not export deriveCheckManifest yet (011 T029)");
+  }
+  return derive(structuredClone(manifest));
+};
+
+/**
+ * The check manifest the rule allows, written out independently of
+ * `checkManifest.mjs`: the cargo build command's profile and features, the
+ * binary's path that follows from the profile, and no `check-no-webdriver.mjs`
+ * step. Everything else is the shipped manifest's.
+ */
+function allowedCheckManifest(shipped: Manifest): Manifest {
+  const check = structuredClone(shipped);
+  for (const module of asArray(check.modules) as Record<string, unknown>[]) {
+    module["build-commands"] = asArray(module["build-commands"])
+      .map(String)
+      .filter((command) => !command.includes("check-no-webdriver.mjs"))
+      .map((command) =>
+        /\bcargo build\b/.test(command)
+          ? command
+              .replace("--release", "--profile e2e")
+              .replace("--features custom-protocol", "--features custom-protocol,e2e")
+          : command.replaceAll("target/release/hoplodex", "target/e2e/hoplodex"),
+      );
+  }
+  return check;
+}
+
+const show = (value: unknown) => (value === undefined ? "nothing" : JSON.stringify(value));
+
+/** Every place the check manifest differs from what the rule allows, as lines naming where. */
+function diffs(expected: unknown, got: unknown, where: string, found: string[] = []): string[] {
+  if (Array.isArray(expected) && Array.isArray(got)) {
+    if (expected.length !== got.length) {
+      const left = expected.map((e) => JSON.stringify(e));
+      const right = got.map((g) => JSON.stringify(g));
+      for (const item of left.filter((e) => !right.includes(e))) {
+        found.push(`${where}: the check manifest lacks ${item}`);
+      }
+      for (const item of right.filter((g) => !left.includes(g))) {
+        found.push(`${where}: the check manifest adds ${item}`);
+      }
+      if (left.every((e) => right.includes(e)) && right.every((g) => left.includes(g))) {
+        found.push(`${where}: the check manifest repeats an entry`);
+      }
+    } else {
+      expected.forEach((item, i) => diffs(item, got[i], `${where}[${i}]`, found));
+    }
+  } else if (
+    expected &&
+    got &&
+    typeof expected === "object" &&
+    typeof got === "object" &&
+    !Array.isArray(expected) &&
+    !Array.isArray(got)
+  ) {
+    const keys = new Set([...Object.keys(expected), ...Object.keys(got)]);
+    for (const key of keys) {
+      diffs(
+        (expected as Record<string, unknown>)[key],
+        (got as Record<string, unknown>)[key],
+        where ? `${where}.${key}` : key,
+        found,
+      );
+    }
+  } else if (JSON.stringify(expected) !== JSON.stringify(got)) {
+    found.push(`${where}: the rule allows ${show(expected)}, the check manifest has ${show(got)}`);
+  }
+  return found;
+}
+
+/** The check manifest's problems: every difference from the shipped one the rule doesn't allow. */
+const checkManifestProblems = (shipped: Manifest, check: Manifest) =>
+  diffs(allowedCheckManifest(shipped), check, "");
+
+const checkFixture = (name: string) => loadFixture(`check-${name}`);
+
+describe("011 US5-2 - the check manifest differs from the shipped one only where the rule allows", () => {
+  it("011 FR-021: checkManifest.mjs's derivation of the real manifest differs only in the allowed ways (red until T029)", () => {
+    const shipped = load(REAL_MANIFEST);
+    expect(checkManifestProblems(shipped, deriveCheckManifest(shipped))).toEqual([]);
+  });
+
+  it("011 FR-021: the derivation does not change the manifest it is given", () => {
+    const shipped = load(REAL_MANIFEST);
+    const before = structuredClone(shipped);
+    deriveCheckManifest(shipped);
+    expect(shipped).toEqual(before);
+  });
+
+  it("the real derivation builds with the e2e profile and features, from the e2e profile's binary, with no webdriver check", () => {
+    const check = deriveCheckManifest(load(REAL_MANIFEST));
+    const commands = (check.modules as Record<string, unknown>[])[0]["build-commands"] as string[];
+    const cargo = commands.filter((c) => /\bcargo build\b/.test(c));
+    expect(cargo).toHaveLength(1);
+    expect(cargo[0]).toMatch(/(^|\s)--profile e2e(\s|$)/);
+    expect(cargo[0]).toMatch(/(^|\s)--features custom-protocol,e2e(\s|$)/);
+    expect(cargo[0]).not.toMatch(/--release/);
+    expect(commands.some((c) => c.includes("check-no-webdriver.mjs"))).toBe(false);
+    expect(commands.some((c) => c.includes("target/release/"))).toBe(false);
+    expect(commands.some((c) => c.includes("target/e2e/hoplodex /app/bin/hoplodex"))).toBe(true);
+  });
+
+  it("a derivation made the allowed way has no problem", () => {
+    expect(checkManifestProblems(loadFixture("valid"), checkFixture("ok"))).toEqual([]);
+  });
+
+  it("the allowed changes are what the independent derivation makes of the fixture", () => {
+    expect(allowedCheckManifest(loadFixture("valid"))).toEqual(checkFixture("ok"));
+  });
+
+  it("fails a derivation that changed nothing, naming the cargo command", () => {
+    const shipped = loadFixture("valid");
+    const problems = checkManifestProblems(shipped, shipped);
+    expect(problems.length).toBeGreaterThan(0);
+    expect(problems.join("\n")).toContain("modules[0].build-commands:");
+  });
+
+  it("fails a derivation that adds a finish-args entry, naming finish-args", () => {
+    expect(checkManifestProblems(loadFixture("valid"), checkFixture("finish-arg-added"))).toEqual([
+      'finish-args: the check manifest adds "--share=network"',
+    ]);
+  });
+
+  it("fails a derivation that drops another build step, naming the build command", () => {
+    expect(checkManifestProblems(loadFixture("valid"), checkFixture("step-dropped"))).toEqual([
+      'modules[0].build-commands: the check manifest lacks "npm run build"',
+    ]);
+  });
+
+  it("fails a derivation that changes a source, naming the module's sources", () => {
+    expect(checkManifestProblems(loadFixture("valid"), checkFixture("source-changed"))).toEqual([
+      'modules[0].sources[2]: the rule allows "node-sources.json", the check manifest has "node-sources-other.json"',
+    ]);
   });
 });
