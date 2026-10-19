@@ -44,10 +44,10 @@ export function outOfReachText(subject: OutOfReachSubject, folder: string): stri
     subject === "database"
       ? "Move the file into your home folder or onto a removable drive"
       : "Choose a folder in your home folder or on a removable drive";
-  // The grants can be changed (`flatpak override`), so this says what is true
-  // of any copy: the folder is outside what it can reach, and what that is by
-  // default (011 T099). The backend's message names the actual grants.
-  return `${cant} It is a Flatpak, and the folder is outside the folders HoploDex can reach; by default, your home folder and removable drives. ${move}, or give HoploDex access to ${folder} by running: ${overrideCommand(folder)} and then restarting HoploDex.`;
+  // The grants can be changed (`flatpak override`), so this says only what a
+  // copy reaches by default (011 T099); the backend's message names the actual
+  // grants.
+  return `${cant} It is a Flatpak, and by default it can reach only your home folder and removable drives. ${move}, or give HoploDex access to ${folder} by running: ${overrideCommand(folder)} and then restarting HoploDex.`;
 }
 
 /** The reason a failed backup gives, as a clause in a sentence (the chooser's

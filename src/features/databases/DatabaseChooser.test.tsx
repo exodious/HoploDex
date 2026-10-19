@@ -1577,7 +1577,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
 
       const asked = await screen.findByRole("dialog", { name: "Save the backup somewhere else?" });
       expect(asked).toHaveTextContent(
-        `HoploDex couldn't save the backup it makes before upgrading “Main collection” in ${BACKUPS}. This copy of HoploDex can't reach this folder. It is a Flatpak, and the folder is outside the folders HoploDex can reach; by default, your home folder and removable drives. Choose a folder in your home folder or on a removable drive, or give HoploDex access to ${BACKUPS} by running: flatpak override --user --filesystem='${BACKUPS}' io.github.exodious.HoploDex and then restarting HoploDex. You can save this one backup in a folder you choose instead, or cancel. “Main collection” isn't upgraded without a backup.`,
+        `HoploDex couldn't save the backup it makes before upgrading “Main collection” in ${BACKUPS}. This copy of HoploDex can't reach this folder. It is a Flatpak, and by default it can reach only your home folder and removable drives. Choose a folder in your home folder or on a removable drive, or give HoploDex access to ${BACKUPS} by running: flatpak override --user --filesystem='${BACKUPS}' io.github.exodious.HoploDex and then restarting HoploDex. You can save this one backup in a folder you choose instead, or cancel. “Main collection” isn't upgraded without a backup.`,
       );
       expect(within(asked).getByRole("button", { name: "Choose a folder…" })).toBeInTheDocument();
     });
