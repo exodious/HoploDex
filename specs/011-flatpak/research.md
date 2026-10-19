@@ -37,6 +37,21 @@ sections below cite it as "the spike".
     is still beta on the day, the manifest uses the beta branch until the
     stable one is out, and the release process (#19) checks it before
     0.1.0.
+  - _Amended 2026-10-19 (011 T012):_ confirmed in the dev container
+    (`scripts/dev-container.sh --flatpak`, after `env.sh`, with
+    `flatpak remote-info --user flathub`). Both extensions are on the **stable**
+    `26.08` branch (`Collection: org.flathub.Stable`): `rust-stable//26.08`
+    (commit `14774ceb`, 2026-09-03) and `node24//26.08` (commit `eb3f0d47`,
+    2026-09-19). Neither has a `26.08beta` ref on Flathub any more, so the
+    manifest names `26.08` and no beta branch. `org.gnome.Platform//51` and
+    `org.gnome.Sdk//51` are stable too (both from GNOME build 51.1-3, 2026-10-18).
+    The `rust-stable` branch's compiler, from installing it into the
+    container's own installation (`--no-deps`, under `/home/dev`, never the
+    host's) and running its `bin/rustc`, is **rustc 1.98.0** (cargo 1.98.0),
+    which is at least `src-tauri/Cargo.toml`'s `rust-version` 1.97, so the
+    build's compiler is new enough. The extension's `bin` also has `cargo`,
+    `cargo-clippy`, `cargo-fmt` and `ld.mold`. Its `remote-info` does not show
+    the compiler, so installing it was the way to read it.
 - **Rationale**: GNOME 51 is the newest branch with the web view Tauri 2
   needs, and the one supported longest: until about September 2027. GNOME
   removed `webkit2gtk-4.1` from its next runtime on 2026-09-28
