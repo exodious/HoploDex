@@ -84,6 +84,7 @@ fn making_a_backup_keeps_the_lock() {
             database_id: &"a".repeat(32),
             folder: &folder,
             reach: &hoplodex_lib::services::sandbox::Reach::Unconfined,
+            need: hoplodex_lib::services::sandbox::Need::BackupFolder,
             make_folder: true,
             now: chrono::Local::now().fixed_offset(),
             kind: BackupKind::Regular,

@@ -80,12 +80,14 @@ written). A Documents-portal path is read as the table below says._
 
 _Amended 2026-10-19 (011 T097): a new `BackupFolder` need, for the folder
 backups are written to now and at every later close: `update_backup_settings`'
-custom location, `backups::check_location` (so the close's backup, the "before"
-backups and the upgrade's chosen folder), `list_backups`' and the settings'
-`available`. It is `WriteFolder` for a path that is not a Documents-portal one;
+custom location, `backups::check_location` (so the close's backup and the
+"before" backups), `list_backups`' and the settings' `available`. It is `WriteFolder` for a path that is not a Documents-portal one;
 for a Documents-portal path it is the host path when that is within a writable
 grant and refused otherwise (the table below). `WriteFolder` stays for
-`export_collection`'s destination, a one-off write._
+`export_collection`'s destination and for the upgrade's chosen folder (the one
+backup before an upgrade, "save this one in a folder you choose instead"), both
+one-off writes; `check_location` and `BackupJob` take the `Need`. A chosen folder
+that is the database's backup location itself is the stored one, `BackupFolder`._
 
 `Reach::check(&self, path: &Path, need: Need) -> Result<PathBuf, CommandError>`
 returns the path to use: the given one, or the host path a Documents-portal

@@ -444,11 +444,10 @@ pub mod ops {
 
         // 1. Before anything is written: the backup location, and room for
         // the restored copy and the "before restoring" backup.
-        backups::check_location(&settings.folder, settings.is_default, reach).map_err(
-            |problem| {
-                CommandError::backup_location_unavailable(&settings.folder, problem.as_reason())
-            },
-        )?;
+        backups::check_location(&settings.folder, settings.is_default, Need::BackupFolder, reach)
+            .map_err(|problem| {
+            CommandError::backup_location_unavailable(&settings.folder, problem.as_reason())
+        })?;
         let restored_len = backup_len(backup)?;
         let current_len = RawFile::of(&open.conn)
             .and_then(|file| file.size())
@@ -494,6 +493,7 @@ pub mod ops {
                 database_id: &open.database_id,
                 folder: &settings.folder,
                 reach,
+                need: Need::BackupFolder,
                 make_folder: settings.is_default,
                 now: session.clock().now(),
                 kind: BackupKind::Regular,

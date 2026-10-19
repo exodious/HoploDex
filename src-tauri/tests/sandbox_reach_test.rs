@@ -1273,11 +1273,14 @@ fn a_portal_folder_outside_reach_is_refused_as_the_stored_backup_location() {
     );
 }
 
-/// 011 T097: the folder chosen for the one backup before an upgrade is refused
-/// the same way when it is a portal folder outside reach.
+/// 011 T097 (amended): the folder chosen for the one backup before an upgrade
+/// is a one-off write, like an export's, so a portal folder outside reach is not
+/// refused for reach. This computer has nothing at the portal's path, so the
+/// upgrade stops on the folder being missing instead (the database waits for
+/// another choice), and never as `outOfReach`.
 #[cfg(unix)]
 #[test]
-fn a_portal_folder_outside_reach_is_refused_as_the_upgrades_chosen_folder() {
+fn a_portal_folder_outside_reach_is_accepted_as_the_upgrades_chosen_folder() {
     let mut world = World::new();
     let (path, _backups) = world.make_db_backing_up_outside();
     world.reach_for_documents(vec![("t097d", world.outside().join("Elsewhere"))]);
@@ -1288,7 +1291,7 @@ fn a_portal_folder_outside_reach_is_refused_as_the_upgrades_chosen_folder() {
     let before = world.listing();
 
     let chosen = portal("t097d", "Elsewhere");
-    let refused = databases::upgrade_database(
+    let stopped = databases::upgrade_database(
         &world.boxed,
         &world.machine,
         awaiting_id,
@@ -1296,9 +1299,64 @@ fn a_portal_folder_outside_reach_is_refused_as_the_upgrades_chosen_folder() {
     )
     .unwrap_err();
 
-    assert_backup_out_of_reach(&refused, &chosen);
+    assert_eq!(stopped.code, "BACKUP_LOCATION_UNAVAILABLE", "{stopped:?}");
+    assert_eq!(
+        details(&stopped),
+        json!({ "path": text(&chosen), "reason": "missing" }),
+        "not outOfReach: {stopped:?}"
+    );
     assert_eq!(world.listing(), before, "the database as it was, no partial backup");
     databases::cancel_upgrade(&world.boxed, awaiting_id).unwrap();
+}
+
+/// 011 T097 (amended): a backup job's folder is judged as the job says. A stored
+/// backup location (the close's, a restore's "before" backup) is `BackupFolder`,
+/// so a portal folder outside reach is `OutOfReach` for it; the same folder as
+/// the upgrade's one-off choice (`WriteFolder`) is not, and fails only because
+/// nothing is at the portal's path here.
+#[cfg(unix)]
+#[test]
+fn a_backup_job_judges_a_portal_folder_by_its_need() {
+    use hoplodex_lib::services::backups::LocationProblem;
+    use hoplodex_lib::services::backups::{self, BackupFailure, BackupJob, BackupKind};
+
+    let mut world = World::new();
+    world.reach_for_documents(vec![("t097g", world.outside().join("Backups"))]);
+    let db = TestDb::new();
+    let folder = portal("t097g", "Backups");
+
+    for (need, expected) in [
+        (Need::BackupFolder, LocationProblem::OutOfReach),
+        (Need::WriteFolder, LocationProblem::Missing),
+    ] {
+        let failure = backups::make_backup(
+            &world.machine,
+            BackupJob {
+                conn: &db.conn,
+                database_path: &db.path(),
+                name: "test",
+                database_id: &"a".repeat(32),
+                folder: &folder,
+                reach: &world.reach,
+                need,
+                make_folder: false,
+                now: chrono::Local::now().fixed_offset(),
+                kind: BackupKind::Regular,
+                cancel: &|| false,
+                progress: &mut |_, _| {},
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(failure, BackupFailure::Location(problem) if problem == expected),
+            "{need:?}: {failure:?}"
+        );
+        assert_eq!(
+            backups::check_location(&folder, false, need, &world.reach),
+            Err(expected),
+            "{need:?}"
+        );
+    }
 }
 
 /// 011 T097: an export's destination is a one-off write, so a portal folder

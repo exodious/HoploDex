@@ -20,6 +20,7 @@ use crate::services::backups::{self, BackupFailure, BackupJob, BackupKind, Due};
 use crate::services::file_swap;
 use crate::services::machine_settings::{self, MachineSettings};
 use crate::services::passphrase::Passphrase;
+use crate::services::sandbox::Need;
 use crate::services::suggestions;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
@@ -680,6 +681,7 @@ fn backup_at_close(
             database_id: &open.database_id,
             folder: &folder,
             reach: session.reach(),
+            need: Need::BackupFolder,
             make_folder: location == "default",
             now,
             kind: BackupKind::Regular,

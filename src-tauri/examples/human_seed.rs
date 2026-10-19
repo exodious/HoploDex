@@ -340,6 +340,7 @@ pub fn seed_sandbox(dir: &Path, extra: usize, pending_from: Option<&str>) -> San
                     database_id: &database_id(&main),
                     folder: &paths.main_backups,
                     reach: &hoplodex_lib::services::sandbox::Reach::Unconfined,
+                    need: hoplodex_lib::services::sandbox::Need::BackupFolder,
                     make_folder: true,
                     now: made_at,
                     kind,

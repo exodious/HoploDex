@@ -29,7 +29,7 @@ use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackup};
-use hoplodex_lib::services::sandbox::Reach;
+use hoplodex_lib::services::sandbox::{Need, Reach};
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::{Value, json};
@@ -1352,6 +1352,7 @@ impl World {
                         database_id: &open.database_id,
                         folder: &self.default_folder(),
                         reach: self.session.reach(),
+                        need: Need::BackupFolder,
                         make_folder: true,
                         now: self.session.clock().now(),
                         kind: backups::BackupKind::BeforeUpgrade { to_version: version },

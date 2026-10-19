@@ -822,9 +822,10 @@ pub mod ops {
         new_folder: &Path,
         new_is_default: bool,
     ) -> Result<BackupSettingsSaved, CommandError> {
-        backups::check_location(new_folder, new_is_default, change.reach).map_err(|problem| {
-            CommandError::backup_location_unavailable(new_folder, problem.as_reason())
-        })?;
+        backups::check_location(new_folder, new_is_default, Need::BackupFolder, change.reach)
+            .map_err(|problem| {
+                CommandError::backup_location_unavailable(new_folder, problem.as_reason())
+            })?;
         let plan = backups::plan_move(old_folder, new_folder, database_id)
             .map_err(|_| CommandError::old_backup_location_unavailable(old_folder))?;
         disk_space::check_room_for_copy(plan.bytes(), new_folder)?;
