@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { formatBytes } from "../../lib/bytes";
 import { formatDateTime } from "../../lib/dates";
@@ -164,6 +164,26 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
     ).toBeInTheDocument();
   });
 
+  // 011 FR-004, contracts/tauri-commands.md "Commands that check reach": list_backups
+  it("says this copy of HoploDex can't reach the backup folder, with the fix", async () => {
+    vi.mocked(databasesService.listBackups).mockResolvedValueOnce({
+      folder: "/srv/hoplodex-backups",
+      available: false,
+      unavailableReason: "outOfReach",
+      backups: [],
+    });
+    renderDialog();
+
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(dialog).toHaveTextContent("This copy of HoploDex can't reach this folder."),
+    );
+    expect(dialog).toHaveTextContent(
+      "give HoploDex access to /srv/hoplodex-backups by running: flatpak override --user --filesystem=/srv/hoplodex-backups io.github.exodious.HoploDex and then restarting HoploDex.",
+    );
+    expect(dialog).not.toHaveTextContent("isn't available on this computer");
+  });
+
   it("says which passphrase to enter and that the current database is backed up first", async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -280,6 +300,15 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
         details: { path: FOLDER, reason: "missing" },
       }),
       "The database can't be backed up first, because the backup location is not available. Nothing has been changed.",
+      true,
+    ],
+    [
+      new CommandFailure({
+        code: "BACKUP_LOCATION_UNAVAILABLE",
+        message: "The backup folder can't be used.",
+        details: { path: FOLDER, reason: "outOfReach" },
+      }),
+      "The database can't be backed up first, because this copy of HoploDex (a Flatpak) can't reach the backup location. Nothing has been changed.",
       true,
     ],
     [

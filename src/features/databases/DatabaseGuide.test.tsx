@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SessionContext } from "../session/sessionStore";
@@ -102,6 +102,43 @@ describe("DatabaseGuide", () => {
     expect(section).toHaveTextContent(/changes can be lost/i);
   });
 
+  describe("the Flatpak paragraph (011 FR-009, 011 research.md §11)", () => {
+    const LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+    const MACOS = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15";
+    const WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/120.0";
+
+    afterEach(() => vi.restoreAllMocks());
+
+    function several(userAgent: string) {
+      vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(userAgent);
+      render(<DatabaseGuide open onOpenChange={vi.fn()} />);
+      return screen.getByRole("region", { name: "Using a database on more than one computer" });
+    }
+
+    it("is shown on Linux, in the section on several computers", () => {
+      const section = several(LINUX);
+
+      expect(section).toHaveTextContent("If you have installed HoploDex as a Flatpak");
+      expect(section).toHaveTextContent(/separate recent lists and settings/i);
+      expect(section).toHaveTextContent(/\.deb or \.rpm/);
+      expect(section).toHaveTextContent(
+        /saved passphrases are shared when both reach the same keyring/i,
+      );
+      expect(section).toHaveTextContent(/only the home folder and removable drives/i);
+      expect(section).toHaveTextContent("flatpak override");
+    });
+
+    it.each([
+      ["macOS", MACOS],
+      ["Windows", WINDOWS],
+    ])("is not shown on %s", (_name, userAgent) => {
+      const section = several(userAgent);
+
+      expect(section).not.toHaveTextContent("Flatpak");
+      expect(screen.queryByText(/Flatpak/)).not.toBeInTheDocument();
+    });
+  });
+
   it("recommends whole-disk encryption and names each system's", () => {
     render(<DatabaseGuide open onOpenChange={vi.fn()} />);
 
@@ -152,6 +189,35 @@ describe("DatabaseGuide with a database open", () => {
       "10 (default: 5)",
       "/mnt/usb/HoploDex backups (default: next to the database)Not available on this computer",
     ]);
+  });
+
+  // 011 FR-004: the guide's note on the folder reads like the settings dialog's
+  it("says this copy can't reach a backup folder out of the Flatpak's reach", () => {
+    const outOfReach = {
+      ...status,
+      settings: {
+        ...status.settings,
+        backups: {
+          ...status.settings.backups,
+          location: {
+            kind: "custom",
+            path: "/srv/hoplodex-backups",
+            available: false,
+            unavailableReason: "outOfReach",
+          },
+        },
+      },
+    } as DatabaseStatus;
+    render(
+      <SessionContext.Provider value={{ status: outOfReach } as SessionState}>
+        <DatabaseGuide open onOpenChange={vi.fn()} />
+      </SessionContext.Provider>,
+    );
+
+    const folder = rows("Backups")[2];
+    expect(folder).toContain("This copy of HoploDex can't reach this folder");
+    expect(folder).toContain("flatpak override --user --filesystem=/srv/hoplodex-backups");
+    expect(folder).not.toContain("Not available on this computer");
   });
 
   it("shows each lock setting the same way", () => {

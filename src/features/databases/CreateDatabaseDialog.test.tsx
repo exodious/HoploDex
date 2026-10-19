@@ -219,6 +219,38 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     await waitFor(() => expect(screen.getByLabelText("Name")).toHaveFocus());
   });
 
+  // 011 US1-8, 011 FR-004: the Flatpak refuses a folder it can't reach, before writing anything.
+  it("puts a location out of the Flatpak's reach on the folder, and focuses it", async () => {
+    const user = userEvent.setup();
+    const message =
+      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /srv/hoplodex-check/My collection.hoplodex. Move the file into your home folder or onto a removable drive, or give HoploDex access to /srv/hoplodex-check by running: flatpak override --user --filesystem=/srv/hoplodex-check io.github.exodious.HoploDex and then restarting HoploDex.";
+    onCreate.mockRejectedValue(
+      new CommandFailure({
+        code: "LOCATION_OUT_OF_REACH",
+        message,
+        fieldErrors: { folder: message },
+        details: {
+          path: "/srv/hoplodex-check/My collection.hoplodex",
+          folder: "/srv/hoplodex-check",
+          grants: ["your home folder", "removable drives"],
+        },
+      }),
+    );
+    renderDialog(onCreate);
+    await user.clear(screen.getByLabelText("Folder"));
+    await user.type(screen.getByLabelText("Folder"), "/srv/hoplodex-check");
+    await fillPassphrases(user, PASSPHRASE);
+    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
+    await user.click(createButton());
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByLabelText("Folder")).toHaveAccessibleDescription(
+      expect.stringContaining(message),
+    );
+    await waitFor(() => expect(screen.getByLabelText("Folder")).toHaveFocus());
+    expect(screen.getByRole("dialog", { name: "Create a database" })).toBeInTheDocument();
+  });
+
   it("moves focus to the name when the file already exists", async () => {
     const user = userEvent.setup();
     onCreate.mockRejectedValue(

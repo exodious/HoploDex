@@ -26,6 +26,7 @@ import type {
   UpgradeNeededDetails,
 } from "./types";
 import { UpgradeFolderDialog, UpgradeProgressDialog, UpgradeQuestion } from "./UpgradeDialogs";
+import { BACKUP_OUT_OF_REACH_REASON } from "./outOfReach";
 import "../app/AppShell.css";
 import "./databases.css";
 
@@ -92,6 +93,7 @@ const BACKUP_FAILURE: Record<Extract<ChooserNotice, { kind: "backupFailed" }>["r
   interrupted: "the backup was interrupted",
   io: "the backup was interrupted",
   databaseUnreachable: "its file could not be reached",
+  outOfReach: BACKUP_OUT_OF_REACH_REASON,
 };
 
 /** The passphrase saved on this computer didn't open the database (003 US5-5). */

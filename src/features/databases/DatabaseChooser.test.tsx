@@ -289,6 +289,56 @@ describe("DatabaseChooser (003 US2)", () => {
     expect(within(row).queryByLabelText(/Passphrase/)).not.toBeInTheDocument();
   });
 
+  // 011 US1-8, 011 FR-004: inside a Flatpak, a folder out of reach isn't "not found".
+  it("says this copy of HoploDex can't reach a database's folder, with the fix, instead of 'not found'", async () => {
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({
+        recent: [main, { ...shared, available: false, unavailableReason: "outOfReach" }],
+      }),
+    );
+    renderChooser();
+
+    const list = await screen.findByRole("list", { name: "Recent databases" });
+    const row = within(list).getAllByRole("listitem")[1];
+    expect(row).toHaveClass("hd-db-row--unavailable");
+    expect(row).toHaveTextContent("This copy of HoploDex can't reach this database's folder.");
+    expect(row).toHaveTextContent(
+      "give HoploDex access to /mnt/nas/family by running: flatpak override --user --filesystem=/mnt/nas/family io.github.exodious.HoploDex and then restarting HoploDex.",
+    );
+    expect(row).not.toHaveTextContent("Not found at this location");
+    expect(within(row).getByRole("button", { name: "Locate…" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Remove from list" })).toBeInTheDocument();
+    expect(within(row).queryByLabelText(/Passphrase/)).not.toBeInTheDocument();
+  });
+
+  // 011 US1-8, 011 FR-004, contracts/tauri-commands.md "Commands that check reach": the
+  // open-failure line shows the backend's message (its `default` case).
+  it("shows an open refused as out of reach in the open-failure line, and the passphrase stays", async () => {
+    const user = userEvent.setup();
+    const message =
+      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /home/sam/Documents/HoploDex/Main collection.hoplodex. Move the file into your home folder or onto a removable drive, or give HoploDex access to /home/sam/Documents/HoploDex by running: flatpak override --user --filesystem=/home/sam/Documents/HoploDex io.github.exodious.HoploDex and then restarting HoploDex.";
+    renderChooser({
+      openDatabase: vi.fn().mockRejectedValue(
+        new CommandFailure({
+          code: "LOCATION_OUT_OF_REACH",
+          message,
+          details: {
+            path: main.path,
+            folder: "/home/sam/Documents/HoploDex",
+            grants: ["your home folder", "removable drives"],
+          },
+        }),
+      ),
+    });
+
+    await openMain(user);
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    const field = screen.getByLabelText("Passphrase for “Main collection”");
+    expect(field).toBeEnabled();
+    expect(field).toHaveAccessibleDescription(message);
+  });
+
   it("locating a missing database points its entry at the file found and selects it", async () => {
     const user = userEvent.setup();
     const found = "/media/usb/Shared collection.hoplodex";
@@ -726,6 +776,25 @@ describe("DatabaseChooser (003 US3)", () => {
     expect(
       screen.getByText("Its backup settings will open when you open “Main collection”."),
     ).toBeInTheDocument();
+  });
+
+  // 011 FR-004, data-model.md "Backup location availability"
+  it("says when this copy of HoploDex can't reach the backup location, and offers a new one", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({
+        notices: [{ kind: "backupFailed", databasePath: main.path, reason: "outOfReach" }],
+      }),
+    );
+    const session = renderChooser();
+
+    expect(
+      await screen.findByText(
+        "“Main collection” was not backed up: this copy of HoploDex (a Flatpak) can't reach the backup location. Its changes will be backed up at the next close.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change backup location…" }));
+    expect(session.requestSettings).toHaveBeenCalledTimes(1);
   });
 
   it("says when the last backup did not finish", async () => {
@@ -1427,6 +1496,12 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
         }),
         BACKUPS,
         `there isn't enough free space (it needs ${formatBytes(needed)}; ${formatBytes(free)} is free)`,
+      ],
+      [
+        "outOfReach",
+        refusal("BACKUP_LOCATION_UNAVAILABLE", { path: BACKUPS, reason: "outOfReach" }),
+        BACKUPS,
+        "this copy of HoploDex (a Flatpak) can't reach that folder",
       ],
       [
         "UPGRADE_BACKUP_FAILED",
