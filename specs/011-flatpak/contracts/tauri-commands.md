@@ -61,10 +61,10 @@ location) is the host path.
 | `create_database` | `folder` + `name` | `DatabaseFolder` | `LOCATION_OUT_OF_REACH` with `fieldErrors.folder` (the create dialog's existing field-error path puts it on the folder field) |
 | `open_database` | `path` (from Open… or a recent entry) | `DatabaseFolder` | `LOCATION_OUT_OF_REACH`; the chooser's open-failure line shows its message (its `default` case) |
 | `locate_database` | the new `path` | `DatabaseFolder` | `LOCATION_OUT_OF_REACH` |
-| `update_backup_settings` | `location.path` when `kind: "custom"` | `WriteFolder` | `VALIDATION_ERROR` with `fieldErrors.location` set to the out-of-reach message, as other unusable locations are; for `move`, `BACKUP_LOCATION_UNAVAILABLE` with `reason: "outOfReach"` |
+| `update_backup_settings` | `location.path` when `kind: "custom"` and it differs from the saved location (an unchanged one writes nothing, so saving the other settings isn't stopped) | `WriteFolder` | `VALIDATION_ERROR` with `fieldErrors.location` set to the out-of-reach message, as other unusable locations are; for `move`, `BACKUP_LOCATION_UNAVAILABLE` with `reason: "outOfReach"` |
 | `close_database` (its backup), and the "before" backups of `restore_backup`, `change_passphrase`, `upgrade_database` | the database's backup folder when custom | `WriteFolder` | the existing failed-backup outcomes with `failureReason: "outOfReach"`; a "before" backup that can't be made stops its operation as it already does, with `BACKUP_LOCATION_UNAVAILABLE` and `reason: "outOfReach"` |
-| `list_backups`, `check_backup` | the backup folder | `WriteFolder` (for `available`) | not an error: `available: false`, `unavailableReason: "outOfReach"` |
-| `restore_backup` | the backup file | `ReadFile` | `LOCATION_OUT_OF_REACH` |
+| `list_backups` | the backup folder | `WriteFolder` (for `available`) | not an error: `available: false`, `unavailableReason: "outOfReach"` |
+| `restore_backup`, `check_backup` | the backup file | `ReadFile` | `LOCATION_OUT_OF_REACH` (`BackupCheck` has no `available`, so `check_backup` has no folder to report) |
 | `restore_backup` with nothing open | `databasePath` | `DatabaseFolder` | `LOCATION_OUT_OF_REACH`, before the "before" backup or any scratch file |
 | `export_collection` | the destination folder | `WriteFolder` | `LOCATION_OUT_OF_REACH` |
 | `read_import_files`, `import_collection` | each file | `ReadFile` | `LOCATION_OUT_OF_REACH`, before the import helper starts |

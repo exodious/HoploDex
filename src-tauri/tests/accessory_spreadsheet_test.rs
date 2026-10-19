@@ -41,6 +41,7 @@ use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput, FirearmStatus};
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::record_id;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use rusqlite::Connection;
 use rusqlite::types::Value as SqlValue;
@@ -334,6 +335,7 @@ fn export_all(
         format,
         &records,
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
     (result.spreadsheet_path, result.accessory_spreadsheet_path)

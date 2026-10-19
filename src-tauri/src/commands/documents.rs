@@ -18,6 +18,7 @@ use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest, needs_con
 use crate::services::document_types::{self, DocumentType, classify};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::preview::availability::PdfAvailabilityState;
+use crate::services::sandbox::{Need, Reach};
 use crate::services::secure_delete::{secure_delete_dir, secure_delete_file};
 use crate::session::scoped::ScopedSession;
 use crate::session::{Session, SessionId};
@@ -149,12 +150,18 @@ pub mod ops {
     /// `add_document` for a file already on disk — a document dropped onto
     /// the window arrives as a path, not as bytes. It is classified by its
     /// content like any other.
+    ///
+    /// Inside a Flatpak a file that can't be seen and lies outside reach is
+    /// refused with `LOCATION_OUT_OF_REACH` before it is read, for the file
+    /// chooser and a drop alike (011 FR-007, 011 US1-5).
     pub fn add_document_from_path(
         conn: &Connection,
         owner: RecordRef,
         path: &Path,
+        reach: &Reach,
     ) -> Result<DocumentAttachment, CommandError> {
-        let file = read_attachment_file(path)?;
+        let path = reach.check(path, Need::ReadFile)?;
+        let file = read_attachment_file(&path)?;
         add_document(conn, owner, &file.bytes, &file.filename)
     }
 
@@ -335,19 +342,164 @@ pub async fn open_document(
     .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not open the document: {e}")))?
 }
 
-/// The app's [`Opener`]: the platform's own launcher, detached, so what it
-/// starts is not tied to HoploDex's lifetime.
+/// How the app's [`Opener`] hands a copy on, chosen once at startup from
+/// `Reach::is_flatpak()` (011 research.md §8).
+#[cfg(not(feature = "e2e"))]
+#[derive(Debug, Clone, Copy)]
+pub enum OpenerRoute {
+    /// The platform's own launcher: `xdg-open` on Linux, `open` on macOS, the
+    /// shell on Windows.
+    XdgOpen,
+    /// Inside a Flatpak: the OpenURI portal, which says whether an application
+    /// took the file. No answer within `timeout` counts as opened.
+    #[cfg(target_os = "linux")]
+    Portal { timeout: std::time::Duration },
+}
+
+/// The app's [`Opener`]: the platform's own launcher, or inside a Flatpak the
+/// OpenURI portal, detached either way, so what it starts is not tied to
+/// HoploDex's lifetime.
 #[cfg(not(feature = "e2e"))]
 pub struct AppOpener<R: tauri::Runtime = tauri::Wry> {
     // Where the platform has no launcher of its own to run (Windows).
     #[cfg_attr(unix, allow(dead_code))]
     app: tauri::AppHandle<R>,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    route: OpenerRoute,
+    /// The session-bus connection of the portal route, made at the first open.
+    #[cfg(target_os = "linux")]
+    portal_connection: std::sync::Mutex<Option<zbus::Connection>>,
 }
 
 #[cfg(not(feature = "e2e"))]
 impl<R: tauri::Runtime> AppOpener<R> {
-    pub fn new(app: tauri::AppHandle<R>) -> Self {
-        Self { app }
+    pub fn new(app: tauri::AppHandle<R>, route: OpenerRoute) -> Self {
+        Self {
+            app,
+            route,
+            #[cfg(target_os = "linux")]
+            portal_connection: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// The portal route: `None` when there is no session bus, which is the
+    /// same answer as no portal on it.
+    #[cfg(target_os = "linux")]
+    fn portal(&self) -> Option<zbus::Connection> {
+        let mut slot = self.portal_connection.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_none() {
+            *slot = zbus::block_on(zbus::Connection::session())
+                .map_err(|err| log::warn!("no session bus for the OpenURI portal: {err}"))
+                .ok();
+        }
+        slot.clone()
+    }
+}
+
+/// The OpenURI portal's route (011 research.md §8; 011 data-model.md "The
+/// portal opener"): `OpenFile` with a read-only descriptor for `copy` and
+/// `writable: false`, then the request's `Response`, which is what says whether
+/// an application took it. Blocks until the answer, `timeout` or the error, as
+/// [`Opener::open`] does.
+///
+/// | answer | result |
+/// |---|---|
+/// | `Response` 0, or 1 (the user closed the portal's chooser) | `Ok(())` |
+/// | `Response` 2 | `Err(NoApp)` |
+/// | none within `timeout` (the chooser may be waiting on the user) | `Ok(())` |
+/// | no portal on the bus, or the call refused | `Err(NoApp)` |
+///
+/// The portal may send `Response` before the call returns, so the request
+/// object's path is known beforehand (from `handle_token`) and the signal is
+/// subscribed to first.
+#[cfg(target_os = "linux")]
+pub fn portal_open(
+    connection: &zbus::Connection,
+    copy: &Path,
+    timeout: std::time::Duration,
+) -> Result<(), OpenFailure> {
+    use std::collections::HashMap;
+    use std::sync::mpsc;
+
+    use zbus::blocking::{Connection as Blocking, MessageIterator, Proxy};
+    use zbus::message::Type;
+    use zbus::zvariant::{OwnedFd, OwnedValue, Value};
+    use zbus::{MatchRule, Message};
+
+    let file = std::fs::File::open(copy).map_err(|e| OpenFailure::Other(format!("{e}")))?;
+    let no_app = |what: &str, err: &dyn std::fmt::Display| {
+        log::warn!("the OpenURI portal: {what}: {err}");
+        OpenFailure::NoApp
+    };
+    let bus = Blocking::from(connection.clone());
+    let Some(name) = connection.unique_name() else {
+        return Err(no_app("no unique name", &"the connection has none"));
+    };
+    let token = format!("hoplodex_{}", crate::db::random_hex(8).unwrap_or_default());
+    let handle = format!(
+        "/org/freedesktop/portal/desktop/request/{}/{token}",
+        name.as_str().trim_start_matches(':').replace('.', "_")
+    );
+
+    // 1. Subscribe, so an answer sent before the call returns is not missed.
+    let rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .interface("org.freedesktop.portal.Request")
+        .and_then(|rule| rule.member("Response"))
+        .and_then(|rule| rule.path(handle.as_str()))
+        .map(|rule| rule.build())
+        .map_err(|err| no_app("the match rule", &err))?;
+    let answers = MessageIterator::for_match_rule(rule, &bus, None)
+        .map_err(|err| no_app("subscribing", &err))?;
+    let (answered, answer) = mpsc::channel::<u32>();
+    std::thread::spawn(move || {
+        // Ends with the first answer, or when the connection does. The route
+        // may have returned long before: the portal's chooser can wait on the
+        // user, and the answer is then no one's to read.
+        for message in answers.flatten() {
+            let message: Message = message;
+            if let Ok((code, _results)) =
+                message.body().deserialize::<(u32, HashMap<String, OwnedValue>)>()
+            {
+                let _ = answered.send(code);
+                return;
+            }
+        }
+    });
+
+    // 2. The call.
+    let portal = Proxy::new(
+        &bus,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.OpenURI",
+    )
+    .map_err(|err| no_app("no proxy", &err))?;
+    let options: HashMap<&str, Value<'_>> = HashMap::from([
+        ("handle_token", Value::from(token.as_str())),
+        ("writable", Value::from(false)),
+    ]);
+    let fd = OwnedFd::from(std::os::fd::OwnedFd::from(file));
+    portal.call_method("OpenFile", &("", fd, options)).map_err(|err| no_app("OpenFile", &err))?;
+
+    // 3. The answer.
+    match answer.recv_timeout(timeout) {
+        Ok(2) => Err(OpenFailure::NoApp),
+        Ok(_) | Err(_) => Ok(()),
+    }
+}
+
+#[cfg(all(target_os = "linux", not(feature = "e2e")))]
+impl<R: tauri::Runtime> AppOpener<R> {
+    fn open_through_the_portal(
+        &self,
+        path: &Path,
+        timeout: std::time::Duration,
+    ) -> Result<(), OpenFailure> {
+        match self.portal() {
+            Some(connection) => portal_open(&connection, path, timeout),
+            None => Err(OpenFailure::NoApp),
+        }
     }
 }
 
@@ -359,6 +511,10 @@ impl<R: tauri::Runtime> AppOpener<R> {
 #[cfg(all(unix, not(feature = "e2e")))]
 impl<R: tauri::Runtime> Opener for AppOpener<R> {
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
+        #[cfg(target_os = "linux")]
+        if let OpenerRoute::Portal { timeout } = self.route {
+            return self.open_through_the_portal(path, timeout);
+        }
         use std::os::unix::process::CommandExt;
         use std::process::{Command, Stdio};
         use std::sync::mpsc;
@@ -868,10 +1024,11 @@ pub async fn add_document_from_path(
     path: String,
     session: ScopedSession,
     pdf: State<'_, PdfAvailabilityState>,
+    reach: State<'_, Arc<Reach>>,
 ) -> Result<DocumentSummary, CommandError> {
     let pdf = pdf.get();
     session.write(|conn| {
-        ops::add_document_from_path(conn, owner, Path::new(&path))
+        ops::add_document_from_path(conn, owner, Path::new(&path), &reach)
             .map(|document| DocumentSummary::new(document, &pdf))
     })
 }

@@ -12,6 +12,7 @@ use hoplodex_lib::commands::import_export::{ExportRecords, ExportResult};
 use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::record::RecordRef;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use serde_json::{Value, json};
 use support::{TestDb, sample_png_bytes};
@@ -93,6 +94,7 @@ fn scenario_1_exports_a_spreadsheet_and_photos_folder() {
         SpreadsheetFormat::Csv,
         &firearms(&[f1.id, f2.id]),
         &mut |done, total| progress_calls.push((done, total)),
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -129,6 +131,7 @@ fn exports_as_xlsx_when_requested() {
         SpreadsheetFormat::Xlsx,
         &firearms(&[f1.id]),
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -169,6 +172,7 @@ fn physical_details_are_exported_as_plain_numbers_between_coverage_and_photos() 
         SpreadsheetFormat::Csv,
         &firearms(&[created.id]),
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -226,6 +230,7 @@ fn blank_physical_details_are_exported_as_blank_cells() {
         SpreadsheetFormat::Csv,
         &firearms(&[created.id]),
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -253,6 +258,7 @@ fn the_export_header_is_the_42_columns_with_cartridge_and_action_type_after_cali
         SpreadsheetFormat::Csv,
         &firearms(&[created.id]),
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -298,6 +304,7 @@ fn export_writes_the_registration_columns_and_blanks_what_a_suppressor_lacks() {
         SpreadsheetFormat::Csv,
         &firearms(&[suppressor.id, plain.id]),
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
     let mut reader = csv::Reader::from_path(&result.spreadsheet_path).unwrap();
@@ -443,6 +450,7 @@ fn export_all(db: &TestDb, dest: &TempDir, base: &str, format: SpreadsheetFormat
         format,
         &records,
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap()
 }
@@ -457,6 +465,7 @@ fn export_filtered(db: &TestDb, dest: &TempDir, query: &str) -> ExportResult {
         SpreadsheetFormat::Csv,
         &records,
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap()
 }
@@ -1011,6 +1020,7 @@ fn export_to(
         format,
         records,
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap()
 }
@@ -1116,6 +1126,7 @@ fn an_export_that_is_stopped_removes_only_what_it_made() {
         &firearms(&[rifle.id()]),
         &mut |_, _| {},
         &|| true,
+        &Reach::Unconfined,
     )
     .unwrap_err();
 

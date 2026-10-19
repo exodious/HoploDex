@@ -679,6 +679,7 @@ fn backup_at_close(
             name: &open.name,
             database_id: &open.database_id,
             folder: &folder,
+            reach: session.reach(),
             make_folder: location == "default",
             now,
             kind: BackupKind::Regular,

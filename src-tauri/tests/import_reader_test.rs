@@ -36,6 +36,7 @@ use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::services::import_reader::limits::ImportLimit;
 use hoplodex_lib::services::import_reader::read_files;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::{ReadTable, SpreadsheetFormat, TableRows};
 use serde_json::{Value, json};
 use support::TestDb;
@@ -409,6 +410,7 @@ fn export(db: &TestDb, dir: &Path, format: SpreadsheetFormat) -> (PathBuf, Optio
         format,
         &records,
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
     (result.spreadsheet_path, result.accessory_spreadsheet_path)

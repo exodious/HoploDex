@@ -246,6 +246,21 @@ pub fn test_session_at(
     (session, events)
 }
 
+/// [`test_session_at`] under `reach`, for a test that runs a command as a
+/// Flatpak would (011 data-model.md "Reach"): the session hands `reach` to the
+/// closes, backups and upgrades it starts itself.
+#[allow(dead_code)]
+pub fn test_session_reaching(
+    opened_documents: &Path,
+    clock: Arc<ManualClock>,
+    reach: Arc<Reach>,
+) -> (Session, Arc<TestEvents>) {
+    let events = Arc::new(TestEvents::default());
+    let session =
+        Session::new(events.clone(), Some(opened_documents.to_owned()), reach).with_clock(clock);
+    (session, events)
+}
+
 /// Opens the database at `path` with [`TEST_PASSPHRASE`] only to look at
 /// it: keyed and configured like the app's connections, but nothing is
 /// written, not even the open marker.

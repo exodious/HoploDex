@@ -27,6 +27,7 @@ use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, SessionId, lifecycle};
 use rusqlite::Connection;
@@ -149,6 +150,7 @@ impl World {
             &Passphrase::from_input(with.to_owned()),
             Target::Open(self.session.current_id()),
             false,
+            &Reach::Unconfined,
         )
     }
 
@@ -185,6 +187,7 @@ impl World {
             self.session.current_id(),
             &self.machine,
             &BackupSettingsInput { enabled, keep_count, location, existing_backups },
+            &Reach::Unconfined,
         )
         .unwrap();
     }
@@ -385,6 +388,7 @@ fn a_file_planted_at_the_copys_name_fails_the_restore_of_a_damaged_database() {
         &passphrase(),
         Target::At(&world.path().to_string_lossy()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap_err();
 
@@ -463,6 +467,7 @@ fn a_damaged_database_says_whether_backups_are_available() {
         &world.path().to_string_lossy(),
         databases::Unlock::typed(&passphrase()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap_err();
 
@@ -474,6 +479,7 @@ fn a_damaged_database_says_whether_backups_are_available() {
         &world.path().to_string_lossy(),
         databases::Unlock::typed(&Passphrase::from_input("not the passphrase at all".into())),
         false,
+        &Reach::Unconfined,
     )
     .unwrap_err();
     assert_eq!(wrong.code, "PASSPHRASE_INCORRECT");
@@ -502,6 +508,7 @@ fn a_damaged_database_is_restored_and_kept_aside() {
         &passphrase(),
         Target::At(&world.path().to_string_lossy()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -524,6 +531,7 @@ impl World {
             &passphrase(),
             Target::At(&target.to_string_lossy()),
             false,
+            &Reach::Unconfined,
         )
     }
 }
@@ -561,6 +569,7 @@ fn issue_62_a_recent_entry_located_onto_another_file_does_not_authorize_it() {
         &world.machine,
         &world.path().to_string_lossy(),
         &stranger.to_string_lossy(),
+        &Reach::Unconfined,
     )
     .unwrap();
     let names = World::names(world.dir.path());
@@ -584,6 +593,7 @@ fn issue_62_a_located_database_is_restorable_once_it_has_opened_there() {
         &world.machine,
         &world.path().to_string_lossy(),
         &moved.to_string_lossy(),
+        &Reach::Unconfined,
     )
     .unwrap();
     databases::open_database(
@@ -592,6 +602,7 @@ fn issue_62_a_located_database_is_restorable_once_it_has_opened_there() {
         &moved.to_string_lossy(),
         databases::Unlock::typed(&passphrase()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
     world.close();
@@ -847,6 +858,7 @@ fn restoring_a_damaged_database_checks_only_the_space_for_the_restored_copy() {
         &passphrase(),
         Target::At(&world.path().to_string_lossy()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -905,6 +917,7 @@ impl World {
             &Passphrase::from_input(with.to_owned()),
             Target::Open(self.session.current_id()),
             upgrade,
+            &Reach::Unconfined,
         )
     }
 
@@ -1098,6 +1111,7 @@ fn check_backup_with_a_database_path_applies_the_damaged_restores_authorization(
         &world.machine,
         &world.path().to_string_lossy(),
         &stranger.to_string_lossy(),
+        &Reach::Unconfined,
     )
     .unwrap();
     let located = at(&stranger, &listed[0].path).unwrap_err();
@@ -1296,6 +1310,7 @@ fn restoring_a_damaged_database_upgrades_the_copy_the_same_way() {
             &passphrase(),
             Target::At(&at.to_string_lossy()),
             upgrade,
+            &Reach::Unconfined,
         )
     };
 

@@ -327,12 +327,19 @@ impl CommandError {
         let roots: Vec<String> =
             grants.iter().map(|grant| grant.root.to_string_lossy().into_owned()).collect();
         // The shipped four are the home folder and the three removable-drive
-        // folders; one grant that is not a removable-drive folder is the home
-        // folder, and anything more is the user's own.
+        // folders, each writable (the one grant that is not a removable-drive
+        // folder is the home folder). Any other set (one added, home removed,
+        // one made read-only) is the user's own, and is listed.
         let removable = ["/media", "/run/media", "/mnt"];
         let others = roots.iter().filter(|root| !removable.contains(&root.as_str())).count();
-        let reach = if others <= 1 {
+        let shipped = grants.len() == 4
+            && grants.iter().all(|grant| grant.writable)
+            && others == 1
+            && removable.iter().all(|folder| roots.iter().any(|root| root == folder));
+        let reach = if shipped {
             "your home folder and removable drives".to_owned()
+        } else if grants.is_empty() {
+            "none of your folders".to_owned()
         } else {
             let named: Vec<String> = grants
                 .iter()
@@ -354,9 +361,10 @@ impl CommandError {
                 "This copy of HoploDex is a Flatpak, and it can only reach {reach}, so it can't \
                  use `{path}`. Move the file into your home folder or onto a removable drive, or \
                  give HoploDex access to `{folder}` by running: `flatpak override --user \
-                 --filesystem={folder} io.github.exodious.HoploDex` and then restarting HoploDex.",
+                 --filesystem={quoted} io.github.exodious.HoploDex` and then restarting HoploDex.",
                 path = path.display(),
                 folder = folder.display(),
+                quoted = shell_quote(&folder.to_string_lossy()),
             ),
         )
         .with_details(Some(json!({
@@ -596,6 +604,19 @@ impl From<OpenError> for CommandError {
     }
 }
 
+/// `text` as one POSIX shell word, so the `flatpak override` command works if
+/// pasted: as it is when every character is plain, else in single quotes with
+/// each embedded single quote written `'\''` (the same rule as
+/// `src/features/databases/outOfReach.ts`'s `overrideCommand`).
+fn shell_quote(text: &str) -> String {
+    let plain = !text.is_empty()
+        && text.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(c, '_' | '@' | '%' | '+' | '=' | ':' | ',' | '.' | '/' | '-')
+        });
+    if plain { text.to_owned() } else { format!("'{}'", text.replace('\'', r"'\''")) }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -679,6 +700,48 @@ mod tests {
             serde_json::to_value(&err).unwrap()["details"]["grants"].as_array().unwrap().len(),
             6
         );
+    }
+
+    /// 011 FR-004: only the shipped four, exactly, get the short first
+    /// sentence.
+    #[test]
+    fn out_of_reach_lists_the_grants_for_any_set_but_the_shipped_four() {
+        let short = "it can only reach your home folder and removable drives";
+        let say = |grants: &[Grant]| {
+            CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), grants).message
+        };
+        assert!(say(&shipped()).contains(short));
+        // Home removed.
+        assert!(!say(&shipped()[1..]).contains(short));
+        // One added.
+        let mut more = shipped();
+        more.push(grant("/srv/archive", true));
+        assert!(!say(&more).contains(short));
+        // One made read-only.
+        let mut read_only = shipped();
+        read_only[2].writable = false;
+        let message = say(&read_only);
+        assert!(!message.contains(short), "{message}");
+        assert!(message.contains("`/run/media` (read only)"), "{message}");
+        // A removable folder missing and another put in its place.
+        let mut swapped = shipped();
+        swapped[3] = grant("/srv/archive", true);
+        assert!(!say(&swapped).contains(short));
+    }
+
+    /// 011 FR-004: the folder in the `flatpak override` command is one shell
+    /// word; the other mentions of it are not quoted.
+    #[test]
+    fn out_of_reach_quotes_the_override_folder_only_when_a_shell_would_split_it() {
+        let say = |folder: &str| {
+            CommandError::out_of_reach(Path::new("/x/y"), Path::new(folder), &shipped()).message
+        };
+        let message = say("/srv/my guns");
+        assert!(message.contains("access to `/srv/my guns` by running"), "{message}");
+        assert!(message.contains("--filesystem='/srv/my guns' io.github"), "{message}");
+        let message = say("/srv/it's $HOME");
+        assert!(message.contains(r"--filesystem='/srv/it'\''s $HOME' io.github"), "{message}");
+        assert!(say("/srv/plain-1_a.b").contains("--filesystem=/srv/plain-1_a.b io.github"));
     }
 
     #[test]

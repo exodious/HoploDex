@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::Serialize;
+use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
@@ -9,6 +12,7 @@ use crate::models::rules::MAX_PHOTOS_PER_RECORD;
 use crate::services::attachments::{
     mime_type_for, read_attachment_file, require_room, safe_basename,
 };
+use crate::services::sandbox::{Need, Reach};
 use crate::session::scoped::ScopedSession;
 
 /// What `set_thumbnail_photo` returns (006 contracts/tauri-commands.md "Photos
@@ -150,12 +154,18 @@ pub mod ops {
 
     /// `add_photo` for a file already on disk — a photo dropped onto the
     /// window arrives as a path, not as bytes.
+    ///
+    /// Inside a Flatpak a file that can't be seen and lies outside reach is
+    /// refused with `LOCATION_OUT_OF_REACH` before it is read, for the file
+    /// chooser and a drop alike (011 FR-007, 011 US1-5).
     pub fn add_photo_from_path(
         conn: &Connection,
         owner: RecordRef,
         path: &std::path::Path,
+        reach: &Reach,
     ) -> Result<Photo, CommandError> {
-        let file = read_attachment_file(path)?;
+        let path = reach.check(path, Need::ReadFile)?;
+        let file = read_attachment_file(&path)?;
         add_photo(conn, owner, &file.bytes, &file.filename, mime_type_for(&file.filename))
     }
 
@@ -259,9 +269,10 @@ pub async fn add_photo_from_path(
     owner: RecordRef,
     path: String,
     session: ScopedSession,
+    reach: State<'_, Arc<Reach>>,
 ) -> Result<PhotoSummary, CommandError> {
     session.write(|conn| {
-        ops::add_photo_from_path(conn, owner, std::path::Path::new(&path)).map(Into::into)
+        ops::add_photo_from_path(conn, owner, std::path::Path::new(&path), &reach).map(Into::into)
     })
 }
 

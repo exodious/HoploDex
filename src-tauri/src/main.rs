@@ -9,10 +9,10 @@ use std::thread;
 use std::time::Duration;
 
 use hoplodex_lib::app_dirs;
-#[cfg(not(feature = "e2e"))]
-use hoplodex_lib::commands::documents::AppOpener;
 #[cfg(feature = "e2e")]
 use hoplodex_lib::commands::documents::E2eOpener;
+#[cfg(not(feature = "e2e"))]
+use hoplodex_lib::commands::documents::{AppOpener, OpenerRoute};
 use hoplodex_lib::commands::documents::{
     OPENED_DOCUMENTS_DIR, Opener, clear_opened_documents_cache,
 };
@@ -195,6 +195,20 @@ fn read_reach(_app: &AppHandle) -> Reach {
     Reach::Unconfined
 }
 
+/// How a document is handed to another application: inside a Flatpak through
+/// the OpenURI portal, which says whether an application took it, and anywhere
+/// else through the platform's own launcher (011 research.md §8).
+#[cfg(not(feature = "e2e"))]
+fn opener_route(reach: &Reach) -> OpenerRoute {
+    #[cfg(target_os = "linux")]
+    if reach.is_flatpak() {
+        return OpenerRoute::Portal { timeout: Duration::from_secs(5) };
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = reach;
+    OpenerRoute::XdgOpen
+}
+
 fn main() {
     // The render helper, the import helper and the sandbox probe are this executable started
     // again (007 research.md §9, §11; 008 research.md §8): before any Tauri, keyring, session
@@ -272,7 +286,11 @@ fn main() {
             let reach = Arc::new(read_reach(app.handle()));
             log::info!("{}", reach.describe());
             app.manage(reach.clone());
-            app.manage(Session::new(Arc::new(app.handle().clone()), Some(opened_documents), reach));
+            app.manage(Session::new(
+                Arc::new(app.handle().clone()),
+                Some(opened_documents),
+                reach.clone(),
+            ));
             // Saved passphrases (003 FR-017); the keyring itself is first asked
             // about when the chooser needs to know whether it is there.
             let machine = MachineSettings::load(&app_dirs::config_dir(app.handle())?)?
@@ -304,7 +322,10 @@ fn main() {
             #[cfg(not(feature = "e2e"))]
             {
                 app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
-                app.manage::<Arc<dyn Opener>>(Arc::new(AppOpener::new(app.handle().clone())));
+                app.manage::<Arc<dyn Opener>>(Arc::new(AppOpener::new(
+                    app.handle().clone(),
+                    opener_route(&reach),
+                )));
             }
             #[cfg(feature = "e2e")]
             {

@@ -40,6 +40,7 @@ use hoplodex_lib::models::firearm::{
 };
 use hoplodex_lib::services::entry_text::MAX_ENTRY_CHARS;
 use hoplodex_lib::services::import_reader::read_files;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::TestDb;
 use tempfile::TempDir;
@@ -366,6 +367,7 @@ fn import_largest_export_as_a_workbook_and_as_two_csv_files() {
                 format,
                 &records,
                 &mut |_, _| {},
+                &Reach::Unconfined,
             )
             .unwrap();
             println!(

@@ -26,6 +26,7 @@ use hoplodex_lib::models::database::{BackupFailureReason, BackupOutcome, CloseRe
 use hoplodex_lib::services::backups::{BackupFailure, LocationProblem};
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::Value;
 use support::{TestEvents, passphrase, test_session};
@@ -632,6 +633,7 @@ fn exporting_on_a_full_disk_says_so_and_removes_what_it_made() {
                             format,
                             &records,
                             &mut |_, _| {},
+                            &Reach::Unconfined,
                         )
                         .map(|_| ())
                     })

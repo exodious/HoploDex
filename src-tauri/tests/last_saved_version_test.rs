@@ -29,6 +29,7 @@ use hoplodex_lib::models::database::{CloseReason, Draft, DraftKind, DraftMode, N
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::fingerprint::FileFingerprint;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
@@ -394,6 +395,7 @@ fn a_restore_names_the_version_that_saved_the_backup_not_this_one() {
         &passphrase(),
         Target::Open(world.session.current_id()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 

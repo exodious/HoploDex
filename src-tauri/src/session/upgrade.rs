@@ -198,13 +198,17 @@ pub fn upgrade_database(
 
     // 3 and 4. The folder, its room, and the backup.
     let (folder, make_folder, at_backup_location) = match backup_folder {
-        Some(chosen) => match backups::check_chosen_folder(chosen, &waiting.backup_folder) {
-            Ok(ChosenFolder { folder, is_backup_location }) => (folder, false, is_backup_location),
-            Err(problem) => {
-                let error = location_problem(chosen, problem);
-                return Err(wait_again(session, waiting, generation, error));
+        Some(chosen) => {
+            match backups::check_chosen_folder(chosen, &waiting.backup_folder, session.reach()) {
+                Ok(ChosenFolder { folder, is_backup_location }) => {
+                    (folder, false, is_backup_location)
+                }
+                Err(problem) => {
+                    let error = location_problem(chosen, problem);
+                    return Err(wait_again(session, waiting, generation, error));
+                }
             }
-        },
+        }
         None => (waiting.backup_folder.clone(), waiting.backup_folder_is_default, true),
     };
     let named_for = waiting
@@ -233,6 +237,7 @@ pub fn upgrade_database(
                 name: &waiting.name,
                 database_id: &named_for,
                 folder: &folder,
+                reach: session.reach(),
                 make_folder,
                 now: session.clock().now(),
                 kind: BackupKind::BeforeUpgrade { to_version: APP_VERSION },

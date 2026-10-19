@@ -23,6 +23,7 @@ use crate::models::document_opening::DocumentOpening;
 use crate::services::consent::Consent;
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
+use crate::services::sandbox::Reach;
 use crate::session::Session;
 use crate::session::scoped::{ScopedSession, Target};
 use ops::Unlock;
@@ -46,15 +47,16 @@ pub mod ops {
         CollectionSettings, DatabaseNotes, DatabaseStatus, Draft, ExistingBackupsChoice,
         ExistingBackupsOutcome, IdlePauseReason, LeftBehind, LockSettings, LockSettingsInput,
         NoteKind, OperationKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
-        RecentRemoved, SuggestedLocation, validate_backup_settings_input,
+        RecentRemoved, SuggestedLocation, UnavailableReason, validate_backup_settings_input,
         validate_create_database_input, validate_lock_settings_input,
     };
     use crate::models::document_opening::DocumentOpening;
-    use crate::services::backups::{self, MoveJob};
+    use crate::services::backups::{self, LocationProblem, MoveJob};
     use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest};
     use crate::services::disk_space;
     use crate::services::machine_settings::{self, MachineSettings, RecentEntry};
     use crate::services::passphrase::Passphrase;
+    use crate::services::sandbox::{Need, Reach};
     use crate::session::operations::Operations;
     use crate::session::scoped::Target;
     use crate::session::{OpenDatabase, Session, SessionId};
@@ -75,11 +77,14 @@ pub mod ops {
     }
 
     /// A recent-list entry as the chooser shows it: unavailable when its
-    /// file isn't at its path (003 FR-012), and otherwise with its backups and
-    /// whether it changed after this computer left it (003 FR-040). Only file
-    /// names and times are read: nothing is decrypted.
-    fn recent_database(entry: RecentEntry) -> RecentDatabase {
-        let available = entry.path.is_file();
+    /// file isn't at its path (003 FR-012), or, inside a Flatpak, when its
+    /// folder is out of reach (011 FR-004: judged first and without touching
+    /// the file, so the row says so instead of "not found"), and otherwise with
+    /// its backups and whether it changed after this computer left it
+    /// (003 FR-040). Only file names and times are read: nothing is decrypted.
+    fn recent_database(entry: RecentEntry, reach: &Reach) -> RecentDatabase {
+        let out_of_reach = reach.check(&entry.path, Need::DatabaseFolder).is_err();
+        let available = !out_of_reach && entry.path.is_file();
         let backups = match (&entry.database_id, &entry.backup_folder) {
             (Some(id), Some(folder)) if available => backup_summary(&entry.path, folder, id),
             _ => None,
@@ -90,6 +95,7 @@ pub mod ops {
         });
         RecentDatabase {
             available,
+            unavailable_reason: out_of_reach.then_some(UnavailableReason::OutOfReach),
             path: entry.path.to_string_lossy().into_owned(),
             name: entry.name,
             last_opened_at: entry.last_opened_at,
@@ -137,9 +143,10 @@ pub mod ops {
         machine: &MachineSettings,
         documents: Option<PathBuf>,
         home: Option<PathBuf>,
+        reach: &Reach,
     ) -> ChooserState {
         let recent: Vec<RecentDatabase> =
-            machine.recent().into_iter().map(recent_database).collect();
+            machine.recent().into_iter().map(|entry| recent_database(entry, reach)).collect();
         let last_closed = session.last_closed().map(|path| path.to_string_lossy().into_owned());
         let selected_path = last_closed
             .filter(|closed| recent.iter().any(|entry| &entry.path == closed))
@@ -158,7 +165,9 @@ pub mod ops {
     }
 
     /// Creates `<folder>/<name>.hoplodex` with `passphrase` and opens it
-    /// (003 FR-003, FR-004, FR-009). A missing folder is made first.
+    /// (003 FR-003, FR-004, FR-009). A missing folder is made first. Inside a
+    /// Flatpak a folder out of reach is refused first, on the folder field,
+    /// with nothing made (011 FR-004, 011 US1-8).
     pub fn create_database(
         session: &Session,
         machine: &MachineSettings,
@@ -166,10 +175,15 @@ pub mod ops {
         name: &str,
         passphrase: &Passphrase,
         acknowledged_unrecoverable: bool,
+        reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
         let path =
             validate_create_database_input(folder, name, passphrase, acknowledged_unrecoverable)?;
-        let folder = Path::new(folder);
+        let path = reach.check(&path, Need::DatabaseFolder).map_err(|refusal| {
+            let message = refusal.message.clone();
+            refusal.on_field("folder", message)
+        })?;
+        let folder = path.parent().unwrap_or(Path::new(folder));
         fs::create_dir_all(folder).map_err(|err| folder_error(folder, &err))?;
         lifecycle::create(session, machine, &path, passphrase)?;
         database_status(session, machine)
@@ -221,14 +235,21 @@ pub mod ops {
     /// database id, since the file can't be read without it. When it no
     /// longer opens the database the refusal says so (003 US5-5), and the next
     /// typed passphrase that does replaces it (003 FR-018).
+    ///
+    /// Inside a Flatpak the database's folder must be within reach first
+    /// (011 FR-004): a Documents-portal path whose host path is, opens from
+    /// the host path, which the recent list then names. A refused open touches
+    /// nothing.
     pub fn open_database(
         session: &Session,
         machine: &MachineSettings,
         path: &str,
         unlock: Unlock<'_>,
         take_over: bool,
+        reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
-        let path = Path::new(path);
+        let checked = reach.check(Path::new(path), Need::DatabaseFolder)?;
+        let path = checked.as_path();
         let loaded;
         let (passphrase, saved) = match unlock {
             Unlock::Typed { passphrase, .. } => (passphrase, false),
@@ -510,10 +531,12 @@ pub mod ops {
         machine: &MachineSettings,
         path: &str,
         new_path: &str,
+        reach: &Reach,
     ) -> Result<RecentDatabase, CommandError> {
+        let new_path = reach.check(Path::new(new_path), Need::DatabaseFolder)?;
         machine
-            .locate_recent(Path::new(path), Path::new(new_path))
-            .map(recent_database)
+            .locate_recent(Path::new(path), &new_path)
+            .map(|entry| recent_database(entry, reach))
             .ok_or_else(|| CommandError::not_found("That database isn't in the recent list."))
     }
 
@@ -523,12 +546,13 @@ pub mod ops {
         machine: &MachineSettings,
     ) -> Result<DatabaseStatus, CommandError> {
         // The frontend asks which session is open: whatever is.
-        session.inspect(session.current_id(), |open| status(open, machine))
+        session.inspect(session.current_id(), |open| status(open, machine, session.reach()))
     }
 
     pub(crate) fn status(
         open: &OpenDatabase,
         machine: &MachineSettings,
+        reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
         let note_dismissed: bool = open
             .conn
@@ -543,17 +567,20 @@ pub mod ops {
             passphrase_saved,
             keyring_available: machine.keyring().is_available(),
             screen_lock_supported: crate::platform::screen_lock_supported(),
-            settings: collection_settings(&open.conn, &open.path)?,
+            settings: collection_settings(&open.conn, &open.path, reach)?,
             pending_changes: pending::summary(&open.conn)?,
             notes: DatabaseNotes { disk_encryption: !note_dismissed, ..open.notes.clone() },
         })
     }
 
     /// The backup and lock settings kept in the database, with the backup
-    /// folder resolved on this computer.
+    /// folder resolved on this computer. A backup folder out of reach is
+    /// `available: false` with the reason (011 FR-004), judged without
+    /// touching it.
     pub fn collection_settings(
         conn: &Connection,
         database_path: &Path,
+        reach: &Reach,
     ) -> Result<CollectionSettings, CommandError> {
         conn.query_row(
             "SELECT backups_enabled, backup_keep_count, backup_location, idle_lock_enabled,
@@ -563,7 +590,8 @@ pub mod ops {
             |row| {
                 let location: String = row.get(2)?;
                 let folder = backups::resolve_folder(database_path, &location);
-                let (kind, available) = if location == "default" {
+                let out_of_reach = reach.check(&folder, Need::WriteFolder).is_err();
+                let (kind, exists) = if location == "default" {
                     // Made at the first backup, beside the database.
                     (BackupLocationKind::Default, folder.is_dir() || database_path.exists())
                 } else {
@@ -576,7 +604,9 @@ pub mod ops {
                         location: BackupLocation {
                             kind,
                             path: folder.to_string_lossy().into_owned(),
-                            available,
+                            available: exists && !out_of_reach,
+                            unavailable_reason: out_of_reach
+                                .then_some(UnavailableReason::OutOfReach),
                         },
                     },
                     lock: LockSettings {
@@ -633,13 +663,22 @@ pub mod ops {
     /// space, saves, then moves them. An old folder that can't be read
     /// allows only `leave`. The recent entry's cached backup folder follows
     /// every save.
+    ///
+    /// Inside a Flatpak a changed custom location out of reach is refused
+    /// before the question about existing backups, with nothing saved or made:
+    /// as a `VALIDATION_ERROR` on the location field, or, with the backups to
+    /// `move`, as `BACKUP_LOCATION_UNAVAILABLE` with the reason `outOfReach`
+    /// (011 FR-004, 011 US1-8). The stored location is the host path of a
+    /// Documents-portal one that is within reach. A location left as it was
+    /// is not checked: saving the other settings writes nothing there.
     pub fn update_backup_settings(
         session: &Session,
         id: SessionId,
         machine: &MachineSettings,
         input: &BackupSettingsInput,
+        reach: &Reach,
     ) -> Result<BackupSettingsSaved, CommandError> {
-        let location = validate_backup_settings_input(input)?;
+        let mut location = validate_backup_settings_input(input)?;
         let (database_path, database_id, old_location) = session.inspect(id, |open| {
             let old: String = open
                 .conn
@@ -648,9 +687,30 @@ pub mod ops {
             Ok((open.path.clone(), open.database_id.clone(), old))
         })?;
         let old_folder = backups::resolve_folder(&database_path, &old_location);
-        let new_folder = backups::resolve_folder(&database_path, &location);
+        let mut new_folder = backups::resolve_folder(&database_path, &location);
+        if location != "default" && !backups::same_path(&old_folder, &new_folder) {
+            match reach.check(&new_folder, Need::WriteFolder) {
+                Ok(usable) => {
+                    new_folder = usable;
+                    location = new_folder.to_string_lossy().into_owned();
+                }
+                Err(_) if input.existing_backups == Some(ExistingBackupsChoice::Move) => {
+                    return Err(CommandError::backup_location_unavailable(
+                        &new_folder,
+                        LocationProblem::OutOfReach.as_reason(),
+                    ));
+                }
+                Err(refusal) => {
+                    let message = refusal.message.clone();
+                    return Err(CommandError::validation(
+                        "Check the backup settings.",
+                        [("location".to_owned(), message)].into(),
+                    ));
+                }
+            }
+        }
         let change =
-            LocationChange { id, input, location: &location, database_path: &database_path };
+            LocationChange { id, input, location: &location, database_path: &database_path, reach };
         let saved = |settings, existing_backups| BackupSettingsSaved { settings, existing_backups };
         if backups::same_path(&old_folder, &new_folder) {
             return Ok(saved(change.save(session, machine)?, None));
@@ -718,6 +778,7 @@ pub mod ops {
         /// As `backup_location` stores it.
         location: &'a str,
         database_path: &'a Path,
+        reach: &'a Reach,
     }
 
     impl LocationChange<'_> {
@@ -741,7 +802,9 @@ pub mod ops {
                 self.database_path,
                 &backups::resolve_folder(self.database_path, self.location),
             );
-            session.inspect(self.id, |open| collection_settings(&open.conn, &open.path))
+            session.inspect(self.id, |open| {
+                collection_settings(&open.conn, &open.path, session.reach())
+            })
         }
     }
 
@@ -759,7 +822,7 @@ pub mod ops {
         new_folder: &Path,
         new_is_default: bool,
     ) -> Result<BackupSettingsSaved, CommandError> {
-        backups::check_location(new_folder, new_is_default).map_err(|problem| {
+        backups::check_location(new_folder, new_is_default, change.reach).map_err(|problem| {
             CommandError::backup_location_unavailable(new_folder, problem.as_reason())
         })?;
         let plan = backups::plan_move(old_folder, new_folder, database_id)
@@ -843,7 +906,7 @@ pub mod ops {
             Ok(())
         })?;
         session.idle().start(settings, session.clock().now());
-        session.inspect(id, |open| collection_settings(&open.conn, &open.path))
+        session.inspect(id, |open| collection_settings(&open.conn, &open.path, session.reach()))
     }
 
     /// "Lock now" (003 FR-033, FR-035): `draft`, the form's unsaved input, is
@@ -895,6 +958,7 @@ pub async fn get_chooser_state(
     app: AppHandle,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
+    reach: State<'_, Arc<Reach>>,
 ) -> Result<ChooserState, CommandError> {
     // `document_dir` honours `user-dirs.dirs`, so a sandboxed run suggests a
     // sandboxed folder (003 research.md §19).
@@ -903,6 +967,7 @@ pub async fn get_chooser_state(
         &machine,
         app_dirs::document_dir(&app).ok(),
         app_dirs::home_dir(&app).ok(),
+        &reach,
     ))
 }
 
@@ -914,6 +979,7 @@ pub async fn create_database(
     acknowledged_unrecoverable: bool,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
+    reach: State<'_, Arc<Reach>>,
 ) -> Result<DatabaseStatus, CommandError> {
     let passphrase = Passphrase::from_input(passphrase);
     ops::create_database(
@@ -923,6 +989,7 @@ pub async fn create_database(
         &name,
         &passphrase,
         acknowledged_unrecoverable,
+        &reach,
     )
 }
 
@@ -950,7 +1017,14 @@ pub async fn open_database(
             ));
         }
     };
-    ops::open_database(&session, &machine, &path, unlock, take_over.unwrap_or(false))
+    ops::open_database(
+        &session,
+        &machine,
+        &path,
+        unlock,
+        take_over.unwrap_or(false),
+        session.reach(),
+    )
 }
 
 /// Upgrades the database `open_database` left waiting (`UPGRADE_NEEDED`):
@@ -1009,8 +1083,9 @@ pub async fn locate_database(
     path: String,
     new_path: String,
     machine: State<'_, MachineSettings>,
+    reach: State<'_, Arc<Reach>>,
 ) -> Result<RecentDatabase, CommandError> {
-    ops::locate_database(&machine, &path, &new_path)
+    ops::locate_database(&machine, &path, &new_path, &reach)
 }
 
 /// Where the page-1 probe of a passphrase check goes (003 research.md §1a).
@@ -1072,12 +1147,14 @@ pub async fn update_backup_settings(
     existing_backups: Option<ExistingBackupsChoice>,
     session: ScopedSession,
     machine: State<'_, MachineSettings>,
+    reach: State<'_, Arc<Reach>>,
 ) -> Result<BackupSettingsSaved, CommandError> {
     ops::update_backup_settings(
         &session.session,
         session.id,
         &machine,
         &BackupSettingsInput { enabled, keep_count, location, existing_backups },
+        &reach,
     )
 }
 
