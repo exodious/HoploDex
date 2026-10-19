@@ -654,6 +654,9 @@ mod tests {
         assert_eq!(grants_of("~/Archive/guns;"), vec![grant("/home/someone/Archive/guns", true)]);
     }
 
+    // Unix only: its paths are POSIX absolute ("/home/..."), which Windows
+    // does not count as absolute; a Flatpak runs only on Linux.
+    #[cfg(unix)]
     #[test]
     fn user_folders_resolve_through_user_dirs_bare_and_with_a_path() {
         assert_eq!(
@@ -670,6 +673,9 @@ mod tests {
         );
     }
 
+    // Unix only: its paths are POSIX absolute ("/home/..."), which Windows
+    // does not count as absolute; a Flatpak runs only on Linux.
+    #[cfg(unix)]
     #[test]
     fn a_user_folder_user_dirs_does_not_name_is_not_counted() {
         assert_eq!(
@@ -706,6 +712,9 @@ mod tests {
         assert_eq!(grants_of("xdg-run/app;weird;home:bogus;/media;"), vec![grant("/media", true)]);
     }
 
+    // Unix only: its paths are POSIX absolute ("/home/..."), which Windows
+    // does not count as absolute; a Flatpak runs only on Linux.
+    #[cfg(unix)]
     #[test]
     fn a_removed_entry_takes_away_what_it_would_grant_by_the_longest_match() {
         let reach =
@@ -771,6 +780,9 @@ mod tests {
         assert!(reach.grants().is_empty());
     }
 
+    // Unix only: its paths are POSIX absolute ("/home/..."), which Windows
+    // does not count as absolute; a Flatpak runs only on Linux.
+    #[cfg(unix)]
     #[test]
     fn user_dirs_reads_the_config_homes_file_and_a_missing_one_gives_none() {
         let dir = TempDir::new().unwrap();
@@ -923,6 +935,9 @@ mod tests {
 
     const DOC: &str = "/run/user/1000/doc/a1b2c3/pick.hoplodex";
 
+    // Unix only: its paths are POSIX absolute ("/home/..."), which Windows
+    // does not count as absolute; a Flatpak runs only on Linux.
+    #[cfg(unix)]
     #[test]
     fn portal_paths_are_recognised_under_run_user_and_the_runtime_dir() {
         let doc =
@@ -937,6 +952,9 @@ mod tests {
     }
 
     /// The cells of 011 data-model.md's resolution table.
+    // Unix only: a portal path ("/run/user/<uid>/doc/...") is made absolute
+    // with a drive letter on Windows, where there is no Documents portal.
+    #[cfg(unix)]
     #[test]
     fn a_portal_path_resolved_into_a_writable_grant_gives_its_host_path_for_every_need() {
         let w = world(|root| vec![(DOC, root.join("home/pick.hoplodex"))]);
@@ -946,6 +964,9 @@ mod tests {
         }
     }
 
+    // Unix only: a portal path ("/run/user/<uid>/doc/...") is made absolute
+    // with a drive letter on Windows, where there is no Documents portal.
+    #[cfg(unix)]
     #[test]
     fn a_portal_path_resolved_into_a_read_only_grant_is_read_but_not_written() {
         let w = world(|root| vec![(DOC, root.join("ro/pick.hoplodex"))]);
@@ -957,6 +978,9 @@ mod tests {
         }
     }
 
+    // Unix only: a portal path ("/run/user/<uid>/doc/...") is made absolute
+    // with a drive letter on Windows, where there is no Documents portal.
+    #[cfg(unix)]
     #[test]
     fn a_portal_path_outside_every_grant_or_unresolved_is_kept_except_for_a_database() {
         for resolved in [true, false] {
