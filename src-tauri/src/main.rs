@@ -33,6 +33,7 @@ use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide
 #[cfg(target_os = "linux")]
 use hoplodex_lib::services::preview::sandbox_probe;
 use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
 use tauri::webview::NewWindowResponse;
@@ -158,6 +159,42 @@ fn tick_idle_clock(app: AppHandle) {
     }
 }
 
+/// What this run may reach on the filesystem (011 research.md §5): inside a
+/// Flatpak, the grants `/.flatpak-info` lists; everywhere else, and on macOS
+/// and Windows always, everything.
+#[cfg(target_os = "linux")]
+fn read_reach(app: &AppHandle) -> Reach {
+    use hoplodex_lib::services::sandbox::{FLATPAK_INFO, PortalHostPaths, UserDirs};
+    use std::path::{Path, PathBuf};
+
+    let info = Path::new(FLATPAK_INFO);
+    // Outside a Flatpak nothing below is read, so a run in a sandbox of the
+    // E2E harness never looks at the developer's own folders.
+    if !info.exists() {
+        return Reach::Unconfined;
+    }
+    let host_paths = Arc::new(PortalHostPaths::new());
+    let Some(home) =
+        app_dirs::home_dir(app).ok().or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+    else {
+        log::error!("the home folder is unknown, so nothing is within reach");
+        return Reach::flatpak(Vec::new(), Vec::new(), PathBuf::new(), host_paths);
+    };
+    // `user-dirs.dirs` is in the config home (`XDG_CONFIG_HOME`; Flatpak points
+    // it at the app's own folder and binds the host's file into it).
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .unwrap_or_else(|| home.join(".config"));
+    let user_dirs = UserDirs::read(&config_home, &home);
+    Reach::detect(info, &home, &user_dirs, host_paths)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_reach(_app: &AppHandle) -> Reach {
+    Reach::Unconfined
+}
+
 fn main() {
     // The render helper, the import helper and the sandbox probe are this executable started
     // again (007 research.md §9, §11; 008 research.md §8): before any Tauri, keyring, session
@@ -230,7 +267,12 @@ fn main() {
             // No database is open at startup: the user chooses one and gives
             // its passphrase (specs/003-database-protection-management).
             let opened_documents = app_dirs::cache_dir(app.handle())?.join(OPENED_DOCUMENTS_DIR);
-            app.manage(Session::new(Arc::new(app.handle().clone()), Some(opened_documents)));
+            // What this run may reach: read once, and the one value the
+            // commands and the session both ask (011 research.md §5).
+            let reach = Arc::new(read_reach(app.handle()));
+            log::info!("{}", reach.describe());
+            app.manage(reach.clone());
+            app.manage(Session::new(Arc::new(app.handle().clone()), Some(opened_documents), reach));
             // Saved passphrases (003 FR-017); the keyring itself is first asked
             // about when the chooser needs to know whether it is there.
             let machine = MachineSettings::load(&app_dirs::config_dir(app.handle())?)?

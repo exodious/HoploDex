@@ -10,6 +10,7 @@ use crate::models::database::OperationKind;
 use crate::models::record::RecordRef;
 use crate::services::disk_space;
 use crate::services::import_reader::limits::ImportLimit;
+use crate::services::sandbox::Grant;
 use crate::session::SessionId;
 
 /// The single error shape returned by every Tauri IPC command, per
@@ -317,6 +318,54 @@ impl CommandError {
             .with_details(Some(json!({ "path": path.to_string_lossy(), "reason": reason })))
     }
 
+    /// 011 FR-004 (011 research.md §5): inside a Flatpak, a location the
+    /// operation needs is outside what this copy may reach. `path` is the
+    /// location as the user gave it, `folder` the folder that would need
+    /// access, `grants` what this copy can reach now. Never overridable:
+    /// `confirmedWarnings` has no effect on it.
+    pub fn out_of_reach(path: &Path, folder: &Path, grants: &[Grant]) -> Self {
+        let roots: Vec<String> =
+            grants.iter().map(|grant| grant.root.to_string_lossy().into_owned()).collect();
+        // The shipped four are the home folder and the three removable-drive
+        // folders; one grant that is not a removable-drive folder is the home
+        // folder, and anything more is the user's own.
+        let removable = ["/media", "/run/media", "/mnt"];
+        let others = roots.iter().filter(|root| !removable.contains(&root.as_str())).count();
+        let reach = if others <= 1 {
+            "your home folder and removable drives".to_owned()
+        } else {
+            let named: Vec<String> = grants
+                .iter()
+                .map(|grant| {
+                    let read_only = if grant.writable { "" } else { " (read only)" };
+                    format!("`{}`{read_only}", grant.root.display())
+                })
+                .collect();
+            match named.split_last() {
+                Some((last, first)) if !first.is_empty() => {
+                    format!("{} and {last}", first.join(", "))
+                }
+                _ => named.join(""),
+            }
+        };
+        Self::new(
+            "LOCATION_OUT_OF_REACH",
+            format!(
+                "This copy of HoploDex is a Flatpak, and it can only reach {reach}, so it can't \
+                 use `{path}`. Move the file into your home folder or onto a removable drive, or \
+                 give HoploDex access to `{folder}` by running: `flatpak override --user \
+                 --filesystem={folder} io.github.exodious.HoploDex` and then restarting HoploDex.",
+                path = path.display(),
+                folder = folder.display(),
+            ),
+        )
+        .with_details(Some(json!({
+            "path": path.to_string_lossy(),
+            "folder": folder.to_string_lossy(),
+            "grants": roots,
+        })))
+    }
+
     /// 003 FR-019.
     pub fn keyring_unavailable() -> Self {
         Self::new("KEYRING_UNAVAILABLE", "This computer's keyring isn't available.")
@@ -544,5 +593,113 @@ impl From<OpenError> for CommandError {
             OpenError::Damaged => Self::database_damaged(false),
             OpenError::Internal(err) => Self::from_db(err),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::CommandError;
+    use crate::services::sandbox::Grant;
+
+    fn grant(root: &str, writable: bool) -> Grant {
+        Grant { root: PathBuf::from(root), writable }
+    }
+
+    /// The four grants the manifest ships (011 research.md §4).
+    fn shipped() -> Vec<Grant> {
+        vec![
+            grant("/home/someone", true),
+            grant("/media", true),
+            grant("/run/media", true),
+            grant("/mnt", true),
+        ]
+    }
+
+    #[test]
+    fn out_of_reach_has_its_code_and_camel_case_details() {
+        let err = CommandError::out_of_reach(
+            Path::new("/srv/guns/a.hoplodex"),
+            Path::new("/srv/guns"),
+            &shipped(),
+        );
+        assert_eq!(err.code, "LOCATION_OUT_OF_REACH");
+        let json = serde_json::to_value(&err).unwrap();
+        assert_eq!(
+            json["details"],
+            serde_json::json!({
+                "path": "/srv/guns/a.hoplodex",
+                "folder": "/srv/guns",
+                "grants": ["/home/someone", "/media", "/run/media", "/mnt"],
+            })
+        );
+        assert!(json.get("fieldErrors").is_none());
+    }
+
+    #[test]
+    fn out_of_reach_message_is_the_one_data_model_gives_word_for_word() {
+        let err = CommandError::out_of_reach(
+            Path::new("/srv/guns/a.hoplodex"),
+            Path::new("/srv/guns"),
+            &shipped(),
+        );
+        assert_eq!(
+            err.message,
+            "This copy of HoploDex is a Flatpak, and it can only reach your home folder and \
+             removable drives, so it can't use `/srv/guns/a.hoplodex`. Move the file into your \
+             home folder or onto a removable drive, or give HoploDex access to `/srv/guns` by \
+             running: `flatpak override --user --filesystem=/srv/guns \
+             io.github.exodious.HoploDex` and then restarting HoploDex."
+        );
+    }
+
+    #[test]
+    fn out_of_reach_lists_the_grants_when_the_user_has_added_more_than_the_shipped_four() {
+        let mut grants = shipped();
+        grants.push(grant("/srv/archive", true));
+        grants.push(grant("/data", false));
+        let err = CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), &grants);
+        assert!(
+            err.message.starts_with(
+                "This copy of HoploDex is a Flatpak, and it can only reach `/home/someone`, \
+                 `/media`, `/run/media`, `/mnt`, `/srv/archive` and `/data` (read only), so it \
+                 can't use `/x/y`."
+            ),
+            "{}",
+            err.message
+        );
+        assert!(!err.message.contains("your home folder and removable drives"));
+        // The advice after the first sentence is the same.
+        assert!(err.message.ends_with(
+            "or give HoploDex access to `/x` by running: `flatpak override --user \
+             --filesystem=/x io.github.exodious.HoploDex` and then restarting HoploDex."
+        ));
+        assert_eq!(
+            serde_json::to_value(&err).unwrap()["details"]["grants"].as_array().unwrap().len(),
+            6
+        );
+    }
+
+    #[test]
+    fn out_of_reach_carries_a_field_error_only_when_the_caller_adds_one() {
+        let err = CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), &shipped());
+        assert!(err.field_errors.is_none());
+        let message = err.message.clone();
+        let err = err.on_field("folder", message.clone());
+        assert_eq!(err.field_errors.as_ref().unwrap()["folder"], message);
+        assert_eq!(err.code, "LOCATION_OUT_OF_REACH");
+    }
+
+    /// 011 contracts/tauri-commands.md "Errors": `confirmedWarnings` has no
+    /// effect on it. Nothing in the error offers an override: it is a plain
+    /// refusal with no warning code for a resend to confirm.
+    #[test]
+    fn out_of_reach_is_a_refusal_no_confirmation_overrides() {
+        let err = CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), &shipped());
+        assert!(!err.code.ends_with("_WARNING"), "{}", err.code);
+        let json = serde_json::to_value(&err).unwrap();
+        assert!(json["details"].get("confirmedWarnings").is_none());
+        assert!(json["details"].get("overridable").is_none());
     }
 }

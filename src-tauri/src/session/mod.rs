@@ -30,6 +30,7 @@ use crate::models::database::{
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
 use crate::services::preview::{Preview, PreviewLoading};
+use crate::services::sandbox::Reach;
 use clock::{Clock, SystemClock};
 use fingerprint::{FileFingerprint, FingerprintCheck};
 use idle::IdleClock;
@@ -250,6 +251,10 @@ pub struct SessionInner {
     /// Where `open_document` puts decrypted copies, deleted at every close
     /// (003 FR-022). `None` where nothing makes them.
     opened_documents_dir: Option<PathBuf>,
+    /// What this run may reach on the filesystem (011 research.md §5), the
+    /// same value the commands get as state, so closes started by OS events
+    /// and upgrades can ask it too.
+    reach: Arc<Reach>,
     /// The database most recently closed in this run, which the chooser
     /// selects (003 FR-033).
     last_closed: Mutex<Option<PathBuf>>,
@@ -352,17 +357,22 @@ pub(crate) struct ImmediateClose {
 impl Default for Session {
     /// A session that reports to no one, for tests of its guards.
     fn default() -> Self {
-        Self::new(Arc::new(NoEvents), None)
+        Self::new(Arc::new(NoEvents), None, Arc::new(Reach::Unconfined))
     }
 }
 
 impl Session {
-    pub fn new(events: Arc<dyn SessionEvents>, opened_documents_dir: Option<PathBuf>) -> Self {
+    pub fn new(
+        events: Arc<dyn SessionEvents>,
+        opened_documents_dir: Option<PathBuf>,
+        reach: Arc<Reach>,
+    ) -> Self {
         Self(Arc::new(SessionInner {
             open: Mutex::new(None),
             current: AtomicU64::new(0),
             events,
             opened_documents_dir,
+            reach,
             last_closed: Mutex::new(None),
             operations: Arc::default(),
             clock: Arc::new(SystemClock),
@@ -393,6 +403,11 @@ impl Session {
 }
 
 impl SessionInner {
+    /// What this run may reach (011 research.md §5).
+    pub fn reach(&self) -> &Arc<Reach> {
+        &self.reach
+    }
+
     pub fn operations(&self) -> &Operations {
         &self.operations
     }

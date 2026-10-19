@@ -10,6 +10,7 @@ use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::insurance_policy::InsurancePolicyInput;
 use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::FIREARM_COLUMNS;
 use hoplodex_lib::session::clock::Clock;
 use hoplodex_lib::session::{Session, SessionEvents};
@@ -221,7 +222,11 @@ impl Clock for ManualClock {
 #[allow(dead_code)]
 pub fn test_session(opened_documents: &Path) -> (Session, Arc<TestEvents>) {
     let events = Arc::new(TestEvents::default());
-    let session = Session::new(events.clone(), Some(opened_documents.to_owned()));
+    let session = Session::new(
+        events.clone(),
+        Some(opened_documents.to_owned()),
+        Arc::new(Reach::Unconfined),
+    );
     (session, events)
 }
 
@@ -232,7 +237,12 @@ pub fn test_session_at(
     clock: Arc<ManualClock>,
 ) -> (Session, Arc<TestEvents>) {
     let events = Arc::new(TestEvents::default());
-    let session = Session::new(events.clone(), Some(opened_documents.to_owned())).with_clock(clock);
+    let session = Session::new(
+        events.clone(),
+        Some(opened_documents.to_owned()),
+        Arc::new(Reach::Unconfined),
+    )
+    .with_clock(clock);
     (session, events)
 }
 
