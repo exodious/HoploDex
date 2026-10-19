@@ -73,7 +73,7 @@ use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 #[cfg(unix)]
 use hoplodex_lib::services::sandbox::Need;
-use hoplodex_lib::services::sandbox::{Grant, HostPaths, Reach};
+use hoplodex_lib::services::sandbox::{ByDocument, Grant, HostPaths, Reach};
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
@@ -635,7 +635,11 @@ fn closing_with_a_backup_location_out_of_reach_fails_the_backup_and_leaves_no_pa
 fn restore_backup_stops_when_the_before_backup_location_is_out_of_reach() {
     let world = World::new();
     let (path, backups) = world.make_db_backing_up_outside();
-    let backup = backups.join(&names_in(&backups)[0]);
+    // The backup to restore is read from where a grant covers it (011 T096: a
+    // file outside the grants is refused whether or not it can be seen); it is
+    // the backup location, `outside`, that is out of reach.
+    let backup = world.home().join("To restore.hoplodex");
+    fs::copy(backups.join(&names_in(&backups)[0]), &backup).unwrap();
     world.open_boxed_ok(&path);
     let before = world.listing();
 
@@ -1016,19 +1020,22 @@ fn a_document_that_would_be_on_the_host_is_refused_and_one_in_the_read_only_gran
     assert_eq!(document_ops::list_documents(&db.conn, owner).unwrap().len(), 1);
 }
 
-/// 011 US1-5: a file the sandbox can see is readable wherever it is, so one in
-/// `outside` that exists (a mounted drive the grants don't name, say) is not
-/// refused. Only a path the sandbox can't see is out of reach.
+/// 011 T096, 011 FR-007: a drop from outside reach is always refused, even where
+/// the file exists in the sandbox (a mounted drive the grants don't name, say):
+/// a file is within reach only where a grant covers it.
 #[test]
-fn a_photo_the_sandbox_can_see_is_attached_even_outside_the_grants() {
+fn a_photo_outside_the_grants_is_refused_even_where_the_sandbox_can_see_it() {
     let world = World::new();
     let (db, owner) = db_with_a_record();
     let file = world.outside().join("visible.png");
     fs::write(&file, sample_png_bytes()).unwrap();
+    let before = world.listing();
 
-    photo_ops::add_photo_from_path(&db.conn, owner, &file, &world.reach).unwrap();
+    let refused = photo_ops::add_photo_from_path(&db.conn, owner, &file, &world.reach).unwrap_err();
 
-    assert_eq!(photo_ops::list_photos(&db.conn, owner).unwrap().len(), 1);
+    assert_out_of_reach(&refused, &world.outside());
+    assert!(photo_ops::list_photos(&db.conn, owner).unwrap().is_empty(), "no row added");
+    assert_eq!(world.listing(), before);
 }
 
 // ============================================================== Documents-portal paths
@@ -1078,9 +1085,86 @@ impl World {
     }
 }
 
+// Used by the portal tests, which are Unix-only.
+#[allow(dead_code)]
+impl World {
+    /// As `reach_for_portal`, with a lookup that answers by document id as the
+    /// Documents portal does: a document's host path stands for
+    /// `doc/<id>/<name>`, and a path below it resolves below that host path
+    /// (011 T094).
+    fn reach_for_documents(&mut self, documents: Vec<(&'static str, PathBuf)>) {
+        let documents: HashMap<String, PathBuf> =
+            documents.into_iter().map(|(id, host)| (id.to_owned(), host)).collect();
+        self.reach = Arc::new(Reach::flatpak(
+            self.reach.grants().to_vec(),
+            Vec::new(),
+            self.home(),
+            Arc::new(ByDocument(move |id: &str, _entry: &Path| documents.get(id).cloned())),
+        ));
+        let (boxed, _) = support::test_session_reaching(
+            &self.config.path().join("opened-documents"),
+            self.clock.clone(),
+            self.reach.clone(),
+        );
+        self.boxed = boxed;
+    }
+}
+
+/// 011 T094, 011 FR-003, 011 US1-3: a database created in a folder the chooser
+/// picked (its Documents-portal path, a folder below the picked one included) is
+/// made at the host path below the picked folder's host path, not in the picked
+/// folder itself; one in a picked folder outside reach is refused naming the host
+/// folder, with nothing made.
+#[cfg(unix)]
+#[test]
+fn a_database_created_in_a_picked_folder_is_made_below_its_host_folder() {
+    let mut world = World::new();
+    world.reach_for_documents(vec![
+        ("t094a", world.home().join("Guns")),
+        ("t094b", world.outside().join("Guns")),
+    ]);
+    let before = world.listing();
+
+    let picked_outside = format!("{}/Sub", text(&portal("t094b", "Guns")));
+    let refused = databases::create_database(
+        &world.boxed,
+        &world.machine,
+        &picked_outside,
+        "Mine",
+        &passphrase(),
+        true,
+        &world.reach,
+    )
+    .unwrap_err();
+    assert_out_of_reach(&refused, &world.outside().join("Guns/Sub"));
+    assert_eq!(
+        details(&refused)["path"],
+        json!(text(&world.outside().join("Guns/Sub/Mine.hoplodex")))
+    );
+    assert_eq!(world.listing(), before, "nothing made");
+
+    let picked = format!("{}/Sub", text(&portal("t094a", "Guns")));
+    let status = databases::create_database(
+        &world.boxed,
+        &world.machine,
+        &picked,
+        "Mine",
+        &passphrase(),
+        true,
+        &world.reach,
+    )
+    .unwrap();
+
+    let made = world.home().join("Guns/Sub/Mine.hoplodex");
+    assert_eq!(status.path, text(&made), "below the picked folder's host path");
+    assert!(made.is_file());
+    assert!(!world.home().join("Guns/Mine.hoplodex").exists());
+}
+
 /// 011 US1-8, 011 research.md §5: a portal path whose host path is outside every
 /// grant is refused at open, as is one the portal can't resolve; the file is
-/// untouched.
+/// untouched. The refusal names the host path and the host folder when they are
+/// known (011 T095), and the portal's when nothing resolves.
 #[cfg(unix)]
 #[test]
 fn a_portal_path_whose_host_path_is_out_of_reach_is_refused_at_open() {
@@ -1092,11 +1176,13 @@ fn a_portal_path_whose_host_path_is_out_of_reach_is_refused_at_open() {
     let before = world.listing();
 
     let refused = world.open_boxed(&text(&picked)).unwrap_err();
-    assert_eq!(refused.code, "LOCATION_OUT_OF_REACH", "{refused:?}");
+    assert_out_of_reach(&refused, &world.outside());
+    assert_eq!(details(&refused)["path"], json!(text(&host)), "the host path, not the portal's");
 
     let unresolved = portal("t038c", "Nobody knows.hoplodex");
     let refused = world.open_boxed(&text(&unresolved)).unwrap_err();
-    assert_eq!(refused.code, "LOCATION_OUT_OF_REACH", "{refused:?}");
+    assert_out_of_reach(&refused, unresolved.parent().unwrap());
+    assert_eq!(details(&refused)["path"], json!(text(&unresolved)));
 
     assert_eq!(fs::read(&host).unwrap(), bytes);
     assert_eq!(world.listing(), before);
@@ -1125,6 +1211,112 @@ fn portal_paths_for_an_export_folder_and_an_import_file_are_used_as_they_are() {
     let err = world.read_import(&no_helper, &[import_file(&file)]).unwrap_err();
     assert_ne!(err.code, "LOCATION_OUT_OF_REACH", "{err:?}");
     assert_eq!(world.listing(), before);
+}
+
+/// 011 T097: a Documents-portal folder outside reach is refused as the stored
+/// backup location, on the location field, naming the host folder the override
+/// would need (or the portal's own when nothing resolves it), and as
+/// `BACKUP_LOCATION_UNAVAILABLE` when the existing backups were to move; one
+/// within reach is stored as its host path. Nothing is saved or made.
+#[cfg(unix)]
+#[test]
+fn a_portal_folder_outside_reach_is_refused_as_the_stored_backup_location() {
+    let mut world = World::new();
+    let path = world.make_db(&world.home(), "Mine", true);
+    fs::create_dir(world.home().join("Chosen")).unwrap();
+    world.reach_for_documents(vec![
+        ("t097a", world.outside().join("Backups")),
+        ("t097c", world.home().join("Chosen")),
+    ]);
+    world.open_boxed_ok(&path);
+    let before = world.listing();
+
+    for (picked, folder) in [
+        (portal("t097a", "Backups"), world.outside().join("Backups")),
+        (portal("t097b", "Backups"), portal("t097b", "Backups")),
+    ] {
+        let refused =
+            world.update_backups(BackupLocationInput::Custom { path: text(&picked) }, None);
+        let refused = refused.unwrap_err();
+        assert_eq!(refused.code, "VALIDATION_ERROR", "{refused:?}");
+        let on_field = refused.field_errors.as_ref().and_then(|fields| fields.get("location"));
+        let on_field = on_field.unwrap_or_else(|| panic!("no fieldErrors.location: {refused:?}"));
+        assert!(
+            on_field
+                .contains(&format!("flatpak override --user --filesystem={}", shell_word(&folder))),
+            "{on_field}"
+        );
+        assert_eq!(world.listing(), before, "nothing saved or made");
+
+        let refused = world
+            .update_backups(
+                BackupLocationInput::Custom { path: text(&picked) },
+                Some(ExistingBackupsChoice::Move),
+            )
+            .unwrap_err();
+        assert_backup_out_of_reach(&refused, &picked);
+        assert_eq!(world.listing(), before, "the backups stay where they are");
+    }
+
+    // Within reach, the host path is what is stored.
+    world
+        .update_backups(
+            BackupLocationInput::Custom { path: text(&portal("t097c", "Chosen")) },
+            Some(ExistingBackupsChoice::Leave),
+        )
+        .unwrap();
+    let status = databases::database_status(&world.boxed, &world.machine).unwrap();
+    let status = serde_json::to_value(status).unwrap();
+    assert_eq!(
+        status["settings"]["backups"]["location"]["path"],
+        json!(text(&world.home().join("Chosen")))
+    );
+}
+
+/// 011 T097: the folder chosen for the one backup before an upgrade is refused
+/// the same way when it is a portal folder outside reach.
+#[cfg(unix)]
+#[test]
+fn a_portal_folder_outside_reach_is_refused_as_the_upgrades_chosen_folder() {
+    let mut world = World::new();
+    let (path, _backups) = world.make_db_backing_up_outside();
+    world.reach_for_documents(vec![("t097d", world.outside().join("Elsewhere"))]);
+    let _scope = testing::scope(&world.home()).extra_steps(&[STEP_A]);
+    let asked = world.open_boxed(&text(&path)).unwrap_err();
+    assert_eq!(asked.code, "UPGRADE_NEEDED", "{asked:?}");
+    let awaiting_id = details(&asked)["awaitingId"].as_u64().expect("an awaitingId");
+    let before = world.listing();
+
+    let chosen = portal("t097d", "Elsewhere");
+    let refused = databases::upgrade_database(
+        &world.boxed,
+        &world.machine,
+        awaiting_id,
+        Some(&text(&chosen)),
+    )
+    .unwrap_err();
+
+    assert_backup_out_of_reach(&refused, &chosen);
+    assert_eq!(world.listing(), before, "the database as it was, no partial backup");
+    databases::cancel_upgrade(&world.boxed, awaiting_id).unwrap();
+}
+
+/// 011 T097: an export's destination is a one-off write, so a portal folder
+/// outside reach is kept for it, whatever the lookup says.
+#[cfg(unix)]
+#[test]
+fn an_export_to_a_portal_folder_outside_reach_is_not_refused_for_reach() {
+    let mut world = World::new();
+    world.reach_for_documents(vec![("t097e", world.outside().join("Exports"))]);
+
+    // `export_collection` asks exactly this of its destination before it
+    // writes (it isn't called here: the portal's folder is not on this
+    // computer, and nothing may be made under /run/user).
+    for id in ["t097e", "t097f"] {
+        let folder = portal(id, "Exports");
+        assert_eq!(world.reach.check(&folder, Need::WriteFolder).unwrap(), folder, "{id}");
+        assert!(world.reach.check(&folder, Need::BackupFolder).is_err(), "{id}");
+    }
 }
 
 // ============================================================== Unconfined

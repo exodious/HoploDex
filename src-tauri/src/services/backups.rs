@@ -587,7 +587,7 @@ impl LocationProblem {
 /// when missing (at the first backup); a custom one that is missing is on a
 /// drive or share that isn't there, and is not made (003 FR-024, FR-027).
 /// Writability is tried with a probe file, removed at once. Inside a Flatpak a
-/// folder outside what this copy may reach (`Need::WriteFolder`) is refused
+/// folder outside what this copy may reach (`Need::BackupFolder`) is refused
 /// first, before the folder is made or the probe is written (011 FR-004,
 /// 011 SC-003).
 pub fn check_location(
@@ -595,7 +595,7 @@ pub fn check_location(
     make_if_missing: bool,
     reach: &Reach,
 ) -> Result<(), LocationProblem> {
-    if reach.check(folder, Need::WriteFolder).is_err() {
+    if reach.check(folder, Need::BackupFolder).is_err() {
         return Err(LocationProblem::OutOfReach);
     }
     if !folder.is_dir() {

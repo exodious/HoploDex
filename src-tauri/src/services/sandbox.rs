@@ -37,8 +37,13 @@ pub enum Need {
     /// A database file: its folder must be within a writable grant. The path
     /// is the database file's.
     DatabaseFolder,
-    /// A folder to write into. The path is the folder.
+    /// A folder to write into once, now. The path is the folder.
     WriteFolder,
+    /// A folder backups are written to, now and at every later close. The path
+    /// is the folder. Like [`Need::WriteFolder`], except that a Documents-portal
+    /// path outside reach is refused (011 T097): the portal's folder is the
+    /// chooser's answer to one question, not a place to keep writing to.
+    BackupFolder,
     /// A file to read. The path is the file.
     ReadFile,
 }
@@ -47,6 +52,27 @@ pub enum Need {
 /// path the same file has on the host.
 pub trait HostPaths: Send + Sync {
     fn host_path(&self, portal_path: &Path) -> Option<PathBuf>;
+}
+
+/// A [`HostPaths`] that asks, per document, where the document is on the host:
+/// `lookup(document id, the document's entry under doc/<id>/)`. It does what the
+/// Documents portal's answer needs done, whoever gives the answer: the
+/// document's host path stands for `doc/<id>/<name>` (the file, or a picked
+/// folder), so the rest of the path below `<name>` is joined onto it (011 T094).
+/// The app's lookup is [`PortalHostPaths`]; a test's is a map by document id.
+pub struct ByDocument<F>(pub F);
+
+impl<F> HostPaths for ByDocument<F>
+where
+    F: Fn(&str, &Path) -> Option<PathBuf> + Send + Sync,
+{
+    fn host_path(&self, portal_path: &Path) -> Option<PathBuf> {
+        let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
+        let portal_path = absolute(portal_path);
+        let document = split_portal(&portal_path, runtime_dir.as_deref())?;
+        let host = (self.0)(&document.id, &document.entry)?;
+        Some(normalize(&host.join(document.below)))
+    }
 }
 
 /// No portal to ask: every portal path stays unresolved.
@@ -297,11 +323,32 @@ impl Reach {
     }
 
     /// How far `path` is within a grant (compared after making it absolute and
-    /// normalising `.` and `..` without following links): the longest root
-    /// that holds it decides.
+    /// normalising `.` and `..`): the longest root that holds it decides.
+    ///
+    /// Links are followed in the grant roots and in the path's folders above
+    /// them, so `/home/someone` is judged against a grant on `/var/home/someone`
+    /// where `/home` links to `/var/home`; a link inside a grant is judged by
+    /// its own path, as bwrap binds it (011 T112).
     fn access(&self, path: &Path) -> Access {
         let Self::Flatpak { grants, removed, .. } = self else { return Access::Writable };
         let path = absolute(path);
+        let originals: Vec<&Path> = grants
+            .iter()
+            .map(|grant| grant.root.as_path())
+            .chain(removed.iter().map(PathBuf::as_path))
+            .collect();
+        let resolved_grants: Vec<Grant> = grants
+            .iter()
+            .map(|grant| Grant { root: resolve(&grant.root), writable: grant.writable })
+            .collect();
+        let resolved_removed: Vec<PathBuf> = removed.iter().map(|root| resolve(root)).collect();
+        let resolved_roots: Vec<&Path> = resolved_grants
+            .iter()
+            .map(|grant| grant.root.as_path())
+            .chain(resolved_removed.iter().map(PathBuf::as_path))
+            .collect();
+        let path = locate(&path, &originals, &resolved_roots);
+        let (grants, removed) = (&resolved_grants, &resolved_removed);
         let depth = |root: &Path| root.components().count();
         let mut best = None::<usize>;
         let mut access = Access::None;
@@ -342,7 +389,7 @@ impl Reach {
             return self.check_portal(path, &given, host_paths.as_ref(), need);
         }
         match need {
-            Need::DatabaseFolder | Need::WriteFolder => {
+            Need::DatabaseFolder | Need::WriteFolder | Need::BackupFolder => {
                 let folder = needed_folder(&given, need);
                 match self.access(&folder) {
                     Access::Writable => Ok(path.to_owned()),
@@ -350,11 +397,12 @@ impl Reach {
                 }
             }
             Need::ReadFile => {
-                // A file the sandbox can see is readable wherever it is; one
-                // it can't see and no grant covers is out of reach, not
-                // "not found". A missing one inside a grant is passed on so
-                // the caller says "not found" as it does today.
-                if std::fs::metadata(&given).is_ok() || self.access(&given) != Access::None {
+                // Only a file a grant covers is within reach, whether or not
+                // it exists in the sandbox (011 FR-007: a drop from outside
+                // reach is always refused, even where the same path happens to
+                // show up in the sandbox). A missing one inside a grant is
+                // passed on so the caller says "not found" as it does today.
+                if self.access(&given) != Access::None {
                     Ok(path.to_owned())
                 } else {
                     Err(self.refuse(path, &needed_folder(&given, need)))
@@ -370,19 +418,29 @@ impl Reach {
         host_paths: &dyn HostPaths,
         need: Need,
     ) -> Result<PathBuf, CommandError> {
+        // A refusal names the host path and the host folder when they are
+        // known, so the override command it gives names a folder that helps
+        // (011 T095); the portal's own folder helps nobody.
         if let Some(host) = host_paths.host_path(portal_path).map(|host| absolute(&host)) {
             let folder = needed_folder(&host, need);
             let probe = if need == Need::ReadFile { &host } else { &folder };
+            let stays_a_portal_path = matches!(need, Need::WriteFolder | Need::ReadFile);
             match (self.access(probe), need) {
                 (Access::Writable, _) | (Access::ReadOnly, Need::ReadFile) => return Ok(host),
-                (Access::ReadOnly, _) => return Err(self.refuse(path, &folder)),
+                (Access::ReadOnly, _) => return Err(self.refuse(&host, &folder)),
+                (Access::None, _) if !stays_a_portal_path => {
+                    return Err(self.refuse(&host, &folder));
+                }
                 (Access::None, _) => {}
             }
         }
         // Outside every grant, or not resolved: writing or reading inside the
-        // portal's own folder works, but a database's folder is not that.
+        // portal's own folder works once, but a database's folder is not that
+        // and a stored backup folder is not to be kept (011 T097).
         match need {
-            Need::DatabaseFolder => Err(self.refuse(path, &needed_folder(portal_path, need))),
+            Need::DatabaseFolder | Need::BackupFolder => {
+                Err(self.refuse(path, &needed_folder(portal_path, need)))
+            }
             Need::WriteFolder | Need::ReadFile => Ok(path.to_owned()),
         }
     }
@@ -411,7 +469,7 @@ impl Access {
 /// The folder whose reach `need` asks about for `path`.
 fn needed_folder(path: &Path, need: Need) -> PathBuf {
     match need {
-        Need::WriteFolder => path.to_owned(),
+        Need::WriteFolder | Need::BackupFolder => path.to_owned(),
         Need::DatabaseFolder | Need::ReadFile => path.parent().unwrap_or(path).to_owned(),
     }
 }
@@ -472,6 +530,55 @@ fn absolute(path: &Path) -> PathBuf {
     normalize(&std::path::absolute(path).unwrap_or_else(|_| path.to_owned()))
 }
 
+/// `path` with its links followed, as far as it exists. Unix only: a Flatpak
+/// runs only on Linux, and elsewhere nothing is followed.
+fn canonical(path: &Path) -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        std::fs::canonicalize(path).ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// `path` with the links in its existing part followed (itself included when it
+/// exists) and the missing rest unchanged.
+fn resolve(path: &Path) -> PathBuf {
+    for ancestor in path.ancestors() {
+        if let Some(found) = canonical(ancestor)
+            && let Ok(rest) = path.strip_prefix(ancestor)
+        {
+            return normalize(&found.join(rest));
+        }
+    }
+    path.to_owned()
+}
+
+/// `path` as it is named under the resolved grant roots: its longest folder
+/// that is not inside a grant or removed root (`originals`, as given, and
+/// `resolved`) and whose real path is that of a root or above one has its links
+/// followed, and the rest stays as it is, so a link inside a grant is judged by
+/// its own path (011 T112). A path none of that applies to is returned as it
+/// is.
+fn locate(path: &Path, originals: &[&Path], resolved: &[&Path]) -> PathBuf {
+    for ancestor in path.ancestors() {
+        let inside_a_root = |root: &&Path| ancestor.starts_with(root) && ancestor != *root;
+        if originals.iter().chain(resolved).any(inside_a_root) {
+            continue;
+        }
+        if let Some(found) = canonical(ancestor)
+            && resolved.iter().any(|root| root.starts_with(&found))
+            && let Ok(rest) = path.strip_prefix(ancestor)
+        {
+            return normalize(&found.join(rest));
+        }
+    }
+    path.to_owned()
+}
+
 fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
@@ -488,22 +595,40 @@ fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-/// The document id when `path` is under the Documents portal's folder
+/// A path under the Documents portal's folder, taken apart.
+#[derive(Debug, PartialEq, Eq)]
+struct PortalDocument {
+    /// The document's id: `<id>` in `doc/<id>/<name>/…`.
+    id: String,
+    /// `doc/<id>/<name>`, the document itself: the file, or the picked folder.
+    /// The portal's lookups (`GetHostPaths`, the host-path attribute) answer
+    /// for this entry.
+    entry: PathBuf,
+    /// What lies below the entry (empty for a file document).
+    below: PathBuf,
+}
+
+/// `path` taken apart when it is under the Documents portal's folder
 /// (`$XDG_RUNTIME_DIR/doc/<id>/…` or `/run/user/<uid>/doc/<id>/…`). `path` is
 /// absolute and normalised.
-fn portal_document(path: &Path, runtime_dir: Option<&Path>) -> Option<String> {
-    let id_after = |doc_folder: &Path| {
+fn split_portal(path: &Path, runtime_dir: Option<&Path>) -> Option<PortalDocument> {
+    let split_after = |doc_folder: &Path| {
         let rest = path.strip_prefix(doc_folder).ok()?;
-        rest.components().next().and_then(|c| c.as_os_str().to_str()).map(str::to_owned)
+        let mut parts = rest.components();
+        let id = parts.next()?.as_os_str().to_str()?.to_owned();
+        let mut entry = doc_folder.join(&id);
+        if let Some(name) = parts.next() {
+            entry.push(name);
+        }
+        Some(PortalDocument { id, entry, below: parts.as_path().to_owned() })
     };
-    if let Some(id) =
-        runtime_dir.filter(|dir| dir.is_absolute()).and_then(|dir| id_after(&dir.join("doc")))
+    if let Some(found) =
+        runtime_dir.filter(|dir| dir.is_absolute()).and_then(|dir| split_after(&dir.join("doc")))
     {
-        return Some(id);
+        return Some(found);
     }
     let mut components = path.components();
-    let (Some(Component::RootDir), Some(run), Some(user), Some(uid), Some(doc), Some(id)) = (
-        components.next(),
+    let (Some(Component::RootDir), Some(run), Some(user), Some(uid), Some(doc)) = (
         components.next(),
         components.next(),
         components.next(),
@@ -517,9 +642,15 @@ fn portal_document(path: &Path, runtime_dir: Option<&Path>) -> Option<String> {
         .as_os_str()
         .to_str()
         .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()));
-    (is(run, "run") && is(user, "user") && numeric && is(doc, "doc"))
-        .then(|| id.as_os_str().to_str().map(str::to_owned))
-        .flatten()
+    if !(is(run, "run") && is(user, "user") && numeric && is(doc, "doc")) {
+        return None;
+    }
+    split_after(&path.components().take(5).collect::<PathBuf>())
+}
+
+/// The document id when `path` is under the Documents portal's folder.
+fn portal_document(path: &Path, runtime_dir: Option<&Path>) -> Option<String> {
+    split_portal(path, runtime_dir).map(|document| document.id)
 }
 
 /// The app's [`HostPaths`] (Linux): the Documents portal's `GetHostPaths`
@@ -573,10 +704,12 @@ impl Default for PortalHostPaths {
 #[cfg(target_os = "linux")]
 impl HostPaths for PortalHostPaths {
     fn host_path(&self, portal_path: &Path) -> Option<PathBuf> {
-        let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
-        let portal_path = absolute(portal_path);
-        let document_id = portal_document(&portal_path, runtime_dir.as_deref())?;
-        self.ask_portal(&document_id).or_else(|| host_path_attribute(&portal_path))
+        // The portal's answer and the attribute are both for the document's
+        // entry (`doc/<id>/<name>`); the rest below it is joined on.
+        ByDocument(|id: &str, entry: &Path| {
+            self.ask_portal(id).or_else(|| host_path_attribute(entry))
+        })
+        .host_path(portal_path)
     }
 }
 
@@ -820,6 +953,17 @@ mod tests {
     /// A Flatpak whose home is `<tmp>/home` (writable), with `<tmp>/ro`
     /// read-only, and `<tmp>/outside` granted nothing.
     fn world(host_map: impl FnOnce(&Path) -> Vec<(&'static str, PathBuf)>) -> World {
+        world_with(|root| {
+            let map = host_map(root)
+                .into_iter()
+                .map(|(portal, host)| (PathBuf::from(portal), host))
+                .collect();
+            Arc::new(Fixed(map))
+        })
+    }
+
+    /// As [`world`], with any lookup of the Documents portal.
+    fn world_with(host: impl FnOnce(&Path) -> Arc<dyn HostPaths>) -> World {
         let dir = TempDir::new().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
         for sub in ["home", "ro", "outside"] {
@@ -827,10 +971,7 @@ mod tests {
         }
         std::fs::write(root.join("home/inside.txt"), "x").unwrap();
         std::fs::write(root.join("outside/real.txt"), "x").unwrap();
-        let map = host_map(&root)
-            .into_iter()
-            .map(|(portal, host)| (PathBuf::from(portal), host))
-            .collect();
+        let host_paths = host(&root);
         let reach = Reach::flatpak(
             vec![
                 Grant { root: root.join("home"), writable: true },
@@ -838,7 +979,7 @@ mod tests {
             ],
             Vec::new(),
             root.join("home"),
-            Arc::new(Fixed(map)),
+            host_paths,
         );
         World { _dir: dir, root, reach }
     }
@@ -907,19 +1048,27 @@ mod tests {
         }
     }
 
+    /// 011 T096, 011 FR-007: a file is within reach only where a grant covers
+    /// it, whether or not it exists in the sandbox. A drop from outside reach
+    /// is always refused, even where the same path shows up in the sandbox.
     #[test]
-    fn a_file_to_read_is_accepted_anywhere_it_exists_and_otherwise_only_inside_a_grant() {
+    fn a_file_to_read_is_accepted_only_inside_a_grant_whether_or_not_it_exists() {
         let w = world(|_| vec![]);
-        for ok in ["outside/real.txt", "home/inside.txt", "home/missing.txt", "ro/missing.txt"] {
+        for ok in ["home/inside.txt", "home/missing.txt", "ro/missing.txt"] {
             let path = w.root.join(ok);
             assert_eq!(w.reach.check(&path, Need::ReadFile).unwrap(), path, "{ok}");
         }
-        let err = w.reach.check(&w.root.join("outside/missing.txt"), Need::ReadFile).unwrap_err();
-        assert_eq!(err.code, "LOCATION_OUT_OF_REACH");
-        assert_eq!(
-            err.details.as_ref().unwrap()["folder"],
-            w.root.join("outside").to_string_lossy().as_ref()
-        );
+        for (refused, folder) in
+            [("outside/real.txt", "outside"), ("outside/missing.txt", "outside")]
+        {
+            let err = w.reach.check(&w.root.join(refused), Need::ReadFile).unwrap_err();
+            assert_eq!(err.code, "LOCATION_OUT_OF_REACH", "{refused}");
+            assert_eq!(
+                err.details.as_ref().unwrap()["folder"],
+                w.root.join(folder).to_string_lossy().as_ref(),
+                "{refused}"
+            );
+        }
     }
 
     #[test]
@@ -1005,6 +1154,311 @@ mod tests {
                 );
             }
         }
+    }
+
+    // 011 T094: a lookup that answers by document id, as the Documents portal
+    // does. The test doubles above map whole paths, which hid a path below the
+    // document being dropped.
+
+    /// A lookup by document id: `id` is the document's host path, which stands
+    /// for `doc/<id>/<name>`.
+    fn by_document(docs: Vec<(&'static str, PathBuf)>) -> Arc<dyn HostPaths> {
+        let docs: HashMap<String, PathBuf> =
+            docs.into_iter().map(|(id, host)| (id.to_owned(), host)).collect();
+        Arc::new(ByDocument(move |id: &str, _entry: &Path| docs.get(id).cloned()))
+    }
+
+    const DOCS: &str = "/run/user/1000/doc";
+
+    // Unix only: portal paths are POSIX absolute ("/run/user/..."), which Windows
+    // does not count as absolute; a Flatpak runs only on Linux.
+    #[cfg(unix)]
+    #[test]
+    fn a_portal_path_splits_into_the_document_its_entry_and_what_lies_below() {
+        let split = |p: &str, runtime: Option<&str>| {
+            split_portal(Path::new(p), runtime.map(Path::new))
+                .map(|d| (d.id, d.entry, d.below))
+                .map(|(id, entry, below)| {
+                    (id, entry.display().to_string(), below.display().to_string())
+                })
+        };
+        let triple = |id: &str, entry: &str, below: &str| {
+            Some((id.to_owned(), entry.to_owned(), below.to_owned()))
+        };
+        assert_eq!(split(DOC, None), triple("a1b2c3", &format!("{DOCS}/a1b2c3/pick.hoplodex"), ""));
+        assert_eq!(
+            split("/run/user/1000/doc/f1/Guns/sub/a.hoplodex", None),
+            triple("f1", &format!("{DOCS}/f1/Guns"), "sub/a.hoplodex")
+        );
+        assert_eq!(
+            split("/xdg/rt/doc/f1/Guns/a.hoplodex", Some("/xdg/rt")),
+            triple("f1", "/xdg/rt/doc/f1/Guns", "a.hoplodex")
+        );
+        assert_eq!(split("/run/user/1000/doc/f1", None), triple("f1", &format!("{DOCS}/f1"), ""));
+        assert_eq!(split("/run/user/1000/doc", None), None);
+        assert_eq!(split("/home/x/doc/y/f", None), None);
+    }
+
+    // Unix only: see above.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_documents_host_path_gets_what_lies_below_it_joined_on() {
+        let host = by_document(vec![
+            ("f1", PathBuf::from("/h/Guns")),
+            ("f2", PathBuf::from("/h/Mine.hoplodex")),
+        ]);
+        let resolve = |p: &str| host.host_path(Path::new(p));
+        // A picked folder: the database in it, in a folder below it, the folder.
+        assert_eq!(
+            resolve("/run/user/1000/doc/f1/Guns/a.hoplodex"),
+            Some("/h/Guns/a.hoplodex".into())
+        );
+        assert_eq!(
+            resolve("/run/user/1000/doc/f1/Guns/sub/deeper/a.hoplodex"),
+            Some("/h/Guns/sub/deeper/a.hoplodex".into())
+        );
+        assert_eq!(resolve("/run/user/1000/doc/f1/Guns"), Some("/h/Guns".into()));
+        // A picked file stands for itself.
+        assert_eq!(resolve("/run/user/1000/doc/f2/Mine.hoplodex"), Some("/h/Mine.hoplodex".into()));
+        // Another document, and a `..` that climbs out of the portal's folder.
+        assert_eq!(resolve("/run/user/1000/doc/nope/x"), None);
+        assert_eq!(resolve("/run/user/1000/doc/f1/Guns/../../../x"), None);
+        // A `..` inside the document stays inside it.
+        assert_eq!(resolve("/run/user/1000/doc/f1/Guns/a/../b"), Some("/h/Guns/b".into()));
+    }
+
+    /// 011 T094, 011 FR-003, 011 US1-3: a database created in a folder the
+    /// chooser picked opens, and is made, at the host path below the picked
+    /// folder, not at the picked folder itself.
+    // Unix only: see above.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_below_a_picked_folder_resolves_below_its_host_folder_for_every_need() {
+        let w = world_with(|root| {
+            by_document(vec![
+                ("f1", root.join("home/Guns")),
+                ("f4", root.join("ro/Docs")),
+                ("f5", root.join("home/Mine.hoplodex")),
+            ])
+        });
+        let home = w.root.join("home");
+        let picked = |tail: &str| PathBuf::from(format!("{DOCS}/{tail}"));
+
+        for (portal, need, expected) in [
+            ("f1/Guns/Mine.hoplodex", Need::DatabaseFolder, home.join("Guns/Mine.hoplodex")),
+            (
+                "f1/Guns/a/b/Mine.hoplodex",
+                Need::DatabaseFolder,
+                home.join("Guns/a/b/Mine.hoplodex"),
+            ),
+            ("f1/Guns/Exports", Need::WriteFolder, home.join("Guns/Exports")),
+            ("f1/Guns/Backups", Need::BackupFolder, home.join("Guns/Backups")),
+            ("f1/Guns/sheet.csv", Need::ReadFile, home.join("Guns/sheet.csv")),
+            ("f5/Mine.hoplodex", Need::DatabaseFolder, home.join("Mine.hoplodex")),
+            ("f4/Docs/receipt.pdf", Need::ReadFile, w.root.join("ro/Docs/receipt.pdf")),
+        ] {
+            assert_eq!(
+                w.reach.check(&picked(portal), need).unwrap(),
+                expected,
+                "{portal} {need:?}"
+            );
+        }
+    }
+
+    /// 011 T094, 011 T095: below a picked folder outside every grant, a database
+    /// is refused naming the host path and the host folder (so the override
+    /// command names a folder that helps), and a read-only grant refuses
+    /// writing the same way.
+    // Unix only: see above.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_portal_path_names_the_host_path_and_the_host_folder() {
+        let w = world_with(|root| {
+            by_document(vec![
+                ("f2", root.join("outside/Guns")),
+                ("f3", root.join("outside/Theirs.hoplodex")),
+                ("f4", root.join("ro/Docs")),
+            ])
+        });
+        let picked = |tail: &str| PathBuf::from(format!("{DOCS}/{tail}"));
+        let refusal = |tail: &str, need: Need| {
+            let err = w.reach.check(&picked(tail), need).unwrap_err();
+            assert_eq!(err.code, "LOCATION_OUT_OF_REACH", "{tail} {need:?}");
+            let details = err.details.as_ref().unwrap();
+            (details["path"].clone(), details["folder"].clone(), err.message.clone())
+        };
+        let text = |p: PathBuf| serde_json::Value::from(p.to_string_lossy().into_owned());
+
+        let (path, folder, message) = refusal("f2/Guns/sub/Mine.hoplodex", Need::DatabaseFolder);
+        assert_eq!(path, text(w.root.join("outside/Guns/sub/Mine.hoplodex")));
+        assert_eq!(folder, text(w.root.join("outside/Guns/sub")));
+        assert!(
+            message
+                .contains(&format!("--filesystem={}", w.root.join("outside/Guns/sub").display()))
+        );
+
+        // A picked file: its host folder.
+        let (path, folder, _) = refusal("f3/Theirs.hoplodex", Need::DatabaseFolder);
+        assert_eq!(path, text(w.root.join("outside/Theirs.hoplodex")));
+        assert_eq!(folder, text(w.root.join("outside")));
+
+        // Read-only: refused for writing, the host folder named.
+        let (path, folder, _) = refusal("f4/Docs/Backups", Need::BackupFolder);
+        assert_eq!(path, text(w.root.join("ro/Docs/Backups")));
+        assert_eq!(folder, text(w.root.join("ro/Docs/Backups")));
+        let (_, folder, _) = refusal("f4/Docs/Mine.hoplodex", Need::DatabaseFolder);
+        assert_eq!(folder, text(w.root.join("ro/Docs")));
+
+        // The portal's own folder is named only when nothing resolves it.
+        let (path, folder, _) = refusal("f9/Mine.hoplodex", Need::DatabaseFolder);
+        assert_eq!(path, text(picked("f9/Mine.hoplodex")));
+        assert_eq!(folder, text(picked("f9")));
+    }
+
+    /// 011 T097: a Documents-portal path outside reach is no stored backup
+    /// location (the host folder is named, or the portal's when nothing
+    /// resolves), while a one-off write (an export) and a read keep it.
+    // Unix only: see above.
+    #[cfg(unix)]
+    #[test]
+    fn a_portal_path_outside_reach_is_refused_as_a_backup_folder_but_kept_for_a_one_off_write() {
+        let w = world_with(|root| {
+            by_document(vec![("f1", root.join("home/Guns")), ("f2", root.join("outside/Guns"))])
+        });
+        let picked = |tail: &str| PathBuf::from(format!("{DOCS}/{tail}"));
+
+        // Within reach it is the host path, as for a one-off write.
+        assert_eq!(
+            w.reach.check(&picked("f1/Guns"), Need::BackupFolder).unwrap(),
+            w.root.join("home/Guns")
+        );
+
+        // Outside every grant, or unresolved: refused with the folder the
+        // override would need.
+        let err = w.reach.check(&picked("f2/Guns"), Need::BackupFolder).unwrap_err();
+        assert_eq!(err.code, "LOCATION_OUT_OF_REACH");
+        assert_eq!(
+            err.details.as_ref().unwrap()["folder"],
+            w.root.join("outside/Guns").to_string_lossy().as_ref()
+        );
+        let err = w.reach.check(&picked("f9/Guns"), Need::BackupFolder).unwrap_err();
+        assert_eq!(err.code, "LOCATION_OUT_OF_REACH");
+
+        // The one-off write and the read keep the portal path.
+        for tail in ["f2/Guns", "f9/Guns"] {
+            assert_eq!(w.reach.check(&picked(tail), Need::WriteFolder).unwrap(), picked(tail));
+            assert_eq!(w.reach.check(&picked(tail), Need::ReadFile).unwrap(), picked(tail));
+        }
+
+        // A plain path is judged as a write folder is.
+        assert!(w.reach.check(&w.root.join("home/Backups"), Need::BackupFolder).is_ok());
+        for bad in ["ro/Backups", "outside/Backups"] {
+            let err = w.reach.check(&w.root.join(bad), Need::BackupFolder).unwrap_err();
+            assert_eq!(err.code, "LOCATION_OUT_OF_REACH", "{bad}");
+        }
+    }
+
+    // 011 T112: where /home links to /var/home (Fedora Silverblue) the grant
+    // names one and the user types the other.
+
+    /// `<tmp>/var/home/someone` (with `Archive` and `Private`), `<tmp>/home`
+    /// linking to `var/home`, a real `<tmp>/outside`, and `<tmp>/elsewhere/lnk`
+    /// linking into the home folder.
+    #[cfg(unix)]
+    struct Linked {
+        _dir: TempDir,
+        root: PathBuf,
+    }
+
+    #[cfg(unix)]
+    impl Linked {
+        fn new() -> Self {
+            let dir = TempDir::new().unwrap();
+            let root = std::fs::canonicalize(dir.path()).unwrap();
+            std::fs::create_dir_all(root.join("var/home/someone/Archive")).unwrap();
+            std::fs::create_dir_all(root.join("var/home/someone/Private")).unwrap();
+            std::fs::create_dir_all(root.join("outside")).unwrap();
+            std::fs::create_dir_all(root.join("elsewhere")).unwrap();
+            std::os::unix::fs::symlink(root.join("var/home"), root.join("home")).unwrap();
+            std::os::unix::fs::symlink(
+                root.join("var/home/someone/Archive"),
+                root.join("elsewhere/lnk"),
+            )
+            .unwrap();
+            std::os::unix::fs::symlink(root.join("outside"), root.join("var/home/someone/out"))
+                .unwrap();
+            Self { _dir: dir, root }
+        }
+
+        fn reach(&self, grant: &str, removed: &[&str]) -> Reach {
+            Reach::flatpak(
+                vec![Grant { root: self.root.join(grant), writable: true }],
+                removed.iter().map(|r| self.root.join(r)).collect(),
+                self.root.join(grant),
+                Arc::new(NoHostPaths),
+            )
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_through_a_link_above_the_grant_is_judged_against_the_grants_real_path() {
+        let l = Linked::new();
+        // The grant is where the sandbox sees the home folder; the user types
+        // the other spelling.
+        let reach = l.reach("var/home/someone", &[]);
+        assert!(reach.check(&l.root.join("home/someone"), Need::WriteFolder).is_ok());
+        for ok in [
+            "home/someone/a.hoplodex",
+            "home/someone/Archive/a.hoplodex",
+            "home/someone/new/deeper/a",
+        ] {
+            assert_eq!(
+                reach.check(&l.root.join(ok), Need::DatabaseFolder).unwrap(),
+                l.root.join(ok),
+                "{ok}"
+            );
+        }
+        assert!(reach.check(&l.root.join("home/someone/Archive"), Need::WriteFolder).is_ok());
+        assert!(reach.check(&l.root.join("home/someone/x.csv"), Need::ReadFile).is_ok());
+        // The other way round, and a grant that does not exist yet.
+        let by_link = l.reach("home/someone", &[]);
+        assert!(by_link.check(&l.root.join("var/home/someone/a/b"), Need::WriteFolder).is_ok());
+        let ghost = l.reach("var/home/ghost", &[]);
+        assert!(ghost.check(&l.root.join("home/ghost/x/a"), Need::DatabaseFolder).is_ok());
+
+        // Neighbours are still outside.
+        for bad in ["home/other/a", "home/someone2/a", "home/a", "outside/a", "home/../outside/a"] {
+            let err = reach.check(&l.root.join(bad), Need::DatabaseFolder).unwrap_err();
+            assert_eq!(err.code, "LOCATION_OUT_OF_REACH", "{bad}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_a_grant_is_still_judged_by_its_own_path_and_one_outside_is_not_followed() {
+        let l = Linked::new();
+        let reach = l.reach("var/home/someone", &[]);
+        // `out` links to `<tmp>/outside` from inside the grant: judged by its
+        // own path, as bwrap binds it (and as the unlinked case is).
+        assert_eq!(reach.access(&l.root.join("home/someone/out/real.txt")), Access::Writable);
+        // A link outside the grant that leads into it is not followed.
+        assert_eq!(reach.access(&l.root.join("elsewhere/lnk/a")), Access::None);
+        // Nor is the real path outside it reached through a link inside.
+        assert_eq!(reach.access(&l.root.join("outside/real.txt")), Access::None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_removed_folder_is_removed_whichever_way_it_is_spelled() {
+        let l = Linked::new();
+        let reach = l.reach("var/home/someone", &["var/home/someone/Private"]);
+        assert_eq!(reach.access(&l.root.join("home/someone/Archive/a")), Access::Writable);
+        assert_eq!(reach.access(&l.root.join("home/someone/Private/a")), Access::None);
+        assert_eq!(reach.access(&l.root.join("var/home/someone/Private/a")), Access::None);
+        let by_link = l.reach("home/someone", &["home/someone/Private"]);
+        assert_eq!(by_link.access(&l.root.join("var/home/someone/Private/a")), Access::None);
+        assert_eq!(by_link.access(&l.root.join("var/home/someone/Archive/a")), Access::Writable);
     }
 
     #[test]

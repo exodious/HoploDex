@@ -73,6 +73,20 @@ so it is not a user of `WriteFolder`; only `close_database`'s backup, a
 restore's and an upgrade's "before" backup (and `update_backup_settings` and
 `export_collection`) are. See contracts/tauri-commands.md._
 
+_Amended 2026-10-19 (011 T096): `ReadFile` accepts a path that is not a
+Documents-portal one only where a grant covers it, whether or not it exists in
+the sandbox, so a drop from outside reach is always refused (`011 FR-007` as
+written). A Documents-portal path is read as the table below says._
+
+_Amended 2026-10-19 (011 T097): a new `BackupFolder` need, for the folder
+backups are written to now and at every later close: `update_backup_settings`'
+custom location, `backups::check_location` (so the close's backup, the "before"
+backups and the upgrade's chosen folder), `list_backups`' and the settings'
+`available`. It is `WriteFolder` for a path that is not a Documents-portal one;
+for a Documents-portal path it is the host path when that is within a writable
+grant and refused otherwise (the table below). `WriteFolder` stays for
+`export_collection`'s destination, a one-off write._
+
 `Reach::check(&self, path: &Path, need: Need) -> Result<PathBuf, CommandError>`
 returns the path to use: the given one, or the host path a Documents-portal
 path stands for when that host path is within reach. It refuses with
@@ -94,6 +108,23 @@ file chooser. `Reach` resolves it through a `HostPaths` trait:
 | within a writable grant | host path | host path | host path |
 | within a read-only grant | refused | refused | host path |
 | outside every grant, or not resolved | refused | the portal path (writing inside a granted folder works) | the portal path |
+
+_Amended 2026-10-19 (011 T094, T095, T097): the host path of a path below the
+document is the document's host path with the rest below it joined on
+(`doc/<id>/<name>/sub/x` is `<host path>/sub/x`; `<name>` is the picked file or
+folder, whose host path `GetHostPaths` answers for), so a database inside a
+picked folder resolves below that folder. A refusal after a successful lookup
+names the host path and the host folder, so the override command names a folder
+that helps; the portal's own path and folder are named only when nothing
+resolves. A `BackupFolder` column is the `DatabaseFolder` one for a folder:
+the host path within a writable grant, otherwise refused._
+
+_Amended 2026-10-19 (011 T112): a path is compared with the grants after
+following the links in the grant roots and in the path's folders above them
+(`/home` linking to `/var/home` on Fedora Silverblue), so a typed
+`/home/<user>/…` is judged against a grant on `/var/home/<user>`. A link inside
+a grant is still judged by its own path, and a link outside that leads into one
+is not followed._
 
 ## IPC additions (camelCase; contracts/tauri-commands.md)
 

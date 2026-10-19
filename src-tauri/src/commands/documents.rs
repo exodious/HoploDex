@@ -345,7 +345,7 @@ pub async fn open_document(
 /// How the app's [`Opener`] hands a copy on, chosen once at startup from
 /// `Reach::is_flatpak()` (011 research.md §8).
 #[cfg(not(feature = "e2e"))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenerRoute {
     /// The platform's own launcher: `xdg-open` on Linux, `open` on macOS, the
     /// shell on Windows.
@@ -354,6 +354,25 @@ pub enum OpenerRoute {
     /// took the file. No answer within `timeout` counts as opened.
     #[cfg(target_os = "linux")]
     Portal { timeout: std::time::Duration },
+}
+
+/// How long the portal route waits for an answer before it counts the document
+/// as opened (a chooser may be waiting on the user).
+#[cfg(all(target_os = "linux", not(feature = "e2e")))]
+const PORTAL_ANSWER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The route this run hands a document on by: inside a Flatpak the OpenURI
+/// portal, which says whether an application took it, and anywhere else the
+/// platform's own launcher (011 research.md §8, 011 FR-008).
+#[cfg(not(feature = "e2e"))]
+pub fn opener_route(reach: &Reach) -> OpenerRoute {
+    #[cfg(target_os = "linux")]
+    if reach.is_flatpak() {
+        return OpenerRoute::Portal { timeout: PORTAL_ANSWER_TIMEOUT };
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = reach;
+    OpenerRoute::XdgOpen
 }
 
 /// The app's [`Opener`]: the platform's own launcher, or inside a Flatpak the
@@ -1050,7 +1069,7 @@ pub async fn delete_document(
 
 #[cfg(test)]
 mod tests {
-    use super::safe_stem;
+    use super::*;
 
     #[test]
     fn a_stored_name_becomes_a_safe_stem() {
@@ -1066,5 +1085,27 @@ mod tests {
         assert_eq!(safe_stem("trailing. .pdf"), "trailing");
         assert_eq!(safe_stem("CON.pdf"), "_CON");
         assert_eq!(safe_stem(&format!("{}.pdf", "x".repeat(300))).chars().count(), 100);
+    }
+
+    // 011 FR-008, 011 US1-7: the route is chosen once from the reach.
+    #[cfg(not(feature = "e2e"))]
+    #[test]
+    fn a_flatpak_hands_a_document_to_the_portal_and_an_unconfined_run_to_the_launcher() {
+        use super::{OpenerRoute, opener_route};
+        use crate::services::sandbox::UserDirs;
+
+        let home = Path::new("/home/someone");
+        let flatpak =
+            Reach::from_flatpak_info("[Context]\nfilesystems=home;\n", home, &UserDirs::default());
+        assert!(flatpak.is_flatpak());
+        assert_eq!(opener_route(&Reach::Unconfined), OpenerRoute::XdgOpen);
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            opener_route(&flatpak),
+            OpenerRoute::Portal { timeout: std::time::Duration::from_secs(5) }
+        );
+        // Only Linux has a Flatpak, and nowhere else is there a portal route.
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(opener_route(&flatpak), OpenerRoute::XdgOpen);
     }
 }

@@ -69,7 +69,7 @@ pub mod ops {
             })?,
             Target::At(path) => cached_backups_of(machine, Path::new(path))?,
         };
-        if session.reach().check(&folder, Need::WriteFolder).is_err() {
+        if session.reach().check(&folder, Need::BackupFolder).is_err() {
             return Ok(BackupList {
                 available: false,
                 unavailable_reason: Some(UnavailableReason::OutOfReach),

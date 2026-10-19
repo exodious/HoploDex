@@ -97,6 +97,17 @@ location out of reach does not stop it
 `close_database`'s backup and the "before" backups of `restore_backup` and
 `upgrade_database` check the backup folder._
 
+_Amended 2026-10-19 (011 T096, T097): `read_import_files`, `import_collection`,
+`add_photo_from_path`, `add_document_from_path`, `restore_backup` and
+`check_backup` (`ReadFile`) accept a path that is not a Documents-portal one only
+where a grant covers it, so a drop from outside reach is refused whether or not
+the file shows up in the sandbox. Every row above whose `Need` is `WriteFolder`
+and names a backup folder (`update_backup_settings`, `close_database`'s backup,
+the "before" backups, `list_backups`, and the upgrade's chosen folder) asks
+`BackupFolder` instead (data-model.md, "`Need`"): a Documents-portal path outside
+reach is refused there, with the override advice for its host folder, and is kept
+only for `export_collection`'s destination._
+
 `change_passphrase` and `restore_backup`'s replacement of the open database
 act on its own path, which `open_database` already found within reach in
 this run, so they check only the backup folder above. With nothing open,

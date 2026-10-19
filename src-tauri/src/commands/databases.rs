@@ -590,7 +590,7 @@ pub mod ops {
             |row| {
                 let location: String = row.get(2)?;
                 let folder = backups::resolve_folder(database_path, &location);
-                let out_of_reach = reach.check(&folder, Need::WriteFolder).is_err();
+                let out_of_reach = reach.check(&folder, Need::BackupFolder).is_err();
                 let (kind, exists) = if location == "default" {
                     // Made at the first backup, beside the database.
                     (BackupLocationKind::Default, folder.is_dir() || database_path.exists())
@@ -689,7 +689,7 @@ pub mod ops {
         let old_folder = backups::resolve_folder(&database_path, &old_location);
         let mut new_folder = backups::resolve_folder(&database_path, &location);
         if location != "default" && !backups::same_path(&old_folder, &new_folder) {
-            match reach.check(&new_folder, Need::WriteFolder) {
+            match reach.check(&new_folder, Need::BackupFolder) {
                 Ok(usable) => {
                     new_folder = usable;
                     location = new_folder.to_string_lossy().into_owned();
