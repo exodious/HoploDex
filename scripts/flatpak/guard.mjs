@@ -1,0 +1,160 @@
+// The host guard (011 US5-3, 011 SC-007; 011 research.md §15, §16): every
+// Flatpak script runs this first, through env.sh. `flatpak` on a host would use
+// the developer's own Flatpak installation, so the scripts run only
+//   - in the dev container started with `scripts/dev-container.sh --flatpak`, or
+//   - on a host, against a throwaway `FLATPAK_USER_DIR` (empty, or one this guard
+//     marked before) with `--i-know-this-is-a-host` passed.
+// `decide()` is a pure function of its inputs; the CLI at the bottom supplies the
+// real ones.
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** The dev container's hostname (CLAUDE.md, "Run tests in the dev container"). */
+export const CONTAINER_HOSTNAME = "hoplodex-dev";
+/** A file the dev container's Dockerfile creates; a host does not have it. */
+export const CONTAINER_MARKER_FILE = "/etc/hoplodex-dev-container";
+/** The file in a throwaway installation that says the guard accepted it. */
+export const MARKER_NAME = ".hoplodex-throwaway-flatpak";
+export const HOST_FLAG = "--i-know-this-is-a-host";
+
+const SYSTEM_INSTALLATION = "/var/lib/flatpak";
+
+/**
+ * @typedef {{
+ *   exists(p: string): boolean,
+ *   stat(p: string): "missing" | "directory" | "other",
+ *   readdir(p: string): string[],
+ *   realpath(p: string): string,
+ * }} Reader
+ */
+
+const refuse = (message) => ({ ok: false, message });
+
+/** Whether `a` is `b` or inside it. */
+function within(a, b) {
+  const rel = path.relative(b, a);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/**
+ * @param {{ env: Record<string, string | undefined>, hostname: string, argv: string[], home: string, fs: Reader }} inputs
+ * @returns {{ ok: true, flatpakUserDir: string, writeMarker: boolean } | { ok: false, message: string }}
+ */
+export function decide({ env, hostname, argv, home, fs: reader }) {
+  // All three of the container's markers; a host can share any one of them.
+  const inContainer =
+    env.HOPLODEX_DEV_CONTAINER === "1" &&
+    hostname === CONTAINER_HOSTNAME &&
+    reader.exists(CONTAINER_MARKER_FILE);
+
+  if (inContainer) {
+    if (!env.HOPLODEX_FLATPAK_STATE) {
+      return refuse(
+        "The dev container was started without Flatpak support. " +
+          "Run this through `scripts/dev-container.sh --flatpak <command>`.",
+      );
+    }
+    return {
+      ok: true,
+      flatpakUserDir: env.FLATPAK_USER_DIR || path.join(home, ".local/share/flatpak"),
+      writeMarker: false,
+    };
+  }
+
+  const hostHelp =
+    "This is not the dev container, and `flatpak` here would use your own Flatpak installation. " +
+    "Run it through `scripts/dev-container.sh --flatpak <command>`, or on a host set " +
+    `FLATPAK_USER_DIR to an empty or throwaway folder and pass ${HOST_FLAG}.`;
+
+  const given = env.FLATPAK_USER_DIR;
+  if (!given || !argv.includes(HOST_FLAG)) return refuse(hostHelp);
+
+  if (!path.isAbsolute(given)) {
+    return refuse(`FLATPAK_USER_DIR must be an absolute path, not "${given}".`);
+  }
+  const dir = reader.realpath(path.resolve(given));
+
+  const dataHome =
+    env.XDG_DATA_HOME && path.isAbsolute(env.XDG_DATA_HOME)
+      ? env.XDG_DATA_HOME
+      : path.join(home, ".local/share");
+  const realInstallations = [
+    path.join(home, ".local/share/flatpak"),
+    path.join(dataHome, "flatpak"),
+    SYSTEM_INSTALLATION,
+  ];
+  for (const real of realInstallations) {
+    for (const candidate of new Set([real, reader.realpath(real)])) {
+      // Inside it, or holding it, is as bad as it.
+      if (within(dir, candidate) || within(candidate, dir)) {
+        return refuse(
+          `FLATPAK_USER_DIR (${given}) is, resolves to, or holds a real Flatpak installation (${real}). ` +
+            "Name a different, empty folder.",
+        );
+      }
+    }
+  }
+
+  const kind = reader.stat(dir);
+  if (kind === "other") return refuse(`FLATPAK_USER_DIR (${given}) is not a folder.`);
+  if (kind === "directory") {
+    const entries = reader.readdir(dir);
+    if (entries.length > 0 && !entries.includes(MARKER_NAME)) {
+      return refuse(
+        `FLATPAK_USER_DIR (${given}) is not empty and was not made by these scripts (no ${MARKER_NAME} in it). ` +
+          "Name an empty folder.",
+      );
+    }
+  }
+  return { ok: true, flatpakUserDir: dir, writeMarker: true };
+}
+
+/** The real file system, for the CLI. A path that doesn't exist resolves through its nearest existing parent. */
+const realReader = {
+  exists: (p) => fs.existsSync(p),
+  stat: (p) => {
+    try {
+      return fs.statSync(p).isDirectory() ? "directory" : "other";
+    } catch {
+      return "missing";
+    }
+  },
+  readdir: (p) => fs.readdirSync(p),
+  realpath: (p) => {
+    const rest = [];
+    let current = path.resolve(p);
+    for (;;) {
+      try {
+        return path.join(fs.realpathSync(current), ...rest);
+      } catch {
+        const parent = path.dirname(current);
+        if (parent === current) return path.resolve(p);
+        rest.unshift(path.basename(current));
+        current = parent;
+      }
+    }
+  },
+};
+
+// The CLI: prints the accepted FLATPAK_USER_DIR on the first line and `marker` or
+// `no-marker` on the second (does the caller write the marker file); on a refusal
+// prints the message to stderr and exits 1.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const result = decide({
+    env: process.env,
+    hostname: os.hostname(),
+    argv: process.argv.slice(2),
+    home: os.homedir(),
+    fs: realReader,
+  });
+  if (!result.ok) {
+    process.stderr.write(`${result.message}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(
+    `${result.flatpakUserDir}\n${result.writeMarker ? "marker" : "no-marker"}\n`,
+  );
+}
