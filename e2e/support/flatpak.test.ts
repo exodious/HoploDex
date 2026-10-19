@@ -158,11 +158,16 @@ describe("011 FR-021 - the default E2E run never includes the Flatpak journey", 
   const named = (list: unknown) =>
     (Array.isArray(list) ? list.flat() : []).map(String).filter((s) => s.includes("flatpak.e2e"));
 
-  it("011 FR-021: the default list names no flatpak.e2e.ts and excludes it from the glob", async () => {
-    const { specs, exclude } = await config(false);
-    expect(named(specs)).toEqual([]);
-    expect(named(exclude)).toEqual(["./specs/flatpak.e2e.ts"]);
-  });
+  // The first test to import e2e/wdio.conf.ts pays for its cold import, which once passed Vitest's 5 s (011 T113).
+  it(
+    "011 FR-021: the default list names no flatpak.e2e.ts and excludes it from the glob",
+    { timeout: 60_000 },
+    async () => {
+      const { specs, exclude } = await config(false);
+      expect(named(specs)).toEqual([]);
+      expect(named(exclude)).toEqual(["./specs/flatpak.e2e.ts"]);
+    },
+  );
 
   it("011 FR-021: HOPLODEX_E2E_FLATPAK=1 runs only flatpak.e2e.ts, with one worker", async () => {
     const { specs, maxInstances } = await config(true);
