@@ -308,7 +308,8 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
         message: "The backup folder can't be used.",
         details: { path: FOLDER, reason: "outOfReach" },
       }),
-      "The database can't be backed up first, because this copy of HoploDex (a Flatpak) can't reach the backup location. Nothing has been changed.",
+      // 011 T100: names the folder and gives the override command, as the other refusals do.
+      "The database can't be backed up first, because the backup folder is out of reach. This copy of HoploDex can't reach this folder. It is a Flatpak, and the folder is outside the folders HoploDex can reach; by default, your home folder and removable drives. Choose a folder in your home folder or on a removable drive, or give HoploDex access to /home/sam/Documents/HoploDex/HoploDex backups by running: flatpak override --user --filesystem='/home/sam/Documents/HoploDex/HoploDex backups' io.github.exodious.HoploDex and then restarting HoploDex. Nothing has been changed.",
       true,
     ],
     [

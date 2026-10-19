@@ -205,6 +205,15 @@ function RestoreForm({
         });
         return;
       case "BACKUP_LOCATION_UNAVAILABLE": {
+        // A folder out of this copy's reach is named, with the override
+        // command, as the other refusals do (011 T100, 011 FR-004).
+        if (details.reason === "outOfReach" && typeof details.path === "string") {
+          setRefusal({
+            text: `The database can't be backed up first, because the backup folder is out of reach. ${outOfReachText("folder", details.path)} Nothing has been changed.`,
+            changeLocation: true,
+          });
+          return;
+        }
         const why =
           details.reason === "insufficientSpace"
             ? "there is not enough space there"

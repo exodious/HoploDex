@@ -28,8 +28,10 @@ describe("outOfReach wording (011 FR-004, 011 US1-8)", () => {
 
     expect(text).toContain(cant);
     expect(text).toContain(
-      "It is a Flatpak, and it can only reach your home folder and removable drives.",
+      "It is a Flatpak, and the folder is outside the folders HoploDex can reach; by default, your home folder and removable drives.",
     );
+    // 011 T099: the grants can be changed, so the flag never claims what is reachable.
+    expect(text).not.toContain("can only reach");
     expect(text).toContain(`${move} your home folder`);
     expect(text).toContain(
       "give HoploDex access to /srv/hoplodex by running: flatpak override --user --filesystem=/srv/hoplodex io.github.exodious.HoploDex and then restarting HoploDex.",

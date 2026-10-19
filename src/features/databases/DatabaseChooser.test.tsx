@@ -357,6 +357,58 @@ describe("DatabaseChooser (003 US2)", () => {
     expect(screen.queryByText("Not found at this location")).not.toBeInTheDocument();
   });
 
+  // 011 T098, 011 US1-8, 011 FR-004: a Locate the backend refuses (the file chosen is out of
+  // reach) says so in the row's line, not as an unhandled rejection, and leaves the row as it was.
+  it("shows a refused Locate's message in the row and leaves the entry where it was", async () => {
+    const user = userEvent.setup();
+    const found = "/srv/guns/Shared collection.hoplodex";
+    const message =
+      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /srv/guns/Shared collection.hoplodex. Move the file into your home folder or onto a removable drive, or give HoploDex access to /srv/guns by running: flatpak override --user --filesystem=/srv/guns io.github.exodious.HoploDex and then restarting HoploDex.";
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [main, { ...shared, available: false }] }),
+    );
+    vi.mocked(openFileDialog).mockResolvedValue(found);
+    vi.mocked(databasesService.locateDatabase).mockRejectedValue(
+      new CommandFailure({
+        code: "LOCATION_OUT_OF_REACH",
+        message,
+        details: { path: found, folder: "/srv/guns", grants: ["/home/sam"] },
+      }),
+    );
+    renderChooser();
+
+    await user.click(await screen.findByRole("button", { name: "Locate…" }));
+
+    const list = await screen.findByRole("list", { name: "Recent databases" });
+    const row = within(list).getAllByRole("listitem")[1];
+    expect(await within(row).findByText(message)).toBeInTheDocument();
+    expect(row).toHaveClass("hd-db-row--unavailable");
+    expect(within(row).getByRole("button", { name: "Locate…" })).toBeEnabled();
+    expect(screen.queryByLabelText("Passphrase for “Shared collection”")).not.toBeInTheDocument();
+  });
+
+  // 011 T098: the row is selected at the path the backend located, which may not be the one picked.
+  it("selects the path the backend located, not the one that was picked", async () => {
+    const user = userEvent.setup();
+    const picked = "/media/usb/link/Shared collection.hoplodex";
+    const located = "/media/usb/Shared collection.hoplodex";
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ recent: [main, { ...shared, available: false }] }),
+    );
+    vi.mocked(openFileDialog).mockResolvedValue(picked);
+    vi.mocked(databasesService.locateDatabase).mockResolvedValue({ ...shared, path: located });
+    renderChooser();
+
+    await user.click(await screen.findByRole("button", { name: "Locate…" }));
+
+    const field = await screen.findByLabelText("Passphrase for “Shared collection”");
+    await waitFor(() => expect(field).toHaveFocus());
+    const row = field.closest("li")!;
+    expect(row).toHaveAttribute("aria-current", "true");
+    expect(row).toHaveTextContent("/media/usb");
+    expect(row).not.toHaveTextContent("/link");
+  });
+
   it("removing a missing database takes it off the list", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
@@ -1498,12 +1550,6 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
         `there isn't enough free space (it needs ${formatBytes(needed)}; ${formatBytes(free)} is free)`,
       ],
       [
-        "outOfReach",
-        refusal("BACKUP_LOCATION_UNAVAILABLE", { path: BACKUPS, reason: "outOfReach" }),
-        BACKUPS,
-        "this copy of HoploDex (a Flatpak) can't reach that folder",
-      ],
-      [
         "UPGRADE_BACKUP_FAILED",
         refusal("UPGRADE_BACKUP_FAILED", { folder: BACKUPS }),
         BACKUPS,
@@ -1520,6 +1566,20 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
       expect(choose).toHaveClass("hd-button--primary");
       await waitFor(() => expect(choose).toHaveFocus());
       expect(within(asked).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    });
+
+    // 011 T100, 011 FR-004: names the folder and gives the override command, as the other
+    // refusals do, and still offers a folder of the user's choosing.
+    it("outOfReach: says the folder is out of reach, with the override command, and offers a folder", async () => {
+      await upgradeRefusedWith(
+        refusal("BACKUP_LOCATION_UNAVAILABLE", { path: BACKUPS, reason: "outOfReach" }),
+      );
+
+      const asked = await screen.findByRole("dialog", { name: "Save the backup somewhere else?" });
+      expect(asked).toHaveTextContent(
+        `HoploDex couldn't save the backup it makes before upgrading “Main collection” in ${BACKUPS}. This copy of HoploDex can't reach this folder. It is a Flatpak, and the folder is outside the folders HoploDex can reach; by default, your home folder and removable drives. Choose a folder in your home folder or on a removable drive, or give HoploDex access to ${BACKUPS} by running: flatpak override --user --filesystem='${BACKUPS}' io.github.exodious.HoploDex and then restarting HoploDex. You can save this one backup in a folder you choose instead, or cancel. “Main collection” isn't upgraded without a backup.`,
+      );
+      expect(within(asked).getByRole("button", { name: "Choose a folder…" })).toBeInTheDocument();
     });
 
     async function askedForAFolder() {

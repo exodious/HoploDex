@@ -2,10 +2,12 @@
  * The one frontend wording for a location this copy of HoploDex can't reach
  * (011 FR-004, 011 US1-8). The backend's `LOCATION_OUT_OF_REACH` message is
  * built from the same sentences (specs/011-flatpak/data-model.md, "Error
- * `LOCATION_OUT_OF_REACH`"); this file words the availability flags that
- * carry no message (`unavailableReason: "outOfReach"`, a close notice's
- * `failureReason: "outOfReach"`) from the path the UI already has, so the
- * error and the flags read alike (constitution III).
+ * `LOCATION_OUT_OF_REACH`"), and names the grants this copy has; this file
+ * words the availability flags that carry no message (`unavailableReason:
+ * "outOfReach"`, a close notice's `failureReason: "outOfReach"`, a backup
+ * location's `reason`) from the path the UI already has, so the error and the
+ * flags read alike (constitution III). The flags don't know the grants, so
+ * they say only what is true of any copy.
  */
 
 /** The Flatpak's application id, as `flatpak override` names it. */
@@ -42,15 +44,13 @@ export function outOfReachText(subject: OutOfReachSubject, folder: string): stri
     subject === "database"
       ? "Move the file into your home folder or onto a removable drive"
       : "Choose a folder in your home folder or on a removable drive";
-  return `${cant} It is a Flatpak, and it can only reach your home folder and removable drives. ${move}, or give HoploDex access to ${folder} by running: ${overrideCommand(folder)} and then restarting HoploDex.`;
+  // The grants can be changed (`flatpak override`), so this says what is true
+  // of any copy: the folder is outside what it can reach, and what that is by
+  // default (011 T099). The backend's message names the actual grants.
+  return `${cant} It is a Flatpak, and the folder is outside the folders HoploDex can reach; by default, your home folder and removable drives. ${move}, or give HoploDex access to ${folder} by running: ${overrideCommand(folder)} and then restarting HoploDex.`;
 }
 
 /** The reason a failed backup gives, as a clause in a sentence (the chooser's
  * "was not backed up: …" notice, a restore's "before" backup). */
 export const BACKUP_OUT_OF_REACH_REASON =
   "this copy of HoploDex (a Flatpak) can't reach the backup location";
-
-/** The reason a chosen folder can't hold the backup made before an upgrade,
- * as a clause in a sentence (009 contracts/ui.md §3). */
-export const FOLDER_OUT_OF_REACH_REASON =
-  "this copy of HoploDex (a Flatpak) can't reach that folder";

@@ -478,8 +478,21 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
       }),
     );
     if (typeof chosen !== "string") return;
+    setFailure(null);
     if (inRecentList(row.path)) {
-      const located = await databasesService.locateDatabase(row.path, chosen);
+      let located: Awaited<ReturnType<typeof databasesService.locateDatabase>>;
+      try {
+        located = await databasesService.locateDatabase(row.path, chosen);
+      } catch (error) {
+        // A file out of this copy's reach (a Flatpak) is refused with the
+        // message that says how to fix it; the row stays as it was (011 T098,
+        // 011 US1-8).
+        const message =
+          error instanceof CommandFailure ? error.message : `HoploDex couldn't use that file.`;
+        setFailure({ path: row.path, kind: "message", message, restore: false });
+        setAnnouncement(message);
+        return;
+      }
       setState(
         (current) =>
           current && {
@@ -489,6 +502,8 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
               .map((r) => (r.path === row.path ? located : r)),
           },
       );
+      // The path the backend recorded, which may not be the one picked.
+      select(located.path);
     } else {
       setPicked((current) =>
         current.map((r) =>
@@ -502,8 +517,8 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
             : r,
         ),
       );
+      select(chosen);
     }
-    select(chosen);
   }
 
   async function openAnotherFile() {
@@ -616,7 +631,10 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                           unavailableNote={
                             failed?.kind === "notFound"
                               ? `“${row.name}” is no longer at this location.`
-                              : undefined
+                              : // A refused Locate (011 T098).
+                                !row.available && failed?.kind === "message"
+                                ? failed.message
+                                : undefined
                           }
                           elsewhere={failed?.kind === "elsewhere" ? failed.elsewhere : undefined}
                           savedFailed={savedFailed.has(row.path)}

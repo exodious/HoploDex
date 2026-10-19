@@ -7,7 +7,7 @@ import { withIdlePaused } from "../session/useIdleActivity";
 import * as databasesService from "./databasesService";
 import type { BackupProblem } from "./backupProblem";
 import type { UpgradeProgress } from "./types";
-import { FOLDER_OUT_OF_REACH_REASON } from "./outOfReach";
+import { outOfReachText } from "./outOfReach";
 
 // The upgrade question, its progress and the choice of another folder for
 // its backup: the dialogs of 009 contracts/ui.md §1-§3.
@@ -144,20 +144,23 @@ export function UpgradeProgressDialog({ name, onCancel }: UpgradeProgressDialogP
   );
 }
 
+/** What follows "…in <folder>" in the dialog's description: a colon and the
+ * reason, or, for a folder out of this copy's reach, a sentence that names the
+ * folder and gives the override command (011 T100, 011 FR-004). */
 function reasonText(problem: BackupProblem): string {
   switch (problem.reason) {
     case "missing":
-      return "the folder isn't there; it may be on a drive that isn't connected";
+      return ": the folder isn't there; it may be on a drive that isn't connected.";
     case "notWritable":
-      return "HoploDex isn't allowed to save files there";
+      return ": HoploDex isn't allowed to save files there.";
     case "insufficientSpace":
       return problem.bytesNeeded !== undefined && problem.bytesAvailable !== undefined
-        ? `there isn't enough free space (it needs ${formatBytes(problem.bytesNeeded)}; ${formatBytes(problem.bytesAvailable)} is free)`
-        : "there isn't enough free space";
+        ? `: there isn't enough free space (it needs ${formatBytes(problem.bytesNeeded)}; ${formatBytes(problem.bytesAvailable)} is free).`
+        : ": there isn't enough free space.";
     case "outOfReach":
-      return FOLDER_OUT_OF_REACH_REASON;
+      return `. ${outOfReachText("folder", problem.folder)}`;
     case "failed":
-      return "saving it failed part way";
+      return ": saving it failed part way.";
   }
 }
 
@@ -207,7 +210,7 @@ export function UpgradeFolderDialog({
       open
       onOpenChange={(open) => !open && onCancel()}
       title="Save the backup somewhere else?"
-      description={`HoploDex couldn't save the backup it makes before upgrading ${quoted} in ${problem.folder}: ${reasonText(problem)}. You can save this one backup in a folder you choose instead, or cancel. ${quoted} isn't upgraded without a backup.`}
+      description={`HoploDex couldn't save the backup it makes before upgrading ${quoted} in ${problem.folder}${reasonText(problem)} You can save this one backup in a folder you choose instead, or cancel. ${quoted} isn't upgraded without a backup.`}
       bare
     >
       <form className="hd-dialog__form" onSubmit={(event) => void choose(event)} noValidate>
