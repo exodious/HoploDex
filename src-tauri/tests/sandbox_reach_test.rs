@@ -736,7 +736,7 @@ fn restore_backup_of_a_file_that_would_be_on_the_host_is_out_of_reach_not_missin
 
 /// 011 US1-8 (011 data-model.md "Need": `check_backup` reads the backup file): the
 /// look at a backup before a restore refuses one that would be on the host the
-/// same way, and reads nothing. (Added with T044-T048: the contract's table lists
+/// same way, and reads nothing. (Added with 011 T044-T048: the contract's table lists
 /// `check_backup` for `available`, but `BackupCheck` has no such field, so only the
 /// file check applies.)
 #[test]

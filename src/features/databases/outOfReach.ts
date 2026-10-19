@@ -11,7 +11,7 @@
 /** The Flatpak's application id, as `flatpak override` names it. */
 export const FLATPAK_APP_ID = "io.github.exodious.HoploDex";
 
-/** The command that gives this copy access to `folder` (data-model.md). */
+/** The command that gives this copy access to `folder` (011 data-model.md). */
 export function overrideCommand(folder: string): string {
   return `flatpak override --user --filesystem=${shellQuote(folder)} ${FLATPAK_APP_ID}`;
 }
