@@ -321,21 +321,22 @@ impl CommandError {
     /// 011 FR-004 (011 research.md §5): inside a Flatpak, a location the
     /// operation needs is outside what this copy may reach. `path` is the
     /// location as the user gave it, `folder` the folder that would need
-    /// access, `grants` what this copy can reach now. Never overridable:
-    /// `confirmedWarnings` has no effect on it.
-    pub fn out_of_reach(path: &Path, folder: &Path, grants: &[Grant]) -> Self {
+    /// access, `home` the user's home folder (the first of the shipped
+    /// grants, which a user may have replaced), `grants` what this copy can
+    /// reach now. Never overridable: `confirmedWarnings` has no effect on it.
+    pub fn out_of_reach(path: &Path, folder: &Path, home: &Path, grants: &[Grant]) -> Self {
         let roots: Vec<String> =
             grants.iter().map(|grant| grant.root.to_string_lossy().into_owned()).collect();
         // The shipped four are the home folder and the three removable-drive
-        // folders, each writable (the one grant that is not a removable-drive
-        // folder is the home folder). Any other set (one added, home removed,
-        // one made read-only) is the user's own, and is listed.
-        let removable = ["/media", "/run/media", "/mnt"];
-        let others = roots.iter().filter(|root| !removable.contains(&root.as_str())).count();
+        // folders, each writable, in any order. Any other set (one added, home
+        // removed or replaced, one made read-only) is the user's own, and is
+        // listed.
+        let home = home.to_string_lossy();
         let shipped = grants.len() == 4
             && grants.iter().all(|grant| grant.writable)
-            && others == 1
-            && removable.iter().all(|folder| roots.iter().any(|root| root == folder));
+            && [home.as_ref(), "/media", "/run/media", "/mnt"]
+                .iter()
+                .all(|shipped| roots.iter().any(|root| root == shipped));
         let reach = if shipped {
             "your home folder and removable drives".to_owned()
         } else if grants.is_empty() {
@@ -624,6 +625,8 @@ mod tests {
     use super::CommandError;
     use crate::services::sandbox::Grant;
 
+    const HOME: &str = "/home/someone";
+
     fn grant(root: &str, writable: bool) -> Grant {
         Grant { root: PathBuf::from(root), writable }
     }
@@ -631,7 +634,7 @@ mod tests {
     /// The four grants the manifest ships (011 research.md §4).
     fn shipped() -> Vec<Grant> {
         vec![
-            grant("/home/someone", true),
+            grant(HOME, true),
             grant("/media", true),
             grant("/run/media", true),
             grant("/mnt", true),
@@ -643,6 +646,7 @@ mod tests {
         let err = CommandError::out_of_reach(
             Path::new("/srv/guns/a.hoplodex"),
             Path::new("/srv/guns"),
+            Path::new(HOME),
             &shipped(),
         );
         assert_eq!(err.code, "LOCATION_OUT_OF_REACH");
@@ -663,6 +667,7 @@ mod tests {
         let err = CommandError::out_of_reach(
             Path::new("/srv/guns/a.hoplodex"),
             Path::new("/srv/guns"),
+            Path::new(HOME),
             &shipped(),
         );
         assert_eq!(
@@ -680,7 +685,12 @@ mod tests {
         let mut grants = shipped();
         grants.push(grant("/srv/archive", true));
         grants.push(grant("/data", false));
-        let err = CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), &grants);
+        let err = CommandError::out_of_reach(
+            Path::new("/x/y"),
+            Path::new("/x"),
+            Path::new(HOME),
+            &grants,
+        );
         assert!(
             err.message.starts_with(
                 "This copy of HoploDex is a Flatpak, and it can only reach `/home/someone`, \
@@ -708,7 +718,8 @@ mod tests {
     fn out_of_reach_lists_the_grants_for_any_set_but_the_shipped_four() {
         let short = "it can only reach your home folder and removable drives";
         let say = |grants: &[Grant]| {
-            CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), grants).message
+            CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), Path::new(HOME), grants)
+                .message
         };
         assert!(say(&shipped()).contains(short));
         // Home removed.
@@ -729,12 +740,65 @@ mod tests {
         assert!(!say(&swapped).contains(short));
     }
 
+    /// 011 FR-004: the home folder is the one the caller names, not whichever
+    /// grant is not a removable-drive folder. A user who replaced home with
+    /// `/srv` is not told "your home folder", and the shipped four are
+    /// recognised in any order.
+    #[test]
+    fn out_of_reach_names_the_shipped_four_by_the_home_folder_it_is_given() {
+        let short = "it can only reach your home folder and removable drives";
+        let replaced = vec![
+            grant("/srv", true),
+            grant("/media", true),
+            grant("/run/media", true),
+            grant("/mnt", true),
+        ];
+        let message = CommandError::out_of_reach(
+            Path::new("/x/y"),
+            Path::new("/x"),
+            Path::new(HOME),
+            &replaced,
+        )
+        .message;
+        assert!(!message.contains(short), "{message}");
+        assert!(
+            message.contains("it can only reach `/srv`, `/media`, `/run/media` and `/mnt`, so"),
+            "{message}"
+        );
+        // The same grants are the shipped four when /srv is the home folder.
+        let message = CommandError::out_of_reach(
+            Path::new("/x/y"),
+            Path::new("/x"),
+            Path::new("/srv"),
+            &replaced,
+        )
+        .message;
+        assert!(message.contains(short), "{message}");
+        // In any order.
+        let mut shuffled = shipped();
+        shuffled.reverse();
+        let message = CommandError::out_of_reach(
+            Path::new("/x/y"),
+            Path::new("/x"),
+            Path::new(HOME),
+            &shuffled,
+        )
+        .message;
+        assert!(message.contains(short), "{message}");
+    }
+
     /// 011 FR-004: the folder in the `flatpak override` command is one shell
     /// word; the other mentions of it are not quoted.
     #[test]
     fn out_of_reach_quotes_the_override_folder_only_when_a_shell_would_split_it() {
         let say = |folder: &str| {
-            CommandError::out_of_reach(Path::new("/x/y"), Path::new(folder), &shipped()).message
+            CommandError::out_of_reach(
+                Path::new("/x/y"),
+                Path::new(folder),
+                Path::new(HOME),
+                &shipped(),
+            )
+            .message
         };
         let message = say("/srv/my guns");
         assert!(message.contains("access to `/srv/my guns` by running"), "{message}");
@@ -746,7 +810,12 @@ mod tests {
 
     #[test]
     fn out_of_reach_carries_a_field_error_only_when_the_caller_adds_one() {
-        let err = CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), &shipped());
+        let err = CommandError::out_of_reach(
+            Path::new("/x/y"),
+            Path::new("/x"),
+            Path::new(HOME),
+            &shipped(),
+        );
         assert!(err.field_errors.is_none());
         let message = err.message.clone();
         let err = err.on_field("folder", message.clone());
@@ -759,7 +828,12 @@ mod tests {
     /// refusal with no warning code for a resend to confirm.
     #[test]
     fn out_of_reach_is_a_refusal_no_confirmation_overrides() {
-        let err = CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), &shipped());
+        let err = CommandError::out_of_reach(
+            Path::new("/x/y"),
+            Path::new("/x"),
+            Path::new(HOME),
+            &shipped(),
+        );
         assert!(!err.code.ends_with("_WARNING"), "{}", err.code);
         let json = serde_json::to_value(&err).unwrap();
         assert!(json["details"].get("confirmedWarnings").is_none());

@@ -1,0 +1,6 @@
+{
+  "io.github.exodious.Other": {
+    "finish-args-home-filesystem-access": "Needs the home folder (011 research.md §4, §5).",
+    "finish-args-login1-system-talk-name": "Needs logind (011 research.md §4, §6)."
+  }
+}

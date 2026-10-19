@@ -87,6 +87,8 @@ way (or whose folder can't even hold the write check's probe file) fails with
 
 _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#errors-added-and-amended): new codes `UPGRADE_NEEDED`, `UPGRADE_FAILED` and `UPGRADE_BACKUP_FAILED`; `DATABASE_NEWER_VERSION` gains `details.backupFolder` and the wording of 009 FR-018; `BACKUP_LOCATION_UNAVAILABLE`, `INSUFFICIENT_SPACE` and `OPERATION_STOPPED` also come from `upgrade_database`._
 
+_Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#errors-added-and-amended): inside a Flatpak, `BACKUP_LOCATION_UNAVAILABLE`'s `reason` also takes `"outOfReach"` (the custom backup location is outside what that copy may reach), with the message parts of the new `LOCATION_OUT_OF_REACH`, which `open_database`, `locate_database`, `restore_backup` and `check_backup` also return (011 FR-004). Elsewhere nothing changes._
+
 ---
 
 ## Shared types
@@ -103,6 +105,8 @@ type RecentDatabase = {
   changedSinceLeftAt: string | null; // FR-040: the file's modification time (ISO-8601 UTC)
                                 //  when later than the one recorded at this computer's last close
 };
+
+_Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#shared-types-amended): `RecentDatabase` also carries `unavailableReason?: "outOfReach"`, set only inside a Flatpak when `available` is false because the file's folder is outside what that copy may reach, so the row says so instead of "not found" (011 FR-004)._
 
 type BackupSummary = {          // FR-040, from the backup files' names at the cached backupFolder
   count: number;
@@ -133,6 +137,8 @@ type CollectionSettings = {
   };
   lock: { idleEnabled: boolean; idleMinutes: number; onScreenLock: boolean };   // 1–240
 };
+
+_Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#shared-types-amended): the backup `location` (`BackupLocation`) also carries `unavailableReason?: "outOfReach"`, set only inside a Flatpak when `available` is false because the custom folder is outside what that copy may reach (011 FR-004)._
 
 type PendingSummary = {
   formVersion: number;  // the frontend offers Resume only for a form version it knows
@@ -173,6 +179,8 @@ type CloseOutcome = {
   backup: "made" | "notDue" | "alreadyToday" | "off" | "skipped" | "failed" | "notAttempted";
   failureReason?: "locationUnavailable" | "insufficientSpace" | "io" | "databaseUnreachable"; // databaseUnreachable: research §6
 };
+
+_Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#shared-types-amended): `failureReason` also takes `"outOfReach"` inside a Flatpak, for a custom backup location outside what that copy may reach, as the outcome of a close, a lock or a quit (011 FR-004)._
 
 type BackupInfo = { path: string; fileName: string; madeAt: string; sizeBytes: number };
 
@@ -278,6 +286,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): s
 - **Input**: `{ enabled: boolean; keepCount: number; location: { kind: "default" } | { kind: "custom"; path: string }; existingBackups?: "move" | "leave" | "delete" }`
 - **Output**: `{ settings: CollectionSettings; existingBackups: ExistingBackupsOutcome | null }` (`null` when the location did not change, or the old folder held no backups; `{ action: "leave" }` after `leave` for an old folder that couldn't be read, whose backups weren't counted)
 - **Errors**: `VALIDATION_ERROR` (`fieldErrors.keepCount`, `fieldErrors.location`); for a changed location, `BACKUPS_AT_OLD_LOCATION` or `OLD_BACKUP_LOCATION_UNAVAILABLE` when `existingBackups` is missing (or, for an unreadable old folder, is not `leave`); for `move`, `BACKUP_LOCATION_UNAVAILABLE` and `INSUFFICIENT_SPACE`, checked before anything is written; for `delete`, `BACKUPS_NOT_ALL_DELETED`; `OPERATION_IN_PROGRESS`; `OPERATION_STOPPED` (`move` or `delete` stopped by a sleep)
+  _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#commands-that-check-reach): inside a Flatpak, a custom `location.path` that differs from the saved location is checked for reach before anything is written (an unchanged one writes nothing, so saving the other settings isn't stopped): `VALIDATION_ERROR` with `fieldErrors.location` set to the out-of-reach message, and for `move`, `BACKUP_LOCATION_UNAVAILABLE` with `reason: "outOfReach"` (011 FR-004)._
+
 - A collection change (FR-025). Lowering `keepCount` does not delete anything straight away; the next successful backup rotates.
 - **A changed location** (FR-026, research §22) is one whose resolved folder differs from the current one's. With backups of this database in the old folder, nothing is saved until the user has chosen:
   - `leave`: the settings are saved; the backups stay where they are and are no longer the database's.
@@ -321,6 +331,8 @@ sleep stops it (FR-037).
 - **Output**: `{ folder: string; available: boolean; backups: BackupInfo[] }` (newest first). `BackupInfo.madeAt` is the local time in the backup's name, without a zone (`2026-09-25T14:30:05`)
 - **Errors**: `NOT_FOUND` when `databasePath` is not in this computer's recent list, which is where its backup folder and id are cached
 
+  _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#shared-types-amended): the output (`BackupList`) also carries `unavailableReason?: "outOfReach"` when `available` is false because the backup folder is outside what a Flatpak may reach. That is not an error (011 FR-004)._
+
   _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#list_backups-amended-fr-013): each `BackupInfo` also carries `beforeUpgradeTo` (009 FR-013)._
 
 ### `restore_backup` 🔑
@@ -328,6 +340,8 @@ sleep stops it (FR-037).
 - **Output**: `DatabaseStatus` (the restored database is open), with `notes.restoredWithPassphraseOf` set
 - **Errors**: `PASSPHRASE_INCORRECT` (for the backup, checked on its first page before anything is copied), `DATABASE_DAMAGED` (the backup itself fails verification), `BACKUP_LOCATION_UNAVAILABLE` (checked before anything is written; not for a damaged database), `INSUFFICIENT_SPACE` (checked before anything is written: room for the restored copy in the database's folder and for the "before restoring" backup in the backup folder), `RESTORE_CANCELLED` (the "before restoring" backup failed), `NOT_FOUND` (the backup is gone), `REPLACE_FAILED` (the database is then closed, since the backend holds no passphrase for it: `session:closed` is emitted and the user opens it again), `OPERATION_STOPPED`
 - **Progress**: `restore:progress` `{ phase: "copying" | "checking" | "savingCurrent" | "replacing"; processed; total }`. The first `copying` event, with the total, is sent once the location and space checks have passed and before the backup's passphrase is checked, as for `change_passphrase`; a `PASSPHRASE_INCORRECT` refusal can follow it
+  _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#commands-that-check-reach): inside a Flatpak, `restore_backup` also fails with `LOCATION_OUT_OF_REACH` when the backup file is outside what that copy may reach (`ReadFile`), and, with nothing open, when `databasePath` is (`DatabaseFolder`), before the "before restoring" backup or any scratch file; its "before" backup into an out-of-reach custom folder stops the restore with `BACKUP_LOCATION_UNAVAILABLE` and `reason: "outOfReach"`. `check_backup` checks only the backup file (`ReadFile`; `BackupCheck` has no folder to report) (011 FR-004)._
+
 - Steps in research §8. `savingCurrent` is the "before restoring" backup, made whatever the once-a-day limit says and even when automatic backups are off (FR-028); if it fails or is stopped, the restore is abandoned and the database is unchanged. A damaged database is renamed aside, not deleted, and its new path is returned in `notes.damagedFileKeptAt`.
 
   _Amended 2026-10-09 ([#62](https://github.com/exodious/HoploDex/issues/62)): with `databasePath`, the backend authorizes the target itself and no longer takes the web view's word for it. `databasePath` must be in this computer's recent list (as for `list_backups`), else `NOT_FOUND`. `backupPath` must be in that entry's cached backup folder, and the database id stored inside the backup (read when its passphrase is checked) must be the entry's cached one, else `VALIDATION_ERROR` with `fieldErrors.backupPath`. An entry `locate_database` re-pointed and that hasn't opened at its new path since is refused with `VALIDATION_ERROR` and `fieldErrors.databasePath`. What is at `databasePath` must be a regular file or nothing, never a symlink (not followed), a directory or anything else, else `VALIDATION_ERROR` with `fieldErrors.databasePath`; it is checked before anything is closed and again right before it is renamed aside, and what was renamed is checked after, so a swap in between is put back and refused with `REPLACE_FAILED`, as is a `damaged` name that is already taken. No refusal changes a file. The frontend needs no new code: the dialog only offers the listed backups and shows the message of any other refusal._

@@ -388,7 +388,11 @@ impl Reach {
     }
 
     fn refuse(&self, path: &Path, folder: &Path) -> CommandError {
-        CommandError::out_of_reach(path, folder, self.grants())
+        let home = match self {
+            Self::Unconfined => Path::new(""),
+            Self::Flatpak { home, .. } => home.as_path(),
+        };
+        CommandError::out_of_reach(path, folder, home, self.grants())
     }
 }
 

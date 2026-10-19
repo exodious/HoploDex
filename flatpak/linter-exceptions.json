@@ -1,0 +1,6 @@
+{
+  "io.github.exodious.HoploDex": {
+    "finish-args-home-filesystem-access": "HoploDex keeps databases, the backups beside them, typed locations, imports and exports anywhere in the home folder, so it needs --filesystem=home (011 research.md §4, §5; 011 FR-003).",
+    "finish-args-login1-system-talk-name": "HoploDex locks and closes before sleep and shutdown through logind's sleep and shutdown notices and its delay inhibitor, so it needs --system-talk-name=org.freedesktop.login1 (011 research.md §4, §6; 011 FR-005)."
+  }
+}

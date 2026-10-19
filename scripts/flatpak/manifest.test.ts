@@ -435,3 +435,128 @@ describe("011 US5-2 - the check manifest differs from the shipped one only where
     ]);
   });
 });
+
+// 011 FR-025, 011 FR-026, 011 US4-5; 011 research.md §4, §14. flathub.json
+// keeps the file x86-64 only for a later submission; the linter's exceptions
+// file holds exactly the two warnings research.md §4 keeps, each with its
+// reason. The format is the linter's own for local exceptions
+// ({ "<app id>": { "<rule id>": "<reason>" } }), confirmed on the first
+// real run (011 T066).
+const APP_ID = "io.github.exodious.HoploDex";
+const KEPT_EXCEPTIONS = ["finish-args-home-filesystem-access", "finish-args-login1-system-talk-name"];
+
+function loadJson(file: string): unknown {
+  if (!fs.existsSync(file)) {
+    throw new Error(`${path.relative(ROOT, file)} does not exist yet`);
+  }
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+const fixtureJson = (name: string, file: string) =>
+  loadJson(path.join(HERE, "fixtures", name, file));
+
+/** flathub.json's problems (011 FR-025). */
+function flathubProblems(flathub: unknown): string[] {
+  const problems: string[] = [];
+  const object = flathub && typeof flathub === "object" ? (flathub as Record<string, unknown>) : {};
+  for (const key of Object.keys(object)) {
+    if (key !== "only-arches") problems.push(`flathub.json: the key ${key} is not allowed`);
+  }
+  if (JSON.stringify(object["only-arches"]) !== JSON.stringify(["x86_64"])) {
+    problems.push(`flathub.json: only-arches must be ["x86_64"], it is ${show(object["only-arches"])}`);
+  }
+  return problems;
+}
+
+/** linter-exceptions.json's problems (011 FR-026). */
+function linterExceptionsProblems(exceptions: unknown): string[] {
+  const problems: string[] = [];
+  const top = exceptions && typeof exceptions === "object" ? (exceptions as Record<string, unknown>) : {};
+  for (const app of Object.keys(top)) {
+    if (app !== APP_ID) problems.push(`linter-exceptions.json: the app id ${app} is not ${APP_ID}`);
+  }
+  const own = top[APP_ID];
+  if (!own || typeof own !== "object") {
+    problems.push(`linter-exceptions.json: there is no entry for ${APP_ID}`);
+    return problems;
+  }
+  const rules = own as Record<string, unknown>;
+  for (const rule of Object.keys(rules)) {
+    if (!KEPT_EXCEPTIONS.includes(rule)) {
+      problems.push(`linter-exceptions.json: the exception ${rule} is not one research.md §4 keeps`);
+    }
+  }
+  for (const rule of KEPT_EXCEPTIONS) {
+    const reason = rules[rule];
+    if (reason === undefined) {
+      problems.push(`linter-exceptions.json: the exception ${rule} is missing`);
+    } else if (typeof reason !== "string" || reason.trim() === "") {
+      problems.push(`linter-exceptions.json: the exception ${rule} has no reason`);
+    } else if (!/research\.md §4/.test(reason)) {
+      problems.push(`linter-exceptions.json: the reason for ${rule} does not cite research.md §4`);
+    }
+  }
+  return problems;
+}
+
+describe("011 US4-5 - flathub.json and the linter's exceptions", () => {
+  it("011 FR-025: the real flathub.json is exactly only-arches x86_64", () => {
+    const flathub = loadJson(path.join(ROOT, "flatpak", "flathub.json"));
+    expect(flathub).toEqual({ "only-arches": ["x86_64"] });
+    expect(flathubProblems(flathub)).toEqual([]);
+  });
+
+  it("011 FR-026: the real exceptions file holds exactly the two kept exceptions, each with a reason citing research.md §4", () => {
+    const exceptions = loadJson(path.join(ROOT, "flatpak", "linter-exceptions.json"));
+    expect(linterExceptionsProblems(exceptions)).toEqual([]);
+    expect(Object.keys(exceptions as object)).toEqual([APP_ID]);
+    expect(Object.keys((exceptions as Record<string, object>)[APP_ID]).sort()).toEqual(KEPT_EXCEPTIONS);
+  });
+
+  it("passes the valid fixtures", () => {
+    expect(flathubProblems(fixtureJson("flathub-ok", "flathub.json"))).toEqual([]);
+    expect(linterExceptionsProblems(fixtureJson("linter-ok", "linter-exceptions.json"))).toEqual([]);
+  });
+
+  it("fails a flathub.json that adds an architecture, naming only-arches", () => {
+    expect(flathubProblems(fixtureJson("flathub-extra-arch", "flathub.json"))).toEqual([
+      'flathub.json: only-arches must be ["x86_64"], it is ["x86_64","aarch64"]',
+    ]);
+  });
+
+  it("fails a flathub.json with another key, naming it", () => {
+    expect(flathubProblems(fixtureJson("flathub-extra-key", "flathub.json"))).toEqual([
+      "flathub.json: the key skip-icons-check is not allowed",
+    ]);
+  });
+
+  it("fails a third exception, naming it", () => {
+    expect(
+      linterExceptionsProblems(fixtureJson("linter-third-exception", "linter-exceptions.json")),
+    ).toEqual([
+      "linter-exceptions.json: the exception finish-args-flatpak-spawn-access is not one research.md §4 keeps",
+    ]);
+  });
+
+  it("fails an empty reason, naming the exception", () => {
+    expect(
+      linterExceptionsProblems(fixtureJson("linter-empty-reason", "linter-exceptions.json")),
+    ).toEqual(["linter-exceptions.json: the exception finish-args-home-filesystem-access has no reason"]);
+  });
+
+  it("fails a reason that does not cite research.md §4, naming the exception", () => {
+    expect(
+      linterExceptionsProblems(fixtureJson("linter-no-citation", "linter-exceptions.json")),
+    ).toEqual([
+      "linter-exceptions.json: the reason for finish-args-login1-system-talk-name does not cite research.md §4",
+    ]);
+  });
+
+  it("fails exceptions under another app id", () => {
+    expect(
+      linterExceptionsProblems(fixtureJson("linter-wrong-app", "linter-exceptions.json")),
+    ).toEqual([
+      `linter-exceptions.json: the app id io.github.exodious.Other is not ${APP_ID}`,
+      `linter-exceptions.json: there is no entry for ${APP_ID}`,
+    ]);
+  });
+});
