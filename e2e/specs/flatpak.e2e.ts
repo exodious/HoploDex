@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -70,16 +71,38 @@ describe("011 US5 - The Flatpak Is Tested in Its Sandbox, Away From Real Data", 
       await $(".hd-chooser__title").waitForExist({ timeout: 10000 });
       return performance.now() - started;
     }
+    /**
+     * What a `.deb` install pays before it starts that the `e2e` build in this
+     * container doesn't: the WebKit sandbox probe (src-tauri/src/services/
+     * preview/sandbox_probe.rs), which a container skips and the Flatpak runs.
+     * Milliseconds for one run of it, forced on as the app does.
+     */
+    function probeMilliseconds(): number {
+      const started = performance.now();
+      const probe = spawnSync(application, ["--webkit-sandbox-probe"], {
+        env: { ...process.env, WEBKIT_FORCE_SANDBOX: "1" },
+        stdio: "ignore",
+        timeout: 10000,
+      });
+      if (probe.status !== 0) {
+        throw new Error(`the WebKit sandbox probe outside the sandbox exited with ${probe.status}`);
+      }
+      return performance.now() - started;
+    }
     const flatpak = flatpakLauncher();
     // One start of each, not timed, so both find the programs and libraries
     // in the file cache; then one of each, timed.
     await startToChooser(binaryLauncher);
     await startToChooser(flatpak);
-    const outside = await startToChooser(binaryLauncher);
+    // The probe runs before the app starts, so outside the sandbox it adds to
+    // the start as a `.deb` would have it (011 research.md §18).
+    const probe = probeMilliseconds();
+    const outside = (await startToChooser(binaryLauncher)) + probe;
     const inside = await startToChooser(flatpak);
     console.log(
       `cold start to the chooser: Flatpak ${Math.round(inside)} ms, ` +
-        `outside the sandbox ${Math.round(outside)} ms, ` +
+        `outside the sandbox ${Math.round(outside)} ms ` +
+        `(including a ${Math.round(probe)} ms WebKit sandbox probe), ` +
         `difference ${Math.round(inside - outside)} ms`,
     );
     expect(inside - outside).toBeLessThanOrEqual(1000);

@@ -235,6 +235,11 @@ share/licenses/io.github.exodious.HoploDex/NOTICES.txt
 
 plus what `flatpak build-finish` itself adds (`manifest.json`, the
 exported copies under `export/`). Any other path fails the check, naming it.
+
+_Amended 2026-10-19 (011 T024): flatpak-builder's appstream compose also adds
+`share/app-info/xmls/io.github.exodious.HoploDex.xml.gz` and
+`share/app-info/icons/flatpak/{48x48,64x64,128x128}/io.github.exodious.HoploDex.png`,
+which `scripts/flatpak/contents.mjs` allows by name._
 `readelf -d bin/hoplodex`'s `NEEDED` libraries must each be found in the
 runtime (FR-018).
 

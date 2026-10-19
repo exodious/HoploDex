@@ -14,7 +14,7 @@
 //! works (011 research.md §9).
 
 use std::{
-    ffi::{c_int, c_void},
+    ffi::{CStr, c_int, c_void},
     path::Path,
     process::{Command, Stdio},
     time::{Duration, Instant},
@@ -28,6 +28,32 @@ use webkit2gtk::glib::{
 /// The argument that makes `main()` run [`run_child`] instead of the app,
 /// checked before anything else, as the render helper's is.
 pub const ARGUMENT: &str = "--webkit-sandbox-probe";
+
+/// The application id WebKit names its sandboxed web processes after (Tauri's
+/// bundle identifier, which is the Flatpak's app id).
+const APPLICATION_ID: &CStr = c"io.github.exodious.HoploDex";
+
+/// Gives the process a default `GApplication` with [`APPLICATION_ID`], never
+/// registered or run. WebKit names a sandboxed web process's accessibility bus
+/// name after the default application's id, or, with none, after a hash, and
+/// the Flatpak portal behind `flatpak-spawn --sandbox` refuses a name that
+/// doesn't start with the Flatpak's app id ("Invalid sandbox a11y own name"),
+/// which ended the app at its first web view once the probe passed. Tauri's
+/// own GTK application (tao's) has no id unless the config sets
+/// `enableGTKAppId`, which would also make a second HoploDex on the same
+/// session bus hand over to the first and exit (tao), so this stands in for
+/// it. Call it before tao creates its application, which then isn't the
+/// default (011 research.md §9, 011 FR-011).
+///
+/// # Safety
+/// Call it from `main()` before it starts a thread, or in the probe child.
+unsafe fn name_default_application() {
+    // SAFETY: GIO's C API; the application lives for the process.
+    unsafe {
+        let application = webkit2gtk::gio::ffi::g_application_new(APPLICATION_ID.as_ptr(), 0);
+        webkit2gtk::gio::ffi::g_application_set_default(application);
+    }
+}
 
 /// This process's own executable, as the kernel has it.
 const SELF_EXE: &str = "/proc/self/exe";
@@ -94,7 +120,8 @@ pub fn decide(markers: &[&Path], probe: impl FnOnce() -> ProbeOutcome) -> WebKit
 
 /// Runs the probe where the app starts: decides for this computer, and when
 /// the sandbox works sets `WEBKIT_FORCE_SANDBOX=1` for this process (and so
-/// for every web view it makes). Call it first in `main()`, before any
+/// for every web view it makes) and names its default application
+/// ([`name_default_application`]). Call it first in `main()`, before any
 /// thread and before Tauri.
 pub fn decide_and_apply() -> WebKitSandbox {
     let markers: Vec<&Path> = SKIP_MARKERS.iter().map(Path::new).collect();
@@ -102,7 +129,10 @@ pub fn decide_and_apply() -> WebKitSandbox {
     if matches!(decision, WebKitSandbox::On) {
         // SAFETY: called from `main()` before it starts a thread, so nothing
         // else reads or writes the environment.
-        unsafe { std::env::set_var("WEBKIT_FORCE_SANDBOX", "1") };
+        unsafe {
+            std::env::set_var("WEBKIT_FORCE_SANDBOX", "1");
+            name_default_application();
+        }
     }
     decision
 }
@@ -183,6 +213,9 @@ pub fn run_child_probe() -> ! {
         if gtk_init_check(std::ptr::null_mut(), std::ptr::null_mut()) == 0 {
             std::process::exit(2);
         }
+        // The app names its default application the same way when the probe
+        // passes ([`decide_and_apply`]), so the probe must too.
+        name_default_application();
         let view = webkit2gtk::ffi::webkit_web_view_new();
         let main_loop = g_main_loop_new(std::ptr::null_mut(), 0);
         let probe = Box::into_raw(Box::new(Probe { main_loop }));

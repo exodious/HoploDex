@@ -806,6 +806,64 @@ check, just as one with the WebDriver server does.
 WebDriver drives only the main web view. What goes on inside the PDF surface,
 a child web view, is the PDF surface check's.
 
+### The Flatpak check
+
+`npm run test:flatpak` builds the Flatpak's check variant, installs it into the
+dev container's Flatpak installation and drives it through WebDriver in its
+sandbox (`011 US5-1`, `011 FR-021`, `011 FR-023`; the reasons are in
+[011's research.md §15, §16 and §18](specs/011-flatpak/research.md)). It runs
+only in the dev container started with `--flatpak`, after `npm run build`, and
+**ordinary test runs skip it**:
+
+```bash
+scripts/dev-container.sh --flatpak bash -c 'npm run build && npm run test:flatpak'
+scripts/dev-container.sh --flatpak bash -c 'npm run build && npm run test:flatpak -- --fresh-install'
+```
+
+What it does, in order:
+
+1. Removes any HoploDex build already installed (`npm run bundle:flatpak`
+   leaves the shipped one there) and notes which apps the installation lists.
+2. Builds the check variant offline and installs it. It is the shipped manifest
+   with only the `e2e` cargo feature and profile changed, so it runs with the
+   permissions the Flatpak ships with (`manifest.test.ts` compares the two).
+3. Starts a private session bus and stand-ins for the Secret Service, both
+   screen savers, the OpenURI portal and a name the manifest does not grant,
+   and a stand-in logind on the private system bus. From inside the sandbox it
+   shows that each granted name answers, that logind's `Inhibit` returns a
+   descriptor through the bus proxy, and that the name not granted is refused
+   while it answers outside the sandbox.
+4. Shows the shipped permissions have no network: it listens on the container's
+   own non-loopback address, then a `python3` run in the sandbox without
+   `--share=network` sees only the loopback interface and cannot connect to it.
+5. Builds the `e2e` binary outside the sandbox and runs
+   `e2e/specs/flatpak.e2e.ts` (`HOPLODEX_E2E_FLATPAK=1`), whose journeys run the
+   check variant with the run's throwaway home, buses and stand-ins, and add
+   `--share=network` only for the WebDriver port. One of its tests prints the
+   cold start to the chooser for the Flatpak and for the `e2e` build outside it
+   and fails on a difference over a second (`011 SC-006`).
+6. Uninstalls the check variant whatever happened, and fails unless the
+   installation lists the same apps as at the start.
+
+Its logs are in `flatpak/out/check/` (`check.log`, one per stand-in and per app
+start). `--fresh-install` is not implemented yet (`011 tasks.md T067`) and the
+script rejects it.
+
+Run it before each release and for a pull request that changes any of these
+paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,
+`e2e/specs/flatpak.e2e.ts`, `e2e/support/flatpak.ts`,
+`src-tauri/src/platform/linux.rs`, `src-tauri/src/main.rs`,
+`src-tauri/src/app_dirs.rs`, `src-tauri/src/session/lifecycle.rs`; under
+`src-tauri/src/services/`: `sandbox.rs`, `keyring.rs`, `file_swap.rs`,
+`backups.rs`, `scratch.rs`, `helper/`, `import_reader/`, `preview/helper.rs`,
+`preview/sandbox_probe.rs`; under `src-tauri/src/commands/`: `databases.rs`,
+`backups.rs`, `import_export.rs`, `documents.rs`, `photos.rs`; and
+`src/features/media/useFileDrop.ts`.
+
+It never touches your Flatpak installation, your `~/.var/app`, your buses or
+your keyring: the container has its own (`011 SC-007`), and the script refuses
+anywhere else (the guard described under "Flatpak" above).
+
 ### E2E files
 
 An E2E file is named for the area of the app whose setup its tests share
@@ -820,6 +878,11 @@ the story's heading exactly. To find a story's tests,
 `grep -rl '"006 US2 -' e2e/specs`. A title that ends in `(was us9-locking)`
 gives the file's name before #121, when a `usN` number, unrelated to the
 specs' story numbers, began every name.
+
+`flatpak.e2e.ts` is the exception: it has its own setup (the container's Flatpak
+installation, private buses and stand-in services, `support/flatpak.ts`) and
+runs only under `npm run test:flatpak`; `wdio.conf.ts` excludes it from every
+other run and runs nothing else under `test:flatpak`.
 
 A new journey goes into a new `describe()` in the existing file whose setup
 it shares (the same seed, the same databases, the same relaunch or idle-lock

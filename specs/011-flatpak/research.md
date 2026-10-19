@@ -459,6 +459,17 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     sandbox fails, apart from the network, which the `.deb` has.
   - **007 research.md §9** gets an amendment note pointing here (plan.md,
     Project Structure).
+  _Amended 2026-10-19 (011 T034): the probe child and the app both need a
+  default `GApplication` with the app id (`sandbox_probe::
+  name_default_application`). WebKit names a sandboxed web process's
+  accessibility bus name after it, or after a hash when there is none, and the
+  Flatpak portal behind `flatpak-spawn --sandbox` refuses a name that doesn't
+  start with the Flatpak's app id ("Invalid sandbox a11y own name"). Without
+  it the probe aborted after 2 s (sandbox off) and, once it passed, the app
+  itself died at its first web view. Tauri's `enableGTKAppId` would give tao's
+  application the id, but tao then makes a second HoploDex on the same session
+  bus exit at once, so a stand-in application is made instead. The probe takes
+  about 470 ms in the sandbox, against 270 ms without WebKit's sandbox._
 - **Rationale**: FR-011, as amended, and 007 FR-004: where the computer
   offers a sandbox and HoploDex finds it works, the preview runs in it.
 - **Alternatives considered**: keeping it off in Flatpak (007's earlier
@@ -791,6 +802,11 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
   the `e2e` build outside it in the same container, and the pull request
   records both against SC-006's one second. A difference over a second
   fails the check.
+  _Amended 2026-10-19 (011 T034): the container skips the probe, so the
+  outside figure adds one run of the probe, forced on as the app does, to
+  model a `.deb` on a desktop. Unfair to neither: the first run of the check
+  measured 2190 ms against 395 ms with the probe failing slowly (see §9's
+  amendment), and 863 ms against 392 ms without the probe added._
 
 ## §19 What a Flathub submission would still need (FR-026)
 
