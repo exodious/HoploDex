@@ -10,6 +10,17 @@ describe("outOfReach wording (011 FR-004, 011 US1-8)", () => {
   });
 
   it.each([
+    ["a folder with a space", "/media/sam/My Drive", "'/media/sam/My Drive'"],
+    ["a single quote", "/srv/Sam's guns", "'/srv/Sam'\\''s guns'"],
+    ["a dollar sign and a double quote", '/srv/$HOME/"x"', `'/srv/$HOME/"x"'`],
+    ["a backslash and a semicolon", "/srv/a\\b;rm", "'/srv/a\\b;rm'"],
+  ])("quotes %s so a shell reads the folder as one word", (_name, folder, quoted) => {
+    expect(overrideCommand(folder)).toBe(
+      `flatpak override --user --filesystem=${quoted} io.github.exodious.HoploDex`,
+    );
+  });
+
+  it.each([
     ["database", "This copy of HoploDex can't reach this database's folder.", "Move the file into"],
     ["folder", "This copy of HoploDex can't reach this folder.", "Choose a folder in"],
   ] as const)("says what can't be reached, and both fixes, for a %s", (subject, cant, move) => {

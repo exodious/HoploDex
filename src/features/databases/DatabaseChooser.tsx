@@ -188,7 +188,9 @@ function shownNotices(notices: ChooserNotice[], firstId: number): ShownNotice[] 
     // is open again.
     const changeLocation =
       notice.kind === "backupFailed" &&
-      (notice.reason === "locationUnavailable" || notice.reason === "insufficientSpace");
+      (notice.reason === "locationUnavailable" ||
+        notice.reason === "insufficientSpace" ||
+        notice.reason === "outOfReach");
     const name = databaseNameOf(notice.databasePath);
     return text ? [{ id: firstId + index, text, name, changeLocation }] : [];
   });
@@ -285,10 +287,20 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
 
   const rows = useMemo<ChooserRow[]>(() => {
     const known: ChooserRow[] = (state?.recent ?? []).map(
-      ({ path, name, available, passphraseSaved, lastOpenedAt, backups, changedSinceLeftAt }) => ({
+      ({
         path,
         name,
         available,
+        unavailableReason,
+        passphraseSaved,
+        lastOpenedAt,
+        backups,
+        changedSinceLeftAt,
+      }) => ({
+        path,
+        name,
+        available,
+        unavailableReason,
         passphraseSaved,
         details: { lastOpenedAt, backups, changedSinceLeftAt },
       }),

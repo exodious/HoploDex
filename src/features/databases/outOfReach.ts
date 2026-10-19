@@ -13,7 +13,15 @@ export const FLATPAK_APP_ID = "io.github.exodious.HoploDex";
 
 /** The command that gives this copy access to `folder` (data-model.md). */
 export function overrideCommand(folder: string): string {
-  return `flatpak override --user --filesystem=${folder} ${FLATPAK_APP_ID}`;
+  return `flatpak override --user --filesystem=${shellQuote(folder)} ${FLATPAK_APP_ID}`;
+}
+
+/** `text` as one POSIX shell word, so the command works if pasted: as is when
+ * every character is plain, else in single quotes with each embedded single
+ * quote written `'\''`. */
+function shellQuote(text: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
 /** What the thing out of reach is: a database file (named by its folder) or a

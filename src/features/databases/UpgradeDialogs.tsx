@@ -7,6 +7,7 @@ import { withIdlePaused } from "../session/useIdleActivity";
 import * as databasesService from "./databasesService";
 import type { BackupProblem } from "./backupProblem";
 import type { UpgradeProgress } from "./types";
+import { FOLDER_OUT_OF_REACH_REASON } from "./outOfReach";
 
 // The upgrade question, its progress and the choice of another folder for
 // its backup: the dialogs of 009 contracts/ui.md §1-§3.
@@ -153,6 +154,8 @@ function reasonText(problem: BackupProblem): string {
       return problem.bytesNeeded !== undefined && problem.bytesAvailable !== undefined
         ? `there isn't enough free space (it needs ${formatBytes(problem.bytesNeeded)}; ${formatBytes(problem.bytesAvailable)} is free)`
         : "there isn't enough free space";
+    case "outOfReach":
+      return FOLDER_OUT_OF_REACH_REASON;
     case "failed":
       return "saving it failed part way";
   }

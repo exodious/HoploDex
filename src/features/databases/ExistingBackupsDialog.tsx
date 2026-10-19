@@ -4,6 +4,7 @@ import { Button, ChoiceCards, ConfirmDialog, Dialog, ProgressBar } from "../../c
 import { formatBytes } from "../../lib/bytes";
 import { CommandFailure } from "../../services/tauriClient";
 import * as databasesService from "./databasesService";
+import { outOfReachText } from "./outOfReach";
 import type {
   BackupSettingsSaved,
   CountProgress,
@@ -155,7 +156,11 @@ function Question({
         );
         return;
       case "BACKUP_LOCATION_UNAVAILABLE":
-        setRefusal(`${newFolder} isn't available. Nothing has been changed.`);
+        setRefusal(
+          details.reason === "outOfReach"
+            ? `${outOfReachText("folder", newFolder)} Nothing has been changed.`
+            : `${newFolder} isn't available. Nothing has been changed.`,
+        );
         return;
       case "BACKUPS_NOT_ALL_DELETED":
         setNotDeleted((details.failedPaths as string[] | undefined) ?? []);
