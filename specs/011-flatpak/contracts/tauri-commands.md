@@ -65,13 +65,17 @@ location) is the host path.
 | `close_database` (its backup), and the "before" backups of `restore_backup`, `change_passphrase`, `upgrade_database` | the database's backup folder when custom | `WriteFolder` | the existing failed-backup outcomes with `failureReason: "outOfReach"`; a "before" backup that can't be made stops its operation as it already does, with `BACKUP_LOCATION_UNAVAILABLE` and `reason: "outOfReach"` |
 | `list_backups`, `check_backup` | the backup folder | `WriteFolder` (for `available`) | not an error: `available: false`, `unavailableReason: "outOfReach"` |
 | `restore_backup` | the backup file | `ReadFile` | `LOCATION_OUT_OF_REACH` |
+| `restore_backup` with nothing open | `databasePath` | `DatabaseFolder` | `LOCATION_OUT_OF_REACH`, before the "before" backup or any scratch file |
 | `export_collection` | the destination folder | `WriteFolder` | `LOCATION_OUT_OF_REACH` |
 | `read_import_files`, `import_collection` | each file | `ReadFile` | `LOCATION_OUT_OF_REACH`, before the import helper starts |
 | `add_photo_from_path`, `add_document_from_path` (the chooser and drops) | the file | `ReadFile` | `LOCATION_OUT_OF_REACH`; for a drop, the record page's existing drop-error toast shows its message |
 
-`change_passphrase` and `restore_backup`'s replacement act on the open (or
-last open) database's own path, which `open_database` already found within
-reach, so they check only the backup folder above.
+`change_passphrase` and `restore_backup`'s replacement of the open database
+act on its own path, which `open_database` already found within reach in
+this run, so they check only the backup folder above. With nothing open,
+`restore_backup` acts on the `databasePath` it is given, whose reach may
+have changed since that database was last open (an override reset between
+runs), so it checks that path too.
 
 ## `open_document` (amended inside Flatpak only)
 

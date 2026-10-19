@@ -154,9 +154,10 @@ chosen once from `Reach` (Flatpak or not). The portal route's answers:
 
 `scripts/flatpak/checkManifest.mjs` writes it into the state folder from the
 manifest. It differs only in the cargo build command's `--features`
-(`custom-protocol,e2e`) and `--profile e2e`, and in the binary's path that
-follows from the profile. The test compares the two parsed manifests and
-fails on any other difference.
+(`custom-protocol,e2e`) and `--profile e2e`, in the binary's path that
+follows from the profile, and in leaving out the `check-no-webdriver.mjs`
+step, which would fail on the `e2e` build's driver by design. The test
+compares the two parsed manifests and fails on any other difference.
 
 ### Offline source lists
 

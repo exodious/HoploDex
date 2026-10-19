@@ -469,6 +469,16 @@ sections below cite it as "the spike".
   documents' copies and the web views' data folders are all in the
   Flatpak's own storage. A `.deb` and a Flatpak on the same computer keep
   separate recent lists and settings (spec, Edge Cases).
+  - **Shown by**: the automated check can't show these locations, because
+    its `e2e` build takes its config, cache and Documents folders from the
+    `HOPLODEX_E2E_*` variables the check sets (§16). The shipped build
+    shows them instead: `test:flatpak -- --fresh-install` starts it under a
+    throwaway home and finds its config folder (with `machine.json`, which
+    startup writes) and its web view data folder under
+    `~/.var/app/io.github.exodious.HoploDex/`, and nothing under the home's
+    own `.config` or `.cache` (FR-009); and the manual setup's first start
+    finds the create dialog suggesting `~/Documents/HoploDex` (FR-010,
+    quickstart.md "Setup").
   - **The guide**: the database guide's section on using a database on
     several computers (`DatabaseGuide.tsx`) gains a paragraph shown on Linux
     only, saying that a Flatpak and a `.deb` or `.rpm` of HoploDex on one
@@ -491,7 +501,13 @@ sections below cite it as "the spike".
   as pending changes, and clear the decrypted copies, as on a `.deb`.
   Startup's sweep of leftover copies and unfinished backups reads the same
   directories.
-- **Shown by**: the automated check's quit and kill steps (§16).
+- **Shown by**: the automated check's US2 journey (§16), which sends
+  SIGTERM to the app inside the sandbox with unsaved input in an open form
+  and an opened document's copy on disk, then finds the pending changes
+  offered at the next open and the copies folder empty. `flatpak kill`,
+  which the helpers' check uses, ends the sandbox without counting on the
+  app's handlers, so it shows the helpers dying with the app, not this
+  path. A real log-out is quickstart.md's manual M7.
 
 ## §13 What the bundle carries (FR-017, FR-018, FR-019)
 
@@ -584,8 +600,9 @@ sections below cite it as "the spike".
     container's protection of `/proc`, which nothing else needs.
   - **The image** gains `flatpak`, `flatpak-builder`, `appstream`,
     `desktop-file-utils`, `python3-dbusmock` (for the check's stand-in
-    services, §16), the Python packages the two generators need, the two
-    generators at one pinned commit (§3), and Flathub's linter (below).
+    services, §16), the Python packages the two generators need (from
+    Debian, or pinned with hashes, §21), the two generators at one pinned
+    commit (§3), and Flathub's linter (below).
   - **A private system bus**: Debian's `flatpak` asks the system bus
     (parental controls) before it installs an app, and the container has no
     system bus. The scripts start a private one and point
@@ -622,7 +639,9 @@ sections below cite it as "the spike".
   then uninstalls it.
   - **The check variant**: the build script derives a second manifest from
     the shipped one, changing only the cargo features (`custom-protocol,e2e`
-    instead of `custom-protocol`) and the profile (`e2e`), and not the
+    instead of `custom-protocol`), the profile (`e2e`) and the binary's
+    path that follows from it, and leaving out the `check-no-webdriver.mjs`
+    step, since the `e2e` build carries the driver by design; not the
     `finish-args`. A test compares the two manifests and fails on any
     other difference, so the check runs with the permissions the Flatpak
     ships with. It is installed but never written to a `.flatpak` file.
@@ -635,7 +654,16 @@ sections below cite it as "the spike".
     `HOPLODEX_E2E_DOCUMENTS` at the documents folder `user-dirs.dirs`
     names, which the check reads from inside the sandbox
     (`flatpak run --command=xdg-user-dir … DOCUMENTS`). So the `e2e` build's
-    seams change nothing the sandbox affects.
+    seams change nothing the sandbox affects, except that the shipped
+    build's own derivation of those folders isn't exercised: §11 says
+    where that is shown.
+  - **No network in the shipped sandbox**: since the journey runs with
+    network added, the check shows the shipped permissions' network
+    separately: `flatpak run --command=python3` (without
+    `--share=network`) finds only the loopback interface and fails to
+    connect to the container's own non-loopback address, where the check
+    listens on a port first so that a connection would succeed outside the
+    sandbox.
   - **What the `e2e` build swaps**, by design: the keyring (an in-memory
     store) and the opener (a log). Both exist so that no test can reach a
     real keyring or start a real app (constitution II). What the sandbox
@@ -661,9 +689,17 @@ sections below cite it as "the spike".
     opened in another application (through the opener log), a saved
     passphrase reopening without typing, a database on a second mount under
     `/mnt` standing in for a removable drive, and a typed location outside
-    reach refused with nothing written. It also checks the helpers'
-    confinement lines and that both are gone after the app is killed
-    (§10), and WebKit's sandbox line (§9).
+    reach refused with nothing written. The opened document's copy is on
+    disk in the copies folder while the database is open and gone once it
+    closes (FR-008, 001 FR-035). While the Flatpak has a database open, a
+    process outside the sandbox can't take the file's lock (the exclusive
+    lock holds across the sandbox, spec Edge Cases). It also checks the
+    helpers' confinement lines and that both are gone after the app is
+    killed (§10), WebKit's sandbox line (§9), and SIGTERM closing at once
+    with pending changes kept and the copies cleared (§12).
+  - **Not in the check**: sleep while a backup is being written (003's
+    tests show the stop; the sandbox changes neither the notice nor the
+    backup's code) and the search and action budgets (§18).
   - **Isolation** (SC-007): the whole check runs in the dev container,
     whose home, keyring, buses and Flatpak installation are the
     container's, never the developer's. The scripts refuse to run on a host
@@ -671,12 +707,18 @@ sections below cite it as "the spike".
     throwaway installation and `--i-know-this-is-a-host` is given.
   - **When it runs**: before each release, and for a pull request that
     changes any of the paths DEVELOPMENT.md lists (FR-021): `flatpak/`,
-    `scripts/flatpak/`, `src-tauri/src/platform/linux.rs`,
-    and, under `src-tauri/src/services/`, `sandbox.rs`, `keyring.rs`,
+    `scripts/flatpak/`, `e2e/specs/flatpak.e2e.ts`, `e2e/support/flatpak.ts`,
+    `src-tauri/src/platform/linux.rs`, `src-tauri/src/main.rs` (reach
+    detection and the opener's route), `src-tauri/src/app_dirs.rs` (the
+    config, cache and Documents folders), `src-tauri/src/session/lifecycle.rs`
+    (the reaction to the OS notices, the close's backup and the signal
+    path), and, under `src-tauri/src/services/`, `sandbox.rs`, `keyring.rs`,
     `file_swap.rs`, `backups.rs`, `scratch.rs`, `helper/`,
     `import_reader/`, `preview/helper.rs`, `preview/sandbox_probe.rs`;
-    `src-tauri/src/commands/documents.rs` and `commands/photos.rs` (opening
-    and drops). Ordinary test runs skip it.
+    under `src-tauri/src/commands/`, `databases.rs`, `backups.rs` and
+    `import_export.rs` (the reach checks), `documents.rs` and `photos.rs`
+    (opening and drops); and `src/features/media/useFileDrop.ts` (drops).
+    Ordinary test runs skip it.
 - **Rationale**: a WebDriver journey is the only way to drive the real app
   in its sandbox. Swapping the two seams the `e2e` build already has keeps
   constitution II's guarantee, and the bus checks cover what the sandbox
@@ -707,7 +749,11 @@ sections below cite it as "the spike".
 ## §18 Performance (SC-006)
 
 - **Decision**: no new budget work. Search and actions run the same code as
-  on a `.deb`. Cold start adds `bwrap` and the D-Bus proxy (tens of
+  on a `.deb`, on the same file: the home folder and removable drives are
+  bind mounts with no layer between the app and the file, and a database
+  is never opened through the Documents portal's FUSE folder (a portal
+  path is turned back into its host path or refused, §5). So the release
+  `performance_test` outside the sandbox measures what the Flatpak does. Cold start adds `bwrap` and the D-Bus proxy (tens of
   milliseconds) and, now, WebKit's sandbox probe (§9), which a `.deb`
   already pays where it isn't in a container (007 research.md §22). The
   automated check times the start to the chooser for the Flatpak and for
@@ -772,6 +818,20 @@ permissions, the linter), and leaves these to a later decision:
   license audit doesn't cover them (constitution, Licensing:
   "Development-only dependencies that are not distributed are exempt").
   None of them collects data.
+- **Keeping the build tools current and free of known vulnerabilities**:
+  as the image's other tools are (`CARGO_DENY_VERSION`,
+  `CARGO_NEXTEST_VERSION` and the like), each is pinned in the
+  `Dockerfile`: flatpak-builder-tools by its commit
+  (`FLATPAK_BUILDER_TOOLS_COMMIT`), the rest as Debian packages. The
+  generators' Python packages come from Debian; any that Debian doesn't
+  have is installed from a committed `scripts/flatpak/requirements.txt`
+  with exact versions and `--require-hashes`, which GitHub's dependency
+  graph reads, so Dependabot's security alerts cover it as they cover the
+  npm and Cargo dependencies, and it is updated by hand the same way
+  (DEVELOPMENT.md, "Dependency audit"). The pinned commit and the SDK
+  branches are reviewed with the release process's checks (#19). None of
+  them touches collection data: the generators read only the lockfiles,
+  and the linter only the manifest and the built repository.
 - **Prebuilt by others, for the build only**: the GNOME SDK, the toolchain
   extensions and, if kept, `org.flatpak.Builder`'s linter, all from Flathub.
   The runtime the Flatpak runs on is Flathub's by the spec's own choice. The

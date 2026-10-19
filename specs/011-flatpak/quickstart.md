@@ -35,12 +35,15 @@ Expected:
   `contents: ok`, `check-no-webdriver: ok`, `desktop-file-validate: ok`,
   `appstreamcli validate: ok` and the linter passing with the two recorded
   exceptions.
-- `test:flatpak` passes every test in `e2e/specs/flatpak.e2e.ts` and the bus
-  checks, prints the cold-start times of the Flatpak and the non-Flatpak
+- `test:flatpak` passes every test in `e2e/specs/flatpak.e2e.ts`, the bus
+  checks and the no-network check, prints the cold-start times of the Flatpak and the non-Flatpak
   build (SC-006), and leaves no app installed (`flatpak list --app` in the
   container is empty afterwards).
 - `--fresh-install` reports that the empty installation gained the
-  `flathub` remote and the GNOME 51 runtime, and that HoploDex started.
+  `flathub` remote and the GNOME 51 runtime, that HoploDex started, and
+  that its config and web view data folders are under
+  `~/.var/app/io.github.exodious.HoploDex/` with nothing in the home's own
+  `.config` or `.cache`.
 
 ### Red checks
 
@@ -64,11 +67,12 @@ reason, then undo the change:
 
 | Scenario or criterion | Test |
 |---|---|
-| US1-1, US1-2, US1-3, US1-4, US1-6 | `flatpak.e2e.ts`, "011 US1" journey |
+| US1-1, US1-2, US1-3, US1-4, US1-6 | `flatpak.e2e.ts`, "011 US1" journey; US1-2's folder in the shipped build: manual "Setup" step 7 |
 | US1-5 | `flatpak.e2e.ts` (a drop within reach); `sandbox_reach_test.rs` (a drop outside it) |
-| US1-7 | `flatpak.e2e.ts` (opener log); `portal_opener_test.rs` (the portal's answers) |
+| US1-7 | `flatpak.e2e.ts` (opener log, the copy on disk and gone after the close); `portal_opener_test.rs` (the portal's answers) |
 | US1-8, SC-003 | `sandbox_reach_test.rs` (every command, nothing written); `flatpak.e2e.ts` (a typed `/srv` location); Vitest for each place's wording |
-| US2-1, US2-2, US2-3, US2-4, US2-6, SC-002 | `flatpak.e2e.ts`, "011 US2" journey, with the stand-in logind and screen saver |
+| US2-1, US2-2, US2-3, US2-4, US2-6, SC-002 | `flatpak.e2e.ts`, "011 US2" journey, with the stand-in logind and screen saver, and SIGTERM for a log-out; a real log-out: manual M7 |
+| FR-009 | `test:flatpak -- --fresh-install` (the shipped build's folders); manual "Setup" step 7 |
 | US2-5 | the existing 003 keyring-unavailable tests; the bus check (no Secret Service, no owner) |
 | US2-7 | research.md §9, §20 (read by the release review, #21) |
 | US3-1, US3-3, US3-4, SC-004, SC-005 | `bundle:flatpak` and its checks; `contents.test.ts` |
@@ -116,12 +120,17 @@ folder and keyring are all that account's.
 6. Start HoploDex from the desktop's application list. Expected: its own
    name and icon in the list and the window, and the database chooser with
    an empty recent list.
-7. Click **Open…**, and in the file chooser pick
+7. Click **Create…**. Expected: the suggested location is
+   `/home/hoplodex-test/Documents/HoploDex`, not a folder under
+   `~/.var/app`. Cancel. In a terminal, run
+   `ls ~/.var/app/io.github.exodious.HoploDex/config/io.github.exodious.HoploDex/ ~/.config/io.github.exodious.HoploDex`.
+   Expected: `machine.json` in the first, and the second doesn't exist.
+8. Click **Open…**, and in the file chooser pick
    `~/Documents/HoploDex/Main collection.hoplodex`. Enter the passphrase
    `human testing passphrase`. Expected: it opens, and once closed, the
    recent list names it at `/home/hoplodex-test/Documents/HoploDex/Main collection.hoplodex`,
    not a path under `/run/user`.
-8. Do the same for `~/Documents/HoploDex/Shared collection.hoplodex`,
+9. Do the same for `~/Documents/HoploDex/Shared collection.hoplodex`,
    passphrase `human testing passphrase`. It says it was left open on
    "Workshop PC": take it over, resolve its pending changes with
    **Discard**, and close it.
