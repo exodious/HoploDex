@@ -866,7 +866,8 @@ probe doesn't run there either. So the container's E2E and surface-check runs
 are unsandboxed. Before merging a change to the preview, run the E2E suite once
 on a Linux host (`npm run build && npm run test:e2e`) and the surface check
 there (`scripts/pdf-surface-check.sh`, without the container) and note the
-result in the pull request.
+result in the pull request. A Flatpak runs the same probe (WebKit sandboxes
+there through `flatpak-spawn --sandbox`); only a container skips it.
 
 A checkout you also use with the container has an empty `node_modules` on the
 host, since the container keeps its own in a volume mounted there, and the

@@ -74,6 +74,9 @@ artifacts.
     or where the system forbids it): a PDF that exploited PDF.js or
     WebKit would run with the user's access to their files, as the main
     window's own web process does (spec edge case).
+    _Amended by [spec 011](../011-flatpak/research.md): WebKit's sandbox
+    does run inside Flatpak, so that case is gone for a Flatpak where the
+    probe works (§9 of that file)._
   - **Windows**: Edge's viewer runs in Chromium's own sandbox, which
     WebView2 always uses.
   - **"Open in another app" set**: a compromised main web view could open
@@ -627,6 +630,10 @@ artifacts.
   - **Skipped without probing** where WebKit itself won't sandbox: in a
     container (`/run/.containerenv`, `/.dockerenv`) and inside Flatpak
     (`/.flatpak-info`, which has its own sandbox).
+    _Amended by [spec 011](../011-flatpak/research.md): `/.flatpak-info`
+    no longer skips the probe. WebKit sandboxes inside Flatpak through
+    `flatpak-spawn --sandbox`, so the Flatpak runs the probe and turns the
+    sandbox on where it works (011 research.md §9)._
   - **Logged once** at startup: whether the sandbox is on, and why not.
 - **Rationale**: FR-004: "where the computer offers a sandbox … and
   HoploDex finds it works there, the preview MUST run in it; where it

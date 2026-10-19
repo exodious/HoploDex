@@ -8,8 +8,10 @@
 //! once with [`ARGUMENT`] and the variable set: the child makes a real web
 //! view, loads `about:blank` and exits 0 when it has loaded. Only an exit of
 //! 0 turns the sandbox on; a crash, another exit status or a time-out means
-//! it stays off. A container or Flatpak is not probed at all: WebKit won't
-//! sandbox in the first, and the second has a sandbox of its own.
+//! it stays off. A container is not probed at all: WebKit won't sandbox in
+//! it. A Flatpak is probed like any other install: WebKit sandboxes there
+//! through `flatpak-spawn --sandbox`, so the probe's child shows whether it
+//! works (011 research.md §9).
 
 use std::{
     ffi::{c_int, c_void},
@@ -33,8 +35,9 @@ const SELF_EXE: &str = "/proc/self/exe";
 /// How long the probe may take before it counts as having failed.
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The files that say this is a container or Flatpak.
-pub const SKIP_MARKERS: [&str; 3] = ["/run/.containerenv", "/.dockerenv", "/.flatpak-info"];
+/// The files that say this is a container, where the probe doesn't run.
+/// `/.flatpak-info` is not one: a Flatpak runs the probe (011 FR-011).
+pub const SKIP_MARKERS: [&str; 2] = ["/run/.containerenv", "/.dockerenv"];
 
 /// What the probe child did.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,7 +73,7 @@ pub fn decide(markers: &[&Path], probe: impl FnOnce() -> ProbeOutcome) -> WebKit
     if let Some(found) = markers.iter().find(|marker| marker.exists()) {
         return WebKitSandbox::Off {
             reason: format!(
-                "this is a container or Flatpak ({} exists), where WebKit doesn't sandbox",
+                "this is a container ({} exists), where WebKit doesn't sandbox",
                 found.display()
             ),
         };
@@ -215,4 +218,33 @@ pub fn run_child_probe() -> ! {
         g_main_loop_run(main_loop);
     }
     std::process::exit(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    /// 011 FR-011, 011 research.md §9: the Flatpak runs the probe, so its
+    /// marker is not one that skips it; a container's two still are.
+    #[test]
+    fn flatpak_marker_no_longer_skips_the_probe() {
+        assert!(!SKIP_MARKERS.contains(&"/.flatpak-info"));
+        assert!(SKIP_MARKERS.contains(&"/run/.containerenv"));
+        assert!(SKIP_MARKERS.contains(&"/.dockerenv"));
+    }
+
+    #[test]
+    fn a_container_marker_skips_the_probe() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join(".containerenv");
+        std::fs::write(&marker, "").unwrap();
+        let ran = Cell::new(false);
+        let decision = decide(&[marker.as_path()], || {
+            ran.set(true);
+            ProbeOutcome::Exited(0)
+        });
+        assert!(!ran.get());
+        assert!(matches!(decision, WebKitSandbox::Off { .. }));
+    }
 }
