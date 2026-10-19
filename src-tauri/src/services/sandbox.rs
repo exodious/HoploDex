@@ -1162,12 +1162,14 @@ mod tests {
 
     /// A lookup by document id: `id` is the document's host path, which stands
     /// for `doc/<id>/<name>`.
+    #[cfg(unix)]
     fn by_document(docs: Vec<(&'static str, PathBuf)>) -> Arc<dyn HostPaths> {
         let docs: HashMap<String, PathBuf> =
             docs.into_iter().map(|(id, host)| (id.to_owned(), host)).collect();
         Arc::new(ByDocument(move |id: &str, _entry: &Path| docs.get(id).cloned()))
     }
 
+    #[cfg(unix)]
     const DOCS: &str = "/run/user/1000/doc";
 
     // Unix only: portal paths are POSIX absolute ("/run/user/..."), which Windows
