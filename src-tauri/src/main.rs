@@ -237,6 +237,8 @@ fn main() {
         );
         std::process::exit(1);
     }
+    // The log goes to standard error from here on (the helpers above have none).
+    hoplodex_lib::logging::init();
     // WebKit's sandbox, on only where a probe shows it works, and decided
     // here because the variable that turns it on must be set before the
     // first web context exists (007 research.md §9).

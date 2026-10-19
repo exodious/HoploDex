@@ -145,6 +145,10 @@ impl HelperProcess {
             .map_err(|_| io::Error::other("no spawner"))?;
         let (child, stdin, stdout) =
             answer.recv().map_err(|_| io::Error::other("no spawner"))??;
+        // The helper's own stderr is discarded, so its start is the parent's
+        // line (011 US2-6); what it is confined with is `log_support_once`'s,
+        // once per run.
+        log::info!("started {mode_argument} (process {})", child.id());
         Ok(Arc::new(Self {
             pid: child.id(),
             child: Mutex::new(child),

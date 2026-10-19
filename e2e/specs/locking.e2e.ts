@@ -13,8 +13,11 @@ import {
   chooseMenuItem,
   clickButton,
   clickEl,
+  chooserSays,
   confirmTakeOver,
   createDatabase,
+  dialogTitled,
+  editNotes,
   expect,
   fieldValue,
   fill,
@@ -25,7 +28,6 @@ import {
   selectedChooserRow,
   submitPassphrase,
   waitForChooser,
-  settle,
 } from "../support/ui";
 
 /**
@@ -54,51 +56,8 @@ async function pressLockShortcut() {
   });
 }
 
-/** Opens the record's edit form and types into its notes, leaving them
- * unsaved. */
-async function editNotes(notes: string) {
-  await clickButton("Edit");
-  await $('[role="dialog"]').waitForExist();
-  await fill("Notes", notes);
-  // Stage the draft now instead of sleeping past its 250 ms debounce, the way
-  // the window losing focus does (usePendingDraft.ts); `settle()` then waits
-  // for the backend call. (The debounce itself is not counted as busy: that
-  // would make every `fill` in every form wait 250 ms.)
-  await browser.execute(() => window.dispatchEvent(new Event("blur")));
-  await settle();
-}
-
-/** Waits for the open dialog titled `title`, and returns its text. */
-async function dialogTitled(title: string): Promise<string> {
-  let text = "";
-  await browser.waitUntil(
-    async () => {
-      text = await browser.execute((wanted: string) => {
-        const dialog = [...document.querySelectorAll('[role="dialog"]')].find(
-          (d) => d.querySelector(".hd-dialog__title")?.textContent?.trim() === wanted,
-        );
-        return dialog?.textContent ?? "";
-      }, title);
-      return text !== "";
-    },
-    { timeout: 10000, timeoutMsg: `no dialog "${title}"` },
-  );
-  return text;
-}
-
 function pendingQuestion(): Promise<string> {
   return dialogTitled(`Unsaved changes to ${LABEL}`);
-}
-
-/** Whether the chooser shows a notice saying `text`. */
-async function chooserSays(text: string): Promise<boolean> {
-  return browser.execute(
-    (wanted: string) =>
-      [...document.querySelectorAll(".hd-chooser__notice")].some((n) =>
-        (n.textContent ?? "").includes(wanted),
-      ),
-    text,
-  );
 }
 
 describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", () => {

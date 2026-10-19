@@ -13,6 +13,8 @@
 #      Secret Service, both screen savers and the portal answer on a private
 #      session bus, logind answers on the private system bus, and a name the
 #      manifest does not grant is refused (011 FR-005, 011 FR-006);
+#      With the Secret Service stand-in then stopped, its name has no owner from inside
+#      the sandbox (011 US2-5);
 #   3. the no-network check (011 FR-021): the shipped permissions have no network;
 #   4. builds the `e2e` binary outside the sandbox and runs
 #      e2e/specs/flatpak.e2e.ts through WebDriver, whose cold-start test compares
@@ -180,7 +182,8 @@ start_mock() {
   local var=DBUS_SESSION_BUS_ADDRESS
   [ "$flag" = --system ] && var=DBUS_SYSTEM_BUS_ADDRESS
   env "$var=$address" python3 -m dbusmock "$flag" "$@" >"$log_dir/standin-check-$name.log" 2>&1 &
-  mock_pids+=("$!")
+  last_mock_pid="$!"
+  mock_pids+=("$last_mock_pid")
   local tries=0
   until name_owned "$address" "$name"; do
     tries=$((tries + 1))
@@ -195,6 +198,7 @@ start_mock "$system_bus" --system org.freedesktop.login1 -t logind
 gdbus call --address "$system_bus" --dest org.freedesktop.login1 --object-path /org/freedesktop/login1 \
   --method org.freedesktop.DBus.Mock.AddSession auto seat0 "$(id -u)" "$(id -un)" true >/dev/null
 start_mock "$check_session_bus" --session org.freedesktop.secrets org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service
+secrets_pid="$last_mock_pid"
 start_mock "$check_session_bus" --session org.gnome.ScreenSaver org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver
 start_mock "$check_session_bus" --session org.freedesktop.ScreenSaver org.freedesktop.ScreenSaver /org/freedesktop/ScreenSaver org.freedesktop.ScreenSaver
 start_mock "$check_session_bus" --session org.freedesktop.portal.Desktop org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.OpenURI
@@ -241,6 +245,34 @@ if ping_inside org.example.NotGranted /org/example/NotGranted >"$scratch/not-gra
   fail "org.example.NotGranted, which the manifest does not grant, answered from inside the sandbox"
 fi
 echo "refused inside the sandbox, answering outside: org.example.NotGranted ($(tr '\n' ' ' <"$scratch/not-granted.out"))"
+
+# No Secret Service (011 US2-5): with the stand-in stopped, the name has no owner from inside
+# the sandbox, so the keyring's availability probe answers false, as the 003 keyring tests
+# (tests/keyring_test.rs, Keyring::off()) show for an unavailable keyring: saving a
+# passphrase is refused with KEYRING_UNAVAILABLE.
+name_has_owner_inside() { # name
+  sandbox_run --command=gdbus "$app_id" call --session --dest org.freedesktop.DBus \
+    --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner "$1"
+}
+owned="$(name_has_owner_inside org.freedesktop.secrets)" ||
+  fail "NameHasOwner for org.freedesktop.secrets failed from inside the sandbox"
+case "$owned" in
+  *true*) echo "with the stand-in running, org.freedesktop.secrets has an owner inside the sandbox: $owned" ;;
+  *) fail "org.freedesktop.secrets has no owner inside the sandbox while the stand-in runs ($owned), so its absence below shows nothing" ;;
+esac
+kill "$secrets_pid" 2>/dev/null || true
+tries=0
+while name_owned "$check_session_bus" org.freedesktop.secrets; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 100 ] || fail "the Secret Service stand-in did not stop"
+  sleep 0.05
+done
+owned="$(name_has_owner_inside org.freedesktop.secrets)" ||
+  fail "NameHasOwner for org.freedesktop.secrets failed from inside the sandbox once the stand-in stopped"
+case "$owned" in
+  *false*) echo "with the stand-in stopped, org.freedesktop.secrets has no owner inside the sandbox: $owned" ;;
+  *) fail "org.freedesktop.secrets still has an owner inside the sandbox after the stand-in stopped ($owned)" ;;
+esac
 
 # ---------------------------------------------------------------------------
 step "the no-network check (011 FR-021, 011 research.md §16)"

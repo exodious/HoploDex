@@ -355,6 +355,20 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     through. Read from the source in the spike, not yet run; the automated
     check (§16) shows it, and the manual procedure (§17) shows a real
     sleep held back.
+    _Amended 2026-10-19 (011 T060): run, in the container's Flatpak 1.16.6
+    with `xdg-dbus-proxy` 0.1.6. `e2e/specs/flatpak.e2e.ts` "011 US2-1": while
+    the database is open, the stand-in logind lists a `sleep` and a
+    `shutdown` delay inhibitor held by "HoploDex", so `Inhibit` reached the
+    app's end through the proxy with its descriptor. The stand-in keeps
+    the other end of each descriptor and drops an inhibitor only once the
+    last end is closed, so the app's end is what its list shows going: after
+    `PrepareForSleep(true)` the database is locked 70 to 80 ms after the
+    signal is sent and the `sleep` inhibitor is gone 80 ms after (the
+    `shutdown` one stays); after `PrepareForSleep(false)` the app takes the
+    `sleep` one again. After `PrepareForShutdown(true)` the app has ended
+    11 ms after the signal and neither inhibitor is left. A sleep locks in
+    69 ms in the Flatpak against 68 ms for the same build outside it (SC-002;
+    `flatpak/out/check/lock-times.log`)._
   - **Unavailable notices**: unchanged. When the ScreenSaver names have no
     owner and the session object can't be read, `spawn` returns false and
     the setting shows as unavailable (003 FR-038, US2-4). Without the
@@ -450,6 +464,51 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     (the display, the GPU, accessibility). The exact `flatpak-spawn`
     arguments WebKit 2.54 passes are read from the running process during
     implementation and recorded in this section before the pull request.
+    _Amended 2026-10-19 (011 T060): read from the running check, with the
+    container's Flatpak portal (1.16.6) and WebKitGTK 2.54 of GNOME 51
+    (`e2e/specs/flatpak.e2e.ts` "011 US2-7" writes it to
+    `flatpak/out/check/webkit-sandbox.txt`). For each web process WebKit runs
+    `flatpak-spawn --forward-fd=<n> --expose-pids --watch-bus --sandbox
+    --directory=/ --no-network --sandbox-flag=share-gpu
+    --sandbox-flag=share-display --sandbox-flag=share-sound
+    --sandbox-flag=allow-a11y --sandbox-flag=allow-dbus
+    --sandbox-a11y-own-name=io.github.exodious.HoploDex.Sandboxed.WebProcess-<uuid>
+    --env=<each variable of the app's environment> …
+    /usr/libexec/webkit2gtk-4.1/WebKitWebProcess <fds>`, with
+    `WEBKIT_FORCE_SANDBOX=1` among the variables. There is no `--sandbox-expose*`
+    and no `--filesystem`, so no folder is shared. The portal then runs
+    `bwrap --args <fd> -- WebKitWebProcess …` for it and a `bwrap … xdg-dbus-proxy`
+    for its session bus; the `bwrap` arguments travel in a descriptor that is
+    closed once they are read, so `/proc/<pid>/cmdline` shows only the
+    descriptor. What the sub-sandbox shares was read from the web process
+    itself (`/proc/<pid>/ns`, `mountinfo`, `net/dev`) and by starting a
+    process with WebKit's own flags and looking from inside:
+    - **Shared with the app**: the user, UTS and IPC namespaces (IPC is the
+      app's own `--share=ipc`), the X11 socket and `Xauthority` (the display),
+      the runtime and `/app` read-only, the fonts and icons. `share-gpu`
+      and `share-sound` ask for the GPU's device nodes and the audio socket;
+      the container has neither, so the check can't show them. HoploDex
+      itself asks for no audio.
+    - **Its own**: a PID namespace, a mount namespace and a network namespace
+      with only `lo`.
+    - **Not there**: the home folder (`$HOME` is an empty folder), Documents,
+      `/media`, `/run/media` and `/mnt`, the app's `~/.var/app` folders, `/tmp`,
+      `/var/data`, and the system bus socket. The database file can't be opened
+      from it (ENOENT).
+    - **The session bus**: through a proxy of its own (`allow-dbus`). The
+      Secret Service and both screen savers were refused (`ServiceUnknown`)
+      while their stand-ins ran; the desktop portals answer, as they do for
+      every sandbox.
+    - **One limit**: the portal that started it is among the names it reaches,
+      and a process that the portal starts for it without `--sandbox`
+      (`flatpak-spawn` run from inside) runs with the app's own permissions: it
+      listed the throwaway home's Documents folder. So WebKit's sandbox makes
+      a compromised web process do one more thing (speak D-Bus to the Flatpak
+      portal and ask for a process) before it has the app's reach, and keeps
+      from it everything it can't do without that step. It is not a barrier
+      against a process that does. This is the portal's behaviour, which
+      Flatpak versions may change, so the check records the result (it does
+      not assert it).
   - **With the sandbox off** (the probe failed, for example on a desktop
     without the Flatpak portal): a compromised web process has everything
     of §4's table: the home folder and removable drives, the user's
@@ -840,6 +899,15 @@ permissions, the linter), and leaves these to a later decision:
   home folder, removable drives, the unlocked keyring and the logind and
   screen-saver interfaces. With it on: only what WebKit's sub-sandbox shares
   for rendering. Neither has the network.
+  _Amended 2026-10-19 (011 T060): with it on, the arguments are in §9:
+  nothing of the home or the removable drives, no network, no system bus and no
+  keyring or screen saver on the session bus, but the display, the audio
+  and GPU sockets WebKit asks for, and the desktop portals, the Flatpak portal
+  among them. A process asked of the Flatpak portal from inside runs with the
+  app's permissions (§9, "One limit"), so with the sandbox on a compromised web
+  process is one D-Bus call from the "off" reach above, and not by default
+  at it. The release review should count WebKit's sandbox here as a layer an
+  attacker has to get through, not a wall._
 - **A compromised HoploDex process**: everything in §4's table, which is
   what a `.deb` install has apart from the network and files outside the
   home folder and removable drives.

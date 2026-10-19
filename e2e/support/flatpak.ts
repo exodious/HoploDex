@@ -519,21 +519,7 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
       name: "org.freedesktop.login1",
       template: "logind",
     });
-    // The session the app listens to: logind resolves `auto` from the caller
-    // (platform/linux.rs).
-    gdbus(system, [
-      "--dest",
-      "org.freedesktop.login1",
-      "--object-path",
-      "/org/freedesktop/login1",
-      "--method",
-      "org.freedesktop.DBus.Mock.AddSession",
-      "auto",
-      "seat0",
-      String(os.userInfo().uid),
-      os.userInfo().username,
-      "true",
-    ]);
+    addLogindSession();
     if (options.screenSavers !== false) await startScreenSavers();
     run.secrets = await startMock({
       bus: "session",
@@ -624,6 +610,36 @@ const SYSTEM_LOGIND = [
   "--object-path",
   "/org/freedesktop/login1",
 ] as const;
+
+const LOGIND_MOCK = "org.freedesktop.DBus.Mock";
+
+/** Gives the stand-in logind the session the app listens to: logind resolves
+ * `auto` from the caller (platform/linux.rs, 011 research.md §6). */
+export function addLogindSession(): void {
+  gdbus(process.env.DBUS_SYSTEM_BUS_ADDRESS as string, [
+    ...SYSTEM_LOGIND,
+    "--method",
+    `${LOGIND_MOCK}.AddSession`,
+    "auto",
+    "seat0",
+    String(os.userInfo().uid),
+    os.userInfo().username,
+    "true",
+  ]);
+}
+
+/** Takes the `auto` session away again, so the next start of the app can't
+ * read it: without it and without a screen saver, nothing tells the app the
+ * screen locked and the setting shows as unavailable (011 US2-4, 011
+ * research.md §6). {@link addLogindSession} puts it back. */
+export function removeLogindSession(): void {
+  gdbus(process.env.DBUS_SYSTEM_BUS_ADDRESS as string, [
+    ...SYSTEM_LOGIND,
+    "--method",
+    `${LOGIND_MOCK}.RemoveObject`,
+    "/org/freedesktop/login1/session/auto",
+  ]);
+}
 
 function emit(address: string, dest: string[], iface: string, signal: string, value: boolean) {
   gdbus(address, [
@@ -788,6 +804,23 @@ export function documentsDir(home: string = currentRun().home): string {
   return documents;
 }
 
+/**
+ * Runs `command` with `args` in a new sandbox of the app (`flatpak run
+ * --command=…`), under the run's throwaway home and private session bus, with
+ * only the shipped permissions. Used to start a sub-sandbox the way WebKit
+ * does (`flatpak-spawn --sandbox`, 011 research.md §9) and look at what it
+ * reaches.
+ */
+export function runInSandbox(command: string, args: string[], timeout = 60000) {
+  requireCheckEnvironment();
+  const run = currentRun();
+  return spawnSync("flatpak", ["run", `--command=${command}`, FLATPAK_APP_ID, ...args], {
+    env: runProcessEnv(run.home, { DBUS_SESSION_BUS_ADDRESS: run.sessionBus.address }),
+    encoding: "utf-8",
+    timeout,
+  });
+}
+
 /** The folder the opened documents' copies are made in while their database is
  * open: `opened-documents` under the app's cache folder (src-tauri/src/commands/documents.rs). */
 export function copiesDir(): string {
@@ -883,6 +916,123 @@ export function sandboxProcesses(): SandboxProcess[] {
     }
   }
   return [...found.values()];
+}
+
+export interface ContainerProcess {
+  pid: number;
+  ppid: number | undefined;
+  /** Its command line (`argv`). */
+  command: string[];
+  /** Its PID namespace, as `/proc/<pid>/ns/pid` names it. */
+  pidNamespace: string | undefined;
+}
+
+/**
+ * Every process the container can see, the sandbox's and the sub-sandboxes'
+ * that WebKit asks the Flatpak portal for included, with its command line and
+ * PID namespace: how the check reads the arguments `flatpak-spawn --sandbox`
+ * and the sub-sandbox's `bwrap` were given (011 research.md §9). The portal
+ * runs in the container, in the run's own session bus, so these are visible.
+ */
+export function containerProcesses(): ContainerProcess[] {
+  const found: ContainerProcess[] = [];
+  for (const pid of procNumbers()) {
+    const stat = readStat(pid);
+    if (!stat || stat.state === "Z") continue;
+    let pidNamespace: string | undefined;
+    try {
+      pidNamespace = fs.readlinkSync(`/proc/${pid}/ns/pid`);
+    } catch {
+      // gone, or not ours to read
+    }
+    found.push({ pid, ppid: stat.ppid, command: readCommand(pid), pidNamespace });
+  }
+  return found;
+}
+
+export interface ProcessView {
+  /** The namespaces, by kind (`mnt`, `net`, `pid`, `ipc`, `user`, `uts`): the
+   * link `/proc/<pid>/ns/<kind>` reads. */
+  namespaces: Record<string, string>;
+  /** Network interfaces the process sees (`/proc/<pid>/net/dev`). */
+  interfaces: string[];
+  /** Where each mount of its mount namespace is (`/proc/<pid>/mountinfo`). */
+  mounts: string[];
+  /** What it sees in some folders of its root (undefined: not there). */
+  folders: Record<string, string[] | undefined>;
+}
+
+/**
+ * What the process `pid` sees of its sandbox, read from the container through
+ * `/proc`: its namespaces, network interfaces, mount points and the entries of
+ * `folders` in its own root. This is how the check reads what WebKit's
+ * sub-sandbox shares (011 research.md §9) when Flatpak passes the `bwrap`
+ * arguments in a descriptor that is closed once they are read.
+ */
+export function processView(pid: number, folders: string[]): ProcessView {
+  const namespaces: Record<string, string> = {};
+  for (const kind of ["mnt", "net", "pid", "ipc", "user", "uts"]) {
+    try {
+      namespaces[kind] = fs.readlinkSync(`/proc/${pid}/ns/${kind}`);
+    } catch {
+      // not readable
+    }
+  }
+  let interfaces: string[] = [];
+  try {
+    interfaces = fs
+      .readFileSync(`/proc/${pid}/net/dev`, "utf-8")
+      .split("\n")
+      .slice(2)
+      .map((line) => line.split(":")[0].trim())
+      .filter(Boolean);
+  } catch {
+    // not readable
+  }
+  let mounts: string[] = [];
+  try {
+    mounts = fs
+      .readFileSync(`/proc/${pid}/mountinfo`, "utf-8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const fields = line.split(" ");
+        const dash = fields.indexOf("-");
+        return `${fields[4]} (${fields[dash + 1]}, ${fields[5].split(",")[0]})`;
+      });
+  } catch {
+    // not readable
+  }
+  const seen: Record<string, string[] | undefined> = {};
+  for (const folder of folders) {
+    try {
+      seen[folder] = fs.readdirSync(`/proc/${pid}/root${folder}`).sort();
+    } catch {
+      seen[folder] = undefined;
+    }
+  }
+  return { namespaces, interfaces, mounts, folders: seen };
+}
+
+/** Whether the process `pid` has ended (a zombie counts: it runs nothing). */
+export function processGone(pid: number): boolean {
+  const stat = readStat(pid);
+  return !stat || stat.state === "Z";
+}
+
+/** The soft and hard limit (`unlimited` as `Infinity`) the process `pid` runs
+ * under for a `/proc/<pid>/limits` row such as "Max core file size". */
+export function resourceLimit(pid: number, name: string): { soft: number; hard: number } {
+  const text = fs.readFileSync(`/proc/${pid}/limits`, "utf-8");
+  const row = text.split("\n").find((line) => line.startsWith(name));
+  if (!row) throw new Error(`no "${name}" in /proc/${pid}/limits`);
+  const [soft, hard] = row
+    .slice(name.length)
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((value) => (value === "unlimited" ? Infinity : Number(value)));
+  return { soft, hard };
 }
 
 /** Ends the app's sandbox with `flatpak kill`, which does not count on the

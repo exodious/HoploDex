@@ -9,6 +9,7 @@ import {
   killApp,
   launchApp,
   relaunchApp,
+  waitForAppToQuit,
   type Launcher,
 } from "../support/app";
 import {
@@ -22,13 +23,29 @@ import {
   waitForEvent,
 } from "../support/documentPreview";
 import {
+  CHECK_LOG_DIR,
   FLATPAK_APP_ID,
+  addLogindSession,
   appDataDir,
+  appLogPath,
+  containerProcesses,
   copiesDir,
   currentRun,
+  emitActiveChanged,
+  emitPrepareForShutdown,
+  emitPrepareForSleep,
   flatpakLauncher,
+  inhibitors,
   lockProbe,
+  processGone,
+  processView,
+  removeLogindSession,
+  resourceLimit,
+  runInSandbox,
   sandboxProcesses,
+  startScreenSavers,
+  stopScreenSavers,
+  terminateApp,
 } from "../support/flatpak";
 import { importFile, tally } from "../support/importExport";
 import { writeTableWorkbook } from "../support/spreadsheets";
@@ -41,14 +58,19 @@ import {
   browser,
   chooseMenuItem,
   chooserNames,
+  chooserSays,
   clickButton,
   clickEl,
   createDatabase,
   dialogFieldError,
+  dialogTitled,
+  displayName,
+  editNotes,
   expect,
   fieldValue,
   fill,
   goTo,
+  isFieldDisabled,
   listedNames,
   openFirearm,
   pressEscape,
@@ -56,6 +78,7 @@ import {
   selectChooserRow,
   selectedChooserRow,
   settle,
+  submitPassphrase,
   switchDatabase,
   toggle,
   unlock,
@@ -635,5 +658,535 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
     expect(await chooserNames()).not.toContain("Nowhere");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 011 US2
+// ---------------------------------------------------------------------------
+
+const PROTECTED = "Protected";
+/** The one record of the Protected database, and the form the journey leaves
+ * unsaved input in. */
+const guard = {
+  make: "Protect",
+  model: "One",
+  caliber: "9mm",
+  type: "Handgun" as const,
+  serial: "PRO-001",
+};
+const GUARD_NAME = displayName(guard);
+
+/** Whether logind lists a delay inhibitor of HoploDex's for `what`: the stand-in
+ * drops one when the app closes its end of the descriptor (011 research.md §6). */
+function holdsInhibitor(what: "sleep" | "shutdown"): boolean {
+  return inhibitors().some((i) => i.who === "HoploDex" && i.what === what && i.mode === "delay");
+}
+
+/** Whether the chooser is on screen. */
+function chooserShown(): Promise<boolean> {
+  return browser.execute(() => document.querySelector(".hd-chooser__title") !== null);
+}
+
+/** Writes a time to the check's log for 011 SC-002's comparison, and the console. */
+function noteTime(what: string, ms: number) {
+  console.log(`011 SC-002: ${what}: ${ms} ms`);
+  fs.mkdirSync(CHECK_LOG_DIR, { recursive: true });
+  fs.appendFileSync(path.join(CHECK_LOG_DIR, "lock-times.log"), `${what}: ${ms} ms\n`);
+}
+
+/**
+ * Sends a signal and times the lock from it: milliseconds until the chooser is
+ * on screen, and, for a sleep or shutdown, until logind's list no longer has the
+ * delay inhibitor the app held (the app closes its end once the lock is done).
+ * The time includes `gdbus` starting to send the signal.
+ */
+async function timedLock(
+  what: string,
+  send: () => void,
+  inhibitor?: "sleep" | "shutdown",
+): Promise<{ lockedMs: number; releasedMs?: number }> {
+  const started = performance.now();
+  send();
+  await browser.waitUntil(chooserShown, {
+    timeout: 20000,
+    interval: 10,
+    timeoutMsg: `${what}: the database never locked`,
+  });
+  const lockedMs = Math.round(performance.now() - started);
+  noteTime(`${what} locked the database after`, lockedMs);
+  if (!inhibitor) return { lockedMs };
+  await browser.waitUntil(() => !holdsInhibitor(inhibitor), {
+    timeout: 10000,
+    interval: 10,
+    timeoutMsg: `${what}: the ${inhibitor} inhibitor was never released`,
+  });
+  const releasedMs = Math.round(performance.now() - started);
+  noteTime(`${what}: the ${inhibitor} inhibitor was seen released after`, releasedMs);
+  return { lockedMs, releasedMs };
+}
+
+/** What the latest start of the app wrote to its standard error. */
+function appLog(): string {
+  return fs.readFileSync(appLogPath(), "utf-8");
+}
+
+/** Starts the open of the chooser's selected database, expects the pending
+ * changes of `GUARD_NAME`'s edit form, resumes them and checks the notes. */
+async function resumePendingNotes(expected: string) {
+  await waitForChooser();
+  await submitPassphrase(E2E_PASSPHRASE);
+  expect(await dialogTitled(`Unsaved changes to ${GUARD_NAME} (edit)`)).toContain(
+    "Your changes were kept.",
+  );
+  await clickButton("Resume editing");
+  await dialogTitled(`Edit ${guard.make} ${guard.model}`);
+  expect(await fieldValue("Notes")).toBe(expected);
+  await clickButton("Cancel");
+  await browser.waitUntil(async () => !(await $('[role="dialog"]').isExisting()), {
+    timeout: 5000,
+    timeoutMsg: "the edit form never closed",
+  });
+}
+
+/** What `containerProcesses()` knows about a helper or web process, one line each. */
+function processLines(processes: { pid: number; ppid?: number; command: string[] }[]): string {
+  return processes
+    .map((p) => `${p.pid} (parent ${p.ppid ?? "?"}): ${p.command.join(" ")}`)
+    .join("\n");
+}
+
+describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
+  const folder = () => path.join(currentRun().documents, "HoploDex");
+  const database = () => path.join(folder(), `${PROTECTED}.hoplodex`);
+  const scans = () => path.join(currentRun().documents, "Protected scans");
+  /** `flatpak-spawn`'s own flags for a sandboxed web process, as WebKit passed
+   * them (read from the running process by the test that follows the launch). */
+  let webKitSpawnFlags: string[] = [];
+  const slowSpreadsheet = () => path.join(currentRun().documents, "Protected scans", "slow.csv");
+
+  before(async () => {
+    await waitForChooser();
+    fs.rmSync(path.join(CHECK_LOG_DIR, "lock-times.log"), { force: true });
+  });
+
+  after(async () => {
+    // What a test may have left changed for the others.
+    fs.rmSync(slowSpreadsheet(), { force: true });
+    if (currentRun().screenSavers.length === 0) await startScreenSavers();
+    try {
+      addLogindSession();
+    } catch {
+      // The session is there already.
+    }
+  });
+
+  it("011 US2-1, 011 SC-002: logind's PrepareForSleep locks the open database and the app's end of the delay inhibitor is closed afterwards", async function () {
+    this.timeout(180000);
+    await createDatabase({ name: PROTECTED });
+    await addFirearm(guard);
+    // A note and a TIFF on the record, for the journeys that follow.
+    fs.mkdirSync(scans(), { recursive: true });
+    fs.writeFileSync(path.join(scans(), "notes.txt"), "Protected by HoploDex in a Flatpak.\n");
+    fs.copyFileSync(path.join(FIXTURES, "one-page.tif"), path.join(scans(), "one-page.tif"));
+    await dropFiles([path.join(scans(), "notes.txt"), path.join(scans(), "one-page.tif")]);
+    await waitForDocument("notes.txt");
+    await waitForDocument("one-page.tif");
+
+    // The app holds a delay inhibitor for each, through the bus proxy.
+    expect(holdsInhibitor("sleep")).toBe(true);
+    expect(holdsInhibitor("shutdown")).toBe(true);
+    expect(lockProbe(database())).toBe(true);
+
+    const { releasedMs } = await timedLock(
+      "PrepareForSleep",
+      () => emitPrepareForSleep(true),
+      "sleep",
+    );
+
+    expect(await chooserSays(`HoploDex locked “${PROTECTED}”.`)).toBe(true);
+    // The lock released the file and closed the descriptor within logind's own
+    // limit on how long a delay inhibitor may hold sleep back (5 s).
+    expect(lockProbe(database())).toBe(false);
+    expect(releasedMs).toBeLessThan(5000);
+    // Only the sleep inhibitor was let go.
+    expect(holdsInhibitor("shutdown")).toBe(true);
+
+    // Awake again: the app takes the inhibitor again.
+    emitPrepareForSleep(false);
+    await browser.waitUntil(() => holdsInhibitor("sleep"), {
+      timeout: 10000,
+      interval: 20,
+      timeoutMsg: "the sleep inhibitor was not taken again after waking",
+    });
+  });
+
+  it("011 US2-2: the screen saver's ActiveChanged locks the open database when the setting is on", async function () {
+    this.timeout(120000);
+    await unlock(E2E_PASSPHRASE);
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await $('[role="dialog"]').waitForExist();
+    const label = "Lock when the computer's screen locks";
+    // The stand-ins make the setting available.
+    expect(await isFieldDisabled(label)).toBe(false);
+    await toggle(label);
+    await clickButton("Save");
+    await browser.waitUntil(async () => !(await $('[role="dialog"]').isExisting()), {
+      timeout: 5000,
+      timeoutMsg: "the settings never closed",
+    });
+
+    await timedLock("ActiveChanged(true)", () => emitActiveChanged(true));
+
+    expect(await chooserSays(`HoploDex locked “${PROTECTED}”.`)).toBe(true);
+    expect(lockProbe(database())).toBe(false);
+    // The screen unlocked again, which the app notes and does nothing else for.
+    emitActiveChanged(false);
+  });
+
+  it("011 SC-002: a sleep locks as fast in the sandbox as outside it", async function () {
+    this.timeout(180000);
+    // Both locks are of a database that has been backed up today, so neither
+    // pays for a backup the other doesn't. Outside the sandbox first.
+    await relaunchApp(binaryLauncher);
+    await waitForChooser();
+    await unlock(E2E_PASSPHRASE);
+    const outside = await timedLock("outside the sandbox: PrepareForSleep", () =>
+      emitPrepareForSleep(true),
+    );
+    emitPrepareForSleep(false);
+
+    await relaunchApp(flatpakLauncher());
+    await waitForChooser();
+    await unlock(E2E_PASSPHRASE);
+    const inside = await timedLock("in the Flatpak: PrepareForSleep", () =>
+      emitPrepareForSleep(true),
+    );
+    emitPrepareForSleep(false);
+
+    console.log(
+      `011 SC-002: locked after ${inside.lockedMs} ms in the Flatpak and ${outside.lockedMs} ms outside it`,
+    );
+    expect(inside.lockedMs - outside.lockedMs).toBeLessThanOrEqual(1000);
+  });
+
+  it("011 US2-3, 011 FR-013: logind's PrepareForShutdown closes the database and ends the app, keeping the open form's input as pending changes", async function () {
+    this.timeout(180000);
+    await unlock(E2E_PASSPHRASE);
+    await openFirearm(GUARD_NAME);
+    await editNotes("typed before the shutdown");
+
+    const app = sandboxProcesses().find(
+      (p) => p.command[0] === "hoplodex" && p.command.length === 1,
+    );
+    expect(app).toBeDefined();
+    const started = performance.now();
+    emitPrepareForShutdown(true);
+    await browser.waitUntil(() => processGone(app!.pid), {
+      timeout: 20000,
+      interval: 5,
+      timeoutMsg: "the app did not end for the shutdown",
+    });
+    noteTime("PrepareForShutdown ended the app after", Math.round(performance.now() - started));
+    // The rest of the sandbox follows it.
+    await waitForAppToQuit(20000);
+    await browser.waitUntil(() => sandboxProcesses().length === 0, {
+      timeout: 20000,
+      timeoutMsg: "the sandbox was still running after the app ended",
+    });
+
+    // Nothing of the app is left holding the file or a descriptor.
+    expect(lockProbe(database())).toBe(false);
+    expect(holdsInhibitor("shutdown")).toBe(false);
+    expect(holdsInhibitor("sleep")).toBe(false);
+
+    await relaunchApp();
+    await resumePendingNotes("typed before the shutdown");
+    await switchDatabase();
+  });
+
+  it("011 US2-3, 011 FR-013, 011 SC-002: a log-out's SIGTERM ends the app at once, keeping the open form's input, and the opened document's copy is gone", async function () {
+    this.timeout(180000);
+    await unlock(E2E_PASSPHRASE);
+    await openFirearm(GUARD_NAME);
+    // A document opened in another application leaves a copy on disk.
+    const opened = logLines("HOPLODEX_E2E_OPENED_LOG").length;
+    await clickRowButton("notes.txt", "Open in another app…");
+    await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length > opened, {
+      timeout: 15000,
+      timeoutMsg: "the opener never logged the copy",
+    });
+    const copy = logLines("HOPLODEX_E2E_OPENED_LOG").at(-1)!;
+    expect(fs.existsSync(copy)).toBe(true);
+    expect(filesUnder(copiesDir())).toContain(copy);
+    await editNotes("typed before the log-out");
+
+    const started = performance.now();
+    await terminateApp();
+    noteTime("SIGTERM ended the app after", Math.round(performance.now() - started));
+
+    expect(fs.existsSync(copy)).toBe(false);
+    expect(filesUnder(copiesDir())).toEqual([]);
+    expect(lockProbe(database())).toBe(false);
+
+    await relaunchApp();
+    await resumePendingNotes("typed before the log-out");
+    await switchDatabase();
+  });
+
+  it("011 US2-6, 011 FR-012, 011 FR-011: the TIFF preview's helper is confined and gone once the app is killed, and WebKit's sandbox is on", async function () {
+    this.timeout(180000);
+    await unlock(E2E_PASSPHRASE);
+    await openFirearm(GUARD_NAME);
+    await openDocument("one-page.tif");
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const image = document.querySelector<HTMLImageElement>('img[alt="one-page.tif"]');
+          return Boolean(image?.complete && image.naturalWidth > 0);
+        }),
+      { timeout: 15000, timeoutMsg: "the TIFF never rendered" },
+    );
+
+    // The helper runs in the app's sandbox, started again from the same file.
+    const helpers = sandboxProcesses().filter((p) => p.command[1] === "--render-helper");
+    expect(helpers).toHaveLength(1);
+    const helper = helpers[0].pid;
+    const app = sandboxProcesses().find(
+      (p) => p.command[0] === "hoplodex" && p.command.length === 1,
+    )!;
+    // Confined as on a .deb: no core dump, and a data limit that the app,
+    // which has none, does not (src-tauri/src/services/helper/confine.rs).
+    expect(resourceLimit(helper, "Max core file size")).toEqual({ soft: 0, hard: 0 });
+    expect(Number.isFinite(resourceLimit(helper, "Max data size").soft)).toBe(true);
+    expect(Number.isFinite(resourceLimit(app.pid, "Max data size").soft)).toBe(false);
+
+    // The log: WebKit's sandbox is on, what the helpers are confined with
+    // (once per run) and this helper's start.
+    const log = appLog();
+    expect(log).toContain("[INFO] WebKit's sandbox is on");
+    expect(log).toMatch(/\[INFO\] the helpers are confined with Landlock ABI \d+/);
+    expect(log).toContain(`[INFO] started --render-helper (process `);
+
+    await killApp();
+    await browser.waitUntil(() => processGone(helper), {
+      timeout: 10000,
+      timeoutMsg: "the render helper outlived the app",
+    });
+    expect(sandboxProcesses()).toEqual([]);
+  });
+
+  it("011 US2-6, 011 FR-012: the import's helper is confined and gone once the app is killed", async function () {
+    this.timeout(180000);
+    await relaunchApp();
+    await waitForChooser();
+    await unlock(E2E_PASSPHRASE);
+    await goTo("Collection");
+    // A named pipe nobody writes to: the import starts its helper, then waits
+    // for the file's first bytes, so the helper is alive when the app is killed.
+    fs.mkdirSync(scans(), { recursive: true });
+    fs.rmSync(slowSpreadsheet(), { force: true });
+    const made = spawnSync("mkfifo", [slowSpreadsheet()]);
+    if (made.status !== 0) throw new Error(`mkfifo failed: ${made.stderr}`);
+    await clickButton("Import");
+    await fill("Spreadsheet file", slowSpreadsheet());
+    await clickButton("Import", { settles: false });
+
+    await browser.waitUntil(
+      () => sandboxProcesses().some((p) => p.command[1] === "--import-helper"),
+      { timeout: 15000, interval: 100, timeoutMsg: "the import's helper never started" },
+    );
+    const helper = sandboxProcesses().find((p) => p.command[1] === "--import-helper")!.pid;
+    expect(resourceLimit(helper, "Max core file size")).toEqual({ soft: 0, hard: 0 });
+    expect(Number.isFinite(resourceLimit(helper, "Max data size").soft)).toBe(true);
+
+    const log = appLog();
+    expect(log).toContain("[INFO] WebKit's sandbox is on");
+    expect(log).toMatch(/\[INFO\] the helpers are confined with Landlock ABI \d+/);
+    expect(log).toContain(`[INFO] started --import-helper (process `);
+
+    await killApp();
+    await browser.waitUntil(() => processGone(helper), {
+      timeout: 10000,
+      timeoutMsg: "the import helper outlived the app",
+    });
+    expect(sandboxProcesses()).toEqual([]);
+    fs.rmSync(slowSpreadsheet(), { force: true });
+  });
+
+  it("011 US2-7, 011 FR-011: a web process runs in the sub-sandbox WebKit asks the Flatpak portal for", async function () {
+    this.timeout(120000);
+    await relaunchApp();
+    await waitForChooser();
+    const processes = containerProcesses();
+    const base = (p: { command: string[] }) => path.basename(p.command[0] ?? "");
+    const app = processes.find((p) => p.command[0] === "hoplodex" && p.command.length === 1)!;
+    const spawners = processes.filter((p) => base(p) === "flatpak-spawn");
+    const webProcesses = processes.filter((p) => base(p) === "WebKitWebProcess");
+    const bubblewraps = processes.filter((p) => base(p) === "bwrap");
+    // What the research record reads (011 research.md §9): the portal's
+    // `flatpak-spawn --sandbox` command line, and what the web process sees of
+    // its sandbox against what the app sees of its own.
+    const looked = ["/", "/home", "/tmp", "/run/user/1000", "/run/flatpak", "/app", "/var/data"];
+    const web = webProcesses[0];
+    const viewLines = (name: string, pid: number) => {
+      const view = processView(pid, looked);
+      return [
+        `${name} (process ${pid})`,
+        `  namespaces: ${JSON.stringify(view.namespaces)}`,
+        `  network interfaces: ${view.interfaces.join(", ")}`,
+        `  mounts: ${view.mounts.join("; ")}`,
+        ...Object.entries(view.folders).map(
+          ([folder, entries]) => `  ${folder}: ${entries ? entries.join(" ") : "(not there)"}`,
+        ),
+      ];
+    };
+    fs.mkdirSync(CHECK_LOG_DIR, { recursive: true });
+    fs.writeFileSync(
+      path.join(CHECK_LOG_DIR, "webkit-sandbox.txt"),
+      [
+        "flatpak-spawn:",
+        processLines(spawners),
+        "bwrap:",
+        processLines(bubblewraps),
+        ...viewLines("the app", app.pid),
+        ...viewLines("the web process", web.pid),
+        "",
+      ].join("\n"),
+    );
+    expect(spawners.length).toBeGreaterThan(0);
+    expect(spawners.every((p) => p.command.includes("--sandbox"))).toBe(true);
+    // The flags WebKit chose, for the next test to start a sub-sandbox with.
+    webKitSpawnFlags = spawners[0].command.filter(
+      (argument) =>
+        argument === "--sandbox" ||
+        argument === "--no-network" ||
+        argument.startsWith("--directory=") ||
+        argument.startsWith("--sandbox-flag="),
+    );
+    expect(webProcesses.length).toBeGreaterThan(0);
+    // Not in the app's own PID namespace, as it would be unsandboxed.
+    expect(webProcesses.every((p) => p.pidNamespace !== app.pidNamespace)).toBe(true);
+    expect(appLog()).toContain("[INFO] WebKit's sandbox is on");
+  });
+
+  it("011 US2-7, 011 FR-011: a process in a sub-sandbox started with WebKit's own flags reaches no file, no network and no bus name", async function () {
+    this.timeout(120000);
+    expect(webKitSpawnFlags).toContain("--sandbox");
+    const script = [
+      "import json, os, socket, subprocess, sys",
+      "home, database = sys.argv[1], sys.argv[2]",
+      "out = {}",
+      'out["interfaces"] = [name for _, name in socket.if_nameindex()]',
+      "def listing(path):",
+      "    try:",
+      "        return sorted(os.listdir(path))",
+      "    except OSError as error:",
+      '        return "error: " + error.strerror',
+      'out["home"] = listing(home)',
+      'out["documents"] = listing(os.path.join(home, "Documents"))',
+      'out["/media"] = listing("/media")',
+      'out["/mnt"] = listing("/mnt")',
+      "try:",
+      '    open(database, "rb").read(16)',
+      '    out["database"] = "read"',
+      "except OSError as error:",
+      '    out["database"] = "error: " + error.strerror',
+      "system = socket.socket(socket.AF_UNIX)",
+      "try:",
+      '    system.connect("/run/dbus/system_bus_socket")',
+      '    out["system bus"] = "connected"',
+      "except OSError as error:",
+      '    out["system bus"] = "error: " + error.strerror',
+      "def ping(name, path):",
+      '    call = ["gdbus", "call", "--session", "--dest", name, "--object-path", path,',
+      '            "--method", "org.freedesktop.DBus.Peer.Ping"]',
+      "    result = subprocess.run(call, capture_output=True, text=True, timeout=20)",
+      '    return "answered" if result.returncode == 0 else "refused: " + (result.stderr.strip().splitlines() or ["?"])[-1]',
+      "for name, path in [",
+      '    ("org.freedesktop.secrets", "/org/freedesktop/secrets"),',
+      '    ("org.gnome.ScreenSaver", "/org/gnome/ScreenSaver"),',
+      '    ("org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver"),',
+      '    ("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop"),',
+      '    ("org.freedesktop.portal.Flatpak", "/org/freedesktop/portal/Flatpak"),',
+      "]:",
+      '    out["session bus " + name] = ping(name, path)',
+      // The portal that started this sandbox is among the names it can reach:
+      // asking it for another process must not give that process more than
+      // this one has.
+      "nested = subprocess.run(",
+      '    ["flatpak-spawn", "--directory=/", "python3", "-I", "-c",',
+      '     "import os, sys; print(os.listdir(sys.argv[1]))", os.path.join(home, "Documents")],',
+      "    capture_output=True, text=True, timeout=30)",
+      'out["nested flatpak-spawn lists Documents"] = (nested.stdout.strip() if nested.returncode == 0',
+      '    else "failed: " + (nested.stderr.strip().splitlines() or ["?"])[-1])',
+      "print(json.dumps(out))",
+    ].join("\n");
+    const { home } = currentRun();
+    const result = runInSandbox("flatpak-spawn", [
+      ...webKitSpawnFlags,
+      "--sandbox-a11y-own-name=io.github.exodious.HoploDex.Sandboxed.WebProcess-probe",
+      "--env=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/flatpak/bus",
+      "python3",
+      "-I",
+      "-c",
+      script,
+      home,
+      database(),
+    ]);
+    const lines = (result.stdout ?? "").trim().split("\n");
+    fs.appendFileSync(
+      path.join(CHECK_LOG_DIR, "webkit-sandbox.txt"),
+      `\nA process started with flatpak-spawn ${webKitSpawnFlags.join(" ")} reaches:\n${lines.at(-1)}\n(exit ${result.status}; ${result.stderr?.trim()})\n`,
+    );
+    expect(result.status).toBe(0);
+    const reach = JSON.parse(lines.at(-1)!) as Record<string, string | string[]>;
+    // No network but the loopback.
+    expect(reach.interfaces).toEqual(["lo"]);
+    // No file of the home folder or of a removable drive.
+    expect(String(reach.database)).toMatch(/^error/);
+    for (const folder of ["documents", "/media", "/mnt"]) {
+      expect(JSON.stringify(reach[folder])).not.toContain("hoplodex-check");
+    }
+    expect(JSON.stringify(reach.documents)).not.toContain("HoploDex");
+    // Not asserted: a second process asked of the Flatpak portal from inside
+    // the sub-sandbox (`flatpak-spawn` without `--sandbox`) runs with the app's
+    // own permissions, as the line written above shows. That is how the portal
+    // works, and 011 research.md §9 and §20 record it as a limit of what WebKit's
+    // sandbox keeps from a compromised web process (011 US2-7). The line is
+    // there to be read, and to be updated if Flatpak ever stops it.
+    console.log(`011 US2-7: ${reach["nested flatpak-spawn lists Documents"]}`);
+    // Neither the system bus nor any name the app talks to on the session bus,
+    // apart from the desktop portals, which every sandbox can reach.
+    expect(String(reach["system bus"])).toMatch(/^error/);
+    for (const name of [
+      "org.freedesktop.secrets",
+      "org.gnome.ScreenSaver",
+      "org.freedesktop.ScreenSaver",
+    ]) {
+      expect(String(reach[`session bus ${name}`])).toMatch(/^refused/);
+    }
+    expect(reach["session bus org.freedesktop.portal.Desktop"]).toBe("answered");
+  });
+
+  it("011 US2-4: without a screen saver on the bus and without logind's session, Database settings shows the screen-lock option unavailable", async function () {
+    this.timeout(180000);
+    await stopScreenSavers();
+    removeLogindSession();
+    await relaunchApp();
+    await waitForChooser();
+    await unlock(E2E_PASSPHRASE);
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await $('[role="dialog"]').waitForExist();
+    const label = "Lock when the computer's screen locks";
+    expect(await isFieldDisabled(label)).toBe(true);
+    const text = await browser.execute(
+      () => document.querySelector('[role="dialog"]')?.textContent ?? "",
+    );
+    expect(text).toContain(
+      "Not available: this computer doesn't tell applications when the screen locks.",
+    );
+    await clickButton("Cancel");
+    await switchDatabase();
   });
 });

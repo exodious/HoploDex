@@ -846,7 +846,12 @@ What it does, in order:
    installation lists the same apps as at the start.
 
 Its logs are in `flatpak/out/check/` (`check.log`, one per stand-in and per app
-start). `--fresh-install` is not implemented yet (`011 tasks.md T067`) and the
+start, which holds what the app logged to standard error: whether WebKit's
+sandbox is on and what the helpers are confined with, see `src-tauri/src/logging.rs`).
+`lock-times.log` has each lock's time from the signal (`011 SC-002`) and
+`webkit-sandbox.txt` the `flatpak-spawn --sandbox` command line, what the web
+process sees of its sandbox and what a process started with WebKit's flags
+reaches (`011 research.md` §9). `--fresh-install` is not implemented yet (`011 tasks.md T067`) and the
 script rejects it.
 
 Run it before each release and for a pull request that changes any of these
