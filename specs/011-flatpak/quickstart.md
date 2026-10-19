@@ -33,8 +33,12 @@ Expected:
 - `bundle:flatpak` ends with the `.flatpak` path. Its log shows the download
   phase, then the build phase with `--disable-download`, then
   `contents: ok`, `check-no-webdriver: ok`, `desktop-file-validate: ok`,
-  `appstreamcli validate: ok` and the linter passing with the two recorded
-  exceptions.
+  `appstreamcli validate: ok`, `notices: same as the other Linux builds` and
+  the linter passing, on the manifest with the two recorded exceptions
+  (`flatpak-builder-lint manifest: ok`) and on the repository with those two
+  and the two screenshot rules `build.sh` adds (`flatpak-builder-lint repo: ok`).
+  _Amended 2026-10-19 (011 T078): the notices line and the repository lint's
+  screenshot rules were added during implementation (research.md §4)._
 - `test:flatpak` passes every test in `e2e/specs/flatpak.e2e.ts`, the bus
   checks and the no-network check, prints the cold-start times of the Flatpak and the non-Flatpak
   build (SC-006), and leaves no app installed (`flatpak list --app` in the

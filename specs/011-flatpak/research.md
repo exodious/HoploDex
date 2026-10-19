@@ -250,6 +250,14 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     only, in a file it writes under the state volume; the committed file stays at
     two (`manifest.test.ts`). A submission to Flathub gets the screenshots
     mirrored by its own pipeline (§19, item 7).
+    _Amended 2026-10-19 (011 T078): checked against what was built.
+    `flatpak/io.github.exodious.HoploDex.yml`'s `finish-args` are this table's
+    rows, in this order (twelve arguments: the `/media`, `/run/media` and `/mnt`
+    row is three of them and the screen savers' row two), with no
+    `--share=network`, and `flatpak/linter-exceptions.json` holds exactly the two
+    exceptions above, each with a reason citing §4 and §5 or §6. `build.sh`
+    passes it with `--exceptions --user-exceptions`, as the T066 note says.
+    Nothing in this section changed._
 - **Rationale**: the spec settled the reach (Clarifications, FR-003) and the
   keyring route (FR-006). The others are what the existing code already
   uses on Linux, kept so the Flatpak runs the same code as the `.deb`.
@@ -324,6 +332,12 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     on this computer" and the close's `failureReason`
     (contracts/tauri-commands.md). The check runs before any scratch file,
     probe or backup is made, so nothing is left behind (SC-003).
+    _Amended 2026-10-19 (011 T078): `details` is `{ path, folder, grants }`
+    (`folder` is the folder that would need access, which the override command
+    names), and the built message names `grants` in its first sentence unless
+    they are the shipped four, and shell-quotes the override's folder when a
+    shell would split it (data-model.md, "Error `LOCATION_OUT_OF_REACH`";
+    `CommandError::out_of_reach(path, folder, home, grants)`)._
   - **Drops**: WebKitGTK's GTK 3 drop target asks only for `text/uri-list`,
     so a drop always arrives as the file's host path (the spike). One within
     reach is attached as on a `.deb`; one outside it doesn't exist in the
@@ -531,6 +545,14 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
       against a process that does. This is the portal's behaviour, which
       Flatpak versions may change, so the check records the result (it does
       not assert it).
+    _Amended 2026-10-19 (011 T078): checked against the code. The probe runs
+    in a Flatpak (`sandbox_probe::SKIP_MARKERS` is `/run/.containerenv` and
+    `/.dockerenv`), and the startup lines the check reads, whether WebKit's
+    sandbox is on and what `Reach` found, are `log` lines that
+    `src-tauri/src/logging.rs` writes to standard error (our crates at `info`,
+    the others at `warn`; the helpers and the probe log nothing, the parent logs
+    for them). Before 011 nothing installed a logger, so those lines went
+    nowhere on any OS (§20)._
   - **With the sandbox off** (the probe failed, for example on a desktop
     without the Flatpak portal): a compromised web process has everything
     of §4's table: the home folder and removable drives, the user's
@@ -930,6 +952,20 @@ permissions, the linter), and leaves these to a later decision:
 7. **Screenshots** hosted where Flathub mirrors them, which the tag-based
    addresses of §13 already allow.
 
+_Amended 2026-10-19 (011 T078): checked against what was built._
+
+- _Item 1: the manifest's own header says it is AI-assisted, which is why it
+  can't be submitted as it is._
+- _Item 5 is two exceptions, not one: `finish-args-login1-system-talk-name`
+  (§4, §6) is recorded beside `finish-args-home-filesystem-access`, and a
+  submission asks Flathub for both. If the logind name is refused, the sleep
+  delay (§6) has no other route (§4, "Alternatives considered")._
+- _Item 7: the repository lint in `build.sh` sets aside
+  `appstream-missing-screenshots` and
+  `appstream-screenshots-not-mirrored-in-ostree` because a local build can't
+  mirror the tag-based addresses (§4). Flathub's pipeline does mirror them
+  (`--mirror-screenshots-url`), so a submission needs neither._
+
 ## §20 Residual risks for the release security review (#21)
 
 - **A compromised web process, with WebKit's sandbox off** (§9): reaches the
@@ -945,12 +981,37 @@ permissions, the linter), and leaves these to a later decision:
   process is one D-Bus call from the "off" reach above, and not by default
   at it. The release review should count WebKit's sandbox here as a layer an
   attacker has to get through, not a wall._
+- **A process asked of the Flatpak portal, from inside WebKit's sub-sandbox.**
+  _Amended 2026-10-19 (011 T078):_ `flatpak-spawn` run without `--sandbox` from
+  inside the sub-sandbox starts a process with the app's own permissions: all of
+  §4's table, the home folder, removable drives, keyring and logind among
+  it. In the check it listed the throwaway home's Documents folder (§9, "One
+  limit"). The sub-sandbox can ask because the Flatpak portal is among the
+  names every Flatpak sandbox reaches on the session bus. So WebKit's sandbox,
+  with it on, does not keep a compromised web process from the app's reach; it
+  adds the one D-Bus call that asks for a process. Judge it as a layer, not a
+  wall. This is the portal's behaviour and may change with Flatpak versions, so
+  the check records it and does not assert it.
 - **A compromised HoploDex process**: everything in §4's table, which is
   what a `.deb` install has apart from the network and files outside the
   home folder and removable drives.
 - **The keyring**: no narrower than on a `.deb` (§7).
 - **The Documents portal** remembers the opened copy's path and name after
   the copy is deleted (§8).
+- **Overrides the user makes.** The refusal's advice (§5) is a
+  `flatpak override --user --filesystem=<folder>` command, and Reach honours
+  whatever the user grants, `host` included. That widens what a compromised
+  HoploDex process reaches by exactly what the user chose, as it would for any
+  Flatpak; nothing in HoploDex limits it.
+- **The app's log reaches standard error.** _Amended 2026-10-19 (011 T078):_
+  `logging.rs` is new in 011. The `log` lines the app already had (about 190, of
+  which about a third name a path) now go to the terminal HoploDex was started
+  from, or to the journal for one started from the desktop, on every OS, not
+  only in a Flatpak. A line can name a database, backup or document file's path
+  and the operating system's error text. The lines that mention a passphrase,
+  key or secret were read and none prints one; the rest were not reviewed line
+  by line for collection data. The journal is local and the user's own; the
+  release review should decide whether paths belong there.
 - **The runtime** is Flathub's, updated by Flathub, and ends with GNOME 51
   (§1). A WebKitGTK security fix reaches users when Flathub updates the
   runtime, without a HoploDex release.

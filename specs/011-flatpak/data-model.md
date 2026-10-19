@@ -11,19 +11,30 @@ small additions to IPC types, and the files the build reads and writes.
 ### `Reach`
 
 What this run of HoploDex may reach on the filesystem. Read once at startup
-by `main.rs` and kept as Tauri state (`Arc<Reach>`). Commands pass it to
-their `ops`, which take `&Reach`, so tests build one for a temporary folder
-(research.md §5).
+by `main.rs` and kept as Tauri state (`Arc<Reach>`), the same `Arc` that
+`Session` holds (`Session::reach()`), so closes, upgrades and the "before"
+backups started by OS events can ask it too. Commands pass it to their `ops`,
+which take `&Reach`, so tests build one for a temporary folder (research.md §5).
 
 | Variant | Meaning |
 |---|---|
 | `Unconfined` | Not in a Flatpak (no `/.flatpak-info`): every path is within reach and nothing is checked. Every non-Flatpak install, and every existing test, uses this. |
-| `Flatpak { grants: Vec<Grant>, home: PathBuf }` | Inside a Flatpak, with the grants read from `/.flatpak-info`. |
+| `Flatpak { grants: Vec<Grant>, removed: Vec<PathBuf>, home: PathBuf, host_paths: Arc<dyn HostPaths> }` | Inside a Flatpak, with the grants read from `/.flatpak-info`, the roots an override removed (`!<entry>`), the home folder, and the lookup that turns a Documents-portal path into its host path. |
+
+_Amended 2026-10-19 (011 T078): the variant was written with `grants` and
+`home` only. `removed` and `host_paths` are fields of it, not separate state:
+a removal beats a grant equally close to the path (so a mistake narrows reach
+and never widens it), and the portal lookup travels with the reach it serves.
+`Reach::detect(info_path, home, user_dirs, host_paths)` reads the file once
+(no file: `Unconfined`; a file that can't be read: `Flatpak` with no grants,
+logged), `Reach::from_flatpak_info(text, home, user_dirs)` is the pure parser,
+and `Reach::describe()` is the one line the log carries at startup._
 
 **`Grant`**: `{ root: PathBuf, writable: bool }`. A path is within a grant
 when it is the grant's root or below it, compared after making it absolute
 and normalising `.` and `..` without following links. The longest matching
-root decides, so a `!` grant below a wider one removes that part.
+root decides, so a `!` entry below a wider grant removes that part; a removal
+as close as the closest grant, or closer, wins.
 
 **Reading `/.flatpak-info`** (`Reach::from_flatpak_info(text, home, user_dirs)`,
 a pure function): the `[Context]` group's `filesystems=` key, a
@@ -93,6 +104,15 @@ details: {
 fieldErrors?: { folder?: string; name?: string }  // create_database only
 ```
 
+`CommandError::out_of_reach(path, folder, home, grants)` builds it, in
+`commands/error.rs`; `home` is the user's home folder, the first of the shipped
+grants, which `Reach` holds.
+
+_Amended 2026-10-19 (011 T078): the constructor was planned as
+`out_of_reach(path, folder, grants)`. It takes `home` too, because "the
+shipped four" is the home folder plus `/media`, `/run/media` and `/mnt`, and
+the home folder is not the same path on every computer._
+
 The message (one wording, built once in `commands/error.rs`):
 
 > This copy of HoploDex is a Flatpak, and it can only reach your home folder
@@ -104,6 +124,19 @@ The message (one wording, built once in `commands/error.rs`):
 
 When the user has granted more, the first sentence lists `grants` instead of
 "your home folder and removable drives".
+
+_Amended 2026-10-19 (011 T078): what the built message does, which the
+paragraph above leaves open:_
+
+- _The first sentence says "your home folder and removable drives" only when
+  `grants` are exactly the shipped four: the home folder, `/media`,
+  `/run/media` and `/mnt`, each writable, in any order. Any other set (one
+  added, one removed, home replaced, one made read-only) is the user's own and
+  is listed, each root in backticks, `(read only)` after a read-only one, and
+  "and" before the last. No grants at all reads "none of your folders"._
+- _The override command's folder is shell-quoted, and only when a shell would
+  split it (a folder with a space in it). `<folder>` in the prose stays plain._
+- _`details.grants` is always the roots, whatever the first sentence says._
 
 ### Backup location availability
 
@@ -122,8 +155,10 @@ When the user has granted more, the first sentence lists `grants` instead of
 
 ## The portal opener (`commands/documents.rs`)
 
-`AppOpener` on Linux holds `OpenerRoute::XdgOpen` or `OpenerRoute::Portal`,
-chosen once from `Reach` (Flatpak or not). The portal route's answers:
+`AppOpener` on Linux holds `OpenerRoute::XdgOpen` or
+`OpenerRoute::Portal { timeout }`, chosen once from `Reach::is_flatpak()` by
+`main.rs`'s `opener_route` (the portal's timeout is 5 s) and passed to
+`AppOpener::new(app, route)`. The portal route's answers:
 
 | OpenURI `Response` | `Opener::open` returns |
 |---|---|
@@ -132,6 +167,12 @@ chosen once from `Reach` (Flatpak or not). The portal route's answers:
 | `2` | `Err(OpenFailure::NoApp)` |
 | no answer in 5 s | `Ok(())` (the portal is waiting on the user) |
 | no portal on the bus, or the call refused | `Err(OpenFailure::NoApp)` |
+
+_Amended 2026-10-19 (011 T078): the planned `AppOpener::new(app)` gained the
+route as its second argument (a refactor of the one constructor, not a sibling
+for Flatpak). `OpenerRoute` exists only outside the `e2e` build, which keeps
+`E2eOpener`; on macOS and Windows it has `XdgOpen` only, which there means the
+platform's own launcher._
 
 ## Build files (`flatpak/`)
 
@@ -144,8 +185,15 @@ chosen once from `Reach` (Flatpak or not). The portal route's answers:
 | `sdk-extensions` | `org.freedesktop.Sdk.Extension.rust-stable`, `org.freedesktop.Sdk.Extension.node24` |
 | `command` | `hoplodex` |
 | `finish-args` | exactly research.md §4's list, each with a comment giving its reason |
-| `build-options` | the extensions' `bin` on `PATH`; `CARGO_HOME` in the build folder; `CARGO_NET_OFFLINE=true`; `npm_config_offline=true`; no `build-args` |
-| `modules` | one: `hoplodex`, `buildsystem: simple`, sources `[{ type: dir, path: .. }, cargo-sources.json, node-sources.json]`, the build commands of research.md §2 |
+| `build-options` | the extensions' `bin` on `PATH`; `CARGO_HOME` in the build folder; `CARGO_NET_OFFLINE=true`; `npm_config_offline=true`; `XDG_CACHE_HOME` and `npm_config_cache` in the node source list's cache; no `build-args` |
+| `modules` | one: `hoplodex`, `buildsystem: simple`, sources `[{ type: dir, path: .., skip: [...] }, cargo-sources.json, node-sources.json]`, the build commands of research.md §2 |
+
+_Amended 2026-10-19 (011 T078): the `dir` source skips `node_modules`,
+`dist`, `src-tauri/target`, `flatpak/out`, `.human-testing`, `.claude`, `.git`
+and `.wdio`, so the dev container's build output and data, the worktrees and
+the history never enter the build. `XDG_CACHE_HOME` and `npm_config_cache`
+point at the cache `node-sources.json` fills (flatpak-node-generator's layout),
+which `npm ci --offline` and esbuild's binary read._
 
 **Rules** (`manifest.test.ts`): one module; those three sources; no
 `--share=network` anywhere; `finish-args` equal to the recorded list.
@@ -158,6 +206,13 @@ manifest. It differs only in the cargo build command's `--features`
 follows from the profile, and in leaving out the `check-no-webdriver.mjs`
 step, which would fail on the `e2e` build's driver by design. The test
 compares the two parsed manifests and fails on any other difference.
+
+_Amended 2026-10-19 (011 T078): the file written to the state volume also names
+the module's `dir` source and the two source lists by absolute path
+(`withAbsoluteSources`), because flatpak-builder resolves relative paths from
+the manifest's own folder and the state volume is not the checkout. That is the
+writer's business: the derivation `manifest.test.ts` compares still differs
+from the shipped manifest only in the ways above._
 
 ### Offline source lists
 
@@ -190,8 +245,19 @@ They are regenerated, never edited.
 }
 ```
 
-The format is the linter's own for local exceptions, confirmed when it is
-first run (research.md §4).
+The format is the linter's own for local exceptions, confirmed when it was
+first run (research.md §4): the linter takes the rule names from the object's
+keys, so the reasons are for people.
+
+_Amended 2026-10-19 (011 T078): the linter is run with `--exceptions
+--user-exceptions flatpak/linter-exceptions.json`; without `--exceptions` it
+reads no exceptions. The committed file stays at these two. `build.sh` lints
+the built repository with a copy that also sets aside
+`appstream-missing-screenshots` and
+`appstream-screenshots-not-mirrored-in-ostree`, written under the state volume
+and never committed: Flathub's pipeline mirrors the metainfo's screenshots
+(addresses at the release's tag, which does not exist while the release is
+made), and a local build can't (research.md §4)._
 
 ### `flathub.json`
 
@@ -235,6 +301,8 @@ share/licenses/io.github.exodious.HoploDex/NOTICES.txt
 
 plus what `flatpak build-finish` itself adds (`manifest.json`, the
 exported copies under `export/`). Any other path fails the check, naming it.
+(`contents.mjs --installed` checks an app Flatpak installed and sets aside the
+two files installing adds, `files/.ref` and `export/bin/<app id>`.)
 
 _Amended 2026-10-19 (011 T024): flatpak-builder's appstream compose also adds
 `share/app-info/xmls/io.github.exodious.HoploDex.xml.gz` and

@@ -17,6 +17,15 @@ check passes (data-model.md).
 `LOCATION_OUT_OF_REACH` is never overridable (`confirmedWarnings` has no
 effect on it).
 
+_Amended 2026-10-19 (011 T078): the message is built in one place,
+`CommandError::out_of_reach(path, folder, home, grants)`. Its first sentence
+names the grants (each root, `(read only)` where it is) unless they are the
+shipped four (the home folder, `/media`, `/run/media`, `/mnt`, all writable),
+for which it says "your home folder and removable drives"; the override
+command shell-quotes the folder when a shell would split it. `details` is
+`{ path, folder, grants }` as above, `grants` always the roots
+(data-model.md, "Error `LOCATION_OUT_OF_REACH`")._
+
 ## Shared types (amended)
 
 ```ts
@@ -70,6 +79,13 @@ location) is the host path.
 | `read_import_files`, `import_collection` | each file | `ReadFile` | `LOCATION_OUT_OF_REACH`, before the import helper starts |
 | `add_photo_from_path`, `add_document_from_path` (the chooser and drops) | the file | `ReadFile` | `LOCATION_OUT_OF_REACH`; for a drop, the record page's existing drop-error toast shows its message |
 
+_Amended 2026-10-19 (011 T078): the one place a backup folder is judged,
+`services/backups.rs`'s `check_location(folder, make_if_missing, &Reach)`, asks
+`Need::WriteFolder` before it makes the folder or writes its probe file, and
+answers `LocationProblem::OutOfReach`, which every row above that names a
+backup folder maps as written. Commands take `State<Arc<Reach>>` (or reach it
+through `Session::reach()`) and hand `&Reach` to their `ops`._
+
 `change_passphrase` and `restore_backup`'s replacement of the open database
 act on its own path, which `open_database` already found within reach in
 this run, so they check only the backup folder above. With nothing open,
@@ -81,8 +97,14 @@ runs), so it checks that path too.
 
 Input, output and errors unchanged. Inside a Flatpak, the copy is handed to
 the OpenURI portal instead of `xdg-open` (research.md §8). Its answers map as
-data-model.md's table does, so `NO_APP_FOR_DOCUMENT` keeps its meaning: the
+data-model.md's table, so `NO_APP_FOR_DOCUMENT` keeps its meaning: the
 portal said no application could open it, or there is no portal.
+
+_Amended 2026-10-19 (011 T078): the route is `AppOpener`'s
+`OpenerRoute::Portal { timeout }`, chosen once at startup from
+`Reach::is_flatpak()` and passed to `AppOpener::new(app, route)`; outside a
+Flatpak it is `OpenerRoute::XdgOpen`, as before (data-model.md, "The portal
+opener")._
 
 ## Unchanged
 

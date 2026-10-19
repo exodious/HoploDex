@@ -77,14 +77,30 @@ SC-007).
 
 | Command | Does | Fails when |
 |---|---|---|
-| `npm run bundle:flatpak` | Installs the SDK, runtime, extensions and linter into the container's installation if missing (network); `flatpak-builder --download-only`; `flatpak-builder --disable-download` (no network); the contents check; `check-no-webdriver.mjs`; `desktop-file-validate`; `appstreamcli validate`; the linter on the manifest and the repository; writes the `.flatpak` | any step fails, naming it |
+| `npm run bundle:flatpak` | Installs the SDK, runtime, extensions and linter into the container's installation if missing (network); `flatpak-builder --download-only`; `flatpak-builder --disable-download` (no network; `check-no-webdriver.mjs` is one of the manifest's build commands); the contents check; `desktop-file-validate`; `appstreamcli validate --no-net`; the notices comparison; installs the build from the local repository; the linter on the manifest and the repository; writes the `.flatpak` | any step fails, naming it |
 | `npm run flatpak:sources` | Regenerates `flatpak/cargo-sources.json` and `flatpak/node-sources.json` from the lockfiles | a generator fails |
-| `npm run test:flatpak` | Builds the check variant (data-model.md), installs it, starts the private buses and stand-ins, runs `e2e/specs/flatpak.e2e.ts` and the bus checks, uninstalls it. `-- --fresh-install` also installs the shipped `.flatpak` into an empty installation with no remotes and starts it (network) | any test fails |
+| `npm run test:flatpak` | Builds the check variant (data-model.md), installs it, starts the private buses and stand-ins, runs `e2e/specs/flatpak.e2e.ts` (US4-3's install-over among it) and the bus checks, uninstalls it. `-- --fresh-install` also installs the shipped `.flatpak` into an empty installation with no remotes and starts it (network) | any test fails |
 
 `npm test` (every run) includes `scripts/flatpak/*.test.ts`, which need no
 Flatpak tooling: the source lists against the lockfiles, the manifest's
 rules, the contents allow list on fixtures, the metadata's rules and the host
 guard.
+
+_Amended 2026-10-19 (011 T078): what the steps do that the table leaves out._
+
+- _The linter is `flatpak run --command=flatpak-builder-lint
+  org.flatpak.Builder`, run with `--exceptions --user-exceptions
+  flatpak/linter-exceptions.json`: on the manifest with exactly the two recorded
+  exceptions, and on the built repository with those two plus
+  `appstream-missing-screenshots` and
+  `appstream-screenshots-not-mirrored-in-ostree`, which `build.sh` adds in a
+  file under the state volume (the screenshots' addresses are at the release's
+  tag, so a local build can't mirror them; research.md §4)._
+- _The notices comparison builds `NOTICES.txt` outside the Flatpak with the same
+  lockfiles and fails if it differs from the bundle's, apart from the copyright
+  years line (FR-019)._
+- _`flatpak build-bundle` is passed `--runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo`
+  and ends the run with the file's path._
 
 ## Output locations
 
