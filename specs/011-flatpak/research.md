@@ -679,6 +679,32 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     A test checks every address names a file in the repository. Before the
     first release is tagged, the addresses don't resolve yet, which the
     validator's offline mode doesn't check.
+    _Amended 2026-10-19 (T106; constitution Licensing): no screenshot shows a
+    photo that needs a credit line (`src-tauri/examples/seed-photos/README.md`:
+    CC BY, OGL). The collection shot was the first one to, with the Benelli
+    M4's photo (OGL v3.0) in its second row, and it showed "$100,048,799" as
+    the replacement value, which is the seed's one firearm at the $99,999,999
+    maximum (#67). It is retaken in the walk's own setting (the dev
+    container's Xvfb, 1200 x 800, light theme) from a throwaway sandbox with
+    the seed, where that firearm's estimated replacement value was edited to
+    $2,500 before the shot (the total reads $51,300; the counts are
+    unchanged), grouped by Type so the Handgun group opens the list and the
+    shotgun, with the Benelli, is below it. The seed is unchanged. What each
+    shot shows, with the photos' licences:
+    - `chooser.png`: no photo.
+    - `collection.png`: the thumbnails of the Beretta 92FS
+      (`beretta-92fs-atf.jpg`, public domain, US Government), the Colt 1911
+      (`1911a1-field-stripped.jpg`, public domain, PD-self) and the Glock 19
+      (`glock-19-gen3.jpg`, public domain, PD-self); the others in view
+      (FN, Ridgeline Arms) have the type's drawing, not a photo.
+    - `record.png`: the Glock 19's photos, `glock-19-gen3.jpg` (public
+      domain, PD-self; the large one), and in the strip `glock-19-gen4-fde.jpg`
+      (CC0 1.0) and `glock-19-atf.jpg` (public domain, US Government).
+    - `document-preview.png`: no photo (the Dead Air Sandman-K has none).
+    - `accessories.png`: no photo from the seed set; the Leupold's is a
+      generated gradient.
+    A retake of any of them must keep to this list: a photo that needs a
+    credit line stays out of view._
   - `share/icons/hicolor/<size>x<size>/apps/io.github.exodious.HoploDex.png`
     at 32, 64, 128, 256 and 512, copied from `src-tauri/icons/`, which
     `npm run icons` generates from `tools/icons/AppIcon.tsx`, so the program
