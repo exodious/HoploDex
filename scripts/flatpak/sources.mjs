@@ -17,6 +17,8 @@ const REGENERATE = "Run `npm run flatpak:sources` in the dev container and commi
 
 /** Source types the generators write that are configuration, not a package. */
 const CONFIG_TYPES = new Set(["inline", "script", "shell"]);
+/** Where `flatpak-node-generator` puts the tools it unpacks (the node list's `dest`). */
+const TOOL_CACHE = "flatpak-node/cache/";
 
 /** The name a message gives a list: the repository path it has. */
 function listName(listPath) {
@@ -160,7 +162,13 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
   const lock = "package-lock.json";
   const packages = readJson(packageLockPath).packages ?? {};
   const sources = readJson(sourcesPath);
-  const downloads = sources.filter((s) => !CONFIG_TYPES.has(s.type));
+  // flatpak-node-generator unpacks esbuild's platform binary a second time, from
+  // the tarball it already lists as a `file`, into its tool cache (011
+  // research.md §3): that archive is the same package, not a second source.
+  const downloads = sources.filter(
+    (s) =>
+      !CONFIG_TYPES.has(s.type) && !(s.type === "archive" && String(s.dest).startsWith(TOOL_CACHE)),
+  );
 
   // One tarball may sit at several places in node_modules: it is one source.
   const wanted = new Map();
