@@ -11,7 +11,7 @@ section has the full forms once it exists.
 # Every test run: the source lists, manifest, contents, metadata and guard checks (Vitest),
 # and the reach and refusal tests (Rust)
 scripts/dev-container.sh npm test
-scripts/dev-container.sh bash -c 'cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf -E "binary(sandbox_reach_test) | binary(portal_opener_test) | test(/sandbox/) | test(/sandbox_probe/)"'
+scripts/dev-container.sh bash -c 'cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf -E "test(/^sandbox_reach_test::/) | test(/^portal_opener_test::/) | test(/sandbox/) | test(/sandbox_probe/)"'
 
 # The build, with its checks and validators; writes flatpak/out/HoploDex-<version>-x86_64.flatpak
 scripts/dev-container.sh --flatpak npm run bundle:flatpak
@@ -32,7 +32,7 @@ Expected:
 - `npm test` and the Rust run pass.
 - `bundle:flatpak` ends with the `.flatpak` path. Its log shows the download
   phase, then the build phase with `--disable-download`, then
-  `contents: ok`, `check-no-webdriver: ok`, `desktop-file-validate: ok`,
+  `contents: ok`, the `check-no-webdriver` line (`Checked: no embedded WebDriver server or E2E switch in a shipped build`), `desktop-file-validate: ok`,
   `appstreamcli validate: ok`, `notices: same as the other Linux builds` and
   the linter passing, on the manifest with the two recorded exceptions
   (`flatpak-builder-lint manifest: ok`) and on the repository with those two
@@ -41,8 +41,9 @@ Expected:
   screenshot rules were added during implementation (research.md §4)._
 - `test:flatpak` passes every test in `e2e/specs/flatpak.e2e.ts`, the bus
   checks and the no-network check, prints the cold-start times of the Flatpak and the non-Flatpak
-  build (SC-006), and leaves no app installed (`flatpak list --app` in the
-  container is empty afterwards).
+  build (SC-006), and leaves the installation listing the same apps as before
+  it started (it ends with "the installation lists the same apps as before";
+  after `bundle:flatpak` that is `org.flatpak.Builder`, the linter).
 - `--fresh-install` reports that the empty installation gained the
   `flathub` remote and the GNOME 51 runtime, that HoploDex started, and
   that its config and web view data folders are under
