@@ -162,14 +162,6 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
   const lock = "package-lock.json";
   const packages = readJson(packageLockPath).packages ?? {};
   const sources = readJson(sourcesPath);
-  // flatpak-node-generator unpacks esbuild's platform binary a second time, from
-  // the tarball it already lists as a `file`, into its tool cache (011
-  // research.md §3): that archive is the same package, not a second source.
-  const downloads = sources.filter(
-    (s) =>
-      !CONFIG_TYPES.has(s.type) && !(s.type === "archive" && String(s.dest).startsWith(TOOL_CACHE)),
-  );
-
   // One tarball may sit at several places in node_modules: it is one source.
   const wanted = new Map();
   for (const [key, entry] of Object.entries(packages)) {
@@ -181,6 +173,19 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
       });
     }
   }
+
+  // flatpak-node-generator unpacks esbuild's platform binary a second time, from
+  // the tarball it already lists as a `file`, into its tool cache (011
+  // research.md §3): such an archive is the same package, not a second source,
+  // and is accepted only when its url and hash are a lockfile package's. Any
+  // other archive there is a source like the rest and fails below.
+  const isToolCacheCopy = (s) => {
+    if (s.type !== "archive" || !String(s.dest).startsWith(TOOL_CACHE)) return false;
+    const entry = wanted.get(s.url);
+    const expected = entry && parseIntegrity(entry.integrity);
+    return Boolean(expected) && s[expected.algorithm] === expected.hex;
+  };
+  const downloads = sources.filter((s) => !CONFIG_TYPES.has(s.type) && !isToolCacheCopy(s));
 
   for (const [url, { label, integrity }] of wanted) {
     const matching = downloads.filter((s) => s.url === url);

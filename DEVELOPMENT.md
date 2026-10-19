@@ -480,6 +480,86 @@ or your real data, run it under `xvfb-run` with throwaway `HOME` and `XDG_*`
 directories and no session D-Bus. The broken build aborts at once with the EGL error, and the
 fixed one shows the chooser.
 
+### Flatpak
+
+`npm run bundle:flatpak` builds the Flatpak from this checkout, offline, checks
+it and installs it (`011 US3-6`, `011 FR-014`; the reasons are in
+[011's research.md §2, §13 and §15](specs/011-flatpak/research.md)):
+
+```bash
+scripts/dev-container.sh --flatpak npm run bundle:flatpak       # build, check, install
+scripts/dev-container.sh --flatpak npm run flatpak:sources      # after any lockfile change
+```
+
+It prints each step as it starts and stops at the first one that fails,
+naming it:
+
+1. Installs the GNOME 51 runtime and SDK and the two SDK extensions (Rust and
+   Node) from Flathub, only the ones missing (network).
+2. `flatpak-builder --download-only` fetches every source the manifest names
+   (network): the checkout, and the crates and npm packages in
+   `flatpak/cargo-sources.json` and `flatpak/node-sources.json`.
+3. `flatpak-builder --disable-download` builds with the build sandbox's
+   network off (`011 SC-004`): `npm ci --offline`, `npm run build`, a release
+   `cargo build --offline --locked --features custom-protocol`,
+   `scripts/check-no-webdriver.mjs` on the binary, and the installs. The
+   notices step of `npm run build` runs its `cargo fetch --locked`,
+   `cargo metadata` and `cargo tree` against the vendored crates, offline.
+4. `scripts/flatpak/contents.mjs` lists what the build carries and fails on
+   any file or shared library not in
+   [011's data-model.md "The bundle's contents"](specs/011-flatpak/data-model.md)
+   (`011 FR-017`, `011 FR-018`).
+5. `desktop-file-validate` and `appstreamcli validate --no-net`.
+6. Compares the notices the Flatpak carries with those the other Linux builds
+   make from the same lockfiles (`011 FR-019`); only the copyright years may
+   differ, because `git` isn't in the build.
+7. Installs the build into the container's Flatpak installation.
+
+The build is of the checkout as it is, uncommitted changes included, except
+`node_modules`, `dist`, `src-tauri/target`, `.git`, `.claude`, `flatpak/out`,
+`.human-testing` and `.wdio`. It doesn't yet run Flathub's linter or write
+the `.flatpak` file (`011 T066`); the output folder for that is `flatpak/out/`
+(git-ignored, so the host can reach it).
+
+**Where it runs.** Only in the dev container started with `--flatpak`
+(`011 FR-023`). `flatpak-builder` and a running Flatpak use `bwrap`, which
+needs the real `/proc`, and a rootless container masks parts of it, so
+`--flatpak` unmasks `/proc` for that run only
+(`--security-opt unmask=/proc/*`). It also mounts a volume for
+`flatpak-builder`'s state (downloads, build folders; several gigabytes) per
+checkout, named in `HOPLODEX_FLATPAK_STATE`. The runtime, SDK and extensions
+(about 2 GB) go in the container's own user installation in the shared
+`/home/dev` volume, so the first run in a container fetches them and later
+ones, in any checkout, don't; the first run also fetches every crate and npm
+package. Run it in the background with a log (the first run is long), and
+see [Development container](#development-container-linux-recommended) for
+`--reset-volumes`, which also deletes the state volume.
+
+**Without podman,** a Linux host needs `flatpak`, `flatpak-builder`,
+`appstream` (`appstreamcli`), `desktop-file-utils`, `binutils` (`readelf`),
+`dbus` (`dbus-daemon`), `python3-dbusmock`, and the generators' Python modules
+(`aiohttp`, `tomlkit`, `PyYAML`) with
+[flatpak-builder-tools](https://github.com/flatpak/flatpak-builder-tools) at
+the commit the `Dockerfile` pins (`FLATPAK_BUILDER_TOOLS_COMMIT`, cloned to
+`/opt/flatpak-builder-tools`, or wherever `HOPLODEX_FLATPAK_BUILDER_TOOLS`
+says). The scripts must never use your own Flatpak installation, so they
+refuse on a host unless `FLATPAK_USER_DIR` names an absolute, empty or
+throwaway folder and `--i-know-this-is-a-host` follows the command
+(`npm run bundle:flatpak -- --i-know-this-is-a-host`); the guard
+(`scripts/flatpak/guard.mjs`) says what to change otherwise. The first run
+then fetches the 2 GB into that folder.
+
+**The source lists.** The offline build can only use what the lists name, so
+`flatpak/cargo-sources.json` (from `src-tauri/Cargo.lock`) and
+`flatpak/node-sources.json` (from `package-lock.json`) are generated and
+committed. After any change to either lockfile, run
+`scripts/dev-container.sh --flatpak npm run flatpak:sources` and commit both
+lists. Until you do, `scripts/flatpak/sources.test.ts` fails in every
+`npm test`, naming the list and the first package that differs (`011 US3-2`,
+`011 FR-015`). That includes a dependency update pull request, Dependabot's or
+one by hand: regenerate the lists in the dev container and commit them to its
+branch before `npm test` passes.
+
 ## Test
 
 ```bash
@@ -1522,6 +1602,10 @@ A license that's only acceptable for particular packages goes in `EXCEPTIONS`
 in `policy.mjs`, scoped to those packages or hand-recorded entries, with the
 reason. Today they are OFL-1.1 for the `@fontsource` fonts, and four licenses
 for data the strength hint's dictionary uses (below).
+
+The Flatpak ships the same binary, built from the same lockfiles, and adds no
+module of its own, so these checks already cover it; `scripts/flatpak/manifest.test.ts`
+fails if its manifest gains a module or a source ([011's research.md §13](specs/011-flatpak/research.md)).
 
 The passphrase strength hint's dictionary (`src/components/strength/estimate.ts`)
 is built from `@zxcvbn-ts`'s word lists, and the package's MIT license doesn't

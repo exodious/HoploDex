@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 const APP_ID = "io.github.exodious.HoploDex";
 const ICON_SIZES = ["32x32", "64x64", "128x128", "256x256", "512x512"];
 
-/** The paths the module installs, under the app's `files/` (data-model.md "The bundle's contents"). */
+/** The paths the module installs, under the app's `files/` (011 data-model.md "The bundle's contents"). */
 const INSTALLED = [
   "bin/hoplodex",
   `share/applications/${APP_ID}.desktop`,
@@ -39,7 +39,20 @@ const ADDED = [
   ).map((p) => `export/${p}`),
 ];
 
-const ALLOWED = new Set([...INSTALLED, ...ADDED]);
+/**
+ * What `flatpak-builder` itself composes into `files/` after the module's commands,
+ * with `appstreamcli compose`, from the installed metainfo: the AppStream catalog
+ * and the icons it names, at the sizes the composer picks (seen in the first
+ * offline build, 011 T024). Generated data, no code; these exact paths only.
+ */
+const COMPOSED = [
+  `share/app-info/xmls/${APP_ID}.xml.gz`,
+  ...["48x48", "64x64", "128x128"].map(
+    (size) => `share/app-info/icons/flatpak/${size}/${APP_ID}.png`,
+  ),
+];
+
+const ALLOWED = new Set([...INSTALLED, ...ADDED, ...COMPOSED]);
 
 /** A shared library by name: `libfoo.so`, `libfoo.so.1`, `libfoo.so.1.2.3`. */
 const isSharedLibrary = (file) => /\.so(\.\d+)*$/.test(path.posix.basename(file));

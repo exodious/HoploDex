@@ -69,6 +69,12 @@ builder() {
 # git is not in the build and 010 then uses the build's own year.
 compare_notices() {
   local other shipped
+  # The generator reads the npm packages' license files from node_modules. A clean
+  # clone has none; the dev container's checkout has them from its first run.
+  if [ ! -d node_modules ]; then
+    echo "node_modules is missing; npm ci (network) so the generator can read the packages' licenses"
+    npm ci
+  fi
   other="$(mktemp -d "${TMPDIR:-/tmp}/hoplodex-notices.XXXXXX")"
   node scripts/licenses/notices.mjs --out "$other" --target x86_64-unknown-linux-gnu
   shipped="$build_dir/files/share/licenses/$app_id/NOTICES.txt"
@@ -94,7 +100,7 @@ builder --download-only --force-clean "$build_dir" "$manifest"
 step "flatpak-builder --disable-download (the build; no network)"
 builder --disable-download --force-clean --repo="$local_repo" "$build_dir" "$manifest"
 
-step "contents check (research.md §13)"
+step "contents check (011 research.md §13)"
 node scripts/flatpak/contents.mjs "$build_dir/files"
 
 step "desktop-file-validate"
@@ -114,7 +120,7 @@ flatpak install --user --reinstall --noninteractive --assumeyes hoplodex-local "
 echo "installed: $app_id (from $local_repo)"
 
 # ---------------------------------------------------------------------------
-# 011 T066 (US4) goes here: Flathub's linter on the manifest and the repository,
+# 011 T066 (011 US4) goes here: Flathub's linter on the manifest and the repository,
 # then `flatpak build-bundle` into flatpak/out/. Nothing below this line yet.
 # ---------------------------------------------------------------------------
 

@@ -15,3 +15,7 @@ export/share/icons/hicolor/64x64/apps/io.github.exodious.HoploDex.png
 export/share/icons/hicolor/128x128/apps/io.github.exodious.HoploDex.png
 export/share/icons/hicolor/256x256/apps/io.github.exodious.HoploDex.png
 export/share/icons/hicolor/512x512/apps/io.github.exodious.HoploDex.png
+share/app-info/xmls/io.github.exodious.HoploDex.xml.gz
+share/app-info/icons/flatpak/48x48/io.github.exodious.HoploDex.png
+share/app-info/icons/flatpak/64x64/io.github.exodious.HoploDex.png
+share/app-info/icons/flatpak/128x128/io.github.exodious.HoploDex.png

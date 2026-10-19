@@ -160,6 +160,22 @@ describe("011 US3-2 - the offline source lists match the lockfiles", () => {
     });
   });
 
+  describe("an archive in the node tool cache (011 research.md §3)", () => {
+    it("is accepted only as a copy of a package the lockfile has, and any other archive fails", () => {
+      // The fixture also holds a copy of left-pad 1.3.0 (same url and hash), which passes.
+      expect(node("node-tool-cache-extra")).toBe(
+        `${NODE}: the list has a source for https://registry.npmjs.org/extra-pkg/-/extra-pkg-9.9.9.tgz, ` +
+          `which package-lock.json does not have. ${REGENERATE}`,
+      );
+    });
+
+    it("fails an archive with a lockfile package's url but another hash", () => {
+      expect(node("node-tool-cache-hash")).toBe(
+        `${NODE}: npm package left-pad@1.3.0 has 2 sources, not one. ${REGENERATE}`,
+      );
+    });
+  });
+
   describe("no git source in Cargo.lock", () => {
     it("names the crate and its source", () => {
       expect(cargo("cargo-git")).toBe(
