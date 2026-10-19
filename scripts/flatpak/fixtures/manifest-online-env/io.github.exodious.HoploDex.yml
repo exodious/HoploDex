@@ -1,0 +1,41 @@
+# A fixture manifest: it passes every build rule unless its folder's README says otherwise.
+id: io.github.exodious.HoploDex
+runtime: org.gnome.Platform
+runtime-version: "51"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node24
+command: hoplodex
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=home
+  - --filesystem=/media
+  - --filesystem=/run/media
+  - --filesystem=/mnt
+  - --talk-name=org.freedesktop.secrets
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.gnome.ScreenSaver
+  - --system-talk-name=org.freedesktop.login1
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node24/bin
+  env:
+    CARGO_HOME: /run/build/hoplodex/cargo
+    CARGO_NET_OFFLINE: "false"
+modules:
+  - name: hoplodex
+    buildsystem: simple
+    build-commands:
+      - npm ci --offline
+      - npm run build
+      - cd src-tauri && cargo build --release --offline --locked --features custom-protocol --bin hoplodex
+      - node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
+      - install -Dm755 src-tauri/target/release/hoplodex /app/bin/hoplodex
+    sources:
+      - type: dir
+        path: ..
+      - cargo-sources.json
+      - node-sources.json
