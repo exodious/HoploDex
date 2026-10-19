@@ -3,6 +3,7 @@ import path from "node:path";
 import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
 import { createDatabase, dialogHeightWhenOpened, listedNames } from "../support/ui";
 import { scratchDocuments, search } from "../support/ui";
+import { importFile, tally } from "../support/importExport";
 import { writeSheetsWorkbook } from "../support/spreadsheets";
 
 /**
@@ -76,22 +77,6 @@ function firearmRow(
     firearm_type: "Handgun",
     ...extra,
   });
-}
-
-async function importFile(csvPath: string) {
-  await clickButton("Import");
-  await fill("Spreadsheet file", csvPath);
-  await clickButton("Import");
-  await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
-}
-
-async function tally(label: string): Promise<number> {
-  return browser.execute((wanted: string) => {
-    const item = [...document.querySelectorAll(".hd-tally__item")].find(
-      (i) => i.querySelector(".hd-tally__label")?.textContent?.trim() === wanted,
-    );
-    return Number(item?.querySelector(".hd-tally__value")?.textContent ?? "NaN");
-  }, label);
 }
 
 describe("001 US5 - Export and Import Records (was us5-export-import)", () => {

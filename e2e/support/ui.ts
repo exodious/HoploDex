@@ -741,6 +741,24 @@ export async function addFirearm(firearm: NewFirearm) {
   await settle();
 }
 
+/** The error shown for the field labelled `label` in the open dialog: the
+ * text of the element its `aria-describedby` names when it is `aria-invalid`,
+ * or `null` when the field shows none. */
+export async function dialogFieldError(label: string): Promise<string | null> {
+  return browser.execute((label: string) => {
+    const labelEl = [...document.querySelectorAll('[role="dialog"] label')].find(
+      (l) => l.textContent?.trim() === label,
+    ) as HTMLLabelElement | undefined;
+    const field = labelEl && document.getElementById(labelEl.htmlFor);
+    if (!field || field.getAttribute("aria-invalid") !== "true") return null;
+    for (const id of (field.getAttribute("aria-describedby") ?? "").split(" ")) {
+      const el = document.getElementById(id);
+      if (el?.classList.contains("hd-field__error")) return el.textContent?.trim() ?? "";
+    }
+    return null;
+  }, label);
+}
+
 /** The passphrase of every database a spec creates. */
 export const E2E_PASSPHRASE = "end to end test passphrase";
 
