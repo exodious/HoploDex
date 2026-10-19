@@ -540,6 +540,14 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     HoploDex, `Exec=hoplodex`, `Icon=io.github.exodious.HoploDex`,
     categories `Office;Database;`, and `StartupWMClass` set to the window's
     class so the desktop matches the window to the entry.
+    _Amended 2026-10-19: the window's class is `hoplodex`, not the identifier.
+    The `e2e` build's main window, read with Xlib's `XGetClassHint` under
+    Xvfb in the dev container (no `xprop` there), has `WM_CLASS`
+    `hoplodex`, `Hoplodex`: GTK takes it from the program name, because
+    Tauri leaves the GTK application id unset (`enableGtkAppId` is off). So
+    `StartupWMClass=hoplodex`. On Wayland the app id comes from the same
+    program name (read from tao's and Tauri's source, not run: no Wayland
+    session in the dev container), so the same value matches there._
   - `share/metainfo/io.github.exodious.HoploDex.metainfo.xml`: name,
     summary, a description that says what HoploDex is and that it keeps
     everything on the computer, `project_license` `GPL-3.0-only`,

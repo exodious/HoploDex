@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.exodious.HoploDex</id>
+  <name>HoploDex</name>
+  <summary>Inventory of a firearm collection, kept on your computer</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="io.github.exodious">
+    <name>exodious</name>
+  </developer>
+  <description>
+    <p>
+      HoploDex keeps an inventory of a firearm collection: the firearms and
+      their accessories, what is mounted on what, photos and documents,
+      insurance coverage and what the collection is worth.
+    </p>
+    <p>
+      Everything stays on your computer, in an encrypted database you choose
+      and open with a passphrase. HoploDex has no account and makes no network
+      connection, and it can import and export spreadsheets and back up the
+      collection.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.exodious.HoploDex.desktop</launchable>
+  <url type="homepage">https://github.com/exodious/HoploDex</url>
+  <url type="vcs-browser">https://github.com/exodious/HoploDex</url>
+  <url type="bugtracker">https://github.com/exodious/HoploDex/issues</url>
+  <content_rating type="oars-1.1"/>
+  <branding>
+    <color type="primary" scheme_preference="light">#edefea</color>
+    <color type="primary" scheme_preference="dark">#0f1419</color>
+  </branding>
+  <screenshots>
+    <screenshot type="default">
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/chooser.png</image>
+      <caption>Open a database with its passphrase</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/collection.png</image>
+      <caption>The collection, with its replacement value and insurance coverage</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/record.png</image>
+      <caption>A firearm's record, with its photos and insurance</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/document-preview.png</image>
+      <caption>Preview a scanned document without leaving the app</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/accessories.png</image>
+      <caption>Accessories, grouped by kind, with what each is mounted on</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.1.0" date="2026-10-19">
+      <description>
+        <p>The first release.</p>
+      </description>
+    </release>
+  </releases>
+</component>
