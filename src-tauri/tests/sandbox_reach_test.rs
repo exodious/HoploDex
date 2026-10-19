@@ -133,13 +133,26 @@ fn details(err: &CommandError) -> Value {
     err.details.as_deref().cloned().unwrap_or(Value::Null)
 }
 
+/// `path` as the message writes it in the `flatpak override` command: as it is
+/// when every character is plain, else in single quotes (a Windows path, which
+/// a Flatpak never has, holds backslashes, so it is quoted there).
+fn shell_word(path: &Path) -> String {
+    let text = path.display().to_string();
+    let plain = text.chars().all(|c| {
+        c.is_ascii_alphanumeric()
+            || matches!(c, '_' | '@' | '%' | '+' | '=' | ':' | ',' | '.' | '/' | '-')
+    });
+    if plain { text } else { format!("'{}'", text.replace('\'', r"'\''")) }
+}
+
 /// The refusal of 011 FR-004: its code, the two fixes in its message, and the
 /// folder it says needs access.
 #[track_caller]
 fn assert_out_of_reach(err: &CommandError, folder: &Path) {
     assert_eq!(err.code, "LOCATION_OUT_OF_REACH", "{err:?}");
     assert!(
-        err.message.contains(&format!("flatpak override --user --filesystem={}", folder.display())),
+        err.message
+            .contains(&format!("flatpak override --user --filesystem={}", shell_word(folder))),
         "the message names the override for {}: {}",
         folder.display(),
         err.message
@@ -529,8 +542,10 @@ fn update_backup_settings_to_a_location_out_of_reach_is_a_validation_error_on_th
             "the out-of-reach message: {on_field}"
         );
         assert!(
-            on_field
-                .contains(&format!("flatpak override --user --filesystem={}", location.display())),
+            on_field.contains(&format!(
+                "flatpak override --user --filesystem={}",
+                shell_word(&location)
+            )),
             "{on_field}"
         );
         assert_eq!(world.listing(), before, "nothing saved or made");
