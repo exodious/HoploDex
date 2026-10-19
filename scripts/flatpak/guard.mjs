@@ -9,7 +9,7 @@
 
 import fs from "node:fs";
 import os from "node:os";
-import path from "node:path";
+import nodePath from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The dev container's hostname (CLAUDE.md, "Run tests in the dev container"). */
@@ -19,6 +19,10 @@ export const CONTAINER_MARKER_FILE = "/etc/hoplodex-dev-container";
 /** The file in a throwaway installation that says the guard accepted it. */
 export const MARKER_NAME = ".hoplodex-throwaway-flatpak";
 export const HOST_FLAG = "--i-know-this-is-a-host";
+
+// Flatpak paths are POSIX paths whatever OS runs this file (the unit test runs on
+// Windows and macOS too), so every path decision goes through `path.posix`.
+const path = nodePath.posix;
 
 const SYSTEM_INSTALLATION = "/var/lib/flatpak";
 
@@ -142,7 +146,7 @@ const realReader = {
 // The CLI: prints the accepted FLATPAK_USER_DIR on the first line and `marker` or
 // `no-marker` on the second (does the caller write the marker file); on a refusal
 // prints the message to stderr and exits 1.
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && nodePath.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = decide({
     env: process.env,
     hostname: os.hostname(),
