@@ -166,6 +166,14 @@ sections below cite it as "the spike".
   - **A git submodule for flatpak-builder-tools** (Tauri's guide): every
     checkout then needs submodules, for a tool only the container runs.
 
+_Amended 2026-10-19 (011 T002): the pinned commit is
+`74697c75b630d7330e77250fc13cb5ea688d9479` (master, committed 2026-09-30,
+the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
+`Dockerfile`'s `FLATPAK_BUILDER_TOOLS_COMMIT`. The generators' modules
+(`aiohttp`, `tomlkit`, `PyYAML`) come from Debian (`python3-aiohttp`,
+`python3-tomlkit`, `python3-yaml`), so there is no
+`scripts/flatpak/requirements.txt`._
+
 ## §4 Permissions (FR-002, FR-003, FR-005, FR-006, FR-008, FR-026)
 
 - **Decision**: the manifest's `finish-args` are exactly these, each with a
