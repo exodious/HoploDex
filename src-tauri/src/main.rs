@@ -9,9 +9,9 @@ use std::thread;
 use std::time::Duration;
 
 use hoplodex_lib::app_dirs;
-#[cfg(feature = "e2e")]
+#[cfg(not(app_opener))]
 use hoplodex_lib::commands::documents::E2eOpener;
-#[cfg(not(feature = "e2e"))]
+#[cfg(app_opener)]
 use hoplodex_lib::commands::documents::{AppOpener, opener_route};
 use hoplodex_lib::commands::documents::{
     OPENED_DOCUMENTS_DIR, Opener, clear_opened_documents_cache,
@@ -307,19 +307,21 @@ fn main() {
             // and the launcher that hands it on. An E2E build answers from
             // its environment and logs the hand-over instead (007 research.md
             // §16).
+            //
+            // The Flatpak check variant (`flatpak-check`) answers the dialog
+            // the same way but keeps the real launcher, which inside a Flatpak
+            // is the OpenURI portal (011 research.md §6, 011 T102).
             #[cfg(not(feature = "e2e"))]
-            {
-                app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
-                app.manage::<Arc<dyn Opener>>(Arc::new(AppOpener::new(
-                    app.handle().clone(),
-                    opener_route(&reach),
-                )));
-            }
+            app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
             #[cfg(feature = "e2e")]
-            {
-                app.manage::<Arc<dyn Consent>>(Arc::new(E2eConsent));
-                app.manage::<Arc<dyn Opener>>(Arc::new(E2eOpener));
-            }
+            app.manage::<Arc<dyn Consent>>(Arc::new(E2eConsent));
+            #[cfg(app_opener)]
+            app.manage::<Arc<dyn Opener>>(Arc::new(AppOpener::new(
+                app.handle().clone(),
+                opener_route(&reach),
+            )));
+            #[cfg(not(app_opener))]
+            app.manage::<Arc<dyn Opener>>(Arc::new(E2eOpener));
             // Sleep, wake, screen lock and shutdown (003 FR-037, FR-038), and
             // the idle lock (003 FR-034).
             let (sender, events) = mpsc::channel();

@@ -4,7 +4,7 @@
 // with and a build that carries the WebDriver server.
 //
 //   - the cargo build command's profile and features (`--profile e2e`,
-//     `--features custom-protocol,e2e`, no `--release`);
+//     `--features custom-protocol,e2e,flatpak-check`, no `--release`);
 //   - the binary's path that follows from the profile (`target/e2e/`);
 //   - no `check-no-webdriver.mjs` step, which fails on the `e2e` build's driver
 //     by design (#29).
@@ -37,7 +37,7 @@ export function deriveCheckManifest(manifest) {
         /\bcargo build\b/.test(command)
           ? command
               .replace("--release", "--profile e2e")
-              .replace("--features custom-protocol", "--features custom-protocol,e2e")
+              .replace("--features custom-protocol", "--features custom-protocol,e2e,flatpak-check")
           : command.replaceAll("target/release/hoplodex", "target/e2e/hoplodex"),
       );
   }

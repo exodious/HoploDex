@@ -320,7 +320,7 @@ function allowedCheckManifest(shipped: Manifest): Manifest {
         /\bcargo build\b/.test(command)
           ? command
               .replace("--release", "--profile e2e")
-              .replace("--features custom-protocol", "--features custom-protocol,e2e")
+              .replace("--features custom-protocol", "--features custom-protocol,e2e,flatpak-check")
           : command.replaceAll("target/release/hoplodex", "target/e2e/hoplodex"),
       );
   }
@@ -395,7 +395,7 @@ describe("011 US5-2 - the check manifest differs from the shipped one only where
     const cargo = commands.filter((c) => /\bcargo build\b/.test(c));
     expect(cargo).toHaveLength(1);
     expect(cargo[0]).toMatch(/(^|\s)--profile e2e(\s|$)/);
-    expect(cargo[0]).toMatch(/(^|\s)--features custom-protocol,e2e(\s|$)/);
+    expect(cargo[0]).toMatch(/(^|\s)--features custom-protocol,e2e,flatpak-check(\s|$)/);
     expect(cargo[0]).not.toMatch(/--release/);
     expect(commands.some((c) => c.includes("check-no-webdriver.mjs"))).toBe(false);
     expect(commands.some((c) => c.includes("target/release/"))).toBe(false);

@@ -344,7 +344,7 @@ pub async fn open_document(
 
 /// How the app's [`Opener`] hands a copy on, chosen once at startup from
 /// `Reach::is_flatpak()` (011 research.md §8).
-#[cfg(not(feature = "e2e"))]
+#[cfg(app_opener)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenerRoute {
     /// The platform's own launcher: `xdg-open` on Linux, `open` on macOS, the
@@ -358,13 +358,13 @@ pub enum OpenerRoute {
 
 /// How long the portal route waits for an answer before it counts the document
 /// as opened (a chooser may be waiting on the user).
-#[cfg(all(target_os = "linux", not(feature = "e2e")))]
+#[cfg(all(target_os = "linux", app_opener))]
 const PORTAL_ANSWER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The route this run hands a document on by: inside a Flatpak the OpenURI
 /// portal, which says whether an application took it, and anywhere else the
 /// platform's own launcher (011 research.md §8, 011 FR-008).
-#[cfg(not(feature = "e2e"))]
+#[cfg(app_opener)]
 pub fn opener_route(reach: &Reach) -> OpenerRoute {
     #[cfg(target_os = "linux")]
     if reach.is_flatpak() {
@@ -378,7 +378,7 @@ pub fn opener_route(reach: &Reach) -> OpenerRoute {
 /// The app's [`Opener`]: the platform's own launcher, or inside a Flatpak the
 /// OpenURI portal, detached either way, so what it starts is not tied to
 /// HoploDex's lifetime.
-#[cfg(not(feature = "e2e"))]
+#[cfg(app_opener)]
 pub struct AppOpener<R: tauri::Runtime = tauri::Wry> {
     // Where the platform has no launcher of its own to run (Windows).
     #[cfg_attr(unix, allow(dead_code))]
@@ -390,7 +390,7 @@ pub struct AppOpener<R: tauri::Runtime = tauri::Wry> {
     portal_connection: std::sync::Mutex<Option<zbus::Connection>>,
 }
 
-#[cfg(not(feature = "e2e"))]
+#[cfg(app_opener)]
 impl<R: tauri::Runtime> AppOpener<R> {
     pub fn new(app: tauri::AppHandle<R>, route: OpenerRoute) -> Self {
         Self {
@@ -508,7 +508,7 @@ pub fn portal_open(
     }
 }
 
-#[cfg(all(target_os = "linux", not(feature = "e2e")))]
+#[cfg(all(target_os = "linux", app_opener))]
 impl<R: tauri::Runtime> AppOpener<R> {
     fn open_through_the_portal(
         &self,
@@ -527,7 +527,7 @@ impl<R: tauri::Runtime> AppOpener<R> {
 /// program that holds the launcher for longer is running, which is a yes.
 /// The launcher gets its own process group, so nothing HoploDex does or
 /// suffers reaches it, and a thread reaps it.
-#[cfg(all(unix, not(feature = "e2e")))]
+#[cfg(all(unix, app_opener))]
 impl<R: tauri::Runtime> Opener for AppOpener<R> {
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
         #[cfg(target_os = "linux")]
@@ -617,7 +617,7 @@ pub fn windows_has_app(extension: &str) -> bool {
 /// open this file?", with or without `SEE_MASK_FLAG_NO_UI`, so it can't say so
 /// itself. Its error for a type with no program, `SE_ERR_NOASSOC` (31) or
 /// `ERROR_NO_ASSOCIATION` (1155), is still mapped, as a fallback.
-#[cfg(all(windows, not(feature = "e2e")))]
+#[cfg(all(windows, app_opener))]
 impl<R: tauri::Runtime> Opener for AppOpener<R> {
     fn has_app(&self, extension: &str) -> bool {
         windows_has_app(extension)
@@ -1088,7 +1088,7 @@ mod tests {
     }
 
     // 011 FR-008, 011 US1-7: the route is chosen once from the reach.
-    #[cfg(not(feature = "e2e"))]
+    #[cfg(app_opener)]
     #[test]
     fn a_flatpak_hands_a_document_to_the_portal_and_an_unconfined_run_to_the_launcher() {
         use super::{OpenerRoute, opener_route};

@@ -419,6 +419,25 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
   from `/proc/self/status`'s `NSpid` (the namespace hides it); the Inhibit
   portal's monitor (§4).
 
+_Amended 2026-10-19 (011 T102): the D-Bus permissions of §4 and §6 are
+unchanged (`finish-args` stays the recorded list), but what answers behind
+two of the names is now real. On the check's private session bus,
+`org.freedesktop.secrets` is a headless `gnome-keyring-daemon` (unlocked, its
+data under the run's throwaway folder) and `org.freedesktop.portal.Desktop` is
+a scripted dbusmock `OpenURI` that records each `OpenFile`'s descriptor and
+sends `Response` after its reply. The check variant is built with the
+`flatpak-check` feature, so the app's `AppOpener` and keyring backend are the
+shipped ones. Both services talk to the app through the same
+`--talk-name=org.freedesktop.secrets` and `--talk-name=org.freedesktop.portal.Desktop`
+grants, so the journeys now show that those grants are enough for a saved
+passphrase to be written, read and used, and for a descriptor to pass the proxy
+to the portal. The logind and screen-saver stand-ins are unchanged.
+First run of the check (011 T111, `flatpak/out/check/lock-times.log`): a sleep
+locked the database in 69 ms in the Flatpak and 74 ms outside it, a screen lock
+in 73 and 77 ms, `PrepareForShutdown` ended the app in 11 and 17 ms, and SIGTERM
+in 40 and 11 ms; the check fails when any Flatpak time is over a second more
+than its outside time (SC-002)._
+
 ## §7 Saved passphrases (FR-006)
 
 - **Decision**: unchanged code. The `keyring` crate's Secret Service backend
@@ -578,6 +597,14 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
 - **Alternatives considered**: keeping it off in Flatpak (007's earlier
   assumption): the web process would keep the app's whole reach for no
   reason now that it isn't needed.
+
+_Amended 2026-10-19 (011 T102): the session bus the sandbox's proxies reach in
+the check now carries a real Secret Service. §9's sub-sandbox test lists
+`org.freedesktop.secrets` among the names a process started with WebKit's flags
+must not reach, and that stays true with the real daemon behind the name: the
+sub-sandbox's proxy is refused it, as it was refused the stand-in. The session bus still has
+no service activation of the container's own, so a stopped keyring leaves the
+name without an owner and does not start another._
 
 ## §10 The helpers (FR-012)
 
@@ -850,6 +877,14 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     connect to the container's own non-loopback address, where the check
     listens on a port first so that a connection would succeed outside the
     sandbox.
+  - _Amended 2026-10-19 (011 T102): the check variant no longer swaps them.
+    It is built with `flatpak-check` as well as `e2e` (the cargo features
+    `custom-protocol,e2e,flatpak-check`), which keeps the WebDriver server and
+    the `HOPLODEX_E2E_*` seams but uses `AppOpener` and the OS keyring. The
+    owner's decision of 2026-10-19: the check talks to a scripted OpenURI and a
+    headless `gnome-keyring-daemon` on its private bus, never to anything
+    the developer has. The paragraph below, and the "Alternatives" entry on a
+    build with the real keyring and opener, are what 011 first decided._
   - **What the `e2e` build swaps**, by design: the keyring (an in-memory
     store) and the opener (a log). Both exist so that no test can reach a
     real keyring or start a real app (constitution II). What the sandbox

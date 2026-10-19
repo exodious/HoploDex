@@ -252,6 +252,12 @@ the manifest's own folder and the state volume is not the checkout. That is the
 writer's business: the derivation `manifest.test.ts` compares still differs
 from the shipped manifest only in the ways above._
 
+_Amended 2026-10-19 (011 T102): the cargo `--features` are now
+`custom-protocol,e2e,flatpak-check`. `flatpak-check` keeps the `e2e` build's
+WebDriver server and `HOPLODEX_E2E_*` seams but uses the real `AppOpener` and
+the OS keyring (see [research.md §16](research.md)); no other difference from
+the shipped manifest._
+
 ### Offline source lists
 
 `cargo-sources.json` and `node-sources.json`: arrays of `flatpak-builder`

@@ -31,7 +31,7 @@ modules:
     buildsystem: simple
     build-commands:
       - npm ci --offline
-      - cd src-tauri && cargo build --profile e2e --offline --locked --features custom-protocol,e2e --bin hoplodex
+      - cd src-tauri && cargo build --profile e2e --offline --locked --features custom-protocol,e2e,flatpak-check --bin hoplodex
       - install -Dm755 src-tauri/target/e2e/hoplodex /app/bin/hoplodex
     sources:
       - type: dir

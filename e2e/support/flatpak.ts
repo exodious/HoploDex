@@ -439,10 +439,15 @@ interface FlatpakRun {
   home: string;
   documents: string;
   busDir: string;
+  /** Where the real keyring's data and runtime folders are: beside the home, in
+   * the run's sandbox, and gone with it. */
+  keyringDir: string;
   sessionBus: { address: string; pid: number };
   logind: Mock;
   screenSavers: Mock[];
+  /** The real Secret Service (a headless gnome-keyring-daemon). */
   secrets: Mock | undefined;
+  /** The scripted OpenURI portal (scripts/flatpak/openuri_mock.py). */
   portal: Mock | undefined;
   launches: number;
 }
@@ -489,11 +494,23 @@ interface MockSpec {
   bus: "system" | "session";
   address: string;
   name: string;
-  /** A dbusmock template, or the object's path and interface. */
+  /** A dbusmock template (a built-in name or the path of a template file), or
+   * the object's path and interface. */
   template?: string;
+  /** The template's parameters (`python3 -m dbusmock -p`). */
+  parameters?: Record<string, string>;
   path?: string;
   iface?: string;
 }
+
+/** The scripted OpenURI portal's template (scripts/flatpak/openuri_mock.py). */
+const OPENURI_TEMPLATE = path.join(repoRoot, "scripts", "flatpak", "openuri_mock.py");
+/** The real keyring's launcher (scripts/flatpak/keyring-daemon.sh). */
+const KEYRING_DAEMON = path.join(repoRoot, "scripts", "flatpak", "keyring-daemon.sh");
+
+/** What the scripted OpenURI portal writes about each `OpenFile` it gets, one
+ * JSON object a line (flatpak/out/check/openuri.log). */
+export const OPENURI_LOG = path.join(CHECK_LOG_DIR, "openuri.log");
 
 /** Starts a python-dbusmock stand-in owning `spec.name`, logging to
  * flatpak/out/check/, and waits until the bus says it does. */
@@ -511,12 +528,43 @@ async function startMock(spec: MockSpec): Promise<Mock> {
     ...(spec.template
       ? ["-t", spec.template]
       : [spec.name, spec.path as string, spec.iface as string]),
+    ...(spec.parameters ? ["-p", JSON.stringify(spec.parameters)] : []),
   ];
   const env = { ...process.env };
   env[spec.bus === "system" ? "DBUS_SYSTEM_BUS_ADDRESS" : "DBUS_SESSION_BUS_ADDRESS"] =
     spec.address;
   const child = spawn("python3", args, { env, stdio: ["ignore", fd, fd] });
   fs.closeSync(fd);
+  return waitForName(spec, child);
+}
+
+/**
+ * Starts the real Secret Service: a headless, unlocked gnome-keyring-daemon on the
+ * run's private session bus only, with its data under the run's keyring folder
+ * (scripts/flatpak/keyring-daemon.sh, which refuses the container's own bus and
+ * starts the daemon with an empty environment). Nothing here reaches another
+ * keyring: it is given the private bus's address and no other.
+ */
+async function startKeyring(run: FlatpakRun): Promise<Mock> {
+  const name = "org.freedesktop.secrets";
+  if (nameHasOwner(run.sessionBus.address, name)) {
+    throw new Error(`${name} already has an owner on the run's session bus`);
+  }
+  const fd = fs.openSync(path.join(ensureLogDir(), `standin-${name}.log`), "w");
+  const child = spawn(KEYRING_DAEMON, [run.sessionBus.address, run.keyringDir], {
+    env: { ...process.env, HOPLODEX_FLATPAK_CHECK: "1" },
+    stdio: ["ignore", fd, fd],
+  });
+  fs.closeSync(fd);
+  return waitForName({ bus: "session", address: run.sessionBus.address, name }, child);
+}
+
+/** Waits until the bus says `child` owns `spec.name`; kills it and throws when it
+ * exits first or never does. */
+async function waitForName(
+  spec: Pick<MockSpec, "bus" | "address" | "name">,
+  child: ChildProcess,
+): Promise<Mock> {
   const deadline = Date.now() + 15000;
   for (;;) {
     if (child.exitCode !== null || child.signalCode !== null) {
@@ -638,6 +686,8 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
   );
   const busDir = path.join(options.sandbox, "bus");
   fs.mkdirSync(busDir, { recursive: true });
+  const keyringDir = path.join(options.sandbox, "keyring");
+  fs.mkdirSync(keyringDir, { recursive: true });
 
   const system = process.env.DBUS_SYSTEM_BUS_ADDRESS as string;
   const sessionBus = startSessionBus(busDir);
@@ -645,6 +695,7 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
     home,
     documents: path.join(home, "Documents"),
     busDir,
+    keyringDir,
     sessionBus,
     logind: undefined as unknown as Mock,
     screenSavers: [],
@@ -662,19 +713,18 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
     });
     addLogindSession();
     if (options.screenSavers !== false) await startScreenSavers();
-    run.secrets = await startMock({
-      bus: "session",
-      address: sessionBus.address,
-      name: "org.freedesktop.secrets",
-      path: "/org/freedesktop/secrets",
-      iface: "org.freedesktop.Secret.Service",
-    });
+    run.secrets = await startKeyring(run);
+    // The files it writes, as the journeys read them: its own log, and the one line
+    // per copy the `e2e` build's opener writes (HOPLODEX_E2E_OPENED_LOG).
+    const files = path.join(home, ".hoplodex-check");
+    fs.mkdirSync(files, { recursive: true });
+    fs.rmSync(OPENURI_LOG, { force: true });
     run.portal = await startMock({
       bus: "session",
       address: sessionBus.address,
       name: "org.freedesktop.portal.Desktop",
-      path: "/org/freedesktop/portal/desktop",
-      iface: "org.freedesktop.portal.OpenURI",
+      template: OPENURI_TEMPLATE,
+      parameters: { log: OPENURI_LOG, opened: path.join(files, "opened.log") },
     });
     run.documents = documentsDir(home);
   } catch (error) {
@@ -691,7 +741,6 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
   process.env.HOPLODEX_E2E_CACHE_HOME = path.join(data, "cache");
   process.env.HOPLODEX_E2E_DOCUMENTS = run.documents;
   process.env.HOPLODEX_E2E_HOME = home;
-  process.env.HOPLODEX_E2E_KEYRING_FILE = path.join(files, "keyring.json");
   process.env.HOPLODEX_E2E_OPENED_LOG = path.join(files, "opened.log");
   process.env.HOPLODEX_E2E_CONSENT_LOG = path.join(files, "consent.log");
   return run;
@@ -737,12 +786,107 @@ export async function stopScreenSavers(): Promise<void> {
   await Promise.all(savers.map(stopMock));
 }
 
-/** Stops the Secret Service stand-in. */
+/** Stops the keyring, so the next start of the app finds no owner of the
+ * Secret Service's name (011 US2-5). Its data stays: {@link startSecrets}
+ * brings the same keyring back. */
 export async function stopSecrets(): Promise<void> {
   const run = currentRun();
   const secrets = run.secrets;
   run.secrets = undefined;
   await stopMock(secrets);
+  const deadline = Date.now() + 5000;
+  while (nameHasOwner(run.sessionBus.address, "org.freedesktop.secrets")) {
+    if (Date.now() > deadline) throw new Error("the keyring still owns the Secret Service's name");
+    await sleep(25);
+  }
+}
+
+/** Starts the keyring again after {@link stopSecrets}: the same data folder, so
+ * the entries saved before are in it. */
+export async function startSecrets(): Promise<void> {
+  const run = currentRun();
+  if (run.secrets) return;
+  run.secrets = await startKeyring(run);
+}
+
+/** One entry of the check's keyring. */
+export interface KeyringEntry {
+  attributes: Record<string, string>;
+  secret: string;
+}
+
+/**
+ * The entries under the app's service (`io.github.exodious.HoploDex`) in the
+ * check's keyring, read with `secret-tool search` against the run's private
+ * session bus and no other (its environment is that address, the PATH and
+ * nothing else, so it cannot find the container's own keyring).
+ */
+export function keyringEntries(): KeyringEntry[] {
+  const run = currentRun();
+  // `secret-tool` prints an entry's secret on standard output and its attributes
+  // on standard error, so the two are read together, in order.
+  const result = spawnSync(
+    "sh",
+    [
+      "-c",
+      'exec secret-tool "$@" 2>&1',
+      "secret-tool",
+      "search",
+      "--all",
+      "--unlock",
+      "service",
+      FLATPAK_APP_ID,
+    ],
+    {
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: run.keyringDir,
+        DBUS_SESSION_BUS_ADDRESS: run.sessionBus.address,
+      },
+      encoding: "utf-8",
+      timeout: 20000,
+    },
+  );
+  // `secret-tool search` prints nothing when nothing matches.
+  const entries: KeyringEntry[] = [];
+  let current: KeyringEntry | undefined;
+  for (const line of (result.stdout ?? "").split("\n")) {
+    if (line.startsWith("[/")) {
+      current = { attributes: {}, secret: "" };
+      entries.push(current);
+    } else if (current && line.startsWith("secret = ")) {
+      current.secret = line.slice("secret = ".length);
+    } else if (current && line.startsWith("attribute.")) {
+      const at = line.indexOf(" = ");
+      if (at > 0) current.attributes[line.slice("attribute.".length, at)] = line.slice(at + 3);
+    }
+  }
+  if (result.status !== 0 && result.status !== 1) {
+    throw new Error(`secret-tool search failed (${result.status}): ${result.stdout}`);
+  }
+  return entries;
+}
+
+/** What the scripted OpenURI portal recorded of one `OpenFile` call. */
+export interface OpenUriCall {
+  /** What `/proc/self/fd/<fd>` names: the copy, as the portal sees it. */
+  path: string;
+  /** The descriptor's access mode: 0 is read only. */
+  accessMode: number;
+  size: number;
+  sha256: string;
+  parentWindow: string;
+  options: Record<string, unknown>;
+}
+
+/** Every `OpenFile` call the scripted portal has got in this run, oldest first. */
+export function openUriCalls(): OpenUriCall[] {
+  if (!fs.existsSync(OPENURI_LOG)) return [];
+  return fs
+    .readFileSync(OPENURI_LOG, "utf-8")
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line) as OpenUriCall);
 }
 
 const SYSTEM_LOGIND = [
@@ -876,8 +1020,6 @@ const APP_PASSTHROUGH = [
 /** The `HOPLODEX_E2E_*` variables the `e2e` build reads besides the four
  * folders (src-tauri/src), which this process's sandbox setup has set. */
 const APP_E2E_VARIABLES = [
-  "HOPLODEX_E2E_KEYRING_FILE",
-  "HOPLODEX_E2E_OPENED_LOG",
   "HOPLODEX_E2E_CONSENT",
   "HOPLODEX_E2E_CONSENT_LOG",
   "HOPLODEX_E2E_IDLE_MINUTE_SECONDS",

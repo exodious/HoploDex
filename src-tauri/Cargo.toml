@@ -47,6 +47,17 @@ mock-keyring = ["dep:keyring-core"]
 # binary in build-appimage.sh) checks that a build without it has none of the
 # server.
 e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
+# The Flatpak check variant only (011 research.md §6, 011 T102;
+# scripts/flatpak/checkManifest.mjs): the `e2e` build, WebDriver server and
+# isolation seams included, but with the real routes that `e2e` swaps for
+# stand-ins: `AppOpener` (inside a Flatpak, the OpenURI portal) instead of
+# `E2eOpener`, and the OS keyring (the Secret Service) instead of keyring-core's
+# in-memory store. The check starts a headless gnome-keyring-daemon and a
+# scripted OpenURI on its private bus for them. build.rs turns it into the
+# `app_opener` and `mock_keyring` cfgs. The consent dialog stays `E2eConsent`: no
+# WebDriver can click a native dialog. Never in a shipped build, since `e2e`
+# is refused there (scripts/check-no-webdriver.mjs).
+flatpak-check = ["e2e"]
 # The Rust tests only (#77 step 11; DEVELOPMENT.md "Test"): keys every database
 # with 1,000 PBKDF2 iterations instead of the pinned 1,000,000
 # (db/cipher.rs's `test_kdf`), which took three quarters of the tests' CPU. A

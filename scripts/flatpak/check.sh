@@ -9,12 +9,12 @@
 #
 #   1. builds the check variant (scripts/flatpak/checkManifest.mjs) offline and
 #      installs it into the container's Flatpak installation;
-#   2. the bus checks, with the permissions the Flatpak ships with: the stand-in
-#      Secret Service, both screen savers and the portal answer on a private
-#      session bus, logind answers on the private system bus, and a name the
-#      manifest does not grant is refused (011 FR-005, 011 FR-006);
-#      With the Secret Service stand-in then stopped, its name has no owner from inside
-#      the sandbox (011 US2-5);
+#   2. the bus checks, with the permissions the Flatpak ships with: the Secret Service (a
+#      real, headless gnome-keyring-daemon: keyring-daemon.sh), both screen savers and the
+#      OpenURI portal (scripted: openuri_mock.py) answer on a private session bus, logind
+#      answers on the private system bus, and a name the manifest does not grant is
+#      refused (011 FR-005, 011 FR-006). With the Secret Service then stopped, its name
+#      has no owner from inside the sandbox (011 US2-5);
 #   3. the no-network check (011 FR-021): the shipped permissions have no network;
 #   4. builds the `e2e` binary outside the sandbox and runs
 #      e2e/specs/flatpak.e2e.ts through WebDriver, whose cold-start test compares
@@ -155,7 +155,28 @@ start_mock() {
   echo "stand-in up: $name"
 }
 
-# The private session bus and the stand-in services both checks start the app against.
+# start_service <bus-address> <name> <command...>: a real service (not a dbusmock stand-in)
+# that takes <name> on the bus, started in the background and stopped with the stand-ins.
+start_service() {
+  local address="$1" name="$2"
+  shift 2
+  "$@" >"$log_dir/standin-check-$name.log" 2>&1 &
+  last_mock_pid="$!"
+  mock_pids+=("$last_mock_pid")
+  local tries=0
+  until name_owned "$address" "$name"; do
+    tries=$((tries + 1))
+    kill -0 "$last_mock_pid" 2>/dev/null || fail "the service for $name exited at start (flatpak/out/check/standin-check-$name.log)"
+    [ "$tries" -lt 300 ] || fail "the service for $name never took its name (flatpak/out/check/standin-check-$name.log)"
+    sleep 0.05
+  done
+  echo "service up: $name"
+}
+
+# The private session bus and the services both checks start the app against: dbusmock
+# stand-ins for logind, both screen savers and a name the manifest does not grant, a real
+# gnome-keyring-daemon for the Secret Service, and the scripted OpenURI portal
+# (011 research.md §6, T102).
 start_standins() {
   cat >"$scratch/session.conf" <<CONF
 <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
@@ -179,11 +200,15 @@ CONF
   start_mock "$system_bus" --system org.freedesktop.login1 -t logind
   gdbus call --address "$system_bus" --dest org.freedesktop.login1 --object-path /org/freedesktop/login1 \
     --method org.freedesktop.DBus.Mock.AddSession auto seat0 "$(id -u)" "$(id -un)" true >/dev/null
-  start_mock "$check_session_bus" --session org.freedesktop.secrets org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service
+  # The real Secret Service, unlocked, on the private bus only, its data in the check's
+  # scratch folder (keyring-daemon.sh refuses the container's own session bus).
+  start_service "$check_session_bus" org.freedesktop.secrets \
+    "$here/keyring-daemon.sh" "$check_session_bus" "$scratch/keyring"
   secrets_pid="$last_mock_pid"
   start_mock "$check_session_bus" --session org.gnome.ScreenSaver org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver
   start_mock "$check_session_bus" --session org.freedesktop.ScreenSaver org.freedesktop.ScreenSaver /org/freedesktop/ScreenSaver org.freedesktop.ScreenSaver
-  start_mock "$check_session_bus" --session org.freedesktop.portal.Desktop org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.OpenURI
+  start_mock "$check_session_bus" --session org.freedesktop.portal.Desktop \
+    -t "$here/openuri_mock.py" -p "{\"log\": \"$log_dir/openuri-check.log\", \"opened\": \"$log_dir/openuri-check-opened.log\"}"
   start_mock "$check_session_bus" --session org.example.NotGranted org.example.NotGranted /org/example/NotGranted org.example.NotGranted
 }
 
@@ -384,7 +409,7 @@ if ping_inside org.example.NotGranted /org/example/NotGranted >"$scratch/not-gra
 fi
 echo "refused inside the sandbox, answering outside: org.example.NotGranted ($(tr '\n' ' ' <"$scratch/not-granted.out"))"
 
-# No Secret Service (011 US2-5): with the stand-in stopped, the name has no owner from inside
+# No Secret Service (011 US2-5): with the keyring stopped, the name has no owner from inside
 # the sandbox, so the keyring's availability probe answers false, as the 003 keyring tests
 # (tests/keyring_test.rs, Keyring::off()) show for an unavailable keyring: saving a
 # passphrase is refused with KEYRING_UNAVAILABLE.
@@ -395,21 +420,21 @@ name_has_owner_inside() { # name
 owned="$(name_has_owner_inside org.freedesktop.secrets)" ||
   fail "NameHasOwner for org.freedesktop.secrets failed from inside the sandbox"
 case "$owned" in
-  *true*) echo "with the stand-in running, org.freedesktop.secrets has an owner inside the sandbox: $owned" ;;
-  *) fail "org.freedesktop.secrets has no owner inside the sandbox while the stand-in runs ($owned), so its absence below shows nothing" ;;
+  *true*) echo "with the keyring running, org.freedesktop.secrets has an owner inside the sandbox: $owned" ;;
+  *) fail "org.freedesktop.secrets has no owner inside the sandbox while the keyring runs ($owned), so its absence below shows nothing" ;;
 esac
 kill "$secrets_pid" 2>/dev/null || true
 tries=0
 while name_owned "$check_session_bus" org.freedesktop.secrets; do
   tries=$((tries + 1))
-  [ "$tries" -lt 100 ] || fail "the Secret Service stand-in did not stop"
+  [ "$tries" -lt 100 ] || fail "the keyring did not stop"
   sleep 0.05
 done
 owned="$(name_has_owner_inside org.freedesktop.secrets)" ||
-  fail "NameHasOwner for org.freedesktop.secrets failed from inside the sandbox once the stand-in stopped"
+  fail "NameHasOwner for org.freedesktop.secrets failed from inside the sandbox once the keyring stopped"
 case "$owned" in
-  *false*) echo "with the stand-in stopped, org.freedesktop.secrets has no owner inside the sandbox: $owned" ;;
-  *) fail "org.freedesktop.secrets still has an owner inside the sandbox after the stand-in stopped ($owned)" ;;
+  *false*) echo "with the keyring stopped, org.freedesktop.secrets has no owner inside the sandbox: $owned" ;;
+  *) fail "org.freedesktop.secrets still has an owner inside the sandbox after the keyring stopped ($owned)" ;;
 esac
 
 # ---------------------------------------------------------------------------

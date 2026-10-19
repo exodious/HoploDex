@@ -747,6 +747,15 @@ as one minute (default 60). The harness sets it to 3 for
 the notice and the settings still say "1 minute". The scaling's unit tests
 (`session/idle.rs`) run in the default Rust test run.
 
+The `flatpak-check` feature builds on `e2e` for the Flatpak check alone
+(`scripts/flatpak/checkManifest.mjs` turns it on; the `e2e` suite, the `.deb`
+and every other build never do). It keeps the WebDriver server and the
+`HOPLODEX_E2E_*` seams, and leaves out two of `e2e`'s stand-ins: `build.rs`
+turns it into the `app_opener` and `mock_keyring` cfgs, so the check variant
+has the real `AppOpener` (the OpenURI portal inside a Flatpak) and the OS
+keyring (the Secret Service) in place of `E2eOpener` and the in-memory store.
+"The Flatpak check" below says what it talks to.
+
 The harness, not a driver, owns the app's process (`e2e/support/app.ts`):
 `wdio.conf.ts` launches the app before each spec file's session, with the
 sandbox's environment and `TAURI_WEBDRIVER_PORT`, waits for its server to
@@ -832,14 +841,25 @@ What it does, in order:
 1. Removes any HoploDex build already installed (`npm run bundle:flatpak`
    leaves the shipped one there) and notes which apps the installation lists.
 2. Builds the check variant offline and installs it. It is the shipped manifest
-   with only the `e2e` cargo feature and profile changed, so it runs with the
-   permissions the Flatpak ships with (`manifest.test.ts` compares the two).
-3. Starts a private session bus and stand-ins for the Secret Service, both
-   screen savers, the OpenURI portal and a name the manifest does not grant,
-   and a stand-in logind on the private system bus. From inside the sandbox it
-   shows that each granted name answers, that logind's `Inhibit` returns a
-   descriptor through the bus proxy, and that the name not granted is refused
-   while it answers outside the sandbox.
+   with only the `e2e` and `flatpak-check` cargo features and the profile
+   changed, so it runs with the permissions the Flatpak ships with
+   (`manifest.test.ts` compares the two). `flatpak-check` is the `e2e` build
+   with the real routes: its `AppOpener` hands a document to the OpenURI
+   portal and its keyring is the OS's (the Secret Service) instead of the
+   `e2e` build's log and in-memory store. The consent dialog is still the
+   `e2e` build's, which no WebDriver could click. Only the Flatpak check
+   builds it; the main E2E suite and every shipped build are unchanged.
+3. Starts a private session bus with a real, headless `gnome-keyring-daemon`
+   (unlocked, its data in the run's throwaway folder, started by
+   `scripts/flatpak/keyring-daemon.sh`, which refuses the container's own bus)
+   for the Secret Service, a scripted OpenURI portal
+   (`scripts/flatpak/openuri_mock.py`, a dbusmock template that records each
+   `OpenFile`'s descriptor and answers `Response`), stand-ins for both screen
+   savers and a name the manifest does not grant, and a stand-in logind on the
+   private system bus. From inside the sandbox it shows that each granted name
+   answers, that logind's `Inhibit` returns a descriptor through the bus proxy,
+   that the name not granted is refused while it answers outside the sandbox,
+   and that, with the keyring stopped, the Secret Service's name has no owner.
 4. Shows the shipped permissions have no network: it listens on the container's
    own non-loopback address, then a `python3` run in the sandbox without
    `--share=network` sees only the loopback interface and cannot connect to it.
@@ -854,8 +874,11 @@ What it does, in order:
 
 Its logs are in `flatpak/out/check/` (`check.log`, one per stand-in and per app
 start, which holds what the app logged to standard error: whether WebKit's
-sandbox is on and what the helpers are confined with, see `src-tauri/src/logging.rs`).
-`lock-times.log` has each lock's time from the signal (`011 SC-002`) and
+sandbox is on and what the helpers are confined with, see `src-tauri/src/logging.rs`;
+and `openuri.log`, one JSON line for each descriptor the scripted portal was handed).
+`lock-times.log` has each lock's time from the signal, in the Flatpak and outside
+the sandbox for a sleep, a screen lock, a shutdown and a SIGTERM, each Flatpak
+time within a second of its outside time (`011 SC-002`), and
 `webkit-sandbox.txt` the `flatpak-spawn --sandbox` command line, what the web
 process sees of its sandbox and what a process started with WebKit's flags
 reaches (`011 research.md` §9).

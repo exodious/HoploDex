@@ -22,9 +22,9 @@ const USER_PREFIX: &str = "passphrase:";
 /// keyring answers at all.
 const PROBE_USER: &str = "passphrase:availability-check";
 
-#[cfg(not(feature = "mock-keyring"))]
+#[cfg(not(mock_keyring))]
 type Entry = ::keyring::Entry;
-#[cfg(feature = "mock-keyring")]
+#[cfg(mock_keyring)]
 type Entry = keyring_core::Entry;
 type KeyringError = ::keyring::Error;
 
@@ -47,7 +47,7 @@ enum Backend {
     System {
         /// E2E only: a file the in-memory store is loaded from and written
         /// back to, so a saved passphrase outlives a relaunch.
-        #[cfg(feature = "mock-keyring")]
+        #[cfg(mock_keyring)]
         mirror: Option<std::path::PathBuf>,
     },
 }
@@ -59,21 +59,21 @@ impl Keyring {
     }
 
     /// The OS keyring.
-    #[cfg(not(feature = "mock-keyring"))]
+    #[cfg(not(mock_keyring))]
     pub fn system() -> Self {
         Self { backend: Backend::System {}, available: OnceLock::new() }
     }
 
     /// The in-memory keyring of an E2E or test build, kept in the file
     /// `HOPLODEX_E2E_KEYRING_FILE` names, if any, across launches.
-    #[cfg(feature = "mock-keyring")]
+    #[cfg(mock_keyring)]
     pub fn system() -> Self {
         Self::mock(std::env::var_os("HOPLODEX_E2E_KEYRING_FILE").map(Into::into))
     }
 
     /// [`system`](Self::system) with its file given, so tests set it without
     /// touching the process environment.
-    #[cfg(feature = "mock-keyring")]
+    #[cfg(mock_keyring)]
     pub fn mock(mirror: Option<std::path::PathBuf>) -> Self {
         mock::install_store();
         if let Some(file) = &mirror {
@@ -146,10 +146,10 @@ impl Keyring {
         }
     }
 
-    #[cfg(not(feature = "mock-keyring"))]
+    #[cfg(not(mock_keyring))]
     fn mirror_changed(&self) {}
 
-    #[cfg(feature = "mock-keyring")]
+    #[cfg(mock_keyring)]
     fn mirror_changed(&self) {
         if let Backend::System { mirror: Some(file) } = &self.backend {
             mock::write_mirror(file);
@@ -161,13 +161,13 @@ fn user_for(database_id: &str) -> String {
     format!("{USER_PREFIX}{database_id}")
 }
 
-#[cfg(not(feature = "mock-keyring"))]
+#[cfg(not(mock_keyring))]
 fn entry(user: &str) -> Result<Entry, KeyringError> {
     debug_assert!(user.starts_with(USER_PREFIX));
     Entry::new(SERVICE, user)
 }
 
-#[cfg(feature = "mock-keyring")]
+#[cfg(mock_keyring)]
 fn entry(user: &str) -> Result<Entry, KeyringError> {
     debug_assert!(user.starts_with(USER_PREFIX));
     // A test may have put in a store of its own; otherwise make one.
@@ -178,7 +178,7 @@ fn entry(user: &str) -> Result<Entry, KeyringError> {
 /// The in-memory store of `mock-keyring` builds, and the file E2E runs keep
 /// it in between launches. The file holds passphrases in the clear: it is
 /// only ever in an E2E run's scratch directory.
-#[cfg(feature = "mock-keyring")]
+#[cfg(mock_keyring)]
 mod mock {
     use std::collections::BTreeMap;
     use std::fs;

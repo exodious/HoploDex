@@ -1,9 +1,11 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  appPid,
   application,
   binaryLauncher,
   killApp,
@@ -40,8 +42,10 @@ import {
   installBundle,
   installedCommit,
   installedOrigin,
+  keyringEntries,
   lockProbe,
   makeBundle,
+  openUriCalls,
   processGone,
   processView,
   removeBundleOrigin,
@@ -50,7 +54,9 @@ import {
   runInSandbox,
   sandboxProcesses,
   startScreenSavers,
+  startSecrets,
   stopScreenSavers,
+  stopSecrets,
   terminateApp,
   uninstallApp,
 } from "../support/flatpak";
@@ -508,18 +514,20 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 
-  it("011 US1-5, 011 US1-6: dropped documents are attached, and a PDF, a TIFF and a text document preview", async function () {
+  it("011 US1-5, 011 US1-6: dropped documents are attached, and a PDF, two image documents (TIFFs) and a text document preview", async function () {
     this.timeout(180000);
     fs.mkdirSync(scans(), { recursive: true });
     const pdf = path.join(scans(), "three-pages.pdf");
     const tiff = path.join(scans(), "one-page.tif");
+    const scan = path.join(scans(), "four-pages-mixed.tif");
     const text = path.join(scans(), "notes.txt");
     fs.copyFileSync(path.join(FIXTURES, "three-pages.pdf"), pdf);
     fs.copyFileSync(path.join(FIXTURES, "one-page.tif"), tiff);
+    fs.copyFileSync(path.join(FIXTURES, "four-pages-mixed.tif"), scan);
     fs.writeFileSync(text, "HoploDex in a Flatpak keeps this note.\n");
 
-    await dropFiles([pdf, tiff, text]);
-    for (const name of ["three-pages.pdf", "one-page.tif", "notes.txt"])
+    await dropFiles([pdf, tiff, scan, text]);
+    for (const name of ["three-pages.pdf", "one-page.tif", "four-pages-mixed.tif", "notes.txt"])
       await waitForDocument(name);
     await recordPreviewEvents();
 
@@ -541,6 +549,21 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     );
     await closeViewer();
 
+    // A scan of several pages, one compression each (LZW, Deflate, CCITT, JPEG), which the
+    // confined helper decodes: the first page shows, of four.
+    await openDocument("four-pages-mixed.tif");
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const image = document.querySelector<HTMLImageElement>(
+            'img[alt="four-pages-mixed.tif, page 1 of 4"]',
+          );
+          return Boolean(image?.complete && image.naturalWidth > 0);
+        }),
+      { timeout: 15000, timeoutMsg: "the multi-page TIFF's first page never rendered" },
+    );
+    await closeViewer();
+
     // A text document.
     await openDocument("notes.txt");
     const shown = await $(".hd-dialog__content--xl pre.hd-preview__text");
@@ -552,16 +575,20 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     expect(await viewerTitle()).toBeNull();
   });
 
-  it("011 US1-7, 011 FR-008: a document opens in another application after consent, its copy is on disk while the database is open and gone once it is closed", async function () {
+  it("011 US1-7, 011 FR-008: a document opens in another application after consent, through the OpenURI portal with a read-only descriptor of its copy, which is on disk while the database is open and gone once it is closed", async function () {
     this.timeout(120000);
     const asked = logLines("HOPLODEX_E2E_CONSENT_LOG").length;
     const opened = logLines("HOPLODEX_E2E_OPENED_LOG").length;
+    const calls = openUriCalls().length;
 
     await clickRowButton("notes.txt", "Open in another app…");
 
+    // The check variant keeps the real portal route (011 research.md §6): the
+    // scripted OpenURI on the run's bus is what logs the copy, from the
+    // descriptor it was handed.
     await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length > opened, {
       timeout: 15000,
-      timeoutMsg: "the opener never logged the copy",
+      timeoutMsg: "the portal never got the copy",
     });
     const consent = logLines("HOPLODEX_E2E_CONSENT_LOG");
     expect(consent).toHaveLength(asked + 1);
@@ -572,6 +599,17 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     const copy = logLines("HOPLODEX_E2E_OPENED_LOG").at(-1)!;
     expect(copies).toContain(copy);
     expect(fs.readFileSync(copy, "utf-8")).toBe("HoploDex in a Flatpak keeps this note.\n");
+    // What the portal was handed: one OpenFile call, a descriptor of that copy
+    // opened read only, its bytes, and `writable: false`.
+    const portal = openUriCalls();
+    expect(portal).toHaveLength(calls + 1);
+    const call = portal.at(-1)!;
+    expect(call.path).toBe(copy);
+    expect(call.accessMode).toBe(0);
+    expect(call.options.writable).toBe(false);
+    expect(call.sha256).toBe(
+      createHash("sha256").update("HoploDex in a Flatpak keeps this note.\n").digest("hex"),
+    );
     await browser.waitUntil(
       async () => (await toastTexts()).includes("Opened notes.txt in another app."),
       { timeout: 5000, timeoutMsg: "no 'Opened … in another app.' toast" },
@@ -587,8 +625,11 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     expect(lockProbe(database())).toBe(false);
   });
 
-  it("011 US1-4: a saved passphrase opens the database from the recent list after a restart, without typing it", async function () {
+  it("011 US1-4, 011 US5-2: a saved passphrase lands in the real keyring and opens the database from the recent list after a restart, without typing it", async function () {
     this.timeout(120000);
+    // The check variant uses the real Secret Service backend (011 research.md §6),
+    // here a headless gnome-keyring-daemon on the run's bus: nothing is saved yet.
+    expect(keyringEntries()).toEqual([]);
     await ensureSelected("Journey");
     await toggle("Remember on this computer");
     await $('[role="alertdialog"]').waitForExist();
@@ -596,6 +637,14 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await unlock(E2E_PASSPHRASE);
     await switchDatabase();
+
+    // `secret-tool` reads it back from the keyring: one entry under the app's
+    // service, named for the database's id, holding the passphrase.
+    const saved = keyringEntries();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].attributes.service).toBe(FLATPAK_APP_ID);
+    expect(saved[0].attributes.username).toMatch(/^passphrase:[0-9a-f]+$/);
+    expect(saved[0].secret).toBe(E2E_PASSPHRASE);
 
     await relaunchApp();
     await waitForChooser();
@@ -734,6 +783,45 @@ async function timedLock(
   return { lockedMs, releasedMs };
 }
 
+/**
+ * The `e2e` build outside the sandbox, on the run's private session bus, so the
+ * screen-saver stand-ins and the other services reach it as they reach the
+ * Flatpak (support/app.ts's `binaryLauncher` leaves it on the container's own
+ * bus). It is the baseline the Flatpak's lock times are compared with
+ * (011 SC-002).
+ */
+const outsideLauncher: Launcher = {
+  start(port: number): ChildProcess {
+    return spawn(application, [], {
+      env: {
+        ...process.env,
+        TAURI_WEBDRIVER_PORT: String(port),
+        DBUS_SESSION_BUS_ADDRESS: currentRun().sessionBus.address,
+      },
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+  },
+};
+
+/** Records both times of a comparison and fails when the Flatpak's is more than a
+ * second over the one outside the sandbox (011 SC-002). */
+function compareTimes(what: string, inside: number, outside: number) {
+  console.log(
+    `011 SC-002: ${what}: ${inside} ms in the Flatpak and ${outside} ms outside it, ` +
+      `difference ${inside - outside} ms`,
+  );
+  noteTime(`${what}, difference between the Flatpak and outside the sandbox`, inside - outside);
+  expect(inside - outside).toBeLessThanOrEqual(1000);
+}
+
+/** Opens `GUARD_NAME`'s edit form in the open database and types into it, the
+ * input a shutdown or a log-out must keep as pending changes. */
+async function typeUnsavedNotes(notes: string) {
+  await unlock(E2E_PASSPHRASE);
+  await openFirearm(GUARD_NAME);
+  await editNotes(notes);
+}
+
 /** What the latest start of the app wrote to its standard error. */
 function appLog(): string {
   return fs.readFileSync(appLogPath(), "utf-8");
@@ -782,6 +870,7 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     // What a test may have left changed for the others.
     fs.rmSync(slowSpreadsheet(), { force: true });
     if (currentRun().screenSavers.length === 0) await startScreenSavers();
+    if (!currentRun().secrets) await startSecrets();
     try {
       addLogindSession();
     } catch {
@@ -856,7 +945,7 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     this.timeout(180000);
     // Both locks are of a database that has been backed up today, so neither
     // pays for a backup the other doesn't. Outside the sandbox first.
-    await relaunchApp(binaryLauncher);
+    await relaunchApp(outsideLauncher);
     await waitForChooser();
     await unlock(E2E_PASSPHRASE);
     const outside = await timedLock("outside the sandbox: PrepareForSleep", () =>
@@ -872,17 +961,49 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     );
     emitPrepareForSleep(false);
 
-    console.log(
-      `011 SC-002: locked after ${inside.lockedMs} ms in the Flatpak and ${outside.lockedMs} ms outside it`,
-    );
-    expect(inside.lockedMs - outside.lockedMs).toBeLessThanOrEqual(1000);
+    compareTimes("a sleep locked the database after", inside.lockedMs, outside.lockedMs);
   });
 
-  it("011 US2-3, 011 FR-013: logind's PrepareForShutdown closes the database and ends the app, keeping the open form's input as pending changes", async function () {
+  it("011 SC-002: a screen lock locks as fast in the sandbox as outside it", async function () {
     this.timeout(180000);
+    // The screen-lock setting is on in this database (the 011 US2-2 test saved it).
+    await relaunchApp(outsideLauncher);
+    await waitForChooser();
     await unlock(E2E_PASSPHRASE);
-    await openFirearm(GUARD_NAME);
-    await editNotes("typed before the shutdown");
+    const outside = await timedLock("outside the sandbox: ActiveChanged(true)", () =>
+      emitActiveChanged(true),
+    );
+    emitActiveChanged(false);
+
+    await relaunchApp(flatpakLauncher());
+    await waitForChooser();
+    await unlock(E2E_PASSPHRASE);
+    const inside = await timedLock("in the Flatpak: ActiveChanged(true)", () =>
+      emitActiveChanged(true),
+    );
+    emitActiveChanged(false);
+
+    compareTimes("a screen lock locked the database after", inside.lockedMs, outside.lockedMs);
+  });
+
+  it("011 US2-3, 011 FR-013, 011 SC-002: logind's PrepareForShutdown closes the database and ends the app, keeping the open form's input as pending changes, as fast as outside the sandbox", async function () {
+    this.timeout(240000);
+    // Outside the sandbox first: the same input left in the same form.
+    await relaunchApp(outsideLauncher);
+    await waitForChooser();
+    await typeUnsavedNotes("typed before the shutdown");
+    const outsideStarted = performance.now();
+    emitPrepareForShutdown(true);
+    await waitForAppToQuit(20000);
+    const outside = Math.round(performance.now() - outsideStarted);
+    noteTime("outside the sandbox: PrepareForShutdown ended the app after", outside);
+    await relaunchApp(outsideLauncher);
+    await resumePendingNotes("typed before the shutdown");
+    await switchDatabase();
+
+    await relaunchApp(flatpakLauncher());
+    await waitForChooser();
+    await typeUnsavedNotes("typed before the shutdown");
 
     const app = sandboxProcesses().find(
       (p) => p.command[0] === "hoplodex" && p.command.length === 1,
@@ -895,7 +1016,9 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
       interval: 5,
       timeoutMsg: "the app did not end for the shutdown",
     });
-    noteTime("PrepareForShutdown ended the app after", Math.round(performance.now() - started));
+    const inside = Math.round(performance.now() - started);
+    noteTime("in the Flatpak: PrepareForShutdown ended the app after", inside);
+    compareTimes("a shutdown ended the app after", inside, outside);
     // The rest of the sandbox follows it.
     await waitForAppToQuit(20000);
     await browser.waitUntil(() => sandboxProcesses().length === 0, {
@@ -913,25 +1036,50 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     await switchDatabase();
   });
 
-  it("011 US2-3, 011 FR-013, 011 SC-002: a log-out's SIGTERM ends the app at once, keeping the open form's input, and the opened document's copy is gone", async function () {
-    this.timeout(180000);
-    await unlock(E2E_PASSPHRASE);
-    await openFirearm(GUARD_NAME);
-    // A document opened in another application leaves a copy on disk.
-    const opened = logLines("HOPLODEX_E2E_OPENED_LOG").length;
-    await clickRowButton("notes.txt", "Open in another app…");
-    await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length > opened, {
-      timeout: 15000,
-      timeoutMsg: "the opener never logged the copy",
-    });
-    const copy = logLines("HOPLODEX_E2E_OPENED_LOG").at(-1)!;
-    expect(fs.existsSync(copy)).toBe(true);
-    expect(filesUnder(copiesDir())).toContain(copy);
-    await editNotes("typed before the log-out");
+  it("011 US2-3, 011 FR-013, 011 SC-002: a log-out's SIGTERM ends the app at once, keeping the open form's input, and the opened document's copy is gone, as fast as outside the sandbox", async function () {
+    this.timeout(240000);
+    /** A document opened in another application leaves a copy on disk; the form
+     * then holds input the log-out must keep. Returns the copy's path. */
+    async function openCopyAndType(): Promise<string> {
+      await unlock(E2E_PASSPHRASE);
+      await openFirearm(GUARD_NAME);
+      const opened = logLines("HOPLODEX_E2E_OPENED_LOG").length;
+      await clickRowButton("notes.txt", "Open in another app…");
+      await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length > opened, {
+        timeout: 15000,
+        timeoutMsg: "the opener never logged the copy",
+      });
+      const copy = logLines("HOPLODEX_E2E_OPENED_LOG").at(-1)!;
+      expect(fs.existsSync(copy)).toBe(true);
+      expect(filesUnder(copiesDir())).toContain(copy);
+      await editNotes("typed before the log-out");
+      return copy;
+    }
+
+    // Outside the sandbox first: SIGTERM to the app's own process.
+    await relaunchApp(outsideLauncher);
+    await waitForChooser();
+    const outsideCopy = await openCopyAndType();
+    const outsideStarted = performance.now();
+    process.kill(appPid(), "SIGTERM");
+    await waitForAppToQuit(15000);
+    const outside = Math.round(performance.now() - outsideStarted);
+    noteTime("outside the sandbox: SIGTERM ended the app after", outside);
+    expect(fs.existsSync(outsideCopy)).toBe(false);
+    expect(filesUnder(copiesDir())).toEqual([]);
+    await relaunchApp(outsideLauncher);
+    await resumePendingNotes("typed before the log-out");
+    await switchDatabase();
+
+    await relaunchApp(flatpakLauncher());
+    await waitForChooser();
+    const copy = await openCopyAndType();
 
     const started = performance.now();
     await terminateApp();
-    noteTime("SIGTERM ended the app after", Math.round(performance.now() - started));
+    const inside = Math.round(performance.now() - started);
+    noteTime("in the Flatpak: SIGTERM ended the app after", inside);
+    compareTimes("a log-out's SIGTERM ended the app after", inside, outside);
 
     expect(fs.existsSync(copy)).toBe(false);
     expect(filesUnder(copiesDir())).toEqual([]);
@@ -1196,6 +1344,38 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     );
     await clickButton("Cancel");
     await switchDatabase();
+  });
+
+  it("011 US2-5: with no keyring on the bus, the chooser and Database settings show saving a passphrase as unavailable, and nothing fails", async function () {
+    this.timeout(180000);
+    const unavailable = "Not available: this computer has no keyring service.";
+    // The real keyring is stopped, so nothing owns the Secret Service's name for
+    // the app (as on a .deb without one); its data stays for the tests after this.
+    await stopSecrets();
+    await relaunchApp();
+    await waitForChooser();
+    await ensureSelected(PROTECTED);
+    expect(await isFieldDisabled("Remember on this computer")).toBe(true);
+    const row = await browser.execute(
+      () => document.querySelector(".hd-db-row--selected")?.textContent ?? "",
+    );
+    expect(row).toContain(unavailable);
+
+    // Opening still works, with the typed passphrase, and the settings say the same.
+    await unlock(E2E_PASSPHRASE);
+    await chooseMenuItem("button.hd-db-menu", "Database settings…");
+    await $('[role="dialog"]').waitForExist();
+    const settings = await browser.execute(
+      () => document.querySelector('[role="dialog"]')?.textContent ?? "",
+    );
+    expect(settings).toContain(unavailable);
+    expect(settings).not.toContain("Remember the passphrase on this computer");
+    await clickButton("Cancel");
+    await switchDatabase();
+
+    // And the keyring comes back with what it held.
+    await startSecrets();
+    expect(keyringEntries().some((entry) => entry.secret === E2E_PASSPHRASE)).toBe(true);
   });
 });
 
