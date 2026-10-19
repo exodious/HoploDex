@@ -345,7 +345,7 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     expect(path.relative(os.homedir(), database()).startsWith("..")).toBe(true);
   });
 
-  it("011 US1-3, 011 US1-4: a normal close backs up beside the database, and the file is not locked once it is closed", async function () {
+  it("011 US1-3: a normal close backs up beside the database, and the file is not locked once it is closed", async function () {
     this.timeout(120000);
     await addFirearm(glock);
     // The exclusive lock holds across the sandbox while the database is open
@@ -358,7 +358,7 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     expect(lockProbe(database())).toBe(false);
   });
 
-  it("011 US1-3: the recent list reopens it, the passphrase changes with the file at its own path, and a restore brings the backup back", async function () {
+  it("011 US1-3, 011 US1-4: the recent list reopens it, the passphrase changes with the file at its own path, and a restore brings the backup back", async function () {
     this.timeout(180000);
     // Reopened from the recent list: the chooser's row, not a typed path.
     expect(await chooserNames()).toEqual(["Journey"]);

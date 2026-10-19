@@ -142,7 +142,7 @@ describe("011 US3-3, 011 US4-4 - the AppStream metadata", () => {
   });
 
   describe("releases", () => {
-    it("011 US4-4: the newest release's version equals APP_VERSION (src-tauri/src/lib.rs)", () => {
+    it("011 FR-017: the newest release's version equals APP_VERSION (src-tauri/src/lib.rs)", () => {
       const newest = doc.querySelector("releases > release");
       expect(
         newest?.getAttribute("version"),

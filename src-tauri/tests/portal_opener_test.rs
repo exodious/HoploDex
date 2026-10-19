@@ -8,7 +8,7 @@
 //! bus as a parameter. Nothing goes through an environment variable: the
 //! integration program shares one environment.
 //!
-//! Written ahead of 011 T049; it fails to compile until that exists. Assumed API,
+//! Written ahead of 011 T049. Assumed API,
 //! the single list to check this file against:
 //!
 //! - `commands::documents::portal_open(connection: &zbus::Connection, copy:

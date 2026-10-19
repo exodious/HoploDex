@@ -9,10 +9,10 @@
 //! (names, sizes, modification times) is the same afterwards: no scratch file,
 //! probe, partial backup, partial export or `.<file>.new`.
 //!
-//! Written ahead of 011 T042 and T044 to T048; it fails to compile until they
-//! exist. Every name this file assumes of code that was not there yet is gathered
-//! here, so one place says what the implementation was built to. Each ops
-//! function that is given `&Reach` takes it as its LAST parameter:
+//! Written ahead of 011 T042 and T044 to T048. Every name this file assumed of
+//! code that was not there yet is gathered here, so one place says what the
+//! implementation was built to. Each ops function that is given `&Reach` takes
+//! it as its LAST parameter:
 //!
 //! - `databases::create_database(&Session, &MachineSettings, folder: &str,
 //!   name: &str, &Passphrase, acknowledged_unrecoverable: bool, &Reach)`;
@@ -411,7 +411,7 @@ fn create_database_outside_reach_and_in_a_read_only_grant_is_refused_and_nothing
     }
 }
 
-/// 011 US1-4: the same call in the writable grant, made as a missing folder
+/// 011 US1-3: the same call in the writable grant, made as a missing folder
 /// first, goes through.
 #[test]
 fn create_database_in_the_writable_grant_is_made() {
