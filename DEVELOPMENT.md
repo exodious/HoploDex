@@ -552,9 +552,20 @@ the commit the `Dockerfile` pins (`FLATPAK_BUILDER_TOOLS_COMMIT`, cloned to
 says). The scripts must never use your own Flatpak installation, so they
 refuse on a host unless `FLATPAK_USER_DIR` names an absolute, empty or
 throwaway folder and `--i-know-this-is-a-host` follows the command
-(`npm run bundle:flatpak -- --i-know-this-is-a-host`); the guard
-(`scripts/flatpak/guard.mjs`) says what to change otherwise. The first run
-then fetches the 2 GB into that folder.
+(`FLATPAK_USER_DIR=/var/tmp/hoplodex-flatpak npm run bundle:flatpak -- --i-know-this-is-a-host`);
+the guard (`scripts/flatpak/guard.mjs`) says what to change otherwise. The
+build's state folder (downloads, build folders and the repository)
+defaults to a folder beside it, `<FLATPAK_USER_DIR>-state`
+(`/var/tmp/hoplodex-flatpak-state` above), so no other variable is needed;
+set `HOPLODEX_FLATPAK_STATE` to an absolute path to put it elsewhere. The
+first run then fetches the 2 GB into those two folders, and deleting both
+removes everything it made. **`npm run test:flatpak` does not run on a
+host, with or without that flag** (`011 FR-023`): it refuses before it
+touches anything, saying so. The check needs what only the dev container
+has: folders outside any home that its user can write (`/mnt/hoplodex-check`
+and `/srv/hoplodex-check`, which the container makes), private D-Bus buses with a
+headless keyring and scripted portals started by the script, and an Xvfb
+display of its own.
 
 **The source lists.** The offline build can only use what the lists name, so
 `flatpak/cargo-sources.json` (from `src-tauri/Cargo.lock`) and

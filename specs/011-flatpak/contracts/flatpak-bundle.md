@@ -86,6 +86,22 @@ Flatpak tooling: the source lists against the lockfiles, the manifest's
 rules, the contents allow list on fixtures, the metadata's rules and the host
 guard.
 
+_Amended 2026-10-19 (011 T104): the paragraph above holds for `npm run
+bundle:flatpak` and `npm run flatpak:sources`, not for `npm run test:flatpak`.
+On a host without podman, `bundle:flatpak` takes its state folder
+(`flatpak-builder`'s state, build folders and repository) from
+`HOPLODEX_FLATPAK_STATE` if set, else a folder beside the throwaway
+`FLATPAK_USER_DIR`, `<FLATPAK_USER_DIR>-state` (`env.sh` exports what the guard
+decided, so no script stops on the variable being unset). `test:flatpak` is
+container-only and refuses on a host before it touches anything, with or
+without `--i-know-this-is-a-host`: `check.sh` asks the guard for
+`--container-only` first. Its message says why: the check needs folders outside
+any home that the container makes (`/mnt/hoplodex-check`, `/srv/hoplodex-check`),
+private buses with a headless keyring and scripted portals, and an Xvfb display
+(`scripts/flatpak/scripts.test.ts` runs the three scripts with stub tools and
+asserts none is called). See [DEVELOPMENT.md](../../../DEVELOPMENT.md), "Without
+podman"._
+
 _Amended 2026-10-19 (011 T108): the `test:flatpak` row's "also" is wrong.
 `npm run test:flatpak -- --fresh-install` is a separate run that replaces the
 check, not an addition to it (`scripts/flatpak/check.sh` runs

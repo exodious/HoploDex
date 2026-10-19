@@ -2,9 +2,10 @@
 # Builds the Flatpak offline, checks it and installs it (npm run bundle:flatpak).
 # 011 research.md §2, §13, §15; 011 contracts/flatpak-bundle.md "Project commands".
 #
-# Runs in `scripts/dev-container.sh --flatpak` only (env.sh's host guard refuses
-# anywhere else unless FLATPAK_USER_DIR names a throwaway installation and
-# --i-know-this-is-a-host is passed). Each step is printed as it starts, and the
+# Runs in `scripts/dev-container.sh --flatpak`, or on a host without podman (env.sh's
+# host guard refuses unless FLATPAK_USER_DIR names a throwaway installation and
+# --i-know-this-is-a-host is passed; the state folder then defaults to a folder
+# beside it, 011 T104). Each step is printed as it starts, and the
 # script stops at the first step that fails, naming it.
 set -euo pipefail
 
@@ -24,7 +25,9 @@ source "$here/env.sh" "$@"
 app_id=io.github.exodious.HoploDex
 manifest="$repo/flatpak/$app_id.yml"
 arch=x86_64
-state="${HOPLODEX_FLATPAK_STATE:?HOPLODEX_FLATPAK_STATE is not set; run through scripts/dev-container.sh --flatpak}"
+# env.sh set it: the container's state volume, or on a host the folder beside the
+# throwaway FLATPAK_USER_DIR (011 T104).
+state="${HOPLODEX_FLATPAK_STATE:?env.sh did not set HOPLODEX_FLATPAK_STATE}"
 build_dir="$state/build-dir"
 local_repo="$state/repo"
 # GNOME 51 is built on Freedesktop SDK 26.08, and so are both SDK extensions

@@ -5,7 +5,13 @@
 // function of the environment, hostname, arguments and a file-system reader, so
 // no test here touches a real Flatpak installation.
 import { describe, expect, it } from "vitest";
-import { CONTAINER_HOSTNAME, CONTAINER_MARKER_FILE, decide, MARKER_NAME } from "./guard.mjs";
+import {
+  CONTAINER_HOSTNAME,
+  CONTAINER_MARKER_FILE,
+  CONTAINER_ONLY_FLAG,
+  decide,
+  MARKER_NAME,
+} from "./guard.mjs";
 
 const HOME = "/home/someone";
 const OWN_INSTALLATION = `${HOME}/.local/share/flatpak`;
@@ -58,6 +64,7 @@ describe("011 US5-3, 011 SC-007 - the host guard", () => {
       expect(r).toEqual({
         ok: true,
         flatpakUserDir: "/home/dev/.local/share/flatpak",
+        stateFolder: "/flatpak-state",
         writeMarker: false,
       });
     });
@@ -160,7 +167,12 @@ describe("011 US5-3, 011 SC-007 - the host guard", () => {
         [HOST_FLAG],
         fakeFs({ dirs: { "/tmp/throwaway": [] } }),
       );
-      expect(r).toEqual({ ok: true, flatpakUserDir: "/tmp/throwaway", writeMarker: true });
+      expect(r).toEqual({
+        ok: true,
+        flatpakUserDir: "/tmp/throwaway",
+        stateFolder: "/tmp/throwaway-state",
+        writeMarker: true,
+      });
     });
 
     it("allows both with a folder that does not exist yet", () => {
@@ -264,6 +276,75 @@ describe("011 US5-3, 011 SC-007 - the host guard", () => {
         fakeFs({ dirs: { [`${HOME}/.local/share`]: [] } }),
       );
       expect(r.ok).toBe(false);
+    });
+  });
+
+  // 011 T104: a host without podman needs no variable beyond FLATPAK_USER_DIR.
+  describe("the state folder", () => {
+    const throwaway = (env: Record<string, string> = {}, fs = fakeFs()) =>
+      onHost({ FLATPAK_USER_DIR: "/tmp/t/flatpak", ...env }, [HOST_FLAG], fs);
+
+    it("011 T104: on a host defaults to a folder beside the throwaway installation", () => {
+      expect(throwaway()).toMatchObject({ ok: true, stateFolder: "/tmp/t/flatpak-state" });
+    });
+
+    it("011 T104: on a host keeps an absolute HOPLODEX_FLATPAK_STATE the caller set", () => {
+      expect(throwaway({ HOPLODEX_FLATPAK_STATE: "/var/tmp/state" })).toMatchObject({
+        ok: true,
+        stateFolder: "/var/tmp/state",
+      });
+    });
+
+    it("011 T104: on a host refuses a relative HOPLODEX_FLATPAK_STATE", () => {
+      expect(throwaway({ HOPLODEX_FLATPAK_STATE: "state" }).ok).toBe(false);
+    });
+
+    it("011 T104: on a host refuses a state folder that is or holds a real installation", () => {
+      for (const state of [OWN_INSTALLATION, `${OWN_INSTALLATION}/x`, `${HOME}/.local/share`]) {
+        expect(throwaway({ HOPLODEX_FLATPAK_STATE: state }).ok).toBe(false);
+      }
+    });
+
+    it("011 T104: on a host refuses a state folder inside the throwaway installation", () => {
+      expect(throwaway({ HOPLODEX_FLATPAK_STATE: "/tmp/t/flatpak/state" }).ok).toBe(false);
+    });
+
+    it("011 T104: in the container is the state volume --flatpak names", () => {
+      const r = decide({
+        env: containerEnv,
+        hostname: CONTAINER_HOSTNAME,
+        argv: [],
+        home: "/home/dev",
+        fs: containerFs(),
+      });
+      expect(r).toMatchObject({ ok: true, stateFolder: "/flatpak-state" });
+    });
+  });
+
+  describe("011 T104: the container-only request (check.sh)", () => {
+    it("is refused on a host, even with a throwaway installation and the host flag", () => {
+      const r = onHost({ FLATPAK_USER_DIR: "/tmp/t" }, [HOST_FLAG, CONTAINER_ONLY_FLAG]);
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.message).toContain("only in the dev container");
+        expect(r.message).toContain("Xvfb");
+        expect(r.message).toContain("scripts/dev-container.sh --flatpak");
+      }
+    });
+
+    it("is refused on a host with nothing else set", () => {
+      expect(onHost({}, [CONTAINER_ONLY_FLAG]).ok).toBe(false);
+    });
+
+    it("is accepted in the container", () => {
+      const r = decide({
+        env: containerEnv,
+        hostname: CONTAINER_HOSTNAME,
+        argv: [CONTAINER_ONLY_FLAG],
+        home: "/home/dev",
+        fs: containerFs(),
+      });
+      expect(r.ok).toBe(true);
     });
   });
 });

@@ -21,6 +21,7 @@ const DOCUMENTS = `${HOME}/Documents`;
 type Flatpak = {
   FLATPAK_APP_ID?: string;
   flatpakRunArgs?: (options: RunOptions) => Run;
+  requireCheckEnvironment?: () => { state: string };
 };
 
 // Loaded by a computed name, so that until e2e/support/flatpak.ts exists (011
@@ -173,5 +174,50 @@ describe("011 FR-021 - the default E2E run never includes the Flatpak journey", 
     const { specs, maxInstances } = await config(true);
     expect(specs).toEqual(["./specs/flatpak.e2e.ts"]);
     expect(maxInstances).toBe(1);
+  });
+});
+
+// 011 T105: every `flatpak` command the check's support code runs comes after this, so
+// without the variables check.sh (and env.sh's guard) sets, nothing may run.
+describe("011 SC-007 - requireCheckEnvironment refuses outside check.sh", () => {
+  const NAMES = [
+    "FLATPAK_USER_DIR",
+    "HOPLODEX_FLATPAK_STATE",
+    "DBUS_SYSTEM_BUS_ADDRESS",
+    "HOPLODEX_FLATPAK_CHECK",
+  ];
+  const full: Record<string, string> = {
+    FLATPAK_USER_DIR: "/tmp/hoplodex-throwaway",
+    HOPLODEX_FLATPAK_STATE: "/tmp/hoplodex-state",
+    DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/tmp/bus",
+    HOPLODEX_FLATPAK_CHECK: "1",
+  };
+  afterEach(() => vi.unstubAllEnvs());
+
+  function require(env: Record<string, string>) {
+    for (const name of NAMES) vi.stubEnv(name, env[name] ?? "");
+    const fn = flatpak.requireCheckEnvironment;
+    if (typeof fn !== "function") throw new Error("requireCheckEnvironment is not exported");
+    return fn();
+  }
+
+  it("returns the state folder when check.sh set all four", () => {
+    expect(require(full)).toEqual({ state: "/tmp/hoplodex-state" });
+  });
+
+  it.each(NAMES)("refuses when %s alone is missing, naming it", (missing) => {
+    const env = { ...full };
+    delete env[missing];
+    expect(() => require(env)).toThrow(new RegExp(`${missing} is not set`));
+  });
+
+  it("refuses with none set, naming every one and the command to use", () => {
+    expect(() => require({})).toThrow(/test:flatpak/);
+    try {
+      require({});
+    } catch (error) {
+      for (const name of NAMES) expect(String(error)).toContain(name);
+      expect(String(error)).toContain("are not set");
+    }
   });
 });

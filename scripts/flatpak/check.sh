@@ -2,9 +2,10 @@
 # Runs the automated Flatpak check in its sandbox (npm run test:flatpak).
 # 011 research.md §15, §16, §18; 011 contracts/flatpak-bundle.md "Project commands".
 #
-# Runs in `scripts/dev-container.sh --flatpak` only (env.sh's host guard refuses
-# anywhere else unless FLATPAK_USER_DIR names a throwaway installation and
-# --i-know-this-is-a-host is passed), after `npm run build` (the check builds the
+# Runs in `scripts/dev-container.sh --flatpak` only: the guard is asked for the
+# container alone (--container-only) before anything else, so a host is refused even
+# with a throwaway FLATPAK_USER_DIR (011 T104; the check needs the container's
+# stand-ins), after `npm run build` (the check builds the
 # Flatpak from the checkout, and the e2e build for the cold-start comparison embeds dist/).
 #
 #   1. builds the check variant (scripts/flatpak/checkManifest.mjs) offline and
@@ -35,23 +36,24 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 cd "$repo"
 
-guard_args=()
+# The container alone, asked before anything else (a host's refusal says why).
+node "$here/guard.mjs" --container-only >/dev/null
+
 fresh_install=0
 for arg in "$@"; do
   case "$arg" in
     --fresh-install) fresh_install=1 ;;
-    --i-know-this-is-a-host) guard_args+=("$arg") ;;
     *)
-      echo "check.sh: unknown argument '$arg' (use --fresh-install or --i-know-this-is-a-host)." >&2
+      echo "check.sh: unknown argument '$arg' (use --fresh-install)." >&2
       exit 2
       ;;
   esac
 done
 
-# env.sh: the host guard (it refuses here, before any `flatpak` command, anywhere
+# env.sh: the host guard again (it refuses here, before any `flatpak` command, anywhere
 # but the dev container), FLATPAK_USER_DIR, and the private system bus.
 # shellcheck source=scripts/flatpak/env.sh
-source "$here/env.sh" ${guard_args[@]+"${guard_args[@]}"}
+source "$here/env.sh"
 # What support/flatpak.ts requires: this script has run the guard.
 export HOPLODEX_FLATPAK_CHECK=1
 

@@ -19,6 +19,11 @@ export const CONTAINER_MARKER_FILE = "/etc/hoplodex-dev-container";
 /** The file in a throwaway installation that says the guard accepted it. */
 export const MARKER_NAME = ".hoplodex-throwaway-flatpak";
 export const HOST_FLAG = "--i-know-this-is-a-host";
+/**
+ * A caller's request to accept the dev container only (011 T104: check.sh). It can
+ * only make the guard stricter, so it is not a way past it.
+ */
+export const CONTAINER_ONLY_FLAG = "--container-only";
 
 // Flatpak paths are POSIX paths whatever OS runs this file (the unit test runs on
 // Windows and macOS too), so every path decision goes through `path.posix`.
@@ -45,7 +50,7 @@ function within(a, b) {
 
 /**
  * @param {{ env: Record<string, string | undefined>, hostname: string, argv: string[], home: string, fs: Reader }} inputs
- * @returns {{ ok: true, flatpakUserDir: string, writeMarker: boolean } | { ok: false, message: string }}
+ * @returns {{ ok: true, flatpakUserDir: string, stateFolder: string, writeMarker: boolean } | { ok: false, message: string }}
  */
 export function decide({ env, hostname, argv, home, fs: reader }) {
   // All three of the container's markers; a host can share any one of them.
@@ -64,8 +69,20 @@ export function decide({ env, hostname, argv, home, fs: reader }) {
     return {
       ok: true,
       flatpakUserDir: env.FLATPAK_USER_DIR || path.join(home, ".local/share/flatpak"),
+      stateFolder: env.HOPLODEX_FLATPAK_STATE,
       writeMarker: false,
     };
+  }
+
+  if (argv.includes(CONTAINER_ONLY_FLAG)) {
+    return refuse(
+      "This command runs only in the dev container, never on a host (011 FR-023): the check needs " +
+        "the container's own stand-ins, which a host does not have, namely folders outside any home " +
+        "that the container's user can write (/mnt/hoplodex-check, /srv/hoplodex-check), private " +
+        "D-Bus buses with a headless keyring and scripted portals, and an Xvfb display. " +
+        "Run it through `scripts/dev-container.sh --flatpak <command>`. " +
+        "`npm run bundle:flatpak` does build on a host, against a throwaway FLATPAK_USER_DIR.",
+    );
   }
 
   const hostHelp =
@@ -113,7 +130,35 @@ export function decide({ env, hostname, argv, home, fs: reader }) {
       );
     }
   }
-  return { ok: true, flatpakUserDir: dir, writeMarker: true };
+
+  // The state folder (flatpak-builder's downloads, build folders and repository):
+  // the one the caller names, else a sibling of the throwaway installation, so that
+  // a host without podman needs no variable beyond FLATPAK_USER_DIR (011 T104).
+  let stateFolder = `${dir}-state`;
+  if (env.HOPLODEX_FLATPAK_STATE) {
+    if (!path.isAbsolute(env.HOPLODEX_FLATPAK_STATE)) {
+      return refuse(
+        `HOPLODEX_FLATPAK_STATE must be an absolute path, not "${env.HOPLODEX_FLATPAK_STATE}".`,
+      );
+    }
+    stateFolder = reader.realpath(path.resolve(env.HOPLODEX_FLATPAK_STATE));
+  }
+  for (const real of realInstallations) {
+    for (const candidate of new Set([real, reader.realpath(real)])) {
+      if (within(stateFolder, candidate) || within(candidate, stateFolder)) {
+        return refuse(
+          `The state folder (${stateFolder}) is, is inside, or holds a real Flatpak installation (${real}). ` +
+            "Name a different folder in HOPLODEX_FLATPAK_STATE.",
+        );
+      }
+    }
+  }
+  if (within(stateFolder, dir)) {
+    return refuse(
+      `The state folder (${stateFolder}) is the throwaway installation or inside it; name a folder beside it.`,
+    );
+  }
+  return { ok: true, flatpakUserDir: dir, stateFolder, writeMarker: true };
 }
 
 /** The real file system, for the CLI. A path that doesn't exist resolves through its nearest existing parent. */
@@ -143,8 +188,9 @@ const realReader = {
   },
 };
 
-// The CLI: prints the accepted FLATPAK_USER_DIR on the first line and `marker` or
-// `no-marker` on the second (does the caller write the marker file); on a refusal
+// The CLI: prints the accepted FLATPAK_USER_DIR on the first line, `marker` or
+// `no-marker` on the second (does the caller write the marker file) and the state
+// folder on the third; on a refusal
 // prints the message to stderr and exits 1.
 if (process.argv[1] && nodePath.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = decide({
@@ -159,6 +205,6 @@ if (process.argv[1] && nodePath.resolve(process.argv[1]) === fileURLToPath(impor
     process.exit(1);
   }
   process.stdout.write(
-    `${result.flatpakUserDir}\n${result.writeMarker ? "marker" : "no-marker"}\n`,
+    `${result.flatpakUserDir}\n${result.writeMarker ? "marker" : "no-marker"}\n${result.stateFolder}\n`,
   );
 }
