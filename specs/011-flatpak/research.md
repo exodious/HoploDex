@@ -1,0 +1,780 @@
+# Research: Build and Distribute a Flatpak
+
+**Feature**: 011-flatpak | **Date**: 2026-10-19 | **Spec**: [spec.md](spec.md)
+
+This file holds the decisions behind [plan.md](plan.md). Each section gives a
+decision, why it was made and what else was considered. Facts read from
+outside the repository carry the date they were read. The spike of
+2026-10-18, run in a throwaway container while planning was paused, is
+reported in full on #42 (comment of 2026-10-19, "Planning 011 paused"). The
+sections below cite it as "the spike".
+
+## §1 The runtime: GNOME 51, and what happens before its end of life (FR-001, FR-016)
+
+- **Decision**: `org.gnome.Platform//51` and `org.gnome.Sdk//51` from Flathub,
+  with the SDK extensions `org.freedesktop.Sdk.Extension.rust-stable` and
+  `org.freedesktop.Sdk.Extension.node24` on the branch GNOME 51 is built on,
+  Freedesktop SDK 26.08. The manifest names the branch (`51`), not one build
+  of it, so Flathub's runtime updates go on under an installed HoploDex
+  (spec, Edge Cases).
+  - **What GNOME 51 gives HoploDex**: WebKitGTK 2.54 as `libwebkit2gtk-4.1`
+    (the GTK 3 API that wry uses, with the `v2_40` features
+    `src-tauri/Cargo.toml` asks for), GTK 3, glib, libsoup 3, OpenSSL (which
+    the bundled SQLCipher links to on Linux, as it links the system's on a
+    `.deb`), D-Bus, `xdg-dbus-proxy`'s client side and `flatpak-spawn`. On
+    Flathub, GNOME 49, 50 and 51 all ship `libwebkit2gtk-4.1.so.0`; 48 is past
+    its end of life (the spike).
+  - **Rust**: `src-tauri/Cargo.toml` needs Rust 1.97 (`rust-version`) and
+    edition 2024. The 26.08 branch of `rust-stable` carries Rust 1.98
+    (tuna-os/compass#103, read 2026-10-19). The build fails if the
+    extension's compiler is older than `rust-version`, so a lag shows at once.
+  - **Node**: Node 24, as the dev container uses. The extension's own npm
+    reads `package-lock.json`'s lockfile version 3, so npm 12 isn't needed
+    inside the build.
+  - **To confirm when implementation starts**: that the 26.08 branches of both extensions
+    are stable on Flathub and not only `26.08beta` (GNOME's "This Week in
+    GNOME" #263 still pointed developers at `rust-stable//26.08beta`). If one
+    is still beta on the day, the manifest uses the beta branch until the
+    stable one is out, and the release process (#19) checks it before
+    0.1.0.
+- **Rationale**: GNOME 51 is the newest branch with the web view Tauri 2
+  needs, and the one supported longest: until about September 2027. GNOME
+  removed `webkit2gtk-4.1` from its next runtime on 2026-09-28
+  ([gnome-build-meta!4734](https://gitlab.gnome.org/GNOME/gnome-build-meta/-/merge_requests/4734)):
+  "Any apps still relying on it should port to webkitgtk-6.0 or stick with
+  the GNOME 51 runtime, which will be supported till September 2027." So
+  FR-016's move to a newer branch can't happen until HoploDex's web view
+  changes. The owner chose on 2026-10-19 to go ahead anyway: Tauri may
+  change its Linux web view before then (spec, Clarifications 2026-10-19).
+- **Before GNOME 51's end of life** (FR-016, as amended): a follow-up issue,
+  opened with this feature's pull request (plan.md, "Close-out"), decides
+  what the release process does by then. Its starting points, from #42's
+  comment:
+  - **Tauri's GTK 4 port**: not merged anywhere on 2026-10-18.
+    tauri-apps/tauri#12562, tauri-apps/tauri#14684 (3.0 milestone),
+    tauri-apps/wry#1767 and tauri-apps/tao#1104 are open. A maintainer's
+    `tauri-apps/winit-gtk4` may replace porting tao. If it lands, the
+    manifest moves to the newest GNOME branch with `webkitgtk-6.0`.
+  - **Tauri's Chromium runtime** (`feat/cef`): takes WebKitGTK out, but
+    bundles Chromium, prebuilt by a third party unless built here.
+  - **Building `webkit2gtk-4.1` as a module of this manifest**, on a newer
+    runtime: frees the branch, but the bundle would then carry an LGPL
+    library (010 FR-017 forbids that without a decision on its source;
+    FR-018 here forbids it as written), and HoploDex would own WebKit's
+    security updates.
+  - **Publishing only the `.deb` and `.rpm`** after September 2027.
+  - What doesn't help: an AppImage escapes GNOME's schedule but not
+    WebKitGTK's. It carries the build machine's WebKit, frozen until the
+    next HoploDex release, and reopens 010 FR-017's source question.
+- **Alternatives considered**:
+  - **GNOME 50** (supported until about March 2027): the same web view,
+    half a year less.
+  - **The Freedesktop runtime with WebKitGTK as a module**: see above.
+  - **Waiting for Tauri's port before shipping a Flatpak**: leaves Linux
+    users without a self-contained bundle (010 FR-017) for an unknown time.
+
+## §2 Building from source, offline (FR-014, FR-026)
+
+- **Decision**: `flatpak-builder` builds one module, `hoplodex`, from the
+  checkout, in two phases: `--download-only` fetches every source the
+  manifest names (the checkout itself, plus the crates and npm packages in
+  the offline source lists, §3); then `--disable-download` builds with the
+  build sandbox's network off. The manifest asks for no
+  `build-args: --share=network`, and a test fails if it ever does, so no
+  step can reach the network during the build (SC-004).
+  - **The module's commands**, in order:
+    1. `npm ci --offline`, from the npm cache the node source list fills.
+    2. `npm run build` (the `tsc` check, then `vite build`, which writes
+       `dist/` with `notices.json` and `NOTICES.txt`; 010 FR-008, FR-011).
+       The notices plugin runs `cargo fetch --locked`, `cargo metadata` and
+       `cargo tree` (#42's comment from 010). With `CARGO_NET_OFFLINE=true`
+       and the vendored crates in `CARGO_HOME` (§3), each runs offline. The
+       plugin reads each crate's license files from its vendored folder,
+       which holds the crate's whole published package. `git` isn't in the
+       build, so the copyright's last year is the build's year, as 010
+       documents.
+    3. `cargo build --release --offline --locked --features custom-protocol
+       --bin hoplodex`, the same features and profile as a release
+       `tauri build`.
+    4. `node scripts/check-no-webdriver.mjs` on the binary it built, as
+       `build-appimage.sh` does for the AppImage's.
+    5. Install the binary, the desktop entry, the AppStream metadata, the
+       icons and `NOTICES.txt` (§13).
+  - **Cargo directly, not the Tauri CLI**: `tauri build` would bring in
+    `@tauri-apps/cli`'s prebuilt native binary and its bundlers, none of
+    which the Flatpak needs. The E2E build already calls cargo directly
+    (`e2e/support/build.ts`). Tauri's `build.rs` (`tauri-build`) needs
+    nothing the SDK lacks.
+  - **The source is the checkout** (`type: dir`, path `..`), so the build is
+    of exactly what is checked out, uncommitted changes included, as every
+    other local build is. A Flathub submission would swap it for a
+    `type: git` source pinned to the release tag and commit (§19).
+  - **State and output**: `flatpak-builder`'s state directory (its download
+    cache and build directories, several gigabytes) goes in a per-checkout
+    volume (§15). The `.flatpak` file goes to `flatpak/out/` in the
+    checkout, which git ignores, so the host can reach it.
+- **Rationale**: the spec's assumption ("built from source, offline", FR-014,
+  FR-026) and Flathub's rules. Building inside `flatpak-builder`'s own
+  sandbox, which has no network, makes "no network during the build" a
+  property of the tool, not of a promise in a script.
+- **Alternatives considered**:
+  - **Repackaging the `.deb`** (the route Tauri's guide also shows): faster,
+    but nothing would be built from source, and Flathub doesn't take it for
+    an open source app.
+  - **`npm run tauri build` inside the module**: needs the CLI's prebuilt
+    binary, and builds bundles that would be thrown away.
+  - **A `type: git` source for local builds too**: builds only what is
+    committed, which makes trying a change slower, and gains nothing until
+    a submission.
+
+## §3 The offline source lists (FR-015)
+
+- **Decision**: two generated files, committed beside the manifest:
+  `flatpak/cargo-sources.json` from `src-tauri/Cargo.lock`, made by
+  `flatpak-cargo-generator.py`, and `flatpak/node-sources.json` from
+  `package-lock.json`, made by `flatpak-node-generator npm`. Both tools come
+  from [flatpak/flatpak-builder-tools](https://github.com/flatpak/flatpak-builder-tools),
+  pinned to one commit and installed in the dev container's image (§15).
+  `npm run flatpak:sources` regenerates both.
+  - **The check** (`scripts/flatpak/sources.test.ts`, run by `npm test`, so
+    by every test run): it reads both lockfiles and both lists and fails,
+    naming the list to regenerate and the first package that differs, when a
+    package in a lockfile has no source in its list with the same version
+    and checksum, or the list has a source no lockfile package needs. It
+    needs no Python and no network, so it is cheap enough for every run,
+    unlike regenerating (SC-004, US3-2).
+  - **What the lists cover**: every registry package in `Cargo.lock`
+    (crates for every target, since `cargo tree --target` is asked about
+    every OS by the notices check), and every package in
+    `package-lock.json`, dev dependencies included, since `npm run build`
+    needs them. The workspace's path dependency
+    (`src-tauri/vendor/tauri-plugin-wdio-webdriver`) is in the checkout and
+    needs no source. `Cargo.lock` has no `git` sources today; the check
+    fails on one, since the generator would then need the network.
+- **Rationale**: these are the generators Flathub and Tauri's own Flatpak
+  guide use, and writing an npm one ourselves would mean reproducing npm's
+  cache layout. The content check is what makes "a lockfile change without
+  them fails the checks" hold on every run, not only when someone runs the
+  Flatpak build.
+- **Alternatives considered**:
+  - **Our own generators in Node**: the cargo one would be small; the npm
+    one wouldn't, and both would need testing against what
+    `flatpak-builder` expects.
+  - **A hash of each lockfile, stored with the lists**: cheaper still, but
+    it can be refreshed without regenerating, and its failure can't say
+    which package differs.
+  - **A git submodule for flatpak-builder-tools** (Tauri's guide): every
+    checkout then needs submodules, for a tool only the container runs.
+
+## §4 Permissions (FR-002, FR-003, FR-005, FR-006, FR-008, FR-026)
+
+- **Decision**: the manifest's `finish-args` are exactly these, each with a
+  comment in the manifest giving its reason. A test (`scripts/flatpak/
+  manifest.test.ts`) compares them with the list below, so a permission
+  can't be added or dropped without changing this record and the test.
+
+| Permission | What needs it | What a compromised HoploDex process could reach with it |
+|---|---|---|
+| `--share=ipc` | X11's shared memory, which GTK uses under X11 | Shared memory with other X11 clients of the session |
+| `--socket=wayland` | The window, on Wayland | The Wayland compositor, as any windowed app |
+| `--socket=fallback-x11` | The window, on X11 only when there is no Wayland | The X server, where X11 lets any client read other windows' input and contents |
+| `--device=dri` | WebKit's GPU rendering; without it, it renders on the CPU | The GPU's device nodes |
+| `--filesystem=home` | Databases, backups beside them, typed locations, imports and exports anywhere in the home folder (FR-003) | Every file of the user's home folder, apart from what Flatpak keeps from every app (other apps' `~/.var/app` folders among them) |
+| `--filesystem=/media`, `--filesystem=/run/media`, `--filesystem=/mnt` | Databases and backups on removable drives (FR-003) | Every file on a mounted removable drive |
+| `--talk-name=org.freedesktop.secrets` | Saved passphrases, through the Secret Service (FR-006) | Every item in the user's unlocked keyring collections, as on a `.deb` install: the Secret Service doesn't separate one app's items from another's (§7) |
+| `--talk-name=org.freedesktop.ScreenSaver`, `--talk-name=org.gnome.ScreenSaver` | Locking when the screen locks (003 FR-038; FR-005) | The screen saver's interface: whether the screen is locked, and its methods, among them inhibiting it |
+| `--system-talk-name=org.freedesktop.login1` | The sleep and shutdown notices and their delay, and the session's lock signals (003 research.md §14; FR-005) | logind's interface on the system bus. Its actions are still checked by polkit as for any process of the user: inhibiting sleep, listing sessions and, where polkit allows a local user, suspending or powering off |
+
+  - **No `--share=network`**: HoploDex is local-only. The sandbox has a
+    network namespace with nothing but loopback, so neither the app nor
+    any process it starts can send a byte off the computer. That is
+    stronger than a `.deb` install, and is recorded with the residual
+    risks (§20). Only the automated check adds network, at run time, for
+    WebDriver (§16).
+  - **No `--socket=pulseaudio`, `--device=all`, `--filesystem=host`,
+    `--talk-name=org.freedesktop.Flatpak` or `--own-name`**: nothing uses
+    them. The desktop portals HoploDex uses (the file chooser, OpenURI, the
+    Documents portal, the Flatpak portal behind `flatpak-spawn --sandbox`)
+    are reachable from every Flatpak without a permission.
+  - **Flathub's linter**: `--filesystem=home` raises
+    `finish-args-home-filesystem-access`, and the logind name raises
+    `finish-args-login1-system-talk-name` (the spike). Both are kept with a
+    recorded exception and its reason in
+    `flatpak/linter-exceptions.json`, which the build passes to the
+    linter. The rest raises nothing. FR-026 holds: the linter passes with
+    each warning kept only by a recorded exception. The exact flag
+    (`--user-exceptions`) and the file's format are confirmed when the
+    linter is first run.
+- **Rationale**: the spec settled the reach (Clarifications, FR-003) and the
+  keyring route (FR-006). The others are what the existing code already
+  uses on Linux, kept so the Flatpak runs the same code as the `.deb`.
+- **Alternatives considered**:
+  - **`--filesystem=xdg-documents` only**, with everything else through the
+    file chooser: rejected in the spec's clarifications, since backups
+    beside a database and typed locations need the folder.
+  - **The Inhibit portal's session monitor** (`org.freedesktop.portal.Inhibit`,
+    `CreateMonitor`) instead of the ScreenSaver names and logind: it
+    reports screen-lock and the session ending, but offers no delay
+    before sleep (spec, Assumptions), so logind is needed anyway. It is a
+    second code path for the same notices.
+  - **The Secret portal**: see §7.
+
+## §5 What is within reach, and refusing what isn't (FR-003, FR-004, FR-007, FR-010)
+
+- **Decision**: a new backend module, `services/sandbox.rs`, says whether a
+  path is within reach, and every command that names a location asks it
+  before anything is written.
+  - **Reach** is read once at startup from `/.flatpak-info`: its
+    `[Context]` group's `filesystems=` key, which holds the manifest's
+    grants with the user's own overrides
+    (`flatpak override --filesystem=…`) already merged. `home`, `host`,
+    `~/…`, `xdg-*` folders and absolute paths are understood, `:ro` marks a
+    read-only grant, and a `!` (an override that removes one) takes it
+    away. A grant it doesn't understand is not counted, so a mistake
+    narrows reach and never widens it. Outside Flatpak (no
+    `/.flatpak-info`), everything is within reach and nothing changes for
+    a `.deb`, `.rpm`, AppImage, macOS or Windows install. The parsing is a
+    pure function of the file's text and the home folder, tested on its
+    own (data-model.md, "Reach").
+  - **Three needs**, since operations need different things:
+    - **A database's folder** (`create_database`, `open_database`, opening
+      from a recent entry): the database's folder must be within reach and
+      writable. `change_passphrase` and `restore_backup` replace a database
+      that is open, or was, and so already passed this check. Opening writes beside the file (the open
+      marker, SQLite's journal, the replacement's `.<file>.new`, the
+      backups' default folder), so a database the file chooser handed over
+      without its folder is refused at open (spec, Clarifications
+      2026-10-19).
+    - **A folder to write into** (the backup location, an export's
+      destination): within reach and writable, or a folder the file chooser
+      handed over through the Documents portal, inside which writing is
+      allowed.
+    - **A file to read** (an import's files, a photo or document attached by
+      the chooser or dropped, a backup being restored): any path that exists
+      and can be read, a Documents-portal path included. A path that
+      doesn't exist inside the sandbox and lies outside reach is out of
+      reach, not "not found".
+  - **Documents-portal paths** (`/run/user/<uid>/doc/<id>/…`): the file
+    chooser returns one even for a file the app could reach directly
+    (flatpak/xdg-desktop-portal#1120). The module asks the Documents portal
+    for the file's host path (`org.freedesktop.portal.Documents.GetHostPaths`,
+    with the `user.document-portal.host-path` extended attribute as a
+    fallback where the portal is older). When the host path is within
+    reach, it is used instead, so a database picked in the home folder
+    opens from its real path, and its recent entry, backups and
+    replacement work. Otherwise the portal path is used where reading or
+    writing inside it is enough, and refused where a database's folder is
+    needed.
+  - **The refusal**: a new error code, `LOCATION_OUT_OF_REACH`, with
+    `details: { path, grants }` and a message that names the location, says
+    this copy of HoploDex is a Flatpak that can reach only the home folder
+    and removable drives, and gives both fixes: move the file into the
+    home folder or onto a removable drive, or give HoploDex access with
+    `flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex`
+    and then restart HoploDex (FR-004). Because the module reads the
+    overrides, that advice works: after the restart, the location is within
+    reach. A running sandbox can't gain access, so the restart is needed. The backup location's
+    existing `BACKUP_LOCATION_UNAVAILABLE` gains the reason `outOfReach`
+    rather than a second code, and so do Database settings' "Not available
+    on this computer" and the close's `failureReason`
+    (contracts/tauri-commands.md). The check runs before any scratch file,
+    probe or backup is made, so nothing is left behind (SC-003).
+  - **Drops**: WebKitGTK's GTK 3 drop target asks only for `text/uri-list`,
+    so a drop always arrives as the file's host path (the spike). One within
+    reach is attached as on a `.deb`; one outside it doesn't exist in the
+    sandbox and gets `LOCATION_OUT_OF_REACH` (spec, Clarifications
+    2026-10-18, FR-007 as amended).
+  - **Network shares and synced folders** (spec, Edge Cases): one mounted
+    under the home folder or a removable-drive folder is within reach. A
+    desktop's own network mounts under `/run/user/<uid>/gvfs` are not, and
+    get the refusal.
+  - **The suggested location** (FR-010): `app_dirs::document_dir` asks the
+    OS through Tauri, which reads `XDG_DOCUMENTS_DIR` from
+    `$XDG_CONFIG_HOME/user-dirs.dirs`. Flatpak sets `XDG_CONFIG_HOME` to the
+    app's own folder, but with home access it binds the host's
+    `user-dirs.dirs` into it, so a localised Documents folder resolves to
+    the same path as on the `.deb` (the spike). No code changes.
+- **Rationale**: FR-004 asks for the check before anything is written, and
+  "how to give access". Reading `/.flatpak-info` follows the manifest and
+  the user's overrides without a second list in the code, and keeps the
+  module inert everywhere else. A probe by trying to write would leave the
+  very files FR-004 forbids.
+- **Alternatives considered**:
+  - **A list of the four granted roots in the code**: it would contradict
+    the advice to run `flatpak override`.
+  - **Reading `/proc/self/mountinfo`** to see what is bound in: closer to
+    the truth, but harder to read reliably than the file Flatpak writes for
+    exactly this.
+  - **Letting the operation fail and turning the I/O error into the
+    message**: an `ENOENT` or `EROFS` can't be told from an ordinary
+    missing folder, and the failure comes after scratch files are made.
+  - **The file-transfer portal for drops**: the web view never offers it
+    (spec, Clarifications 2026-10-18).
+
+## §6 Sleep, shutdown and screen-lock notices (FR-005)
+
+- **Decision**: `platform/linux.rs` keeps its listeners, through the three
+  bus names of §4, with one change: the logind session it listens to is
+  always `/org/freedesktop/login1/session/auto`, and the
+  `GetSessionByPID(std::process::id())` call goes.
+  - **Why**: inside Flatpak the app has its own PID namespace (it runs as
+    PID 2 under bwrap; the spike), so the PID it sends is not its PID on
+    the host. logind would look up a different process, fail, or in the
+    worst case answer with another session. `session/auto` is resolved by
+    logind from the caller's own credentials on the bus, which the bus
+    takes from the connection, not from anything the app says. On a GNOME
+    or KDE desktop today, an app launched from the desktop runs in an app
+    scope outside any logind session, so `GetSessionByPID` already fails
+    there and the code already falls back to `auto`. Using it always
+    removes a lookup that is wrong in one install and useless in most.
+  - **The delay inhibitor** (003 research.md §14): logind's `Inhibit`
+    returns a file descriptor, and `xdg-dbus-proxy` passes descriptors
+    through. Read from the source in the spike, not yet run; the automated
+    check (§16) shows it, and the manual procedure (§17) shows a real
+    sleep held back.
+  - **Unavailable notices**: unchanged. When the ScreenSaver names have no
+    owner and the session object can't be read, `spawn` returns false and
+    the setting shows as unavailable (003 FR-038, US2-4). Without the
+    system bus, the log says so and the wake watchdog still notices a
+    sleep afterwards.
+  - **Logout and shutdown**: when the session ends, systemd stops the
+    session's processes, the Flatpak's included, with SIGTERM; the app
+    receives it directly and closes at once, keeping pending changes, as
+    on a `.deb` (§12).
+- **Rationale**: same code, same behaviour, one fewer guess about PIDs.
+- **Alternatives considered**: `GetSessionByPID` with the host PID, read
+  from `/proc/self/status`'s `NSpid` (the namespace hides it); the Inhibit
+  portal's monitor (§4).
+
+## §7 Saved passphrases (FR-006)
+
+- **Decision**: unchanged code. The `keyring` crate's Secret Service backend
+  talks to `org.freedesktop.secrets` through the bus name of §4, with the
+  same service and user names as on every other install. Its availability
+  probe (003 FR-019) answers false when the name isn't reachable, and
+  saving a passphrase shows as unavailable (US2-5).
+  - **What it reaches** (the permission record, FR-006): the Secret Service
+    API has no per-application separation, so through it HoploDex, or
+    anything that compromised it, can read every item in the user's
+    unlocked collections, exactly as a `.deb` install can. The sandbox
+    narrows nothing here.
+  - **A `.deb` user moving to the Flatpak** (spec, Edge Cases): entries are
+    keyed by the database's id (003 research.md §10), so the saved
+    passphrase is found again once the database is opened from the
+    Flatpak's recent list.
+- **Alternatives considered**: **the Secret portal**
+  (`org.freedesktop.portal.Secret`), which gives the app a secret of its
+  own for a local encrypted file. It reaches nothing else, but the entries
+  would then live in the Flatpak's own storage, not the user's keyring, so
+  a `.deb` and the Flatpak wouldn't share them, and the `keyring` crate
+  would need another backend. The spec chose the Secret Service
+  (Clarifications 2026-10-18).
+
+## §8 Opening a document in another application (FR-008)
+
+- **Decision**: inside Flatpak, `AppOpener` on Linux opens the copy through
+  the OpenURI portal directly: `org.freedesktop.portal.OpenURI.OpenFile`
+  with a read-only descriptor for the copy and `writable: false`, then
+  waits for the request's `Response` signal. Outside Flatpak it runs
+  `xdg-open` as now.
+  - **Why not `xdg-open` in the sandbox**: the runtime's `xdg-open` hands
+    the file to the portal and exits 0 as soon as the call is accepted,
+    without waiting to see whether an app took it. With no portal at all
+    it exits 4, which today's code already reads as "no application" (the
+    spike). So "no application for this type" would be lost silently.
+  - **The answer**: response 0 is opened; 2 (the portal couldn't open it,
+    or no application handles the type) is `OpenFailure::NoApp`, which
+    `open_document` already turns into `NO_APP_FOR_DOCUMENT`; 1 (the user
+    closed the portal's own application chooser) is treated as opened,
+    since the user made the choice; no portal service on the bus is
+    `NoApp`. The wait is bounded as `xdg-open`'s is (5 s), after which the
+    document counts as opened, since the portal's chooser may be waiting
+    on the user.
+  - **The copy** (001 FR-035): stays in the app's cache directory, which in
+    Flatpak is inside `~/.var/app/io.github.exodious.HoploDex/cache`, and
+    is deleted as on every other install. The portal shares it with the
+    receiving app through the Documents portal; deleting the copy ends
+    that app's access to its contents.
+  - **What the Documents portal keeps**: its database records the copy's
+    path, file name included, after the copy is deleted. On a `.deb`, the
+    receiving app's recent-files list does the same. Recorded with the
+    residual risks (§20).
+  - **The E2E build** keeps `E2eOpener` (no app is started from a test),
+    so the portal call is tested in Rust against a test portal on a private
+    bus (plan.md, Test Levels).
+- **Rationale**: the existing failure path (007 research.md §18) needs an
+  honest "no app", and only the portal's response gives it.
+- **Alternatives considered**: `gio open` (the same portal call, the same
+  early exit); `tauri-plugin-opener`'s Linux path (`xdg-open` again).
+
+## §9 WebKit's sandbox and the PDF preview (FR-011)
+
+- **Decision**: the Flatpak runs 007's startup probe like any other Linux
+  install. `/.flatpak-info` comes out of `sandbox_probe::SKIP_MARKERS`, and
+  `/run/.containerenv` and `/.dockerenv` stay, since inside a Flatpak the
+  sandbox's own `/run` and root hide the container's markers anyway.
+  - **How WebKit sandboxes inside Flatpak**: with `WEBKIT_FORCE_SANDBOX=1`,
+    WebKitGTK starts each web process through `flatpak-spawn --sandbox`
+    (WebKit's `FlatpakLauncher`), which asks the Flatpak portal for a
+    sub-sandbox. `flatpak-spawn` is in the GNOME 51 Platform, and it worked
+    in the spike, contrary to 007 research.md §9, which assumed WebKit
+    won't sandbox inside Flatpak. The probe is the same: a crash, a
+    non-zero exit or a time-out leaves it off and is logged once.
+  - **With the sandbox on** (the expected case): a web process, the PDF
+    surface's and the main window's, runs in a sub-sandbox with none of the
+    app's `--filesystem` grants, no network (it has none anyway, §4) and
+    only the sockets WebKit asks `flatpak-spawn` to share for rendering
+    (the display, the GPU, accessibility). The exact `flatpak-spawn`
+    arguments WebKit 2.54 passes are read from the running process during
+    implementation and recorded in this section before the pull request.
+  - **With the sandbox off** (the probe failed, for example on a desktop
+    without the Flatpak portal): a compromised web process has everything
+    of §4's table: the home folder and removable drives, the user's
+    unlocked keyring through the Secret Service, the logind and screen
+    saver interfaces, and the display and GPU. It still has no network.
+    That is what a `.deb` install's web process has where WebKit's own
+    sandbox fails, apart from the network, which the `.deb` has.
+  - **007 research.md §9** gets an amendment note pointing here (plan.md,
+    Project Structure).
+- **Rationale**: FR-011, as amended, and 007 FR-004: where the computer
+  offers a sandbox and HoploDex finds it works, the preview runs in it.
+- **Alternatives considered**: keeping it off in Flatpak (007's earlier
+  assumption): the web process would keep the app's whole reach for no
+  reason now that it isn't needed.
+
+## §10 The helpers (FR-012)
+
+- **Decision**: no change. The import reader and the render helper
+  (`--import-helper`, `--render-helper`) start from `/proc/self/exe` inside
+  the sandbox and confine themselves as on any Linux. In the spike,
+  Landlock (the host kernel's ABI), `PR_SET_PDEATHSIG`,
+  `PR_SET_DUMPABLE` and the rlimits all worked inside the sandbox, so
+  each helper is confined at least as tightly as on a `.deb` on the same
+  computer, with the sandbox around it as well. `unshare(CLONE_NEWUSER)`
+  is refused inside Flatpak, and nothing in `services/helper/` uses it.
+  - **Dying with HoploDex**: `PR_SET_PDEATHSIG` ties each helper to the
+    app's thread that started it, as on a `.deb`; inside the sandbox, bwrap
+    runs with `--die-with-parent` as well.
+  - **Shown by the automated check** (§16): each helper's confinement line
+    in the log and the helper gone once the app is killed.
+- **Rationale**: the spike shows nothing the helpers need is missing.
+
+## §11 Settings, recent list, caches and the guide (FR-009, FR-010)
+
+- **Decision**: no change to where anything is kept. Tauri's
+  `app_config_dir` and `app_cache_dir` follow `XDG_CONFIG_HOME` and
+  `XDG_CACHE_HOME`, which Flatpak points into
+  `~/.var/app/io.github.exodious.HoploDex/`, so `machine.json` (with the
+  recent list), the passphrase check's scratch files, the opened
+  documents' copies and the web views' data folders are all in the
+  Flatpak's own storage. A `.deb` and a Flatpak on the same computer keep
+  separate recent lists and settings (spec, Edge Cases).
+  - **The guide**: the database guide's section on using a database on
+    several computers (`DatabaseGuide.tsx`) gains a paragraph shown on Linux
+    only, saying that a Flatpak and a `.deb` or `.rpm` of HoploDex on one
+    computer keep separate recent lists and settings, that saved
+    passphrases are shared when both reach the same keyring, and that the
+    Flatpak reaches only the home folder and removable drives unless given
+    more. The frontend already knows the platform
+    (`browserControls.ts`'s `platformFrom`), so no command changes. The
+    text says "If you have installed HoploDex as a Flatpak", so it reads
+    correctly on any Linux install.
+- **Alternatives considered**: showing it only inside Flatpak, which needs
+  the backend to report the install kind for one paragraph.
+
+## §12 Quit, shutdown and signals (FR-013)
+
+- **Decision**: no change. Inside Flatpak the app is a child of bwrap and
+  receives SIGTERM, SIGHUP and SIGINT itself: from systemd when the
+  session ends, from `flatpak kill`, and from the terminal for a
+  `flatpak run` in one. Its handlers close at once, keeping unsaved input
+  as pending changes, and clear the decrypted copies, as on a `.deb`.
+  Startup's sweep of leftover copies and unfinished backups reads the same
+  directories.
+- **Shown by**: the automated check's quit and kill steps (§16).
+
+## §13 What the bundle carries (FR-017, FR-018, FR-019)
+
+- **Decision**: the module installs exactly these into `/app`:
+  - `bin/hoplodex`: the program.
+  - `share/applications/io.github.exodious.HoploDex.desktop`: name
+    HoploDex, `Exec=hoplodex`, `Icon=io.github.exodious.HoploDex`,
+    categories `Office;Database;`, and `StartupWMClass` set to the window's
+    class so the desktop matches the window to the entry.
+  - `share/metainfo/io.github.exodious.HoploDex.metainfo.xml`: name,
+    summary, a description that says what HoploDex is and that it keeps
+    everything on the computer, `project_license` `GPL-3.0-only`,
+    `metadata_license` `CC0-1.0`, the developer, the homepage, VCS and
+    issue tracker addresses, `launchable`, the content rating (OARS 1.1,
+    nothing to declare), branding colours from the design tokens, the
+    releases with their notes, newest first, and screenshots. The newest
+    release's version must equal `APP_VERSION` (as
+    `tests/app_version_test.rs` keeps the others equal).
+  - **Screenshots**: AppStream wants addresses, which a software centre
+    fetches. They are images from the screenshot walk
+    (`e2e/screenshots/screens.e2e.ts`), copied into `flatpak/screenshots/`
+    and addressed at the release's tag on GitHub
+    (`https://raw.githubusercontent.com/exodious/HoploDex/v<version>/flatpak/screenshots/…`).
+    A test checks every address names a file in the repository. Before the
+    first release is tagged, the addresses don't resolve yet, which the
+    validator's offline mode doesn't check.
+  - `share/icons/hicolor/<size>x<size>/apps/io.github.exodious.HoploDex.png`
+    at 32, 64, 128, 256 and 512, copied from `src-tauri/icons/`, which
+    `npm run icons` generates from `tools/icons/AppIcon.tsx`, so the program
+    icon has one source.
+  - `share/licenses/io.github.exodious.HoploDex/NOTICES.txt`: the build's
+    `dist/NOTICES.txt` (010 FR-011), which carries the copyright notice and
+    the GPL-3.0 text; the folder Flatpak and software centres use for an
+    app's license files.
+  - **Nothing else**. The bundle check (`scripts/flatpak/contents.mjs`)
+    lists the built app's files and fails on any path not in this list,
+    which covers FR-018: no runtime library, and no shared library at all,
+    can be inside without failing. It also confirms, with `readelf`, that
+    the binary's needed libraries are all ones the runtime has.
+- **The audit** (FR-019): the Flatpak builds the same binary from the same
+  lockfiles with the same features as the other Linux bundles, and adds no
+  module, so its notices list the same components, and nothing ships only
+  in the Flatpak. A test fails if the manifest gains a module or a source
+  other than the checkout and the two lists, so that statement can't go
+  stale without someone extending the audit. The SDK extensions (the Rust
+  and Node toolchains) are used only to build, like the dev container's
+  toolchains, and ship nothing.
+- **Validators**: `desktop-file-validate`, `appstreamcli validate` (the
+  validator Flathub uses), and Flathub's linter on the manifest and the
+  built repository (§4) all run in the build command and fail it.
+- **Alternatives considered**: Tauri's generated `.desktop` from the `.deb`
+  (it names the binary's own icon and lacks the Flatpak id); an SVG icon
+  (`tauri icon`'s PNGs are drawn per size, which an SVG would lose at the
+  small sizes).
+
+## §14 The `.flatpak` file, upgrades and the architecture (FR-020, FR-024, FR-025)
+
+- **Decision**: the build command ends with
+  `flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo`,
+  making `flatpak/out/HoploDex-<version>-x86_64.flatpak`. That
+  `--runtime-repo` is what makes installing the file on a computer without
+  Flathub add Flathub and fetch the runtime from it (the spike). Nothing is
+  attached to a release, and nothing goes to Flathub (FR-020, SC-009): the
+  release process (#19) attaches the file, and its written process says how
+  the file is made (plan.md, "Close-out").
+  - **Upgrades** (FR-024): installing the next version's file over the
+    previous one keeps `~/.var/app/io.github.exodious.HoploDex` (the
+    spike), so settings, the recent list and the cache stay, and the keyring
+    is outside the app anyway. `flatpak update` doesn't update an app
+    installed from a file; the install instructions say so, and #19 puts
+    them with the releases.
+  - **x86-64 only** (FR-025): the build passes `--arch=x86_64`, and
+    `flatpak/flathub.json` holds `{"only-arches": ["x86_64"]}` for a later
+    submission.
+- **Alternatives considered**: a repository of our own on GitHub Pages,
+  which would give `flatpak update`, but is a publishing channel the spec
+  doesn't ask for and HoploDex would have to sign and keep.
+
+## §15 Running it in the dev container (FR-014, FR-023)
+
+- **Decision**: the Flatpak build and check run in the dev container, with a
+  new `--flatpak` option for `scripts/dev-container.sh`.
+  - **What `--flatpak` adds**: `--security-opt unmask=/proc/*`, which bwrap
+    needs under rootless podman (the spike), and a per-checkout volume for
+    `flatpak-builder`'s state directory (its downloads and build folders).
+    The container's own Flatpak installation (the runtime, SDK, extensions
+    and linter, about 2 GB, fetched from Flathub once) is its user
+    installation in `/home/dev`, the volume every checkout already shares,
+    so worktrees don't each fetch it. It is opt-in because it relaxes the
+    container's protection of `/proc`, which nothing else needs.
+  - **The image** gains `flatpak`, `flatpak-builder`, `appstream`,
+    `desktop-file-utils`, `python3-dbusmock` (for the check's stand-in
+    services, §16), the Python packages the two generators need, the two
+    generators at one pinned commit (§3), and Flathub's linter (below).
+  - **A private system bus**: Debian's `flatpak` asks the system bus
+    (parental controls) before it installs an app, and the container has no
+    system bus. The scripts start a private one and point
+    `DBUS_SYSTEM_BUS_ADDRESS` at it (the spike). The check uses the same bus
+    for its stand-in logind (§16).
+  - **The linter**: `flatpak-builder-lint` from Flathub's `org.flatpak.Builder`
+    (installed into the container's own Flatpak installation, run with
+    `flatpak run --command=flatpak-builder-lint org.flatpak.Builder`), the
+    way Flathub runs it, with the appstream version it expects. It is a
+    build-time tool built by Flathub and never ships.
+  - **Commands** (contracts/flatpak-bundle.md): `npm run bundle:flatpak`
+    builds, checks and writes the `.flatpak`; `npm run flatpak:sources`
+    regenerates the lists; `npm run test:flatpak` runs the automated check.
+    Each refuses to run outside the dev container unless told to, since on a
+    host it would use the developer's own Flatpak installation (SC-007).
+  - **Without podman**: DEVELOPMENT.md lists what a host needs and says to
+    point `FLATPAK_USER_DIR` at a throwaway installation.
+- **Alternatives considered**:
+  - **The linter from source** (`pip install` from
+    flathub-infra/flatpak-builder-lint at a pinned commit): avoids a
+    Flathub-built tool, but needs its own appstream and pinning by hand.
+    The owner can choose it instead at no cost to the plan.
+  - **`flatpak-builder` from `org.flatpak.Builder` too**: nests a Flatpak
+    sandbox in a Flatpak sandbox in a container; Debian's package worked in
+    the spike.
+  - **Always unmasking `/proc`**: weakens every test run's container for one
+    feature.
+
+## §16 The automated Flatpak check (FR-021, SC-002, SC-007)
+
+- **Decision**: `npm run test:flatpak` builds a check variant of the
+  Flatpak, installs it into the container's Flatpak installation, and runs
+  one E2E file, `e2e/specs/flatpak.e2e.ts`, against it through WebDriver,
+  then uninstalls it.
+  - **The check variant**: the build script derives a second manifest from
+    the shipped one, changing only the cargo features (`custom-protocol,e2e`
+    instead of `custom-protocol`) and the profile (`e2e`), and not the
+    `finish-args`. A test compares the two manifests and fails on any
+    other difference, so the check runs with the permissions the Flatpak
+    ships with. It is installed but never written to a `.flatpak` file.
+  - **What the run adds at `flatpak run`**: `--share=network` (WebDriver's
+    port, which the test runner outside the sandbox must reach; the
+    shipped Flatpak has no network) and the `HOPLODEX_E2E_*` variables the
+    `e2e` build needs. The variables point at the paths a shipped Flatpak
+    uses: `HOPLODEX_E2E_CONFIG_HOME` at `~/.var/app/<id>/config`,
+    `HOPLODEX_E2E_CACHE_HOME` at `~/.var/app/<id>/cache`, and
+    `HOPLODEX_E2E_DOCUMENTS` at the documents folder `user-dirs.dirs`
+    names, which the check reads from inside the sandbox
+    (`flatpak run --command=xdg-user-dir … DOCUMENTS`). So the `e2e` build's
+    seams change nothing the sandbox affects.
+  - **What the `e2e` build swaps**, by design: the keyring (an in-memory
+    store) and the opener (a log). Both exist so that no test can reach a
+    real keyring or start a real app (constitution II). What the sandbox
+    changes about each is its bus access, so the check shows that with the
+    shipped permissions: `flatpak run --command=gdbus` calls the stand-in
+    Secret Service and the OpenURI portal's name from inside the sandbox,
+    and is refused for a name the manifest doesn't grant. The portal call
+    itself is tested in Rust (§8), and the keyring's Secret Service
+    backend is the `.deb`'s, used in human testing in the same container.
+  - **The stand-in services**: `python-dbusmock` on the private system bus
+    as logind (its `logind` template, with `Inhibit`), and on the check's
+    private session bus as `org.gnome.ScreenSaver` and
+    `org.freedesktop.secrets`. The check sends `PrepareForSleep(true)`,
+    `PrepareForShutdown(true)` and `ActiveChanged(true)` and confirms the
+    database locks or closes, and that the inhibitor's descriptor is closed
+    once it has (the `Inhibit` stand-in keeps the other end). Running
+    without the ScreenSaver stand-ins shows the setting as unavailable
+    (US2-4).
+  - **The journey** (US5-2): create in the suggested location, close with a
+    backup beside it, reopen from the recent list, change the passphrase,
+    restore, import and export a spreadsheet, a file dropped onto a record
+    (the native drop technique the E2E suite already uses), a document
+    opened in another application (through the opener log), a saved
+    passphrase reopening without typing, a database on a second mount under
+    `/mnt` standing in for a removable drive, and a typed location outside
+    reach refused with nothing written. It also checks the helpers'
+    confinement lines and that both are gone after the app is killed
+    (§10), and WebKit's sandbox line (§9).
+  - **Isolation** (SC-007): the whole check runs in the dev container,
+    whose home, keyring, buses and Flatpak installation are the
+    container's, never the developer's. The scripts refuse to run on a host
+    that isn't the dev container unless `FLATPAK_USER_DIR` names a
+    throwaway installation and `--i-know-this-is-a-host` is given.
+  - **When it runs**: before each release, and for a pull request that
+    changes any of the paths DEVELOPMENT.md lists (FR-021): `flatpak/`,
+    `scripts/flatpak/`, `src-tauri/src/platform/linux.rs`,
+    and, under `src-tauri/src/services/`, `sandbox.rs`, `keyring.rs`,
+    `file_swap.rs`, `backups.rs`, `scratch.rs`, `helper/`,
+    `import_reader/`, `preview/helper.rs`, `preview/sandbox_probe.rs`;
+    `src-tauri/src/commands/documents.rs` and `commands/photos.rs` (opening
+    and drops). Ordinary test runs skip it.
+- **Rationale**: a WebDriver journey is the only way to drive the real app
+  in its sandbox. Swapping the two seams the `e2e` build already has keeps
+  constitution II's guarantee, and the bus checks cover what the sandbox
+  changes about them.
+- **Alternatives considered**:
+  - **A WebDriver build with the real keyring and opener**: a build whose
+    WebDriver server can save to a real keyring is one mistake away from
+    the developer's own; the bus checks give the same evidence about the
+    sandbox without it.
+  - **Driving the shipped build by real input only** (`x11-input.py`):
+    possible, but there is nothing to read the app's state from without
+    WebDriver.
+  - **Waiting for #36**: the spec asks for the notices now; #36 can reuse
+    the stand-ins.
+
+## §17 Manual procedures (FR-022)
+
+- **Decision**: quickstart.md's manual part, which #37's release procedures
+  take over, holds the steps the check can't take, on a real desktop with
+  the `.flatpak` installed: a real sleep held back until the database locks,
+  a real screen lock, a drop from the desktop's own file manager, a file
+  picked through the real file chooser (a Documents-portal path), a
+  document opened in its real application, a saved passphrase in the
+  desktop's own keyring, and the out-of-reach message for a folder outside
+  the home folder. Each step names the database ("Main collection" or
+  "Shared collection", from `scripts/human-testing.sh`) and its passphrase.
+
+## §18 Performance (SC-006)
+
+- **Decision**: no new budget work. Search and actions run the same code as
+  on a `.deb`. Cold start adds `bwrap` and the D-Bus proxy (tens of
+  milliseconds) and, now, WebKit's sandbox probe (§9), which a `.deb`
+  already pays where it isn't in a container (007 research.md §22). The
+  automated check times the start to the chooser for the Flatpak and for
+  the `e2e` build outside it in the same container, and the pull request
+  records both against SC-006's one second. A difference over a second
+  fails the check.
+
+## §19 What a Flathub submission would still need (FR-026)
+
+Read from [Flathub's requirements](https://docs.flathub.org/docs/for-app-authors/requirements)
+and its linter's documentation on 2026-10-18. This feature keeps the build
+within Flathub's conventions (the app id, `flathub.json`, the metadata, the
+permissions, the linter), and leaves these to a later decision:
+
+1. **A manifest written without AI-generated or AI-assisted content.**
+   Flathub's rule since 2026-09-21: "Flathub manifests must not contain
+   AI-generated or AI-assisted content. Disclosure does not exempt
+   manifests from this restriction." This feature's manifest is
+   AI-assisted, so a submission needs one a person writes.
+2. **Disclosure of the AI-generated material in the app**, and acceptance of
+   reviewers' discretion over its extent.
+3. **Evidence of a meaningful development history and of use.**
+4. **A submission opened and answered by a person**: agents may not open
+   or automate submissions.
+5. **The home-folder exception**: Flathub's linter policy says it "will not
+   be granted if there are signs of LLM usage in the software", so the
+   `--filesystem=home` grant (§4) may have to narrow, with the reach
+   design of §5 adjusted.
+6. **A `type: git` source** pinned to the release tag and commit, in place
+   of the checkout (§2).
+7. **Screenshots** hosted where Flathub mirrors them, which the tag-based
+   addresses of §13 already allow.
+
+## §20 Residual risks for the release security review (#21)
+
+- **A compromised web process, with WebKit's sandbox off** (§9): reaches the
+  home folder, removable drives, the unlocked keyring and the logind and
+  screen-saver interfaces. With it on: only what WebKit's sub-sandbox shares
+  for rendering. Neither has the network.
+- **A compromised HoploDex process**: everything in §4's table, which is
+  what a `.deb` install has apart from the network and files outside the
+  home folder and removable drives.
+- **The keyring**: no narrower than on a `.deb` (§7).
+- **The Documents portal** remembers the opened copy's path and name after
+  the copy is deleted (§8).
+- **The runtime** is Flathub's, updated by Flathub, and ends with GNOME 51
+  (§1). A WebKitGTK security fix reaches users when Flathub updates the
+  runtime, without a HoploDex release.
+- **The `.flatpak` file is unsigned**, as the other bundles are until #19
+  decides signing. Installing it from anywhere but the release page is the
+  user's risk.
+
+## §21 Dependencies and tools
+
+- **Shipped**: no new crate or npm package. The OpenURI and Documents
+  portal calls use `zbus`, already a Linux dependency for the OS notices.
+  The runtime's libraries are the runtime's (010 FR-017).
+- **Build and test only**, all in the dev container: the GNOME 51 SDK and
+  the two SDK extensions, `flatpak`, `flatpak-builder`, the two
+  flatpak-builder-tools generators, Flathub's linter (§15), `appstream`,
+  `desktop-file-utils` and `python3-dbusmock`. None of them ships, so the
+  license audit doesn't cover them (constitution, Licensing:
+  "Development-only dependencies that are not distributed are exempt").
+  None of them collects data.
+- **Prebuilt by others, for the build only**: the GNOME SDK, the toolchain
+  extensions and, if kept, `org.flatpak.Builder`'s linter, all from Flathub.
+  The runtime the Flatpak runs on is Flathub's by the spec's own choice. The
+  owner's preference against third-party-built binaries
+  (plan.md, "Decisions for the owner") applies to what ships; the linter's
+  alternative is in §15.
