@@ -86,12 +86,27 @@ answers `LocationProblem::OutOfReach`, which every row above that names a
 backup folder maps as written. Commands take `State<Arc<Reach>>` (or reach it
 through `Session::reach()`) and hand `&Reach` to their `ops`._
 
+_Amended 2026-10-19 (011 T107): `change_passphrase` makes no backup before it
+re-keys the file (`commands/backups.rs`, `ops::change_passphrase` writes a
+re-keyed copy beside the database and swaps it in; it only marks a change as
+waiting to be backed up, 003 FR-025), so it has no backup folder to check and
+the row above does not apply to it: it asks `Reach` nothing, and a backup
+location out of reach does not stop it
+(`sandbox_reach_test.rs`,
+`change_passphrase_is_not_stopped_by_a_backup_location_out_of_reach`). Only
+`close_database`'s backup and the "before" backups of `restore_backup` and
+`upgrade_database` check the backup folder._
+
 `change_passphrase` and `restore_backup`'s replacement of the open database
 act on its own path, which `open_database` already found within reach in
 this run, so they check only the backup folder above. With nothing open,
 `restore_backup` acts on the `databasePath` it is given, whose reach may
 have changed since that database was last open (an override reset between
 runs), so it checks that path too.
+
+_Amended 2026-10-19 (011 T107): for `change_passphrase` the paragraph above
+holds only as far as the path: it checks no backup folder, because it makes
+no backup (see the note before it)._
 
 ## `open_document` (amended inside Flatpak only)
 

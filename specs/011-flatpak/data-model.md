@@ -68,6 +68,11 @@ judges it.
 | `WriteFolder` | `update_backup_settings`' custom location; the backup at close, a restore's and a passphrase change's "before" backup when the location is custom; `export_collection`'s destination | the folder is within a writable grant, or is a Documents-portal folder |
 | `ReadFile` | `read_import_files` / `import_collection` files, `add_photo_from_path`, `add_document_from_path` (chooser and drop), `restore_backup`'s backup file, `check_backup` | the file exists and can be read in the sandbox (a Documents-portal path included), or, when it doesn't exist, it isn't outside every grant (then it is "not found" as today) |
 
+_Amended 2026-10-19 (011 T107): a passphrase change makes no "before" backup,
+so it is not a user of `WriteFolder`; only `close_database`'s backup, a
+restore's and an upgrade's "before" backup (and `update_backup_settings` and
+`export_collection`) are. See contracts/tauri-commands.md._
+
 `Reach::check(&self, path: &Path, need: Need) -> Result<PathBuf, CommandError>`
 returns the path to use: the given one, or the host path a Documents-portal
 path stands for when that host path is within reach. It refuses with

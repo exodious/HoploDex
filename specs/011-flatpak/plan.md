@@ -265,6 +265,15 @@ comment on a closed one unless the owner asks. All five were open on
   the install instructions (one command, the software centre, and that
   `flatpak update` doesn't update a copy installed from a file); check the
   SDK extensions' branches are stable; the follow-up issue's deadline.
+
+  _Amended 2026-10-19 (011 T109): the comment also says that each release
+  updates the metainfo's `<release>` date and notes (the newest release's
+  version must equal `APP_VERSION`, research.md §13); that the `v<version>`
+  tag must carry `flatpak/screenshots/`, since the metainfo's screenshot
+  addresses are at that tag; and that the release reviews the pinned
+  flatpak-builder-tools commit (`FLATPAK_BUILDER_TOOLS_COMMIT` in the
+  `Dockerfile`, research.md §21) and Flathub's linter (`org.flatpak.Builder`,
+  installed unpinned by `scripts/flatpak/build.sh`)._
 - **#21** (release security review): comment with research.md §4's
   permission table, §9's web-process reach with WebKit's sandbox on and off,
   and §20's residual risks, for the review's attack surface.

@@ -86,6 +86,14 @@ Flatpak tooling: the source lists against the lockfiles, the manifest's
 rules, the contents allow list on fixtures, the metadata's rules and the host
 guard.
 
+_Amended 2026-10-19 (011 T108): the `test:flatpak` row's "also" is wrong.
+`npm run test:flatpak -- --fresh-install` is a separate run that replaces the
+check, not an addition to it (`scripts/flatpak/check.sh` runs
+`fresh_install_check` and exits): it builds no check variant and runs no
+journey or bus check, only installs the shipped `.flatpak` into an empty
+installation with no remotes and starts it once (network). A release runs the
+two commands one after the other._
+
 _Amended 2026-10-19 (011 T078): what the steps do that the table leaves out._
 
 - _The linter is `flatpak run --command=flatpak-builder-lint
