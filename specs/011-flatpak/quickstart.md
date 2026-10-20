@@ -174,10 +174,10 @@ _Amended 2026-10-19 (owner's decision): the drop within reach comes from
 4. From Files, drag `~/Pictures/outside.jpg` onto the photos. Expected: it
    is refused with a message that names `/home/hoplodex-test/Pictures/outside.jpg`,
    says this copy of HoploDex is a Flatpak that can only reach the HoploDex
-   folder in Documents and removable drives, says to use Add photo to attach it
+   folder in Documents and removable drives, says to use Add photos to attach it
    from where it is, and gives the `flatpak override` command. Nothing is
    attached.
-5. Click **Add photo** and choose `~/Pictures/outside.jpg` in the file
+5. Click **Add photos** and choose `~/Pictures/outside.jpg` in the file
    chooser. Expected: it is attached.
 
 ### M4. Opening a document in its real application

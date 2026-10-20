@@ -164,7 +164,7 @@ pub mod ops {
         path: &std::path::Path,
         reach: &Reach,
     ) -> Result<Photo, CommandError> {
-        let path = reach.check(path, Need::ReadFile)?;
+        let path = reach.check(path, Need::AttachPhoto)?;
         let file = read_attachment_file(&path)?;
         add_photo(conn, owner, &file.bytes, &file.filename, mime_type_for(&file.filename))
     }

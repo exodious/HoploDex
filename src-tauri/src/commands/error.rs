@@ -13,6 +13,18 @@ use crate::services::import_reader::limits::ImportLimit;
 use crate::services::sandbox::Grant;
 use crate::session::SessionId;
 
+/// What a `LOCATION_OUT_OF_REACH` message tells the user to do besides the two
+/// fixes every one gives (move the file into reach, or run the override
+/// command). The attach commands name the button that attaches a file from
+/// anywhere: a host path outside reach there can only be a drop, and the file
+/// chooser reaches every folder (011 FR-007).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutOfReachAdvice {
+    Move,
+    AttachPhoto,
+    AttachDocument,
+}
+
 /// The single error shape returned by every Tauri IPC command, per
 /// 001 contracts/tauri-commands.md. `code` is a stable, machine-matchable
 /// identifier (e.g. `"VALIDATION_ERROR"`); `message` is safe to show
@@ -321,26 +333,42 @@ impl CommandError {
     /// 011 FR-004 (011 research.md §5): inside a Flatpak, a location the
     /// operation needs is outside what this copy may reach. `path` is the
     /// location as the user gave it, `folder` the folder that would need
-    /// access, `home` the user's home folder (the first of the shipped
-    /// grants, which a user may have replaced), `grants` what this copy can
-    /// reach now. Never overridable: `confirmedWarnings` has no effect on it.
-    pub fn out_of_reach(path: &Path, folder: &Path, home: &Path, grants: &[Grant]) -> Self {
+    /// access, `documents` the user's Documents folder when there is one a
+    /// Flatpak can be granted, `grants` what this copy can reach now, and
+    /// `advice` what to tell the user to do besides the two fixes. Exactly the
+    /// shipped default (`<documents>/HoploDex`, `/media` and `/run/media`, each
+    /// writable, in any order) is worded as such; any other set is the user's
+    /// own and is listed. Never overridable: `confirmedWarnings` has no effect
+    /// on it.
+    pub fn out_of_reach(
+        path: &Path,
+        folder: &Path,
+        documents: Option<&Path>,
+        grants: &[Grant],
+        advice: OutOfReachAdvice,
+    ) -> Self {
         let roots: Vec<String> =
             grants.iter().map(|grant| grant.root.to_string_lossy().into_owned()).collect();
-        // The shipped four are the home folder and the three removable-drive
-        // folders, each writable, in any order. Any other set (one added, home
-        // removed or replaced, one made read-only) is the user's own, and is
-        // listed.
-        let home = home.to_string_lossy();
-        let shipped = grants.len() == 4
-            && grants.iter().all(|grant| grant.writable)
-            && [home.as_ref(), "/media", "/run/media", "/mnt"]
-                .iter()
-                .all(|shipped| roots.iter().any(|root| root == shipped));
-        let reach = if shipped {
-            "your home folder and removable drives".to_owned()
+        let default_folder = documents.map(|documents| documents.join("HoploDex"));
+        let shipped = default_folder.as_ref().is_some_and(|default_folder| {
+            let default_folder = default_folder.to_string_lossy();
+            grants.len() == 3
+                && grants.iter().all(|grant| grant.writable)
+                && [default_folder.as_ref(), "/media", "/run/media"]
+                    .iter()
+                    .all(|shipped| roots.iter().any(|root| root == shipped))
+        });
+        let (reach, moving) = if let (true, Some(default_folder)) = (shipped, &default_folder) {
+            let default_folder = default_folder.display();
+            (
+                format!(
+                    "the HoploDex folder in your Documents folder (`{default_folder}`) and \
+                     removable drives"
+                ),
+                format!("Move the file into `{default_folder}` or onto a removable drive"),
+            )
         } else if grants.is_empty() {
-            "none of your folders".to_owned()
+            ("none of your folders".to_owned(), "Move the file into a folder it can reach".into())
         } else {
             let named: Vec<String> = grants
                 .iter()
@@ -349,20 +377,30 @@ impl CommandError {
                     format!("`{}`{read_only}", grant.root.display())
                 })
                 .collect();
-            match named.split_last() {
+            let listed = match named.split_last() {
                 Some((last, first)) if !first.is_empty() => {
                     format!("{} and {last}", first.join(", "))
                 }
                 _ => named.join(""),
+            };
+            (listed, "Move the file into a folder it can reach".into())
+        };
+        let attach = match advice {
+            OutOfReachAdvice::Move => "",
+            OutOfReachAdvice::AttachPhoto => {
+                " To attach it from where it is, use Add photos and choose it there."
+            }
+            OutOfReachAdvice::AttachDocument => {
+                " To attach it from where it is, use Attach and choose it there."
             }
         };
         Self::new(
             "LOCATION_OUT_OF_REACH",
             format!(
                 "This copy of HoploDex is a Flatpak, and it can only reach {reach}, so it can't \
-                 use `{path}`. Move the file into your home folder or onto a removable drive, or \
-                 give HoploDex access to `{folder}` by running: `flatpak override --user \
-                 --filesystem={quoted} io.github.exodious.HoploDex` and then restarting HoploDex.",
+                 use `{path}`.{attach} {moving}, or give HoploDex access to `{folder}` by \
+                 running: `flatpak override --user --filesystem={quoted} \
+                 io.github.exodious.HoploDex` and then restarting HoploDex.",
                 path = path.display(),
                 folder = folder.display(),
                 quoted = shell_quote(&folder.to_string_lossy()),
@@ -622,32 +660,47 @@ fn shell_quote(text: &str) -> String {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::CommandError;
+    use super::{CommandError, OutOfReachAdvice};
     use crate::services::sandbox::Grant;
 
-    const HOME: &str = "/home/someone";
+    const DOCUMENTS: &str = "/home/someone/Documents";
 
     fn grant(root: &str, writable: bool) -> Grant {
         Grant { root: PathBuf::from(root), writable }
     }
 
-    /// The four grants the manifest ships (011 research.md §4).
+    /// The three grants the manifest ships (011 research.md §4, amended
+    /// 2026-10-19).
     fn shipped() -> Vec<Grant> {
         vec![
-            grant(HOME, true),
+            grant("/home/someone/Documents/HoploDex", true),
             grant("/media", true),
             grant("/run/media", true),
-            grant("/mnt", true),
         ]
     }
+
+    /// A refusal for `/x/y`, folder `/x`, with Documents at [`DOCUMENTS`].
+    fn refusal(grants: &[Grant], advice: OutOfReachAdvice) -> CommandError {
+        CommandError::out_of_reach(
+            Path::new("/x/y"),
+            Path::new("/x"),
+            Some(Path::new(DOCUMENTS)),
+            grants,
+            advice,
+        )
+    }
+
+    const DEFAULT_REACH: &str = "it can only reach the HoploDex folder in your Documents folder \
+        (`/home/someone/Documents/HoploDex`) and removable drives";
 
     #[test]
     fn out_of_reach_has_its_code_and_camel_case_details() {
         let err = CommandError::out_of_reach(
             Path::new("/srv/guns/a.hoplodex"),
             Path::new("/srv/guns"),
-            Path::new(HOME),
+            Some(Path::new(DOCUMENTS)),
             &shipped(),
+            OutOfReachAdvice::Move,
         );
         assert_eq!(err.code, "LOCATION_OUT_OF_REACH");
         let json = serde_json::to_value(&err).unwrap();
@@ -656,135 +709,164 @@ mod tests {
             serde_json::json!({
                 "path": "/srv/guns/a.hoplodex",
                 "folder": "/srv/guns",
-                "grants": ["/home/someone", "/media", "/run/media", "/mnt"],
+                "grants": ["/home/someone/Documents/HoploDex", "/media", "/run/media"],
             })
         );
         assert!(json.get("fieldErrors").is_none());
     }
 
+    /// 011 FR-004: the default's wording, word for word as 011 data-model.md gives
+    /// it, which the frontend's tests copy.
     #[test]
     fn out_of_reach_message_is_the_one_data_model_gives_word_for_word() {
         let err = CommandError::out_of_reach(
             Path::new("/srv/guns/a.hoplodex"),
             Path::new("/srv/guns"),
-            Path::new(HOME),
+            Some(Path::new(DOCUMENTS)),
             &shipped(),
+            OutOfReachAdvice::Move,
         );
         assert_eq!(
             err.message,
-            "This copy of HoploDex is a Flatpak, and it can only reach your home folder and \
-             removable drives, so it can't use `/srv/guns/a.hoplodex`. Move the file into your \
-             home folder or onto a removable drive, or give HoploDex access to `/srv/guns` by \
-             running: `flatpak override --user --filesystem=/srv/guns \
+            "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in \
+             your Documents folder (`/home/someone/Documents/HoploDex`) and removable drives, so \
+             it can't use `/srv/guns/a.hoplodex`. Move the file into \
+             `/home/someone/Documents/HoploDex` or onto a removable drive, or give HoploDex \
+             access to `/srv/guns` by running: `flatpak override --user --filesystem=/srv/guns \
              io.github.exodious.HoploDex` and then restarting HoploDex."
         );
     }
 
+    /// 011 FR-007: an attach command's refusal puts the sentence naming the
+    /// button before the two fixes; nothing else changes.
     #[test]
-    fn out_of_reach_lists_the_grants_when_the_user_has_added_more_than_the_shipped_four() {
+    fn out_of_reach_for_an_attach_command_says_to_use_its_button_first() {
+        let moved = refusal(&shipped(), OutOfReachAdvice::Move).message;
+        let photo = refusal(&shipped(), OutOfReachAdvice::AttachPhoto).message;
+        let document = refusal(&shipped(), OutOfReachAdvice::AttachDocument).message;
+        assert_eq!(
+            photo,
+            moved.replace(
+                "can't use `/x/y`. Move",
+                "can't use `/x/y`. To attach it from where it is, use Add photos and choose it \
+                 there. Move"
+            )
+        );
+        assert_ne!(photo, moved);
+        assert_eq!(
+            document,
+            moved.replace(
+                "can't use `/x/y`. Move",
+                "can't use `/x/y`. To attach it from where it is, use Attach and choose it \
+                 there. Move"
+            )
+        );
+        assert_ne!(document, moved);
+    }
+
+    #[test]
+    fn out_of_reach_lists_the_grants_when_the_user_has_added_more_than_the_shipped_three() {
         let mut grants = shipped();
         grants.push(grant("/srv/archive", true));
         grants.push(grant("/data", false));
-        let err = CommandError::out_of_reach(
-            Path::new("/x/y"),
-            Path::new("/x"),
-            Path::new(HOME),
-            &grants,
-        );
+        let err = refusal(&grants, OutOfReachAdvice::Move);
         assert!(
             err.message.starts_with(
-                "This copy of HoploDex is a Flatpak, and it can only reach `/home/someone`, \
-                 `/media`, `/run/media`, `/mnt`, `/srv/archive` and `/data` (read only), so it \
-                 can't use `/x/y`."
+                "This copy of HoploDex is a Flatpak, and it can only reach \
+                 `/home/someone/Documents/HoploDex`, `/media`, `/run/media`, `/srv/archive` and \
+                 `/data` (read only), so it can't use `/x/y`."
             ),
             "{}",
             err.message
         );
-        assert!(!err.message.contains("your home folder and removable drives"));
-        // The advice after the first sentence is the same.
+        assert!(!err.message.contains("removable drives, so"));
+        // The advice after the first sentence does not name a folder it
+        // can't know.
         assert!(err.message.ends_with(
-            "or give HoploDex access to `/x` by running: `flatpak override --user \
-             --filesystem=/x io.github.exodious.HoploDex` and then restarting HoploDex."
+            "Move the file into a folder it can reach, or give HoploDex access to `/x` by \
+             running: `flatpak override --user --filesystem=/x io.github.exodious.HoploDex` and \
+             then restarting HoploDex."
         ));
         assert_eq!(
             serde_json::to_value(&err).unwrap()["details"]["grants"].as_array().unwrap().len(),
-            6
+            5
         );
     }
 
-    /// 011 FR-004: only the shipped four, exactly, get the short first
-    /// sentence.
+    /// 011 FR-004: only the shipped three, exactly, get the default wording.
     #[test]
-    fn out_of_reach_lists_the_grants_for_any_set_but_the_shipped_four() {
-        let short = "it can only reach your home folder and removable drives";
-        let say = |grants: &[Grant]| {
-            CommandError::out_of_reach(Path::new("/x/y"), Path::new("/x"), Path::new(HOME), grants)
-                .message
-        };
-        assert!(say(&shipped()).contains(short));
-        // Home removed.
-        assert!(!say(&shipped()[1..]).contains(short));
-        // One added.
-        let mut more = shipped();
-        more.push(grant("/srv/archive", true));
-        assert!(!say(&more).contains(short));
+    fn out_of_reach_lists_the_grants_for_any_set_but_the_shipped_three() {
+        let say = |grants: &[Grant]| refusal(grants, OutOfReachAdvice::Move).message;
+        assert!(say(&shipped()).contains(DEFAULT_REACH));
+        // In any order.
+        let mut shuffled = shipped();
+        shuffled.reverse();
+        assert!(say(&shuffled).contains(DEFAULT_REACH));
+        // The HoploDex folder removed.
+        assert!(!say(&shipped()[1..]).contains(DEFAULT_REACH));
+        // One added, among them the old home folder and `/mnt`.
+        for extra in ["/srv/archive", "/home/someone", "/mnt"] {
+            let mut more = shipped();
+            more.push(grant(extra, true));
+            let message = say(&more);
+            assert!(!message.contains(DEFAULT_REACH), "{extra}: {message}");
+            assert!(message.contains(&format!("`{extra}`")), "{extra}: {message}");
+        }
         // One made read-only.
         let mut read_only = shipped();
         read_only[2].writable = false;
         let message = say(&read_only);
-        assert!(!message.contains(short), "{message}");
+        assert!(!message.contains(DEFAULT_REACH), "{message}");
         assert!(message.contains("`/run/media` (read only)"), "{message}");
         // A removable folder missing and another put in its place.
         let mut swapped = shipped();
-        swapped[3] = grant("/srv/archive", true);
-        assert!(!say(&swapped).contains(short));
+        swapped[2] = grant("/srv/archive", true);
+        assert!(!say(&swapped).contains(DEFAULT_REACH));
     }
 
-    /// 011 FR-004: the home folder is the one the caller names, not whichever
-    /// grant is not a removable-drive folder. A user who replaced home with
-    /// `/srv` is not told "your home folder", and the shipped four are
-    /// recognised in any order.
+    /// 011 FR-004: the default is named by the Documents folder the caller
+    /// gives, not by whichever grant is not a drive folder. A folder named
+    /// `HoploDex` somewhere else is not the default, and with no Documents
+    /// folder nothing is.
     #[test]
-    fn out_of_reach_names_the_shipped_four_by_the_home_folder_it_is_given() {
-        let short = "it can only reach your home folder and removable drives";
-        let replaced = vec![
-            grant("/srv", true),
+    fn out_of_reach_names_the_default_by_the_documents_folder_it_is_given() {
+        let elsewhere = vec![
+            grant("/srv/Documents/HoploDex", true),
             grant("/media", true),
             grant("/run/media", true),
-            grant("/mnt", true),
         ];
+        let message = refusal(&elsewhere, OutOfReachAdvice::Move).message;
+        assert!(!message.contains(DEFAULT_REACH), "{message}");
+        assert!(message.contains("it can only reach `/srv/Documents/HoploDex`, `/media` and"));
+        // The same grants are the default when that is the Documents folder.
         let message = CommandError::out_of_reach(
             Path::new("/x/y"),
             Path::new("/x"),
-            Path::new(HOME),
-            &replaced,
+            Some(Path::new("/srv/Documents")),
+            &elsewhere,
+            OutOfReachAdvice::Move,
         )
         .message;
-        assert!(!message.contains(short), "{message}");
-        assert!(
-            message.contains("it can only reach `/srv`, `/media`, `/run/media` and `/mnt`, so"),
-            "{message}"
-        );
-        // The same grants are the shipped four when /srv is the home folder.
+        assert!(message.contains("(`/srv/Documents/HoploDex`) and removable drives"), "{message}");
+        assert!(message.contains("Move the file into `/srv/Documents/HoploDex` or onto"));
+        // No Documents folder the Flatpak can be granted: the drives only.
+        let drives = vec![grant("/media", true), grant("/run/media", true)];
         let message = CommandError::out_of_reach(
             Path::new("/x/y"),
             Path::new("/x"),
-            Path::new("/srv"),
-            &replaced,
+            None,
+            &drives,
+            OutOfReachAdvice::Move,
         )
         .message;
-        assert!(message.contains(short), "{message}");
-        // In any order.
-        let mut shuffled = shipped();
-        shuffled.reverse();
-        let message = CommandError::out_of_reach(
-            Path::new("/x/y"),
-            Path::new("/x"),
-            Path::new(HOME),
-            &shuffled,
-        )
-        .message;
-        assert!(message.contains(short), "{message}");
+        assert!(message.contains("it can only reach `/media` and `/run/media`, so"), "{message}");
+        assert!(!message.contains("Documents"), "{message}");
+    }
+
+    #[test]
+    fn out_of_reach_with_no_grants_says_none_of_your_folders() {
+        let message = refusal(&[], OutOfReachAdvice::Move).message;
+        assert!(message.contains("it can only reach none of your folders, so"), "{message}");
     }
 
     /// 011 FR-004: the folder in the `flatpak override` command is one shell
@@ -795,8 +877,9 @@ mod tests {
             CommandError::out_of_reach(
                 Path::new("/x/y"),
                 Path::new(folder),
-                Path::new(HOME),
+                Some(Path::new(DOCUMENTS)),
                 &shipped(),
+                OutOfReachAdvice::Move,
             )
             .message
         };
@@ -810,12 +893,7 @@ mod tests {
 
     #[test]
     fn out_of_reach_carries_a_field_error_only_when_the_caller_adds_one() {
-        let err = CommandError::out_of_reach(
-            Path::new("/x/y"),
-            Path::new("/x"),
-            Path::new(HOME),
-            &shipped(),
-        );
+        let err = refusal(&shipped(), OutOfReachAdvice::Move);
         assert!(err.field_errors.is_none());
         let message = err.message.clone();
         let err = err.on_field("folder", message.clone());
@@ -828,12 +906,7 @@ mod tests {
     /// refusal with no warning code for a resend to confirm.
     #[test]
     fn out_of_reach_is_a_refusal_no_confirmation_overrides() {
-        let err = CommandError::out_of_reach(
-            Path::new("/x/y"),
-            Path::new("/x"),
-            Path::new(HOME),
-            &shipped(),
-        );
+        let err = refusal(&shipped(), OutOfReachAdvice::AttachPhoto);
         assert!(!err.code.ends_with("_WARNING"), "{}", err.code);
         let json = serde_json::to_value(&err).unwrap();
         assert!(json["details"].get("confirmedWarnings").is_none());

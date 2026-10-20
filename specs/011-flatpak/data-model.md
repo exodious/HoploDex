@@ -200,6 +200,19 @@ choose it there." The constructor takes which advice to give
 (contracts/tauri-commands.md); `details` are unchanged. Any other set of grants
 is listed as before._
 
+_Amended 2026-10-19 (011 T118): what was built. The constructor is
+`out_of_reach(path, folder, documents, grants, advice)`: `documents` is the
+Documents folder `UserDirs` names (`None` when it is unset or is the home
+folder, which `Reach` holds), and the default is recognised as exactly
+`<documents>/HoploDex`, `/media` and `/run/media`, each writable, in any order.
+The attach sentence names the real button, not both: "To attach it from where
+it is, use Add photos and choose it there." from `add_photo_from_path`
+(`Need::AttachPhoto`), and "...use Attach and choose it there." from
+`add_document_from_path` (`Need::AttachDocument`); each is read like
+`Need::ReadFile`. For any other set of grants the move advice reads "Move the
+file into a folder it can reach" (the default's folder and drives are not
+promised there), followed by the same override fix._
+
 ## Saved passphrases inside a Flatpak (`services/keyring.rs`)
 
 _Added 2026-10-19 (owner's decision; FR-006; research.md §7)._

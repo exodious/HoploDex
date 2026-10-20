@@ -36,6 +36,11 @@ choose it there." `details` are unchanged. The frontend's own availability
 sentence (`src/features/databases/outOfReach.ts`) says "by default it can reach
 only the HoploDex folder in your Documents folder and removable drives"._
 
+_Amended 2026-10-19 (011 T118): the attach advice names each command's real
+button, "Add photos" for `add_photo_from_path` and "Attach" for
+`add_document_from_path`, in place of "Add photo (or Add document)"; see
+data-model.md._
+
 ## Shared types (amended)
 
 ```ts

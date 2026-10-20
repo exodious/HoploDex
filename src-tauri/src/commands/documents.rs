@@ -160,7 +160,7 @@ pub mod ops {
         path: &Path,
         reach: &Reach,
     ) -> Result<DocumentAttachment, CommandError> {
-        let path = reach.check(path, Need::ReadFile)?;
+        let path = reach.check(path, Need::AttachDocument)?;
         let file = read_attachment_file(&path)?;
         add_document(conn, owner, &file.bytes, &file.filename)
     }

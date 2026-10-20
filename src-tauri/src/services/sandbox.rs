@@ -19,6 +19,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use crate::commands::CommandError;
+use crate::commands::error::OutOfReachAdvice;
 
 /// Where Flatpak describes the sandbox to the app inside it.
 pub const FLATPAK_INFO: &str = "/.flatpak-info";
@@ -46,6 +47,29 @@ pub enum Need {
     BackupFolder,
     /// A file to read. The path is the file.
     ReadFile,
+    /// A photo to attach, read like [`Need::ReadFile`]. A refusal tells the user
+    /// to attach it with the photo button, since a host path outside reach
+    /// can only be a drop and the file chooser reaches every folder (011 FR-007).
+    AttachPhoto,
+    /// A document to attach: [`Need::AttachPhoto`] for a document.
+    AttachDocument,
+}
+
+impl Need {
+    /// Whether the path is a file to read (an import, a backup, an attachment),
+    /// whatever the advice a refusal gives.
+    fn reads_a_file(self) -> bool {
+        matches!(self, Self::ReadFile | Self::AttachPhoto | Self::AttachDocument)
+    }
+
+    /// What a refusal for this need tells the user to do instead.
+    fn advice(self) -> OutOfReachAdvice {
+        match self {
+            Self::AttachPhoto => OutOfReachAdvice::AttachPhoto,
+            Self::AttachDocument => OutOfReachAdvice::AttachDocument,
+            _ => OutOfReachAdvice::Move,
+        }
+    }
 }
 
 /// Turns a Documents-portal path (`/run/user/<uid>/doc/<id>/<name>`) into the
@@ -106,7 +130,10 @@ impl UserDirs {
 
     /// The file is shell-sourced: `NAME="value"` lines, `#` comments, and a
     /// value that may start with `$HOME` or `${HOME}`. A value that is not an
-    /// absolute path after that is left out.
+    /// absolute path after that is left out, and so is one that is the home
+    /// folder itself: `xdg-user-dirs` writes that for a folder the user has
+    /// not set, and Flatpak grants nothing for an `xdg-*` entry whose folder is
+    /// the home folder (011 FR-003, 011 research.md §5).
     pub fn parse(text: &str, home: &Path) -> Self {
         let mut dirs = HashMap::new();
         for line in text.lines() {
@@ -131,11 +158,17 @@ impl UserDirs {
             } else {
                 PathBuf::from(&value)
             };
-            if expanded.is_absolute() {
-                dirs.insert(key.to_owned(), normalize(&expanded));
+            let expanded = normalize(&expanded);
+            if expanded.is_absolute() && expanded != normalize(home) {
+                dirs.insert(key.to_owned(), expanded);
             }
         }
         Self { dirs }
+    }
+
+    /// The user's Documents folder, when it is one a Flatpak can be granted.
+    pub fn documents(&self) -> Option<&Path> {
+        self.folder("documents")
     }
 
     /// The folder `xdg-<name>` stands for: `documents`, `download`,
@@ -181,6 +214,10 @@ pub enum Reach {
         /// narrows reach and never widens it.
         removed: Vec<PathBuf>,
         home: PathBuf,
+        /// The user's Documents folder, where the shipped default reaches
+        /// `HoploDex` (`None` when it is unset or is the home folder), so a
+        /// refusal can tell the default from a set the user changed.
+        documents: Option<PathBuf>,
         host_paths: Arc<dyn HostPaths>,
     },
 }
@@ -189,11 +226,12 @@ impl fmt::Debug for Reach {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unconfined => f.write_str("Unconfined"),
-            Self::Flatpak { grants, removed, home, .. } => f
+            Self::Flatpak { grants, removed, home, documents, .. } => f
                 .debug_struct("Flatpak")
                 .field("grants", grants)
                 .field("removed", removed)
                 .field("home", home)
+                .field("documents", documents)
                 .finish_non_exhaustive(),
         }
     }
@@ -227,7 +265,17 @@ impl Reach {
         home: PathBuf,
         host_paths: Arc<dyn HostPaths>,
     ) -> Self {
-        Self::Flatpak { grants, removed, home, host_paths }
+        Self::Flatpak { grants, removed, home, documents: None, host_paths }
+    }
+
+    /// This reach with the user's Documents folder named, which is how a
+    /// refusal knows the shipped default (`<Documents>/HoploDex`, `/media`,
+    /// `/run/media`) from a set the user changed.
+    pub fn with_documents(mut self, folder: Option<PathBuf>) -> Self {
+        if let Self::Flatpak { documents, .. } = &mut self {
+            *documents = folder;
+        }
+        self
     }
 
     /// Reads `info_path` (`/.flatpak-info`) once. No file there means this is
@@ -242,8 +290,8 @@ impl Reach {
     ) -> Self {
         match std::fs::read_to_string(info_path) {
             Ok(text) => match Self::from_flatpak_info(&text, home, user_dirs) {
-                Self::Flatpak { grants, removed, home, .. } => {
-                    Self::Flatpak { grants, removed, home, host_paths }
+                Self::Flatpak { grants, removed, home, documents, .. } => {
+                    Self::Flatpak { grants, removed, home, documents, host_paths }
                 }
                 unconfined => unconfined,
             },
@@ -254,6 +302,7 @@ impl Reach {
                     info_path.display()
                 );
                 Self::flatpak(Vec::new(), Vec::new(), home.to_owned(), host_paths)
+                    .with_documents(user_dirs.documents().map(Path::to_owned))
             }
         }
     }
@@ -285,6 +334,7 @@ impl Reach {
             }
         }
         Self::flatpak(grants, removed, home.to_owned(), Arc::new(NoHostPaths))
+            .with_documents(user_dirs.documents().map(Path::to_owned))
     }
 
     pub fn is_flatpak(&self) -> bool {
@@ -393,10 +443,10 @@ impl Reach {
                 let folder = needed_folder(&given, need);
                 match self.access(&folder) {
                     Access::Writable => Ok(path.to_owned()),
-                    _ => Err(self.refuse(path, &folder)),
+                    _ => Err(self.refuse(path, &folder, need)),
                 }
             }
-            Need::ReadFile => {
+            Need::ReadFile | Need::AttachPhoto | Need::AttachDocument => {
                 // Only a file a grant covers is within reach, whether or not
                 // it exists in the sandbox (011 FR-007: a drop from outside
                 // reach is always refused, even where the same path happens to
@@ -405,7 +455,7 @@ impl Reach {
                 if self.access(&given) != Access::None {
                     Ok(path.to_owned())
                 } else {
-                    Err(self.refuse(path, &needed_folder(&given, need)))
+                    Err(self.refuse(path, &needed_folder(&given, need), need))
                 }
             }
         }
@@ -423,13 +473,14 @@ impl Reach {
         // (011 T095); the portal's own folder helps nobody.
         if let Some(host) = host_paths.host_path(portal_path).map(|host| absolute(&host)) {
             let folder = needed_folder(&host, need);
-            let probe = if need == Need::ReadFile { &host } else { &folder };
-            let stays_a_portal_path = matches!(need, Need::WriteFolder | Need::ReadFile);
+            let probe = if need.reads_a_file() { &host } else { &folder };
+            let stays_a_portal_path = need == Need::WriteFolder || need.reads_a_file();
             match (self.access(probe), need) {
-                (Access::Writable, _) | (Access::ReadOnly, Need::ReadFile) => return Ok(host),
-                (Access::ReadOnly, _) => return Err(self.refuse(&host, &folder)),
+                (Access::Writable, _) => return Ok(host),
+                (Access::ReadOnly, _) if need.reads_a_file() => return Ok(host),
+                (Access::ReadOnly, _) => return Err(self.refuse(&host, &folder, need)),
                 (Access::None, _) if !stays_a_portal_path => {
-                    return Err(self.refuse(&host, &folder));
+                    return Err(self.refuse(&host, &folder, need));
                 }
                 (Access::None, _) => {}
             }
@@ -439,18 +490,20 @@ impl Reach {
         // and a stored backup folder is not to be kept (011 T097).
         match need {
             Need::DatabaseFolder | Need::BackupFolder => {
-                Err(self.refuse(path, &needed_folder(portal_path, need)))
+                Err(self.refuse(path, &needed_folder(portal_path, need), need))
             }
-            Need::WriteFolder | Need::ReadFile => Ok(path.to_owned()),
+            Need::WriteFolder | Need::ReadFile | Need::AttachPhoto | Need::AttachDocument => {
+                Ok(path.to_owned())
+            }
         }
     }
 
-    fn refuse(&self, path: &Path, folder: &Path) -> CommandError {
-        let home = match self {
-            Self::Unconfined => Path::new(""),
-            Self::Flatpak { home, .. } => home.as_path(),
+    fn refuse(&self, path: &Path, folder: &Path, need: Need) -> CommandError {
+        let documents = match self {
+            Self::Unconfined => None,
+            Self::Flatpak { documents, .. } => documents.as_deref(),
         };
-        CommandError::out_of_reach(path, folder, home, self.grants())
+        CommandError::out_of_reach(path, folder, documents, self.grants(), need.advice())
     }
 }
 
@@ -470,7 +523,9 @@ impl Access {
 fn needed_folder(path: &Path, need: Need) -> PathBuf {
     match need {
         Need::WriteFolder | Need::BackupFolder => path.to_owned(),
-        Need::DatabaseFolder | Need::ReadFile => path.parent().unwrap_or(path).to_owned(),
+        Need::DatabaseFolder | Need::ReadFile | Need::AttachPhoto | Need::AttachDocument => {
+            path.parent().unwrap_or(path).to_owned()
+        }
     }
 }
 
@@ -932,6 +987,50 @@ mod tests {
         let read = UserDirs::read(dir.path(), &home());
         assert_eq!(read.folder("documents"), Some(Path::new("/home/someone/Docs")));
         assert_eq!(read.folder("music"), None);
+    }
+
+    // Unix only: POSIX absolute paths (see above).
+    /// 011 FR-003, research.md §5: `xdg-user-dirs` writes `$HOME/` for a folder
+    /// the user has not set, and Flatpak grants nothing for an `xdg-*` entry
+    /// whose folder is the home folder, so it is not a folder here either.
+    #[cfg(unix)]
+    #[test]
+    fn a_user_folder_that_is_the_home_folder_is_not_a_folder() {
+        let dirs = UserDirs::parse(
+            "XDG_DOCUMENTS_DIR=\"$HOME/\"\nXDG_DOWNLOAD_DIR=\"$HOME\"\n\
+             XDG_DESKTOP_DIR=\"${HOME}/./\"\nXDG_MUSIC_DIR=\"/home/someone/\"\n\
+             XDG_VIDEOS_DIR=\"$HOME/Videos\"\n",
+            &home(),
+        );
+        for name in ["documents", "download", "desktop", "music"] {
+            assert_eq!(dirs.folder(name), None, "{name}");
+        }
+        assert_eq!(dirs.documents(), None);
+        assert_eq!(dirs.folder("videos"), Some(Path::new("/home/someone/Videos")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn xdg_documents_with_a_path_grants_nothing_when_documents_is_the_home_folder() {
+        let at_home = UserDirs::parse("XDG_DOCUMENTS_DIR=\"$HOME/\"\n", &home());
+        let text = info("xdg-documents/HoploDex;xdg-documents;/media;/run/media");
+        let reach = Reach::from_flatpak_info(&text, &home(), &at_home);
+        assert_eq!(reach.grants(), &[grant("/media", true), grant("/run/media", true)]);
+        // Never the whole home folder, nor a `HoploDex` folder in it.
+        assert_eq!(reach.access(Path::new("/home/someone/HoploDex/a")), Access::None);
+        assert_eq!(reach.access(Path::new("/home/someone/Documents/HoploDex/a")), Access::None);
+        // Unset altogether: the same.
+        let unset = Reach::from_flatpak_info(&text, &home(), &UserDirs::default());
+        assert_eq!(unset.grants(), reach.grants());
+        // Set to a real folder: the grant is that folder's `HoploDex`.
+        let set = UserDirs::parse("XDG_DOCUMENTS_DIR=\"$HOME/Documents\"\n", &home());
+        let reach = Reach::from_flatpak_info(&text, &home(), &set);
+        assert_eq!(
+            reach.grants()[0],
+            grant("/home/someone/Documents/HoploDex", true),
+            "{:?}",
+            reach.grants()
+        );
     }
 
     // 011 research.md §5: how paths are compared and what `check` decides.

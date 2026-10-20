@@ -411,6 +411,83 @@ fn create_database_outside_reach_and_in_a_read_only_grant_is_refused_and_nothing
     }
 }
 
+/// 011 FR-010, 011 FR-003: on a computer with no Documents folder the Flatpak
+/// can be granted (`xdg-user-dirs` unset, or Documents set to the home folder,
+/// which Flatpak treats as no folder), the manifest's `xdg-documents/HoploDex`
+/// reaches nothing, so only the drives are within reach. Creating at the
+/// location the create dialog suggests is then refused on the folder field,
+/// with the override command, and nothing is made. Nothing else is granted in
+/// its place.
+#[test]
+fn creating_at_the_suggested_folder_with_no_grantable_documents_is_refused_and_nothing_is_made() {
+    use hoplodex_lib::services::sandbox::UserDirs;
+
+    const MANIFEST: &str = "[Context]\nfilesystems=xdg-documents/HoploDex;/media;/run/media;\n";
+    for (user_dirs, documents_the_app_names, home_suffix) in [
+        // `xdg-user-dirs` unset: the app names no Documents folder, so the
+        // suggestion falls back to `~/Documents/HoploDex`.
+        (None, false, "Documents/HoploDex"),
+        // Documents set to the home folder, as `xdg-user-dirs` writes for an
+        // unset one.
+        (Some("XDG_DOCUMENTS_DIR=\"$HOME/\"\n"), true, "HoploDex"),
+    ] {
+        let world = World::new();
+        let home = world.home();
+        let user_dirs =
+            user_dirs.map_or_else(UserDirs::default, |text| UserDirs::parse(text, &home));
+        let reach = Reach::from_flatpak_info(MANIFEST, &home, &user_dirs);
+        assert_eq!(
+            reach.grants(),
+            &[
+                Grant { root: PathBuf::from("/media"), writable: true },
+                Grant { root: PathBuf::from("/run/media"), writable: true },
+            ],
+            "only the drives are granted"
+        );
+
+        let suggested = databases::chooser_state(
+            &world.boxed,
+            &world.machine,
+            documents_the_app_names.then(|| home.clone()),
+            Some(home.clone()),
+            &reach,
+        )
+        .suggested
+        .folder;
+        let folder = PathBuf::from(&suggested);
+        assert_eq!(folder, home.join(home_suffix));
+        let before = world.listing();
+        let recent_before = world.machine.recent().len();
+
+        let refused = databases::create_database(
+            &world.boxed,
+            &world.machine,
+            &suggested,
+            "My collection",
+            &passphrase(),
+            true,
+            &reach,
+        )
+        .unwrap_err();
+
+        assert_out_of_reach(&refused, &folder);
+        assert_eq!(
+            refused.field_errors.as_ref().and_then(|fields| fields.get("folder")),
+            Some(&refused.message),
+            "the message is on the folder field: {refused:?}"
+        );
+        assert!(
+            refused.message.contains("it can only reach `/media` and `/run/media`, so"),
+            "{}",
+            refused.message
+        );
+        assert_eq!(world.listing(), before, "nothing made, not even the folder");
+        assert!(!folder.exists());
+        assert!(!world.boxed.is_open());
+        assert_eq!(world.machine.recent().len(), recent_before);
+    }
+}
+
 /// 011 US1-3: the same call in the writable grant, made as a missing folder
 /// first, goes through.
 #[test]
@@ -909,6 +986,7 @@ fn an_import_file_that_would_be_on_the_host_is_out_of_reach_before_the_helper_st
 
     let refused = world.read_import(&no_helper, &[import_file(&gone_outside)]).unwrap_err();
     assert_out_of_reach(&refused, &world.outside());
+    assert!(!refused.message.contains("To attach it"), "{}", refused.message);
 
     // One of two files out of reach refuses the whole import, naming it.
     let refused = world
@@ -974,6 +1052,13 @@ fn a_dropped_photo_that_would_be_on_the_host_is_refused_and_nothing_is_attached(
     .unwrap_err();
 
     assert_out_of_reach(&refused, &world.outside());
+    assert!(
+        refused
+            .message
+            .contains(" To attach it from where it is, use Add photos and choose it there. "),
+        "a drop is told to use the photo button: {}",
+        refused.message
+    );
     assert!(photo_ops::list_photos(&db.conn, owner).unwrap().is_empty(), "no row added");
     assert_eq!(world.listing(), before);
 }
@@ -1009,6 +1094,13 @@ fn a_document_that_would_be_on_the_host_is_refused_and_one_in_the_read_only_gran
     .unwrap_err();
 
     assert_out_of_reach(&refused, &world.outside());
+    assert!(
+        refused
+            .message
+            .contains(" To attach it from where it is, use Attach and choose it there. "),
+        "a drop is told to use the document button: {}",
+        refused.message
+    );
     assert!(document_ops::list_documents(&db.conn, owner).unwrap().is_empty());
     assert_eq!(world.listing(), before);
 

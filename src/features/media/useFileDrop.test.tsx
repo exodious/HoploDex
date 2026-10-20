@@ -95,7 +95,7 @@ describe("useFileDrop", () => {
 // that check reach"); the record page's drop-error toast shows the backend's message.
 describe("a drop refused as out of reach (011 US1-5, 011 FR-004)", () => {
   const message =
-    "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/outside/gun.png. To attach it from where it is, use Add photo and choose it there. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/outside by running: flatpak override --user --filesystem=/srv/outside io.github.exodious.HoploDex and then restarting HoploDex.";
+    "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/outside/gun.png. To attach it from where it is, use Add photos and choose it there. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/outside by running: flatpak override --user --filesystem=/srv/outside io.github.exodious.HoploDex and then restarting HoploDex.";
   const refusal = () =>
     new CommandFailure({
       code: "LOCATION_OUT_OF_REACH",
