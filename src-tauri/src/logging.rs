@@ -10,8 +10,15 @@
 //!
 //! The helpers and the sandbox probe are this executable started again before
 //! this module runs (`main()`), so they log nothing; the parent logs for them.
+//!
+//! A line never carries anything from inside a database: no record's values,
+//! no photo's or document's original file name (nor the path it was attached
+//! from, nor a copy named after it: [`folder_of`]), no draft's text (nor a
+//! JSON error that quotes it: [`json_error`]), and never a passphrase. The
+//! paths of databases, backups and the app's own files may be named.
 
 use std::io::Write;
+use std::path::Path;
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
@@ -49,6 +56,18 @@ impl Log for StderrLogger {
 
 static LOGGER: StderrLogger = StderrLogger;
 
+/// The folder `path` is in, for a line about a file whose name came from a
+/// database, such as an opened document's copy, named after the document.
+pub fn folder_of(path: &Path) -> std::path::Display<'_> {
+    path.parent().unwrap_or(Path::new(".")).display()
+}
+
+/// What a line may say about a JSON error: its kind and place, not its
+/// message, which quotes the text it was reading (`invalid type: string "…"`).
+pub fn json_error(err: &serde_json::Error) -> String {
+    format!("{:?} error at line {}, column {}", err.classify(), err.line(), err.column())
+}
+
 /// Installs the logger. Call it once, first in `main()` after the helper
 /// modes have been dispatched. A second call, or a logger already installed
 /// by something else, changes nothing.
@@ -72,6 +91,21 @@ mod tests {
         assert!(!allowed(Level::Info, "tauri::app"));
         assert!(allowed(Level::Warn, "tauri::app"));
         assert!(!allowed(Level::Info, "hoplodexish"));
+    }
+
+    #[test]
+    fn a_copy_named_after_a_document_is_logged_by_its_folder() {
+        let copy = Path::new("/cache/opened-documents/7/Bill of sale.pdf");
+        assert_eq!(folder_of(copy).to_string(), "/cache/opened-documents/7");
+    }
+
+    #[test]
+    fn a_json_error_is_logged_without_the_text_it_quotes() {
+        let err = serde_json::from_str::<u32>("\"Serial ABC123\"").unwrap_err();
+        assert!(err.to_string().contains("ABC123"), "the premise: serde_json quotes it");
+        let line = json_error(&err);
+        assert!(!line.contains("ABC123"), "{line}");
+        assert_eq!(line, "Data error at line 1, column 15");
     }
 
     #[test]

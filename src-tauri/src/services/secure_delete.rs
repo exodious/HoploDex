@@ -33,7 +33,11 @@ fn open_for_wipe(path: &Path) -> io::Result<Option<File>> {
     options.write(true);
     let file = scratch::open_no_follow(&mut options, path)?;
     if !file.metadata()?.file_type().is_file() || scratch::link_count(&file)? > 1 {
-        log::warn!("{} has other names: unlinking it without overwriting", path.display());
+        // The folder only: a document's copy is named after it (logging.rs).
+        log::warn!(
+            "a file in {} has other names: unlinking it without overwriting",
+            crate::logging::folder_of(path)
+        );
         return Ok(None);
     }
     Ok(Some(file))

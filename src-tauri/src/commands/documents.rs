@@ -285,7 +285,10 @@ pub mod ops {
     /// OS had no program for it.
     fn delete_copy(path: &Path) {
         if let Err(err) = secure_delete_file(path) {
-            log::warn!("could not delete the opened-document copy {}: {err}", path.display());
+            log::warn!(
+                "could not delete the opened-document copy in {}: {err}",
+                crate::logging::folder_of(path)
+            );
         }
         if let Some(folder) = path.parent() {
             let _ = std::fs::remove_dir(folder);
@@ -314,7 +317,10 @@ pub fn clear_opened_documents_cache(app: &AppHandle) {
         return;
     };
     for path in ops::clear_opened_documents(&cache_dir.join(OPENED_DOCUMENTS_DIR)) {
-        log::warn!("could not delete opened-document copy {}", path.display());
+        log::warn!(
+            "could not delete an opened-document copy in {}",
+            crate::logging::folder_of(&path)
+        );
     }
 }
 
@@ -499,7 +505,13 @@ pub fn portal_open(
         ("writable", Value::from(false)),
     ]);
     let fd = OwnedFd::from(std::os::fd::OwnedFd::from(file));
-    portal.call_method("OpenFile", &("", fd, options)).map_err(|err| no_app("OpenFile", &err))?;
+    portal.call_method("OpenFile", &("", fd, options)).map_err(|err| match &err {
+        // The error's name only: the portal's message can name the file,
+        // which is named after the document (logging.rs).
+        zbus::Error::MethodError(name, _, _) => no_app("OpenFile", name),
+        zbus::Error::FDO(fdo) => no_app("OpenFile", &zbus::DBusError::name(fdo.as_ref())),
+        other => no_app("OpenFile", other),
+    })?;
 
     // 3. The answer.
     match answer.recv_timeout(timeout) {

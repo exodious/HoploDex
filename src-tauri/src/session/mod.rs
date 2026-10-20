@@ -867,7 +867,10 @@ impl SessionInner {
     pub(crate) fn clear_opened_documents(&self) {
         let Some(dir) = &self.opened_documents_dir else { return };
         for leftover in crate::commands::documents::ops::clear_opened_documents(dir) {
-            log::warn!("could not delete opened-document copy {}", leftover.display());
+            log::warn!(
+                "could not delete an opened-document copy in {}",
+                crate::logging::folder_of(&leftover)
+            );
         }
     }
 }
