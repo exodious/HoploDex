@@ -32,6 +32,19 @@ Most of the app already works in the sandbox as it is. The changes:
   skipping it, so web processes get WebKit's own sub-sandbox.
 - **The guide** (§11): one paragraph for Linux about separate installs.
 
+_Amended 2026-10-19 (owner's decision; spec Clarifications 2026-10-19):
+secure defaults. The manifest reaches `<Documents>/HoploDex` (made if
+missing), `/media` and `/run/media`, and no longer the home folder, `/mnt`
+or the Secret Service (research.md §4). Inside a Flatpak, saved passphrases
+go through the Secret portal into the app's own encrypted file, with the
+`oo7` crate's portal-only path and no fallback (§7). Everywhere else they
+stay on the `keyring` crate. `Reach` applies Flatpak's rule for unset `xdg-*`
+folders and those equal to `$HOME` (§5). The refusal names the new default,
+and an attach refusal points to the file chooser. The guide names the
+default reach. Two more of the owner's decisions:
+`name_default_application` runs only inside a Flatpak (§9), and the store
+screenshots come from a scripted, reproducible command (§13)._
+
 Around them: the manifest with its recorded permissions (§4), the offline
 source lists with a check on every test run (§3), the desktop entry,
 AppStream metadata, icons and notices with a contents allow list (§13),
@@ -45,7 +58,11 @@ the check can't take (§17).
 5 / React 18 for the frontend; Bash and Node 24 (ESM `.mjs`) for the build
 and check scripts; YAML (the manifest), XML (AppStream), INI (desktop entry).
 
-**Primary Dependencies**: no new shipped dependency. `zbus` 5 (already a
+**Primary Dependencies**: _amended 2026-10-19 (owner's decision): one new
+shipped dependency, Linux only: `oo7` 0.6 (MIT, pure Rust with
+`default-features = false, features = ["async-std", "native_crypto"]`, about
+25 crates, sharing the app's zbus 5) for the Secret portal and its file
+keyring (research.md §7)._ Before that: no new shipped dependency. `zbus` 5 (already a
 Linux dependency) makes the OpenURI and Documents portal calls. Build and
 test only, in the dev container: `org.gnome.Sdk//51`,
 `org.freedesktop.Sdk.Extension.rust-stable` and `node24` on the 26.08
@@ -67,7 +84,8 @@ opener against a test portal on a private bus; Vitest for the UI's messages
 and for the script checks (source lists, manifest, contents allow list,
 metadata, the host guard); the automated Flatpak check (`npm run
 test:flatpak`, a WebDriver journey against the installed Flatpak in the dev
-container, with stand-in logind, screen saver and Secret Service); manual
+container, with stand-in logind, screen saver and Secret Service; _amended
+2026-10-19: and a stand-in Secret portal, research.md §16_); manual
 steps before a release (quickstart.md).
 
 **Target Platform**: Linux x86-64, as a Flatpak on any distribution with
@@ -103,7 +121,7 @@ four frontend components; about ten new scripts and checks.
 | III. UX Consistency | One component set and pattern, WCAG 2.1 AA | No new screen or dialog. The refusal arrives through the existing mechanisms: a field error in the create dialog, the chooser's open-failure line, Database settings' "Not available on this computer", the close's backup notice, the import, export and attach errors. One wording for all of them (contracts/tauri-commands.md). The guide's paragraph uses the guide's existing section pattern |
 | IV. Performance | 100 ms feedback / 1 s completion, 500 ms search, no UI-thread blocking | Same code paths; reach is read once. The check measures cold start against the non-Flatpak build in the same container, and the pull request records it (research.md §18) |
 | V. User Privacy | Local only, no telemetry, nothing leaves without consent | The Flatpak has no network at all (research.md §4), stronger than a `.deb`. Opening a document keeps 007's native consent; the portal hands only that copy to the chosen app. Nothing is sent to Flathub or attached to a release |
-| Security & Data Handling | Encryption at rest, vetted dependencies, no cipher change | No cipher, key, database format or keyring entry changes. No new shipped dependency. Each permission is recorded with what a compromised process could reach (research.md §4), and the residual risks are listed for #21 (§20). WebKit's sandbox comes on inside Flatpak (§9). The persistence PR note comes from research.md §5 and §20 |
+| Security & Data Handling | Encryption at rest, vetted dependencies, no cipher change | _Amended 2026-10-19 (owner's decision): one new shipped dependency, `oo7` (MIT, pure Rust, Linux only), through the dependency and license audit and the notices. Inside a Flatpak, saved passphrases are encrypted in the app's own file with the Secret portal's key. The defaults are the narrowest that let the journey work (SC-011), and a compromise no longer reaches the home folder or other keyring items (research.md §4, §7, §20)._ No cipher, key, database format or keyring entry changes outside a Flatpak. Each permission is recorded with what a compromised process could reach (research.md §4), and the residual risks are listed for #21 (§20). WebKit's sandbox comes on inside Flatpak (§9). The persistence PR note comes from research.md §5 and §20 |
 | Licensing | GPLv3-compatible shipped components; release carries notices | The bundle carries `NOTICES.txt` (010 FR-011) and no runtime library (010 FR-017), enforced by an allow list of the bundle's files. Same binary, same lockfiles, so the audit already covers what it ships; a test fails if the manifest gains a module (research.md §13). Build tools ship nothing (§21) |
 
 **Result**: PASS, with the entries in Complexity Tracking.
@@ -245,8 +263,10 @@ comment on a closed one unless the owner asks. All five were open on
 2026-10-19.
 
 - **#42**: the pull request closes it ("Fixes #42"). Comment with what was
-  settled against the issue's list: the reach (home and removable drives,
-  overrides honoured, the refusal), the keyring, the notices' bus names and
+  settled against the issue's list: the reach (_amended 2026-10-19:
+  `<Documents>/HoploDex` and the drives under `/media` and `/run/media` by
+  default, overrides honoured, the refusal_), the keyring (_the Secret portal
+  inside the Flatpak, the app's own entries only_), the notices' bus names and
   `session/auto`, drops (host paths only; outside reach refused), config and
   data locations and the guide's note, the copies and the portal opener,
   WebKit's sandbox now on, the runtime (GNOME 51 and its end of life, with a
@@ -276,7 +296,11 @@ comment on a closed one unless the owner asks. All five were open on
   installed unpinned by `scripts/flatpak/build.sh`)._
 - **#21** (release security review): comment with research.md §4's
   permission table, §9's web-process reach with WebKit's sandbox on and off,
-  and §20's residual risks, for the review's attack surface.
+  and §20's residual risks, for the review's attack surface. _Amended
+  2026-10-19: with the narrower defaults and the Secret portal (§4, §7), and
+  the sub-sandbox's reach to the portal's key (§9)._
+- **#128** (troubleshooting log, opened 2026-10-19): no comment needed. The
+  pull request body links it as the follow-up to the logger 011 added.
 - **#36** (OS event checks): comment that `scripts/flatpak/env.sh` and
   `e2e/support/flatpak.ts` start a stand-in logind and screen saver with
   `python-dbusmock` and send their signals, which the general check can
@@ -293,6 +317,8 @@ comment on a closed one unless the owner asks. All five were open on
 | A check variant of the manifest | WebDriver needs the `e2e` build | A shipped build has no driver; a separate hand-kept manifest would drift, so it is derived and its difference tested (§16) |
 | `--flatpak` in `dev-container.sh` (unmasking `/proc`) | bwrap under rootless podman | Always unmasking weakens every run's container (§15) |
 | Python generators and the linter in the image | Offline source lists and FR-026 | Writing an npm generator ourselves (research.md §3) |
+| A second keyring store, inside a Flatpak only (2026-10-19) | FR-006: only HoploDex's own entries, no fallback | The `keyring` crate has no Secret portal store, and `oo7::Keyring::new()` falls back to the Secret Service (research.md §7) |
+| `npm run screenshots:store` (2026-10-19) | Reproducible store screenshots (the owner's decision) | Hand edits in a throwaway sandbox can't be repeated; changing the seed would lose #67's maximum-value case (research.md §13) |
 
 ## Post-Design Constitution Check
 
@@ -319,6 +345,15 @@ quickstart.md).*
 
 **Result**: PASS. The design adds no violations beyond those justified above.
 
+_Re-checked 2026-10-19 after the owner's secure-defaults decision: still PASS.
+**Security**: narrower defaults, with SC-011 enforced by a manifest test, and
+the one new dependency (`oo7`) through the audit. **Testing**: the reach rule,
+the portal store's availability and the attach advice each get Rust tests,
+and the check runs the real portal store against a stand-in portal.
+**Code Quality**: one `Entry` API with a second store installed at startup
+rather than a `_flatpak` sibling. **UX**: the same refusal mechanisms, with
+new wording only._
+
 ## Decisions for the owner
 
 Settled at planning, each reversible before tasks start:
@@ -338,3 +373,13 @@ Settled at planning, each reversible before tasks start:
    shows the sandbox's effect on them by bus checks with the shipped
    permissions (research.md §16), rather than a WebDriver build that could
    reach a real keyring.
+7. _Added 2026-10-19 (owner's decisions): **secure defaults** (spec,
+   Clarifications 2026-10-19). Settled at planning: **`oo7`** as the
+   Secret portal client, on its portal-only path (research.md §7). The
+   alternatives are libsecret through FFI (C) or ashpd with our own file
+   format; say so and §7 changes. **The check's Secret portal is a stand-in**
+   in `openuri_mock.py`, as its OpenURI is, rather than a real
+   xdg-desktop-portal with gnome-keyring's backend, which would also take over
+   the OpenURI stand-in (§16)._
+8. _**`name_default_application` inside a Flatpak only** (§9) and **scripted
+   store screenshots** (§13): the owner's decisions of 2026-10-19._

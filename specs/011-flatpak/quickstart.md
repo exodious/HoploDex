@@ -78,7 +78,8 @@ reason, then undo the change:
 | US1-8, SC-003 | `sandbox_reach_test.rs` (every command, nothing written); `flatpak.e2e.ts` (a typed `/srv` location); Vitest for each place's wording |
 | US2-1, US2-2, US2-3, US2-4, US2-6, SC-002 | `flatpak.e2e.ts`, "011 US2" journey, with the stand-in logind and screen saver, and SIGTERM for a log-out; a real log-out: manual M7 |
 | FR-009 | `test:flatpak -- --fresh-install` (the shipped build's folders); manual "Setup" step 7 |
-| US2-5 | the existing 003 keyring-unavailable tests; the bus check (no Secret Service, no owner) |
+| US2-5 | the existing 003 keyring-unavailable tests; the bus check (no Secret Service, no owner). _Amended 2026-10-19: a check run whose stand-in portal has no Secret interface (saving unavailable); the bus check shows `org.freedesktop.secrets` refused while a daemon owns it (SC-011)_ |
+| SC-011 | `manifest.test.ts` (no grant wider than the ten); the bus check |
 | US2-7 | research.md §9, §20 (read by the release review, #21) |
 | US3-1, US3-3, US3-4, SC-004, SC-005 | `bundle:flatpak` and its checks; `contents.test.ts` |
 | US3-2 | `sources.test.ts` |
@@ -161,17 +162,23 @@ folder and keyring are all that account's.
 
 ### M3. Drops from the desktop's file manager
 
-1. Copy any JPEG image to `~/Pictures/drop-test.jpg`, and another to
-   `/tmp/outside.jpg`.
+_Amended 2026-10-19 (owner's decision): the drop within reach comes from
+`~/Documents/HoploDex`, and one from `~/Pictures` is refused._
+
+1. Copy any JPEG image to `~/Documents/HoploDex/drop-test.jpg`, and another
+   to `~/Pictures/outside.jpg`.
 2. Open "Main collection" (passphrase `human testing passphrase`) and open
    any firearm record.
-3. From Files, drag `~/Pictures/drop-test.jpg` onto the record's photos.
-   Expected: it is attached.
-4. From Files (Other Locations > Computer > tmp), drag `/tmp/outside.jpg`
-   onto the photos. Expected: it is refused with a message that names
-   `/tmp/outside.jpg`, says this copy of HoploDex is a Flatpak that can only
-   reach the home folder and removable drives, and gives the
-   `flatpak override` command. Nothing is attached.
+3. From Files, drag `~/Documents/HoploDex/drop-test.jpg` onto the record's
+   photos. Expected: it is attached.
+4. From Files, drag `~/Pictures/outside.jpg` onto the photos. Expected: it
+   is refused with a message that names `/home/hoplodex-test/Pictures/outside.jpg`,
+   says this copy of HoploDex is a Flatpak that can only reach the HoploDex
+   folder in Documents and removable drives, says to use Add photo to attach it
+   from where it is, and gives the `flatpak override` command. Nothing is
+   attached.
+5. Click **Add photo** and choose `~/Pictures/outside.jpg` in the file
+   chooser. Expected: it is attached.
 
 ### M4. Opening a document in its real application
 
@@ -191,11 +198,16 @@ folder and keyring are all that account's.
    computer.
 2. Quit HoploDex, start it again, and open "Main collection" from the recent
    list. Expected: it opens without asking.
-3. Open Passwords and Keys (Seahorse). Expected: a login keyring item for
-   `io.github.exodious.HoploDex`, user `passphrase:` followed by the
-   database's id.
-4. Back in **Database settings**, forget the saved passphrase. Expected:
-   the item is gone from Seahorse.
+3. Open Passwords and Keys (Seahorse). Expected: one new login keyring item,
+   "Application key for io.github.exodious.HoploDex", and no item with user
+   `passphrase:`. _(Amended 2026-10-19: the Secret portal keeps the entries in
+   the app's own file, research.md §7.)_
+4. In a terminal, run
+   `ls ~/.var/app/io.github.exodious.HoploDex/data/keyrings/`. Expected:
+   `default.keyring`.
+5. Back in **Database settings**, forget the saved passphrase. Quit
+   HoploDex, start it again, and open "Main collection" from the recent
+   list. Expected: it asks for the passphrase.
 
 ### M6. A folder outside reach, and the override that fixes it
 

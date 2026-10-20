@@ -36,6 +36,8 @@
 - Q: The file chooser reaches every folder without a grant, but a drop arrives as the file's host path, which the Flatpak can read only within reach. What does a drop from outside reach (say `~/Pictures`) do? → A: It is refused with FR-004's message, which says to attach the file with the file chooser or move it into reach. No folder is granted for drops (FR-007).
 - Q: What does saving a passphrase do on a desktop that offers no Secret portal? → A: It shows as unavailable, as on a computer with no keyring (003 FR-019); the database still opens with its typed passphrase. There is no fallback to the Secret Service (FR-006).
 - Q: What happens when the computer has no Documents folder the Flatpak can be granted (`xdg-user-dirs` unset, or Documents set to the home folder itself, which Flatpak treats as no folder)? → A: Nothing but the drives is within reach, so creating a database at the suggested location is refused with FR-004's message, which gives the override command; nothing else is granted in its place (FR-003, FR-010).
+- Q: The store screenshots were taken after a one-off edit, so a retake can't reproduce them. How are they made? → A: By a scripted command that makes the same images from the seed every time, with nothing in view that depends on the day; they change only when someone retakes them on purpose, for example to show a new feature (FR-017).
+- Q: The GTK default application with the app id, which WebKit's sandbox needs inside the Flatpak, was set on every Linux install with WebKit's sandbox on. Where should it be set? → A: Only inside a Flatpak, so the `.deb` and `.rpm` behave exactly as before this feature (FR-011).
 
 ## User Scenarios & Testing *(mandatory)*
 

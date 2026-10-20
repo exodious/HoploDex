@@ -53,6 +53,10 @@ a pure function): the `[Context]` group's `filesystems=` key, a
 | `!<entry>` | removes what the entry would grant (the longest-match rule above) |
 | anything else | not counted, and logged once |
 
+_Amended 2026-10-19 (owner's decision): an `xdg-*` entry whose folder is
+unset, or is the home folder itself, is not counted, as Flatpak grants nothing
+for it (research.md §5)._
+
 A missing or unreadable file inside a Flatpak gives `Flatpak` with no
 grants, so nothing is within reach and each operation is refused with the
 fix, rather than failing part-way.
@@ -176,6 +180,42 @@ paragraph above leaves open:_
   split it (a folder with a space in it). `<folder>` in the prose stays plain._
 - _`details.grants` is always the roots, whatever the first sentence says._
 
+_Amended 2026-10-19 (owner's decision; FR-003, FR-007): the shipped default is
+now three grants, `<Documents>/HoploDex` (Documents from `UserDirs`), `/media`
+and `/run/media`, each writable. For exactly those the message reads (the
+`<…>` filled in):_
+
+> This copy of HoploDex is a Flatpak, and it can only reach the HoploDex
+> folder in your Documents folder (`<Documents>/HoploDex`) and removable
+> drives, so it can't use `<path>`. Move the file into
+> `<Documents>/HoploDex` or onto a removable drive, or give HoploDex access
+> to `<folder>` by running:
+> `flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex`
+> and then restarting HoploDex.
+
+_An attach command's refusal (`add_photo_from_path`, `add_document_from_path`:
+a host path outside reach there can only be a drop) puts a sentence before the
+two fixes: "To attach it from where it is, use Add photo (or Add document) and
+choose it there." The constructor takes which advice to give
+(contracts/tauri-commands.md); `details` are unchanged. Any other set of grants
+is listed as before._
+
+## Saved passphrases inside a Flatpak (`services/keyring.rs`)
+
+_Added 2026-10-19 (owner's decision; FR-006; research.md §7)._
+
+| | Outside a Flatpak | Inside a Flatpak |
+|---|---|---|
+| Store | the `keyring` crate's OS store (unchanged) | a keyring-core `CredentialStoreApi` over oo7's file keyring, installed with `set_default_store` |
+| Secret | the OS keyring's own | the Secret portal's per-app key (`RetrieveSecret`), fetched on first use in a run |
+| File | the OS keyring's | `$XDG_DATA_HOME/keyrings/default.keyring` (`~/.var/app/io.github.exodious.HoploDex/data/keyrings/`) |
+| Entry | service `io.github.exodious.HoploDex`, user `passphrase:<database id>` | the same, as the item's attributes |
+| Available when | the OS keyring answers (003 FR-019) | `org.freedesktop.portal.Desktop` has an owner and its Secret interface's `version` reads; never by calling `RetrieveSecret` |
+| When it isn't | saving shows unavailable | the same, with no fallback to the Secret Service |
+
+`e2e` builds keep the mock store, except `flatpak-check`, which uses the
+portal store against the check's stand-in portal (research.md §16).
+
 ### Backup location availability
 
 - `BACKUP_LOCATION_UNAVAILABLE.details.reason` gains `"outOfReach"` beside
@@ -288,6 +328,10 @@ They are regenerated, never edited.
   }
 }
 ```
+
+_Amended 2026-10-19 (owner's decision): `finish-args-home-filesystem-access`
+goes with `--filesystem=home`, so the committed file holds the logind exception
+only, unless the linter warns about a narrower grant (research.md §4)._
 
 The format is the linter's own for local exceptions, confirmed when it was
 first run (research.md §4): the linter takes the rule names from the object's

@@ -258,6 +258,32 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     exceptions above, each with a reason citing §4 and §5 or §6. `build.sh`
     passes it with `--exceptions --user-exceptions`, as the T066 note says.
     Nothing in this section changed._
+  _Amended 2026-10-19 (owner's decision; spec Clarifications 2026-10-19,
+  FR-002, FR-003, FR-006, SC-011): secure defaults, after §9's "One limit"
+  showed that whatever the Flatpak reaches, a compromised web process can reach
+  with one D-Bus call. Three rows change:_
+
+  | Permission | What needs it | What a compromised HoploDex process could reach with it |
+  |---|---|---|
+  | `--filesystem=xdg-documents/HoploDex:create` (replaces `--filesystem=home`) | Databases and their backups in the suggested folder, made if missing (FR-003, FR-010) | Every file under `<Documents>/HoploDex`, and nothing else of the home folder |
+  | `--filesystem=/media`, `--filesystem=/run/media` (`/mnt` removed) | Databases and backups on removable drives (FR-003) | Every file on a mounted removable drive |
+  | _(none; `--talk-name=org.freedesktop.secrets` removed)_ | Saved passphrases, through the Secret portal, which needs no permission (§7) | HoploDex's own saved passphrases, and no other keyring item |
+
+  _That is ten arguments. A compromised process no longer reaches `~/.bashrc`,
+  `~/.config/autostart` or any other file of the home folder, so it can't leave
+  the sandbox by writing a file the desktop or a shell later runs.
+  `finish-args-home-filesystem-access` leaves `linter-exceptions.json`, which
+  keeps the logind exception only; if the build's linter warns about a
+  narrower grant, the warning is answered by the grant or recorded with its
+  reason, as before. `manifest.test.ts` gains SC-011's check: it fails on any
+  `home`, `~`, `host` or `~/…` grant, any `xdg-*` grant other than
+  `xdg-documents/HoploDex`, any mount root other than `/media` and
+  `/run/media`, and any `--talk-name` of `org.freedesktop.secrets`. What a
+  user grants later with `flatpak override` is their own choice, and `Reach`
+  honours it (§5). The first alternative below, "`xdg-documents` only", was
+  rejected because typed locations and backups beside a database need a
+  folder; the scoped folder gives both inside it, and the refusal's override
+  gives them anywhere else._
 - **Rationale**: the spec settled the reach (Clarifications, FR-003) and the
   keyring route (FR-006). The others are what the existing code already
   uses on Linux, kept so the Flatpak runs the same code as the `.deb`.
@@ -370,6 +396,36 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
   - **The file-transfer portal for drops**: the web view never offers it
     (spec, Clarifications 2026-10-18).
 
+_Amended 2026-10-19 (owner's decision; FR-003, FR-007, FR-010):_
+
+- _**Flatpak's rule for `xdg-*` folders.** Flatpak grants nothing for an
+  `xdg-*` folder that is unset or set to the home folder itself (xdg-user-dirs'
+  way of turning one off). `UserDirs` applies the same rule, or `Reach` would
+  count a grant the sandbox doesn't have: with Documents set to `$HOME`,
+  `xdg-documents/HoploDex` would wrongly count `~/HoploDex`. Unit tests cover
+  both cases._
+- _**The shipped default is three grants**: `<Documents>/HoploDex`, `/media`
+  and `/run/media`, each writable. `CommandError::out_of_reach` words the
+  refusal for them when the grants are exactly these (the Documents one
+  resolved through the same `UserDirs`), and lists any other set as before
+  (contracts/tauri-commands.md)._
+- _**No grantable Documents folder.** `suggested_folder`
+  (`commands/databases.rs`) falls back to `~/Documents/HoploDex` when there is
+  no Documents folder. In the Flatpak that folder isn't granted then, so
+  creating there is refused with the override command; nothing else is
+  suggested (spec, Clarifications)._
+- _**A drop from outside reach.** The file chooser hands a file as a
+  Documents-portal path, which is read wherever it is (`Need::ReadFile`), so a
+  host path outside reach reaching `add_photo_from_path` or
+  `add_document_from_path` can only be a drop. Their refusal therefore always
+  says to attach the file with the file chooser instead; an import's and the
+  other commands' refusals don't (contracts/tauri-commands.md)._
+- _**To confirm first.** With no home folder in reach, whether the sandbox
+  still sees the host's `user-dirs.dirs` (`Reach` and `app_dirs` read it to
+  find Documents). The check's US1-2 test (`xdg-user-dir DOCUMENTS` inside the
+  sandbox against the host's) settles it in the first run on the narrower
+  manifest, before anything else is built on it._
+
 ## §6 Sleep, shutdown and screen-lock notices (FR-005)
 
 - **Decision**: `platform/linux.rs` keeps its listeners, through the three
@@ -461,6 +517,57 @@ than its outside time (SC-002)._
   a `.deb` and the Flatpak wouldn't share them, and the `keyring` crate
   would need another backend. The spec chose the Secret Service
   (Clarifications 2026-10-18).
+
+_Amended 2026-10-19 (owner's decision; FR-006): inside a Flatpak, saved
+passphrases go through the Secret portal. The `.deb`, `.rpm`, macOS and
+Windows keep the `keyring` crate, unchanged._
+
+- _**Client**: `oo7` 0.6 (MIT; github.com/linux-credentials/oo7), with
+  `default-features = false, features = ["async-std", "native_crypto"]`: pure
+  Rust (RustCrypto: aes, cbc, hkdf, pbkdf2, sha2), no C and no OpenSSL. Its
+  only `-sys` crate, linux-raw-sys, is already in the tree. It shares the app's
+  one zbus 5 and adds about 25 crates, Linux only. Not its `tokio` feature,
+  which turns on `zbus/tokio` for the whole graph and moves the app's
+  `zbus::blocking` calls onto tokio._
+- _**Never the Secret Service.** Not `oo7::Keyring::new()`, which falls back
+  to the Secret Service when the portal is missing; FR-006 forbids any
+  fallback. Only the portal path: `oo7::ashpd::desktop::secret::retrieve()`
+  for the app's secret, then `oo7::file::UnlockedKeyring::load(path, secret)`
+  on `$XDG_DATA_HOME/keyrings/default.keyring`. In the Flatpak that is
+  `~/.var/app/io.github.exodious.HoploDex/data/keyrings/default.keyring`, in
+  libsecret's file format. It is driven from the app's sync code with
+  `zbus::block_on`. Nothing in this path names `org.freedesktop.secrets`._
+- _**One API.** A small keyring-core `CredentialStoreApi` over that file
+  keyring is installed with `set_default_store` when `Reach` is `Flatpak`, so
+  `services::keyring` keeps one `Entry` path with the same service and user
+  names. The `e2e` build's mock store stays for every other E2E run. The
+  `flatpak-check` build uses the portal store, as it uses the real opener
+  (T102)._
+- _**Availability (003 FR-019)**: available when `org.freedesktop.portal.Desktop`
+  has an owner and its `org.freedesktop.portal.Secret` `version` property
+  reads. xdg-desktop-portal exports that interface only when a backend
+  implements it. ashpd's `Secret::new()` answers Ok when the portal service
+  itself is missing, so the owner is checked first. The probe never calls
+  `RetrieveSecret`, whose first call makes the app's key and may prompt._
+- _**Who provides it**: gnome-keyring 51 (`gnome-keyring.portal`, GNOME);
+  KWallet's ksecretd (`kwallet.portal`, KDE Frameworks 6.2 and later); and
+  oo7-portal (Fedora's oo7-daemon, which replaces both there). Where none is
+  configured, saving shows as unavailable._
+- _**What it reaches.** The portal takes the app id from the caller's
+  `.flatpak-info`, never from its arguments. The backend keeps one random
+  64-byte key per app id in the user's login keyring ("Application key for
+  io.github.exodious.HoploDex"), and the file is encrypted with it (PBKDF2-SHA256
+  at 100,000 iterations, AES-128-CBC with HMAC-SHA256). A compromised
+  HoploDex process gets HoploDex's key and file, so its saved passphrases, and
+  no other item. A process on the host, or an app granted the Secret Service,
+  can still read that key, as it could read the entries before._
+- _**Moving from a `.deb`**: entries aren't shared. The user saves the
+  passphrase again in the Flatpak (spec, Edge Cases); nothing reads the
+  Secret Service to bring them over, since that would need its permission._
+- _**Alternatives**: libsecret through FFI (C and the runtime's library, with
+  oo7's README citing its sandbox issues); ashpd alone (it gives only the key,
+  so the encryption and the file format would be ours); the `keyring` crate's
+  Secret Service stores (no portal support)._
 
 ## §8 Opening a document in another application (FR-008)
 
@@ -606,6 +713,21 @@ sub-sandbox's proxy is refused it, as it was refused the stand-in. The session b
 no service activation of the container's own, so a stopped keyring leaves the
 name without an owner and does not start another._
 
+_Amended 2026-10-19 (owner's decision):_
+
+- _**`name_default_application` runs only inside a Flatpak** (`/.flatpak-info`),
+  in the probe child and in the app. Only the Flatpak portal refuses WebKit's
+  hash-named accessibility bus name, so a `.deb` or `.rpm` with WebKit's
+  sandbox on keeps 007's behaviour exactly. A unit test pins the choice._
+- _**With the narrower defaults (§4).** A process the sub-sandbox asks of the
+  Flatpak portal ("One limit" above) now gets §4's narrower reach. The Secret
+  portal answers the sub-sandbox too: it keeps the app id, and `allow-dbus`
+  gives it the portals, so a compromised web process can fetch HoploDex's key.
+  It can't reach the keyring file, since `--sandbox` mounts no `~/.var/app`
+  (read from flatpak 1.16's `flatpak-run.c`; the check's sub-sandbox listing
+  confirms it). Through the one D-Bus call it gets both, and so HoploDex's
+  saved passphrases (§20)._
+
 ## §10 The helpers (FR-012)
 
 - **Decision**: no change. The import reader and the render helper
@@ -732,6 +854,17 @@ name without an owner and does not start another._
       generated gradient.
     A retake of any of them must keep to this list: a photo that needs a
     credit line stays out of view._
+    _Amended 2026-10-19 (owner's decision): the store shots must be
+    reproducible, changing only when someone retakes them on purpose, for
+    example to show a new feature. A scripted command
+    (`npm run screenshots:store`, in the dev container) takes the five from the
+    seed in the walk's setting. The script makes the one value edit (the
+    $99,999,999 firearm's estimated replacement value set to $2,500 in the
+    throwaway sandbox) and the grouping, and no text in view may depend on the
+    day it runs. Where a shot would show such text, the script changes the view,
+    or the seed gets a record with fixed dates for it. It writes
+    `flatpak/screenshots/`; a build never retakes them. A test checks the
+    recorded list above (records, photos, licences) against the script's._
   - `share/icons/hicolor/<size>x<size>/apps/io.github.exodious.HoploDex.png`
     at 32, 64, 128, 256 and 512, copied from `src-tauri/icons/`, which
     `npm run icons` generates from `tools/icons/AppIcon.tsx`, so the program
@@ -955,6 +1088,31 @@ name without an owner and does not start another._
   - **Waiting for #36**: the spec asks for the notices now; #36 can reuse
     the stand-ins.
 
+_Amended 2026-10-19 (owner's decision): the check follows the narrower
+defaults (§4, §5, §7):_
+
+- _**Files in reach.** The throwaway home's `Documents/HoploDex` is the only
+  home folder in reach, so the journey's own files (the scans, the export,
+  "Protected scans") move inside it. A drop from `~/Pictures` becomes the
+  out-of-reach drop (refused, with the message naming the file chooser), and a
+  drop from inside reach is attached._
+- _**The stand-in drive** moves from `/mnt/hoplodex-check` to a mount under
+  `/run/media` (`dev-container.sh --flatpak`). A typed location under `/mnt`
+  joins `/srv` as refused._
+- _**The Secret portal** is added to the stand-in
+  `org.freedesktop.portal.Desktop` (`openuri_mock.py`, which already serves the
+  OpenURI): `version` 1, and `RetrieveSecret` writing a fixed per-run key to
+  the descriptor. The app's real portal store (oo7's file keyring) runs against
+  it. The saved-passphrase, reopen and install-over (US4-3) journeys look for
+  the entry in the sandbox's `keyrings/default.keyring`, read with that key,
+  not with `secret-tool`._
+- _**The bus check.** The headless gnome-keyring-daemon stays on the private
+  bus, so the check can show that the shipped permissions are refused
+  `org.freedesktop.secrets` while a real daemon owns it (SC-011)._
+- _**US2-5** becomes a run whose stand-in portal has no Secret interface
+  (saving unavailable)._
+- _**The sub-sandbox listing's expectations** change with §9's note._
+
 ## §17 Manual procedures (FR-022)
 
 - **Decision**: quickstart.md's manual part, which #37's release procedures
@@ -966,6 +1124,14 @@ name without an owner and does not start another._
   desktop's own keyring, and the out-of-reach message for a folder outside
   the home folder. Each step names the database ("Main collection" or
   "Shared collection", from `scripts/human-testing.sh`) and its passphrase.
+
+_Amended 2026-10-19 (owner's decision): quickstart.md's manual steps follow.
+M3's drop from the file manager is made from `~/Pictures` (refused, the
+message naming the file chooser) and from `~/Documents/HoploDex` (attached).
+M5 saves a passphrase through the desktop's Secret portal, then checks in the
+desktop's keyring manager that the only new item is the "Application key for
+io.github.exodious.HoploDex" and no `passphrase:` entry. M6's folder outside
+reach is one in the home folder outside `Documents/HoploDex`._
 
 ## §18 Performance (SC-006)
 
@@ -1056,6 +1222,15 @@ _Amended 2026-10-19 (011 T078): checked against what was built._
 - **A compromised HoploDex process**: everything in §4's table, which is
   what a `.deb` install has apart from the network and files outside the
   home folder and removable drives.
+  _Amended 2026-10-19 (owner's decision): with the narrower defaults (§4), a
+  compromised HoploDex process, or one the sub-sandbox has the Flatpak portal
+  start, reaches `<Documents>/HoploDex`, the drives under `/media` and
+  `/run/media`, HoploDex's own saved passphrases (§7), logind, the screen
+  savers and the display. It no longer reaches the rest of the home folder or
+  any other keyring item, and so can no longer leave the sandbox by writing a
+  startup file. The databases in reach stay encrypted; the saved passphrases
+  open those whose passphrase is saved. A user's `flatpak override` widens this
+  by what they chose. The keyring bullet below now applies to a `.deb` only._
 - **The keyring**: no narrower than on a `.deb` (§7).
 - **The Documents portal** remembers the opened copy's path and name after
   the copy is deleted (§8).

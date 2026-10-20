@@ -37,6 +37,23 @@ its reason beside it:
 Adding, removing or changing one is a change to this contract, research.md
 §4's record and `manifest.test.ts`, and needs the automated check (FR-021).
 
+_Amended 2026-10-19 (owner's decision; FR-002, FR-003, FR-006, SC-011): the
+list is now these ten. `manifest.test.ts` also fails on any grant wider than
+these (SC-011):_
+
+```text
+--share=ipc
+--socket=wayland
+--socket=fallback-x11
+--device=dri
+--filesystem=xdg-documents/HoploDex:create
+--filesystem=/media
+--filesystem=/run/media
+--talk-name=org.freedesktop.ScreenSaver
+--talk-name=org.gnome.ScreenSaver
+--system-talk-name=org.freedesktop.login1
+```
+
 ## Where things live inside the Flatpak
 
 | What | Where | As on a `.deb`? |
@@ -46,6 +63,13 @@ Adding, removing or changing one is a change to this contract, research.md
 | `machine.json` (settings, recent list) | `~/.var/app/io.github.exodious.HoploDex/config/io.github.exodious.HoploDex/` | No: separate from a `.deb`'s (FR-009) |
 | Caches, opened documents' copies, web view data | `~/.var/app/io.github.exodious.HoploDex/cache/io.github.exodious.HoploDex/` | No: separate |
 | Saved passphrases | the user's keyring, service `io.github.exodious.HoploDex`, user `passphrase:<database id>` | Yes: the same entries (FR-006) |
+
+_Amended 2026-10-19 (owner's decision): databases and backups are within reach
+only in `<Documents>/HoploDex` and on drives under `/media` and `/run/media`,
+unless the user grants more. Saved passphrases are in
+`~/.var/app/io.github.exodious.HoploDex/data/keyrings/default.keyring`,
+encrypted with the Secret portal's key for the app, with the same service and
+user names. They are not shared with a `.deb` (FR-006)._
 
 ## Bundle contents (FR-017, FR-018)
 
@@ -96,7 +120,7 @@ decided, so no script stops on the variable being unset). `test:flatpak` is
 container-only and refuses on a host before it touches anything, with or
 without `--i-know-this-is-a-host`: `check.sh` asks the guard for
 `--container-only` first. Its message says why: the check needs folders outside
-any home that the container makes (`/mnt/hoplodex-check`, `/srv/hoplodex-check`),
+any home that the container makes (`/mnt/hoplodex-check`, `/srv/hoplodex-check`; _amended 2026-10-19: the stand-in drive moves under `/run/media`, research.md §16_),
 private buses with a headless keyring and scripted portals, and an Xvfb display
 (`scripts/flatpak/scripts.test.ts` runs the three scripts with stub tools and
 asserts none is called). See [DEVELOPMENT.md](../../../DEVELOPMENT.md), "Without

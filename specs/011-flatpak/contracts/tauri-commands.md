@@ -26,6 +26,16 @@ command shell-quotes the folder when a shell would split it. `details` is
 `{ path, folder, grants }` as above, `grants` always the roots
 (data-model.md, "Error `LOCATION_OUT_OF_REACH`")._
 
+_Amended 2026-10-19 (owner's decision; FR-003, FR-007): the shipped default is
+three grants, `<Documents>/HoploDex`, `/media` and `/run/media`, and the
+message's first sentence and its "move" advice name those
+(data-model.md). `out_of_reach` takes which advice to give. Only
+`add_photo_from_path` and `add_document_from_path` ask for the attach advice,
+which adds: "To attach it from where it is, use Add photo (or Add document) and
+choose it there." `details` are unchanged. The frontend's own availability
+sentence (`src/features/databases/outOfReach.ts`) says "by default it can reach
+only the HoploDex folder in your Documents folder and removable drives"._
+
 ## Shared types (amended)
 
 ```ts
