@@ -8,11 +8,18 @@
 //! The pre-feature `sqlcipher-key` entry, which keys the developer's real
 //! database, is never read, written or deleted: every user name used here
 //! starts with `passphrase:`.
+//!
+//! Inside a Flatpak the entries are kept through the Secret portal instead of
+//! the Secret Service, with the same names (011 FR-006; [`portal`]).
+
+#[cfg(target_os = "linux")]
+pub mod portal;
 
 use std::sync::OnceLock;
 
 use crate::commands::CommandError;
 use crate::services::passphrase::Passphrase;
+use crate::services::sandbox::Reach;
 
 /// The bundle identifier. Changing it after release would orphan every saved
 /// passphrase.
@@ -22,11 +29,11 @@ const USER_PREFIX: &str = "passphrase:";
 /// keyring answers at all.
 const PROBE_USER: &str = "passphrase:availability-check";
 
-#[cfg(not(mock_keyring))]
-type Entry = ::keyring::Entry;
-#[cfg(mock_keyring)]
+/// Every store's entry is keyring-core's: the `keyring` crate's own `Entry` is a
+/// wrapper that, on its first use, makes the Secret Service the default store,
+/// which a Flatpak must never reach (011 FR-006).
 type Entry = keyring_core::Entry;
-type KeyringError = ::keyring::Error;
+type KeyringError = keyring_core::Error;
 
 /// This computer's keyring as HoploDex uses it. Kept by
 /// [`MachineSettings`](crate::services::machine_settings::MachineSettings),
@@ -50,12 +57,48 @@ enum Backend {
         #[cfg(mock_keyring)]
         mirror: Option<std::path::PathBuf>,
     },
+    /// Inside a Flatpak: the Secret portal's store, never the Secret Service
+    /// (011 FR-006).
+    #[cfg(target_os = "linux")]
+    Portal(portal::Store),
 }
 
 impl Keyring {
     /// A keyring that is never touched and reports itself unavailable.
     pub fn off() -> Self {
         Self { backend: Backend::Off, available: OnceLock::new() }
+    }
+
+    /// The keyring this run uses: inside a Flatpak, the Secret portal's
+    /// (011 FR-006); anywhere else [`system`](Self::system). An E2E build with
+    /// the in-memory keyring keeps it whatever `reach` says.
+    pub fn for_reach(reach: &Reach) -> Self {
+        #[cfg(target_os = "linux")]
+        if reach.is_flatpak() && !cfg!(mock_keyring) {
+            return match portal::default_keyring_file() {
+                Some(file) => Self::portal(file, std::sync::Arc::new(portal::DesktopPortal)),
+                None => {
+                    log::warn!("no data folder for the Secret portal's keyring file");
+                    Self::off()
+                }
+            };
+        }
+        let _ = reach;
+        Self::system()
+    }
+
+    /// The Secret portal's store over the keyring file `file`, asking `secret`
+    /// for the app's secret. [`for_reach`](Self::for_reach) is the way in the
+    /// app; a test gives its own file and secret.
+    #[cfg(target_os = "linux")]
+    pub fn portal(
+        file: std::path::PathBuf,
+        secret: std::sync::Arc<dyn portal::SecretPortal>,
+    ) -> Self {
+        Self {
+            backend: Backend::Portal(portal::Store::new(file, secret)),
+            available: OnceLock::new(),
+        }
     }
 
     /// The OS keyring.
@@ -87,13 +130,17 @@ impl Keyring {
     pub fn is_available(&self) -> bool {
         *self.available.get_or_init(|| match &self.backend {
             Backend::Off => false,
-            Backend::System { .. } => match entry(PROBE_USER).and_then(|e| e.get_password()) {
+            Backend::System { .. } => match self.entry(PROBE_USER).and_then(|e| e.get_password()) {
                 Ok(_) | Err(KeyringError::NoEntry) => true,
                 Err(err) => {
                     log::warn!("the keyring is not available: {err}");
                     false
                 }
             },
+            // Never by reading an entry: that asks the portal for the app's
+            // secret, which makes it on the first call and may prompt.
+            #[cfg(target_os = "linux")]
+            Backend::Portal(store) => store.is_available(),
         })
     }
 
@@ -104,7 +151,7 @@ impl Keyring {
             return Err(CommandError::keyring_unavailable());
         }
         let user = user_for(database_id);
-        entry(&user).and_then(|e| e.set_password(passphrase.as_str())).map_err(|err| {
+        self.entry(&user).and_then(|e| e.set_password(passphrase.as_str())).map_err(|err| {
             log::error!("could not save a passphrase in the keyring: {err}");
             CommandError::keyring_unavailable()
         })?;
@@ -118,7 +165,7 @@ impl Keyring {
         if !self.is_available() {
             return None;
         }
-        match entry(&user_for(database_id)).and_then(|e| e.get_password()) {
+        match self.entry(&user_for(database_id)).and_then(|e| e.get_password()) {
             Ok(saved) => Some(Passphrase::from_input(saved)),
             Err(KeyringError::NoEntry) => None,
             Err(err) => {
@@ -134,7 +181,7 @@ impl Keyring {
         if !self.is_available() {
             return Err(CommandError::keyring_unavailable());
         }
-        match entry(&user_for(database_id)).and_then(|e| e.delete_credential()) {
+        match self.entry(&user_for(database_id)).and_then(|e| e.delete_credential()) {
             Ok(()) | Err(KeyringError::NoEntry) => {
                 self.mirror_changed();
                 Ok(())
@@ -143,6 +190,19 @@ impl Keyring {
                 log::error!("could not delete a saved passphrase from the keyring: {err}");
                 Err(CommandError::keyring_unavailable())
             }
+        }
+    }
+
+    /// The entry for `user` in this keyring's store.
+    fn entry(&self, user: &str) -> Result<Entry, KeyringError> {
+        debug_assert!(user.starts_with(USER_PREFIX));
+        match &self.backend {
+            Backend::Off => Err(KeyringError::NoDefaultStore),
+            #[cfg(target_os = "linux")]
+            Backend::Portal(store) => {
+                keyring_core::api::CredentialStoreApi::build(store, SERVICE, user, None)
+            }
+            Backend::System { .. } => system_entry(user),
         }
     }
 
@@ -162,14 +222,13 @@ fn user_for(database_id: &str) -> String {
 }
 
 #[cfg(not(mock_keyring))]
-fn entry(user: &str) -> Result<Entry, KeyringError> {
-    debug_assert!(user.starts_with(USER_PREFIX));
-    Entry::new(SERVICE, user)
+fn system_entry(user: &str) -> Result<Entry, KeyringError> {
+    // The first call makes the OS store the default one.
+    ::keyring::Entry::new(SERVICE, user).map(|entry| entry.inner)
 }
 
 #[cfg(mock_keyring)]
-fn entry(user: &str) -> Result<Entry, KeyringError> {
-    debug_assert!(user.starts_with(USER_PREFIX));
+fn system_entry(user: &str) -> Result<Entry, KeyringError> {
     // A test may have put in a store of its own; otherwise make one.
     mock::install_store();
     Entry::new(SERVICE, user)

@@ -35,8 +35,9 @@ custom-protocol = ["tauri/custom-protocol"]
 # it (003 FR-017), for keyring-core's in-memory mock store: a headless session
 # can't answer the Secret Service's unlock prompt, and tests must never
 # reach the developer's real keyring. Tests play a computer with no keyring
-# with `Keyring::off()`.
-mock-keyring = ["dep:keyring-core"]
+# with `Keyring::off()`. (keyring-core itself is always a dependency now: the
+# Flatpak's store implements its traits, 011 research.md §7.)
+mock-keyring = []
 # Enabled for E2E builds, and meant for everything that must never reach a
 # shipped build: it implies `mock-keyring`; it compiles in the embedded
 # WebDriver server the E2E suite drives the app through (main.rs, #29), which
@@ -51,9 +52,9 @@ e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 # scripts/flatpak/checkManifest.mjs): the `e2e` build, WebDriver server and
 # isolation seams included, but with the real routes that `e2e` swaps for
 # stand-ins: `AppOpener` (inside a Flatpak, the OpenURI portal) instead of
-# `E2eOpener`, and the OS keyring (the Secret Service) instead of keyring-core's
-# in-memory store. The check starts a headless gnome-keyring-daemon and a
-# scripted OpenURI on its private bus for them. build.rs turns it into the
+# `E2eOpener`, and the real keyring (inside a Flatpak, the Secret portal's store,
+# `services::keyring::portal`) instead of keyring-core's in-memory store. The
+# check scripts an OpenURI and a Secret portal on its private bus for them. build.rs turns it into the
 # `app_opener` and `mock_keyring` cfgs. The consent dialog stays `E2eConsent`: no
 # WebDriver can click a native dialog. Never in a shipped build, since `e2e`
 # is refused there (scripts/check-no-webdriver.mjs).
@@ -86,7 +87,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher", "chrono"] }
 keyring = "4"
-keyring-core = { version = "1", optional = true }
+# Always built: the Flatpak's store (services/keyring/portal.rs) implements its
+# traits, and every `Entry` the app uses is its `Entry` (011 research.md §7).
+keyring-core = "1"
 # The embedded W3C WebDriver server, E2E builds only (the `e2e` feature).
 tauri-plugin-wdio-webdriver = { version = "1.4.0", optional = true }
 rust_xlsxwriter = "0.96"
@@ -137,6 +140,12 @@ libc = "0.2.189"
 # already in the tree for its platform; only the features are switched on.
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5.18"
+# Saved passphrases inside a Flatpak, through the Secret portal (011 FR-006,
+# research.md §7): the portal's per-app secret and oo7's file keyring, nothing of
+# the Secret Service. Pure Rust (RustCrypto), no C; `async-std`, not `tokio`,
+# which would turn `zbus/tokio` on for the whole graph. Never
+# `oo7::Keyring::new()`, which falls back to the Secret Service.
+oo7 = { version = "0.6", default-features = false, features = ["async-std", "native_crypto"] }
 # The render helper's confinement (007 research.md §11).
 landlock = "0.4.7"
 # The PDF surface's filter, settings and signals (007 research.md §6-§10). The

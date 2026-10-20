@@ -70,6 +70,7 @@ mod pending_resume_test;
 mod photo_test;
 mod physical_details_test;
 mod policy_deletion_test;
+mod portal_keyring_test;
 mod portal_opener_test;
 mod preview_text_test;
 mod query_plan_test;

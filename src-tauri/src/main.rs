@@ -282,7 +282,7 @@ fn main() {
             // Saved passphrases (003 FR-017); the keyring itself is first asked
             // about when the chooser needs to know whether it is there.
             let machine = MachineSettings::load(&app_dirs::config_dir(app.handle())?)?
-                .with_keyring(Keyring::system());
+                .with_keyring(Keyring::for_reach(&reach));
             // A backup a crash or forced quit cut short (003 research.md §7).
             backups::sweep_unfinished(&machine);
             // Copies the macOS PDF viewer left behind in a run that couldn't
