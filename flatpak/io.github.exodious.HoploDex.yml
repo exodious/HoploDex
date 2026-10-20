@@ -17,8 +17,10 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.node24
 command: hoplodex
 
-# Exactly 011 research.md §4's table, in contracts/flatpak-bundle.md's order.
-# There is no --share=network: HoploDex is local-only.
+# Exactly 011 research.md §4's table as amended 2026-10-19 (ten arguments), in
+# contracts/flatpak-bundle.md's order. There is no --share=network: HoploDex is
+# local-only. Nothing grants the home folder, the Secret Service or /mnt
+# (011 SC-011): a process that compromised HoploDex reaches only what is below.
 finish-args:
   # X11's shared memory, which GTK uses under X11.
   - --share=ipc
@@ -28,15 +30,12 @@ finish-args:
   - --socket=fallback-x11
   # WebKit's GPU rendering; without it, it renders on the CPU.
   - --device=dri
-  # Databases, backups beside them, typed locations, imports and exports anywhere
-  # in the home folder (011 FR-003).
-  - --filesystem=home
+  # Databases and their backups in the suggested folder, made if it is missing
+  # (011 FR-003, FR-010). The rest of the home folder is not granted.
+  - --filesystem=xdg-documents/HoploDex:create
   # Databases and backups on removable drives (011 FR-003).
   - --filesystem=/media
   - --filesystem=/run/media
-  - --filesystem=/mnt
-  # Saved passphrases, through the Secret Service (011 FR-006).
-  - --talk-name=org.freedesktop.secrets
   # Locking when the screen locks (003 FR-038; 011 FR-005).
   - --talk-name=org.freedesktop.ScreenSaver
   - --talk-name=org.gnome.ScreenSaver

@@ -307,7 +307,11 @@ describe("ExportDialog refused as out of reach (011 US1-8, 011 FR-004)", () => {
       new CommandFailure({
         code: "LOCATION_OUT_OF_REACH",
         message,
-        details: { path: "/srv/out", folder: "/srv/out", grants: ["/home/sam/Documents/HoploDex", "/media", "/run/media"] },
+        details: {
+          path: "/srv/out",
+          folder: "/srv/out",
+          grants: ["/home/sam/Documents/HoploDex", "/media", "/run/media"],
+        },
       }),
     );
     await renderDialog();

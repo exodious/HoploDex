@@ -10,14 +10,14 @@
 #
 #   1. builds the check variant (scripts/flatpak/checkManifest.mjs) offline and
 #      installs it into the container's Flatpak installation;
-#   2. the bus checks, with the permissions the Flatpak ships with: the Secret Service (a
-#      real, headless gnome-keyring-daemon: keyring-daemon.sh), both screen savers and the
-#      OpenURI portal (scripted: openuri_mock.py) answer on a private session bus, logind
-#      answers on the private system bus, and a name the manifest does not grant is
-#      refused (011 FR-005, 011 FR-006). With the Secret Service then stopped, its name
-#      has no owner from inside the sandbox (011 US2-5);
+#   2. the bus checks, with the permissions the Flatpak ships with: both screen savers and
+#      the desktop portal (scripted: openuri_mock.py, with its OpenURI and Secret
+#      interfaces) answer on a private session bus, logind answers on the private system
+#      bus, and a name the manifest does not grant is refused (011 FR-005, 011 FR-006).
+#      The Secret Service (a real, headless gnome-keyring-daemon: keyring-daemon.sh) owns
+#      its name on that bus and is refused to the sandbox as well (011 SC-011);
 #   3. the no-network check (011 FR-021): the shipped permissions have no network;
-#   4. builds the `e2e` binary outside the sandbox and runs
+#   4. builds the `e2e` binary and the keyring file reader outside the sandbox and runs
 #      e2e/specs/flatpak.e2e.ts through WebDriver, whose cold-start test compares
 #      the two (011 SC-006, 011 research.md §18);
 #   5. uninstalls the check variant whatever happened (a trap), and fails unless the
@@ -128,6 +128,8 @@ trap 'echo "check.sh: command failed at step: $current_step" >&2' ERR
 # bus, as the E2E run starts it: no XDG_* folders of this shell, no network.
 check_home="$scratch/home"
 mkdir -p "$check_home/.config" "$check_home/Documents"
+# What the stand-in Secret portal hands the app (the journey makes its own).
+check_secret="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 sandbox_run() {
   env -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_STATE_HOME \
     HOME="$check_home" DBUS_SESSION_BUS_ADDRESS="${check_session_bus:-}" \
@@ -177,8 +179,8 @@ start_service() {
 
 # The private session bus and the services both checks start the app against: dbusmock
 # stand-ins for logind, both screen savers and a name the manifest does not grant, a real
-# gnome-keyring-daemon for the Secret Service, and the scripted OpenURI portal
-# (011 research.md §6, T102).
+# gnome-keyring-daemon for the Secret Service (which the Flatpak is not granted, 011 SC-011),
+# and the scripted desktop portal with OpenURI and Secret (011 research.md §6, §7, T102).
 start_standins() {
   cat >"$scratch/session.conf" <<CONF
 <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
@@ -206,11 +208,10 @@ CONF
   # scratch folder (keyring-daemon.sh refuses the container's own session bus).
   start_service "$check_session_bus" org.freedesktop.secrets \
     "$here/keyring-daemon.sh" "$check_session_bus" "$scratch/keyring"
-  secrets_pid="$last_mock_pid"
   start_mock "$check_session_bus" --session org.gnome.ScreenSaver org.gnome.ScreenSaver /org/gnome/ScreenSaver org.gnome.ScreenSaver
   start_mock "$check_session_bus" --session org.freedesktop.ScreenSaver org.freedesktop.ScreenSaver /org/freedesktop/ScreenSaver org.freedesktop.ScreenSaver
   start_mock "$check_session_bus" --session org.freedesktop.portal.Desktop \
-    -t "$here/openuri_mock.py" -p "{\"log\": \"$log_dir/openuri-check.log\", \"opened\": \"$log_dir/openuri-check-opened.log\"}"
+    -t "$here/openuri_mock.py" -p "{\"log\": \"$log_dir/openuri-check.log\", \"opened\": \"$log_dir/openuri-check-opened.log\", \"secret\": \"$check_secret\"}"
   start_mock "$check_session_bus" --session org.example.NotGranted org.example.NotGranted /org/example/NotGranted org.example.NotGranted
 }
 
@@ -376,7 +377,6 @@ ping_inside() { # name path
     --method org.freedesktop.DBus.Peer.Ping
 }
 for pair in \
-  "org.freedesktop.secrets /org/freedesktop/secrets" \
   "org.gnome.ScreenSaver /org/gnome/ScreenSaver" \
   "org.freedesktop.ScreenSaver /org/freedesktop/ScreenSaver" \
   "org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop"; do
@@ -411,33 +411,33 @@ if ping_inside org.example.NotGranted /org/example/NotGranted >"$scratch/not-gra
 fi
 echo "refused inside the sandbox, answering outside: org.example.NotGranted ($(tr '\n' ' ' <"$scratch/not-granted.out"))"
 
-# No Secret Service (011 US2-5): with the keyring stopped, the name has no owner from inside
-# the sandbox, so the keyring's availability probe answers false, as the 003 keyring tests
-# (tests/keyring_test.rs, Keyring::off()) show for an unavailable keyring: saving a
-# passphrase is refused with KEYRING_UNAVAILABLE.
+# Whether the sandbox's bus proxy says a name has an owner.
 name_has_owner_inside() { # name
   sandbox_run --command=gdbus "$app_id" call --session --dest org.freedesktop.DBus \
     --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner "$1"
 }
+
+# The Secret portal answers from inside the sandbox, with no permission for it: its
+# interface reads a version, which is what the app's availability probe asks (011 FR-006).
+version="$(sandbox_run --command=gdbus "$app_id" call --session --dest org.freedesktop.portal.Desktop \
+  --object-path /org/freedesktop/portal/desktop --method org.freedesktop.DBus.Properties.Get \
+  org.freedesktop.portal.Secret version)" ||
+  fail "the Secret portal's version does not read from inside the sandbox"
+echo "the Secret portal answers inside the sandbox: version $version"
+
+# The Secret Service (011 SC-011): a real daemon owns the name, and the shipped
+# permissions are refused it. It answers outside the sandbox, and not inside.
+gdbus call --address "$check_session_bus" --dest org.freedesktop.secrets --object-path /org/freedesktop/secrets \
+  --method org.freedesktop.DBus.Peer.Ping >/dev/null ||
+  fail "the real Secret Service does not answer outside the sandbox, so its refusal shows nothing"
+if ping_inside org.freedesktop.secrets /org/freedesktop/secrets >"$scratch/secrets.out" 2>&1; then
+  fail "org.freedesktop.secrets answered from inside the sandbox, which the manifest does not grant (011 SC-011)"
+fi
+echo "refused inside the sandbox, answering outside: org.freedesktop.secrets ($(tr '\n' ' ' <"$scratch/secrets.out"))"
+# What the proxy says of who owns the name is recorded, not asserted.
 owned="$(name_has_owner_inside org.freedesktop.secrets)" ||
   fail "NameHasOwner for org.freedesktop.secrets failed from inside the sandbox"
-case "$owned" in
-  *true*) echo "with the keyring running, org.freedesktop.secrets has an owner inside the sandbox: $owned" ;;
-  *) fail "org.freedesktop.secrets has no owner inside the sandbox while the keyring runs ($owned), so its absence below shows nothing" ;;
-esac
-kill "$secrets_pid" 2>/dev/null || true
-tries=0
-while name_owned "$check_session_bus" org.freedesktop.secrets; do
-  tries=$((tries + 1))
-  [ "$tries" -lt 100 ] || fail "the keyring did not stop"
-  sleep 0.05
-done
-owned="$(name_has_owner_inside org.freedesktop.secrets)" ||
-  fail "NameHasOwner for org.freedesktop.secrets failed from inside the sandbox once the keyring stopped"
-case "$owned" in
-  *false*) echo "with the keyring stopped, org.freedesktop.secrets has no owner inside the sandbox: $owned" ;;
-  *) fail "org.freedesktop.secrets still has an owner inside the sandbox after the keyring stopped ($owned)" ;;
-esac
+echo "org.freedesktop.secrets, as the sandbox's bus proxy answers who owns it: $owned"
 
 # ---------------------------------------------------------------------------
 step "the no-network check (011 FR-021, 011 research.md §16)"
@@ -486,6 +486,12 @@ step "the e2e build outside the sandbox, for the cold-start comparison (011 SC-0
 node --import tsx --input-type=module -e '
   const build = await import("./e2e/support/build.ts");
   process.exit(build.buildApp() ? 0 : 1);
+'
+# The example that reads the app's keyring file back with the run's key (the journeys'
+# saved-passphrase checks); it opens a file and makes no connection.
+node --import tsx --input-type=module -e '
+  const flatpak = await import("./e2e/support/flatpak.ts");
+  process.exit(flatpak.buildKeyringReader() ? 0 : 1);
 '
 
 # ---------------------------------------------------------------------------

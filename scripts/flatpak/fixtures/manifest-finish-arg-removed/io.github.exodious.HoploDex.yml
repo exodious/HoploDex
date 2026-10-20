@@ -11,11 +11,9 @@ finish-args:
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
-  - --filesystem=home
+  - --filesystem=xdg-documents/HoploDex:create
   - --filesystem=/media
   - --filesystem=/run/media
-  - --filesystem=/mnt
-  - --talk-name=org.freedesktop.secrets
   - --talk-name=org.freedesktop.ScreenSaver
   - --talk-name=org.gnome.ScreenSaver
   - --system-talk-name=org.freedesktop.login1

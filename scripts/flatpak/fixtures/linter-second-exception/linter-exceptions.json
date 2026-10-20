@@ -1,6 +1,5 @@
 {
   "io.github.exodious.HoploDex": {
-    "finish-args-home-filesystem-access": "Needs the home folder (011 research.md §4, §5).",
     "finish-args-login1-system-talk-name": "Needs logind (011 research.md §4, §6).",
     "finish-args-flatpak-spawn-access": "Needs to spawn (011 research.md §4)."
   }

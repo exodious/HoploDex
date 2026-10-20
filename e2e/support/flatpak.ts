@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -445,10 +446,18 @@ interface FlatpakRun {
   sessionBus: { address: string; pid: number };
   logind: Mock;
   screenSavers: Mock[];
-  /** The real Secret Service (a headless gnome-keyring-daemon). */
+  /** The real Secret Service (a headless gnome-keyring-daemon), kept on the bus
+   * for the whole run: the app never talks to it (011 FR-006), and the checks
+   * show the shipped permissions are refused its name while it owns it (011
+   * SC-011). */
   secrets: Mock | undefined;
-  /** The scripted OpenURI portal (scripts/flatpak/openuri_mock.py). */
+  /** The scripted desktop portal (scripts/flatpak/openuri_mock.py): OpenURI, and
+   * the Secret portal while {@link secretPortal} is true. */
   portal: Mock | undefined;
+  /** The key the stand-in Secret portal hands the app, fixed for the run. */
+  secretKey: string;
+  /** Whether the stand-in portal has its Secret interface (011 US2-5). */
+  secretPortal: boolean;
   launches: number;
 }
 
@@ -539,8 +548,52 @@ async function startMock(spec: MockSpec): Promise<Mock> {
 }
 
 /**
+ * The stand-in desktop portal's template parameters (scripts/flatpak/openuri_mock.py):
+ * the two logs and, when the Secret portal is wanted, the run's key. Pure.
+ */
+export function portalParameters(options: {
+  log: string;
+  opened: string;
+  secret?: string;
+}): Record<string, string> {
+  const parameters: Record<string, string> = { log: options.log, opened: options.opened };
+  if (options.secret) parameters.secret = options.secret;
+  return parameters;
+}
+
+/**
+ * Where the run's own files are: the opener's log and the consent log. The consent
+ * log is written by the app, inside the sandbox, so it is in the one folder of the
+ * home the Flatpak reaches (`<Documents>/HoploDex/.hoplodex-check`, 011 FR-003);
+ * the shipped permissions grant no other folder of the home.
+ */
+function checkFilesDir(run: FlatpakRun): string {
+  const files = path.join(run.documents, "HoploDex", ".hoplodex-check");
+  fs.mkdirSync(files, { recursive: true });
+  return files;
+}
+
+/** Starts the stand-in desktop portal on the run's bus, with the Secret portal
+ * when `secret` is true. */
+async function startPortal(run: FlatpakRun, secret: boolean): Promise<Mock> {
+  const files = checkFilesDir(run);
+  return startMock({
+    bus: "session",
+    address: run.sessionBus.address,
+    name: "org.freedesktop.portal.Desktop",
+    template: OPENURI_TEMPLATE,
+    parameters: portalParameters({
+      log: OPENURI_LOG,
+      opened: path.join(files, "opened.log"),
+      secret: secret ? run.secretKey : undefined,
+    }),
+  });
+}
+
+/**
  * Starts the real Secret Service: a headless, unlocked gnome-keyring-daemon on the
- * run's private session bus only, with its data under the run's keyring folder
+ * run's private session bus only (kept running for the whole run and used by nothing
+ * in the sandbox: the Flatpak's saved passphrases go through the Secret portal), with its data under the run's keyring folder
  * (scripts/flatpak/keyring-daemon.sh, which refuses the container's own bus and
  * starts the daemon with an empty environment). Nothing here reaches another
  * keyring: it is given the private bus's address and no other.
@@ -665,8 +718,9 @@ export interface StartRunOptions {
  * Documents folder inside it), the private session bus, and the stand-in
  * services: logind on env.sh's private system bus (with a `session/auto`
  * object), and `org.gnome.ScreenSaver`, `org.freedesktop.ScreenSaver`,
- * `org.freedesktop.secrets` and `org.freedesktop.portal.Desktop` on the session
- * bus. Then reads the Documents folder inside the sandbox and points this
+ * `org.freedesktop.secrets` (the real daemon, which the Flatpak must never use or be
+ * granted) and `org.freedesktop.portal.Desktop` (OpenURI and the Secret portal, whose
+ * key for the run is `secretKey`) on the session bus. Then reads the Documents folder inside the sandbox and points this
  * process's `HOPLODEX_E2E_*` variables at the paths the app will see, so a
  * spec reads the same paths the app writes. The check variant must be
  * installed (011 research.md §16).
@@ -679,7 +733,9 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
   fs.mkdirSync(path.join(home, "Documents"), { recursive: true });
   fs.mkdirSync(path.join(home, ".config"), { recursive: true });
   // Flatpak shows the host's ~/.config/user-dirs.dirs inside the sandbox at its
-  // own config folder, so `xdg-user-dir` there reads this one.
+  // own config folder even with no access to the home folder (the shipped
+  // permissions grant none, 011 SC-011), so `xdg-user-dir` there reads this one
+  // (confirmed 2026-10-20, 011 research.md §5).
   fs.writeFileSync(
     path.join(home, ".config", "user-dirs.dirs"),
     `XDG_DOCUMENTS_DIR="${path.join(home, "Documents")}"\n`,
@@ -688,6 +744,9 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
   fs.mkdirSync(busDir, { recursive: true });
   const keyringDir = path.join(options.sandbox, "keyring");
   fs.mkdirSync(keyringDir, { recursive: true });
+  // A fixed key for the run: what the stand-in Secret portal hands the app, and what
+  // reads its keyring file back (keyringEntries). A real portal's is 64 random bytes.
+  const secretKey = randomBytes(32).toString("hex");
 
   const system = process.env.DBUS_SYSTEM_BUS_ADDRESS as string;
   const sessionBus = startSessionBus(busDir);
@@ -701,6 +760,8 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
     screenSavers: [],
     secrets: undefined,
     portal: undefined,
+    secretKey,
+    secretPortal: true,
     launches: 0,
   };
   globals[stateKey] = run;
@@ -716,16 +777,8 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
     run.secrets = await startKeyring(run);
     // The files it writes, as the journeys read them: its own log, and the one line
     // per copy the `e2e` build's opener writes (HOPLODEX_E2E_OPENED_LOG).
-    const files = path.join(home, ".hoplodex-check");
-    fs.mkdirSync(files, { recursive: true });
     fs.rmSync(OPENURI_LOG, { force: true });
-    run.portal = await startMock({
-      bus: "session",
-      address: sessionBus.address,
-      name: "org.freedesktop.portal.Desktop",
-      template: OPENURI_TEMPLATE,
-      parameters: { log: OPENURI_LOG, opened: path.join(files, "opened.log") },
-    });
+    run.portal = await startPortal(run, true);
     run.documents = documentsDir(home);
   } catch (error) {
     await endFlatpakRun();
@@ -735,8 +788,7 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
   // What specs read, as the app will see it (the home is the same path on both
   // sides of the sandbox).
   const data = appDataDir(home);
-  const files = path.join(home, ".hoplodex-check");
-  fs.mkdirSync(files, { recursive: true });
+  const files = checkFilesDir(run);
   process.env.HOPLODEX_E2E_CONFIG_HOME = path.join(data, "config");
   process.env.HOPLODEX_E2E_CACHE_HOME = path.join(data, "cache");
   process.env.HOPLODEX_E2E_DOCUMENTS = run.documents;
@@ -786,42 +838,122 @@ export async function stopScreenSavers(): Promise<void> {
   await Promise.all(savers.map(stopMock));
 }
 
-/** Stops the keyring, so the next start of the app finds no owner of the
- * Secret Service's name (011 US2-5). Its data stays: {@link startSecrets}
- * brings the same keyring back. */
-export async function stopSecrets(): Promise<void> {
+/** Restarts the stand-in desktop portal without its Secret interface, so the next
+ * start of the app finds a desktop with no Secret portal backend (011 US2-5). The
+ * real Secret Service stays on the bus: the app must not fall back to it
+ * (011 FR-006). */
+export async function stopSecretPortal(): Promise<void> {
+  await restartPortal(false);
+}
+
+/** Restarts the stand-in desktop portal with its Secret interface again, the same
+ * key as before, so the entries saved earlier open. */
+export async function startSecretPortal(): Promise<void> {
+  await restartPortal(true);
+}
+
+async function restartPortal(secret: boolean): Promise<void> {
   const run = currentRun();
-  const secrets = run.secrets;
-  run.secrets = undefined;
-  await stopMock(secrets);
+  if (run.secretPortal === secret && run.portal) return;
+  const portal = run.portal;
+  run.portal = undefined;
+  await stopMock(portal);
   const deadline = Date.now() + 5000;
-  while (nameHasOwner(run.sessionBus.address, "org.freedesktop.secrets")) {
-    if (Date.now() > deadline) throw new Error("the keyring still owns the Secret Service's name");
+  while (nameHasOwner(run.sessionBus.address, "org.freedesktop.portal.Desktop")) {
+    if (Date.now() > deadline) throw new Error("the stand-in portal still owns its name");
     await sleep(25);
   }
+  run.secretPortal = secret;
+  run.portal = await startPortal(run, secret);
 }
 
-/** Starts the keyring again after {@link stopSecrets}: the same data folder, so
- * the entries saved before are in it. */
-export async function startSecrets(): Promise<void> {
-  const run = currentRun();
-  if (run.secrets) return;
-  run.secrets = await startKeyring(run);
-}
-
-/** One entry of the check's keyring. */
+/** One entry of the app's keyring file. */
 export interface KeyringEntry {
   attributes: Record<string, string>;
   secret: string;
 }
 
+/** The app's Secret-portal keyring file in the run's home:
+ * `~/.var/app/<id>/data/keyrings/default.keyring` (src-tauri/src/services/keyring/portal.rs). */
+export function keyringFile(): string {
+  return path.join(appDataDir(currentRun().home), "data", "keyrings", "default.keyring");
+}
+
+const KEYRING_PROFILE = process.env.HOPLODEX_E2E_PROFILE || "e2e";
+
+/** The example that reads a keyring file (src-tauri/examples/flatpak_keyring_read.rs). */
+function keyringReader(): string {
+  return path.join(
+    repoRoot,
+    "src-tauri",
+    "target",
+    KEYRING_PROFILE,
+    "examples",
+    "flatpak_keyring_read",
+  );
+}
+
+/** Builds the keyring file reader with the profile and features of the `e2e`
+ * build, so it shares that build's compiled dependencies. Returns whether it built. */
+export function buildKeyringReader(): boolean {
+  return (
+    spawnSync(
+      "cargo",
+      [
+        "build",
+        "--profile",
+        KEYRING_PROFILE,
+        "--features",
+        "custom-protocol,e2e",
+        "--manifest-path",
+        "src-tauri/Cargo.toml",
+        "--example",
+        "flatpak_keyring_read",
+      ],
+      { cwd: repoRoot, stdio: "inherit" },
+    ).status === 0
+  );
+}
+
 /**
- * The entries under the app's service (`io.github.exodious.HoploDex`) in the
- * check's keyring, read with `secret-tool search` against the run's private
- * session bus and no other (its environment is that address, the PATH and
- * nothing else, so it cannot find the container's own keyring).
+ * The entries under the app's service (`io.github.exodious.HoploDex`) in its keyring
+ * file, read with the run's key (the one the stand-in Secret portal handed the app):
+ * a copy of `default.keyring` opened by oo7, the library that wrote it, in a small
+ * example that makes no connection. Nothing when the file isn't there yet. It never
+ * asks a Secret Service or a portal.
  */
 export function keyringEntries(): KeyringEntry[] {
+  const file = keyringFile();
+  if (!fs.existsSync(file)) return [];
+  const reader = keyringReader();
+  if (!fs.existsSync(reader)) {
+    throw new Error(
+      `${reader} is not built; scripts/flatpak/check.sh builds it (buildKeyringReader)`,
+    );
+  }
+  // A copy, so reading it can never change what the app has open.
+  const run = currentRun();
+  const copy = path.join(run.busDir, "keyring-read.keyring");
+  fs.copyFileSync(file, copy);
+  const result = spawnSync(reader, [copy, run.secretKey], { encoding: "utf-8", timeout: 30000 });
+  fs.rmSync(copy, { force: true });
+  if (result.status !== 0) {
+    throw new Error(`reading ${file} failed (${result.status}): ${result.stderr.trim()}`);
+  }
+  return (JSON.parse(result.stdout) as KeyringEntry[]).filter(
+    (entry) => entry.attributes.service === FLATPAK_APP_ID,
+  );
+}
+
+/**
+ * The entries under the app's service (`io.github.exodious.HoploDex`) in the run's
+ * real Secret Service (the headless daemon), read with `secret-tool search` against
+ * the run's private session bus and no other (its environment is that address, the
+ * PATH and nothing else, so it cannot find the container's own keyring). The
+ * Flatpak keeps its saved passphrases in its own file instead ({@link keyringEntries}),
+ * so this is empty whatever the app saved (011 FR-006).
+ */
+export function secretServiceEntries(): KeyringEntry[] {
   const run = currentRun();
   // `secret-tool` prints an entry's secret on standard output and its attributes
   // on standard error, so the two are read together, in order.
@@ -1102,6 +1234,15 @@ export function runInSandbox(command: string, args: string[], timeout = 60000) {
     encoding: "utf-8",
     timeout,
   });
+}
+
+/**
+ * The one folder of the home in the Flatpak's reach: `<Documents>/HoploDex`
+ * (`--filesystem=xdg-documents/HoploDex:create`, 011 FR-003). The journeys keep
+ * their files here, and the suggested location for a database is this folder.
+ */
+export function reachDir(): string {
+  return path.join(currentRun().documents, "HoploDex");
 }
 
 /** The folder the opened documents' copies are made in while their database is

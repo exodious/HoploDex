@@ -27,9 +27,12 @@
 #                        unmasks /proc (bwrap needs it under rootless podman),
 #                        mounts a per-checkout volume for flatpak-builder's
 #                        state at /var/lib/hoplodex-flatpak-state (named in
-#                        HOPLODEX_FLATPAK_STATE), and a tmpfs at
-#                        /mnt/hoplodex-check standing in for a removable
-#                        drive. Opt-in: no other run loses /proc's masking.
+#                        HOPLODEX_FLATPAK_STATE), a tmpfs at
+#                        /run/media/dev/hoplodex-check standing in for a
+#                        removable drive (inside the Flatpak's reach), and one
+#                        at /mnt/hoplodex-check (outside it, a location the
+#                        check shows refused). Opt-in: no other run loses
+#                        /proc's masking.
 #   --git-config[=FILE]  mount your git config read-only (default ~/.gitconfig,
 #                        else ~/.config/git/config)
 #   --ssh-agent          forward your SSH agent socket ($SSH_AUTH_SOCK)
@@ -168,6 +171,7 @@ if [[ $flatpak -eq 1 ]]; then
     --security-opt 'unmask=/proc/*'
     -v "$flatpak_state_volume:$flatpak_state_dir"
     -e "HOPLODEX_FLATPAK_STATE=$flatpak_state_dir"
+    --tmpfs /run/media/dev/hoplodex-check:rw,mode=1777
     --tmpfs /mnt/hoplodex-check:rw,mode=1777
   )
 fi

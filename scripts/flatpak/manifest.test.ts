@@ -21,17 +21,18 @@ const ROOT = path.resolve(HERE, "../..");
 const MANIFEST_NAME = "io.github.exodious.HoploDex.yml";
 const REAL_MANIFEST = path.join(ROOT, "flatpak", MANIFEST_NAME);
 
-/** 011 contracts/flatpak-bundle.md "Permissions": the twelve, in this order. */
+/**
+ * 011 contracts/flatpak-bundle.md "Permissions" (amended 2026-10-19): the ten,
+ * in this order.
+ */
 const FINISH_ARGS = [
   "--share=ipc",
   "--socket=wayland",
   "--socket=fallback-x11",
   "--device=dri",
-  "--filesystem=home",
+  "--filesystem=xdg-documents/HoploDex:create",
   "--filesystem=/media",
   "--filesystem=/run/media",
-  "--filesystem=/mnt",
-  "--talk-name=org.freedesktop.secrets",
   "--talk-name=org.freedesktop.ScreenSaver",
   "--talk-name=org.gnome.ScreenSaver",
   "--system-talk-name=org.freedesktop.login1",
@@ -69,6 +70,37 @@ function findNetwork(node: unknown, where: string, found: string[] = []): string
 
 const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
+/** The only mount roots a grant may name (011 SC-011). */
+const MOUNT_ROOTS = ["/media", "/run/media"];
+
+/**
+ * Why a finish-arg is wider than 011 SC-011 allows, or null. A grant is wider
+ * when it names the home folder (`home`, `~`, `host*`, `~/…`, whatever its
+ * `:ro`/`:create` suffix), an `xdg-*` folder other than `xdg-documents/HoploDex`,
+ * a mount root other than `/media` and `/run/media`, or the Secret Service's
+ * name. Saved passphrases go through the Secret portal, which needs no
+ * permission (011 research.md §7).
+ */
+function widerGrant(arg: string): string | null {
+  if (/^--(system-)?talk-name=org\.freedesktop\.secrets$/.test(arg)) {
+    return "it names the Secret Service, and the Secret portal needs no permission";
+  }
+  const match = /^--filesystem=([^:]*)(:.*)?$/.exec(arg);
+  if (!match) return null;
+  const target = match[1];
+  if (target === "home" || target === "~" || target.startsWith("~/")) {
+    return "it reaches the home folder";
+  }
+  if (target.startsWith("host")) return "it reaches the whole host";
+  if (target.startsWith("xdg-") && target !== "xdg-documents/HoploDex") {
+    return `${target} is not the HoploDex folder in Documents`;
+  }
+  if (target.startsWith("/") && !MOUNT_ROOTS.includes(target)) {
+    return "it is not a removable drives' mount root (/media or /run/media)";
+  }
+  return null;
+}
+
 /** The build rules: every problem the manifest has, in a stable order. */
 function buildRuleProblems(manifest: Manifest): string[] {
   const problems: string[] = [];
@@ -97,9 +129,15 @@ function buildRuleProblems(manifest: Manifest): string[] {
   }
 
   const finishArgs = asArray(manifest["finish-args"]).map(String);
-  for (const arg of finishArgs.filter((a) => !FINISH_ARGS.includes(a))) {
+  for (const arg of finishArgs) {
+    const why = widerGrant(arg);
+    if (why !== null) {
+      problems.push(`finish-args has "${arg}", which is wider than 011 SC-011 allows: ${why}`);
+    }
+  }
+  for (const arg of finishArgs.filter((a) => !FINISH_ARGS.includes(a) && widerGrant(a) === null)) {
     problems.push(
-      `finish-args has "${arg}", which is not one of the twelve permissions recorded in 011 research.md §4 ` +
+      `finish-args has "${arg}", which is not one of the ten permissions recorded in 011 research.md §4 ` +
         "(changing a permission changes that record, 011 contracts/flatpak-bundle.md and this test together)",
     );
   }
@@ -193,9 +231,13 @@ describe("011 US3-5 - the manifest's build rules", () => {
     expect(buildRuleProblems(load(REAL_MANIFEST))).toEqual([]);
   });
 
-  it("the recorded permissions are the contract's twelve", () => {
-    expect(FINISH_ARGS).toHaveLength(12);
-    expect(new Set(FINISH_ARGS).size).toBe(12);
+  it("the recorded permissions are the contract's ten", () => {
+    expect(FINISH_ARGS).toHaveLength(10);
+    expect(new Set(FINISH_ARGS).size).toBe(10);
+  });
+
+  it("011 SC-011: none of the recorded permissions is wider than the rule allows", () => {
+    expect(FINISH_ARGS.filter((arg) => widerGrant(arg) !== null)).toEqual([]);
   });
 
   it("a manifest that follows every rule has no problem", () => {
@@ -231,7 +273,7 @@ describe("011 US3-5 - the manifest's build rules", () => {
 
     it("fails it in finish-args, naming the permission", () => {
       expect(buildRuleProblems(loadFixture("network-finish-args"))).toContain(
-        WORDS("finish-args[12]"),
+        WORDS("finish-args[10]"),
       );
     });
 
@@ -251,7 +293,7 @@ describe("011 US3-5 - the manifest's build rules", () => {
   describe("finish-args equal the recorded list", () => {
     it("fails a permission added, naming it and the record", () => {
       expect(buildRuleProblems(loadFixture("finish-arg-added"))).toEqual([
-        'finish-args has "--socket=pulseaudio", which is not one of the twelve permissions recorded in 011 research.md §4 ' +
+        'finish-args has "--socket=pulseaudio", which is not one of the ten permissions recorded in 011 research.md §4 ' +
           "(changing a permission changes that record, 011 contracts/flatpak-bundle.md and this test together)",
       ]);
     });
@@ -264,9 +306,8 @@ describe("011 US3-5 - the manifest's build rules", () => {
 
     it("fails --filesystem=host, naming it and the one it replaced", () => {
       expect(buildRuleProblems(loadFixture("finish-arg-host"))).toEqual([
-        'finish-args has "--filesystem=host", which is not one of the twelve permissions recorded in 011 research.md §4 ' +
-          "(changing a permission changes that record, 011 contracts/flatpak-bundle.md and this test together)",
-        'finish-args lacks "--filesystem=home", which 011 research.md §4 records',
+        'finish-args has "--filesystem=host", which is wider than 011 SC-011 allows: it reaches the whole host',
+        'finish-args lacks "--filesystem=xdg-documents/HoploDex:create", which 011 research.md §4 records',
       ]);
     });
 
@@ -274,6 +315,66 @@ describe("011 US3-5 - the manifest's build rules", () => {
       expect(buildRuleProblems(loadFixture("finish-arg-order"))).toEqual([
         "finish-args are not in the order 011 contracts/flatpak-bundle.md lists them, or repeat one",
       ]);
+    });
+  });
+
+  describe("011 SC-011: no grant wider than the HoploDex folder, the drives and the portals", () => {
+    const WIDER = (arg: string, why: string) =>
+      `finish-args has "${arg}", which is wider than 011 SC-011 allows: ${why}`;
+    const LACKS =
+      'finish-args lacks "--filesystem=xdg-documents/HoploDex:create", which 011 research.md §4 records';
+    const HOME = "it reaches the home folder";
+
+    it.each([
+      ["home", "--filesystem=home", HOME],
+      ["home-read-only", "--filesystem=home:ro", HOME],
+      ["tilde", "--filesystem=~", HOME],
+      ["tilde-folder", "--filesystem=~/Documents", HOME],
+    ])("fails %s, naming it and the HoploDex folder it replaced", (fixture, arg, why) => {
+      expect(buildRuleProblems(loadFixture(`finish-arg-wider-${fixture}`))).toEqual([
+        WIDER(arg, why),
+        LACKS,
+      ]);
+    });
+
+    it("fails the whole Documents folder in place of the HoploDex folder", () => {
+      expect(buildRuleProblems(loadFixture("finish-arg-wider-xdg-documents"))).toEqual([
+        WIDER(
+          "--filesystem=xdg-documents",
+          "xdg-documents is not the HoploDex folder in Documents",
+        ),
+        LACKS,
+      ]);
+    });
+
+    it("fails an xdg folder added", () => {
+      expect(buildRuleProblems(loadFixture("finish-arg-wider-xdg-pictures"))).toEqual([
+        WIDER("--filesystem=xdg-pictures", "xdg-pictures is not the HoploDex folder in Documents"),
+      ]);
+    });
+
+    it("fails /mnt, a mount root other than /media and /run/media", () => {
+      expect(buildRuleProblems(loadFixture("finish-arg-wider-mnt"))).toEqual([
+        WIDER(
+          "--filesystem=/mnt",
+          "it is not a removable drives' mount root (/media or /run/media)",
+        ),
+      ]);
+    });
+
+    it("fails a talk-name of the Secret Service", () => {
+      expect(buildRuleProblems(loadFixture("finish-arg-wider-secrets"))).toEqual([
+        WIDER(
+          "--talk-name=org.freedesktop.secrets",
+          "it names the Secret Service, and the Secret portal needs no permission",
+        ),
+      ]);
+    });
+
+    it("the shipped HoploDex folder grant is not called wider", () => {
+      expect(widerGrant("--filesystem=xdg-documents/HoploDex:create")).toBeNull();
+      expect(widerGrant("--filesystem=/media")).toBeNull();
+      expect(widerGrant("--filesystem=/run/media")).toBeNull();
     });
   });
 
@@ -438,15 +539,12 @@ describe("011 US5-2 - the check manifest differs from the shipped one only where
 
 // 011 FR-025, 011 FR-026, 011 US4-5; 011 research.md §4, §14. flathub.json
 // keeps the file x86-64 only for a later submission; the linter's exceptions
-// file holds exactly the two warnings 011 research.md §4 keeps, each with its
-// reason. The format is the linter's own for local exceptions
+// file holds exactly the one warning 011 research.md §4 keeps (logind's; the
+// home folder's left with the narrower defaults), with its reason. The format is the linter's own for local exceptions
 // ({ "<app id>": { "<rule id>": "<reason>" } }), confirmed on the first
 // real run (011 T066).
 const APP_ID = "io.github.exodious.HoploDex";
-const KEPT_EXCEPTIONS = [
-  "finish-args-home-filesystem-access",
-  "finish-args-login1-system-talk-name",
-];
+const KEPT_EXCEPTIONS = ["finish-args-login1-system-talk-name"];
 
 function loadJson(file: string): unknown {
   if (!fs.existsSync(file)) {
@@ -515,7 +613,7 @@ describe("011 US4-5 - flathub.json and the linter's exceptions", () => {
     expect(flathubProblems(flathub)).toEqual([]);
   });
 
-  it("011 FR-026: the real exceptions file holds exactly the two kept exceptions, each with a reason citing 011 research.md §4", () => {
+  it("011 FR-026: the real exceptions file holds exactly the one kept exception, with a reason citing 011 research.md §4", () => {
     const exceptions = loadJson(path.join(ROOT, "flatpak", "linter-exceptions.json"));
     expect(linterExceptionsProblems(exceptions)).toEqual([]);
     expect(Object.keys(exceptions as object)).toEqual([APP_ID]);
@@ -543,11 +641,19 @@ describe("011 US4-5 - flathub.json and the linter's exceptions", () => {
     ]);
   });
 
-  it("fails a third exception, naming it", () => {
+  it("fails a second exception, naming it", () => {
     expect(
-      linterExceptionsProblems(fixtureJson("linter-third-exception", "linter-exceptions.json")),
+      linterExceptionsProblems(fixtureJson("linter-second-exception", "linter-exceptions.json")),
     ).toEqual([
       "linter-exceptions.json: the exception finish-args-flatpak-spawn-access is not one 011 research.md §4 keeps",
+    ]);
+  });
+
+  it("011 SC-011: fails the home folder's exception, which the narrower defaults dropped", () => {
+    expect(
+      linterExceptionsProblems(fixtureJson("linter-home-exception", "linter-exceptions.json")),
+    ).toEqual([
+      "linter-exceptions.json: the exception finish-args-home-filesystem-access is not one 011 research.md §4 keeps",
     ]);
   });
 
@@ -555,7 +661,7 @@ describe("011 US4-5 - flathub.json and the linter's exceptions", () => {
     expect(
       linterExceptionsProblems(fixtureJson("linter-empty-reason", "linter-exceptions.json")),
     ).toEqual([
-      "linter-exceptions.json: the exception finish-args-home-filesystem-access has no reason",
+      "linter-exceptions.json: the exception finish-args-login1-system-talk-name has no reason",
     ]);
   });
 

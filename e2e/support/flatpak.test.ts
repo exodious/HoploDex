@@ -22,6 +22,11 @@ type Flatpak = {
   FLATPAK_APP_ID?: string;
   flatpakRunArgs?: (options: RunOptions) => Run;
   requireCheckEnvironment?: () => { state: string };
+  portalParameters?: (options: {
+    log: string;
+    opened: string;
+    secret?: string;
+  }) => Record<string, string>;
 };
 
 // Loaded by a computed name, so that until e2e/support/flatpak.ts exists (011
@@ -138,6 +143,26 @@ describe("011 FR-021 - the argument list for `flatpak run` in the Flatpak check"
     build();
     expect(() => build({ home: "" })).toThrow();
     expect(() => build({ home: "home" })).toThrow();
+  });
+});
+
+// 011 T120, 011 research.md §16: the stand-in portal serves the Secret portal only when it is
+// given the run's key, so a run without it is a desktop with no Secret portal backend (011 US2-5).
+describe("011 US2-5 - the stand-in portal's Secret interface follows its key", () => {
+  const files = { log: "/x/openuri.log", opened: "/x/opened.log" };
+  const parameters = (options: { secret?: string }) => {
+    const fn = flatpak.portalParameters;
+    if (typeof fn !== "function") throw new Error("portalParameters is not exported");
+    return fn({ ...files, ...options });
+  };
+
+  it("passes the two logs and the key when there is one", () => {
+    expect(parameters({ secret: "abc123" })).toEqual({ ...files, secret: "abc123" });
+  });
+
+  it("passes no key, so no Secret interface, when there is none", () => {
+    expect(parameters({})).toEqual(files);
+    expect(parameters({ secret: "" })).toEqual(files);
   });
 });
 

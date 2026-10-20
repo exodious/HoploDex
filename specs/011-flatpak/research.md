@@ -284,6 +284,19 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
   rejected because typed locations and backups beside a database need a
   folder; the scoped folder gives both inside it, and the refusal's override
   gives them anywhere else._
+  _Amended 2026-10-20 (011 T115): built and checked. `flatpak/io.github.exodious.
+  HoploDex.yml`'s `finish-args` are the ten, each with its reason beside it, and
+  `flatpak/linter-exceptions.json` holds the logind exception only. Flathub's
+  linter (`org.flatpak.Builder`, stable, run by `npm run bundle:flatpak`) passes the
+  manifest and the built repository with that one exception: the narrower grants
+  (`--filesystem=xdg-documents/HoploDex:create`, `/media`, `/run/media`) raise no
+  warning of their own, and `finish-args-home-filesystem-access` no longer
+  fires. `manifest.test.ts` carries SC-011's check: a grant that names the home
+  folder (`home`, `~`, `~/…`, `host…`, with or without `:ro`), any `xdg-*` other
+  than `xdg-documents/HoploDex`, any absolute path other than `/media` and
+  `/run/media`, or a talk-name of `org.freedesktop.secrets` fails with a message
+  naming it as wider than SC-011 allows, each with a red fixture
+  (`fixtures/manifest-finish-arg-wider-*`, and `manifest-finish-arg-host`)._
 - **Rationale**: the spec settled the reach (Clarifications, FR-003) and the
   keyring route (FR-006). The others are what the existing code already
   uses on Linux, kept so the Flatpak runs the same code as the `.deb`.
@@ -425,6 +438,17 @@ _Amended 2026-10-19 (owner's decision; FR-003, FR-007, FR-010):_
   find Documents). The check's US1-2 test (`xdg-user-dir DOCUMENTS` inside the
   sandbox against the host's) settles it in the first run on the narrower
   manifest, before anything else is built on it._
+
+_Amended 2026-10-20 (011 T120): **confirmed.** On the narrower manifest, the
+shipped build run under a throwaway home with no `--filesystem` for it still
+sees the host's `~/.config/user-dirs.dirs`: Flatpak binds it into the sandbox's
+`$XDG_CONFIG_HOME` (`~/.var/app/<id>/config`) whatever the filesystem grants, so
+`xdg-user-dir DOCUMENTS` inside the sandbox answers the host's Documents folder
+(`<throwaway home>/Documents`). The sandbox's view of the home folder is
+`Documents/HoploDex` and `.var` only; `:create` made `Documents/HoploDex` on the
+host when the sandbox started. The check variant's startup log line reads
+`running in a Flatpak; reach: [/media, /run/media, <Documents>/HoploDex]`, and the
+journey's first test asserts that list. No code change was needed._
 
 ## §6 Sleep, shutdown and screen-lock notices (FR-005)
 
@@ -711,6 +735,25 @@ Windows keep the `keyring` crate, unchanged._
 - **Alternatives considered**: keeping it off in Flatpak (007's earlier
   assumption): the web process would keep the app's whole reach for no
   reason now that it isn't needed.
+
+_Amended 2026-10-20 (011 T120): the sub-sandbox listing, read from the check
+on the narrower manifest (`flatpak/out/check/webkit-sandbox.txt`; the journey's
+"011 US2-7" tests). The web process's root has no `/media`, `/run/media`, `/mnt`
+or `/var/data`; `$HOME` is an empty folder, and the sub-sandbox started with
+WebKit's flags finds no `Documents`, no `.var` (so no
+`~/.var/app/<id>/data/keyrings/default.keyring`), no removable drive, no system
+bus socket and no network but the loopback. On the session bus it is refused
+`org.freedesktop.secrets`, which is now a real refusal of the manifest, since the
+check keeps a real headless gnome-keyring-daemon on its bus for the whole run;
+both screen savers are refused too; the desktop portals answer, and so does the
+Secret portal: its `version` reads `1`. A process the sub-sandbox asks of the Flatpak
+portal without `--sandbox` (`flatpak-spawn` run from inside) runs with the app's
+own permissions, as before, and with the narrower ones: it lists `Documents` as
+`['HoploDex']` and reads the first bytes of the keyring file (`GnomeKeyring…`). So the
+"one limit" gives a compromised web process the app's key (one `RetrieveSecret`
+call) and its file, and so HoploDex's saved passphrases, as §9's note above said
+and §20 records, and gives it no other item of the user's keyring. The check
+records these, it does not assert the nested process._
 
 _Amended 2026-10-19 (011 T102): the session bus the sandbox's proxies reach in
 the check now carries a real Secret Service. §9's sub-sandbox test lists
@@ -1119,6 +1162,33 @@ defaults (§4, §5, §7):_
 - _**US2-5** becomes a run whose stand-in portal has no Secret interface
   (saving unavailable)._
 - _**The sub-sandbox listing's expectations** change with §9's note._
+
+_Amended 2026-10-20 (011 T120): done. What the check does now, as built:_
+
+- _`scripts/dev-container.sh --flatpak` makes a tmpfs at `/run/media/dev/hoplodex-check`
+  (the stand-in drive, inside the reach of `/run/media`) and keeps one at
+  `/mnt/hoplodex-check`, which no grant covers; with `/srv/hoplodex-check`, the
+  journey types both `/srv` and `/mnt` locations and sees each refused on the folder
+  field, with the three-grant wording and nothing written._
+- _The journey's files (`Scans`, `Export`, `Protected scans`, the check's own logs in
+  `.hoplodex-check`, which the app writes the consent log to) are in
+  `<Documents>/HoploDex`. A photo dropped from `~/Pictures` is refused with the sentence
+  "To attach it from where it is, use Add photos and choose it there." and nothing is
+  attached; one dropped from `Documents/HoploDex` is attached._
+- _`openuri_mock.py` serves `org.freedesktop.portal.Secret` (`version` 1;
+  `RetrieveSecret` writes the run's key, 64 hex characters, to the descriptor and
+  answers `Response(0, {})`) only when given the `secret` parameter. The
+  saved-passphrase, reopen and install-over (US4-3) journeys read the entry from
+  `~/.var/app/<id>/data/keyrings/default.keyring` with that key, through a small
+  example, `src-tauri/examples/flatpak_keyring_read.rs` (oo7's reader, on a copy of
+  the file), never `secret-tool`. The file does not contain the passphrase as text,
+  and `secret-tool search` against the real daemon finds nothing of the app's._
+- _US2-5 restarts the stand-in portal without its Secret interface while the real
+  daemon still owns `org.freedesktop.secrets`: saving shows as unavailable, so the
+  app did not fall back to the Secret Service._
+- _The bus check shows `org.freedesktop.secrets` answering outside the sandbox and
+  refused inside it, the Secret portal's `version` readable inside, and the
+  proxy answering `false` to `NameHasOwner` for the daemon's name._
 
 ## §17 Manual procedures (FR-022)
 

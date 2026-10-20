@@ -9,7 +9,7 @@
 //! keyring, and the Flatpak asks for no bus name of the Secret Service.
 //!
 //! Only the portal path of oo7 is used: never `oo7::Keyring::new()`, which falls
-//! back to the Secret Service when the portal is missing (FR-006 forbids any
+//! back to the Secret Service when the portal is missing (011 FR-006 forbids any
 //! fallback). Nothing in this file names `org.freedesktop.secrets`.
 //!
 //! [`Store`] is a keyring-core [`CredentialStoreApi`], so `services::keyring`

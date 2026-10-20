@@ -43,6 +43,7 @@ import {
   installedCommit,
   installedOrigin,
   keyringEntries,
+  keyringFile,
   lockProbe,
   makeBundle,
   openUriCalls,
@@ -51,12 +52,14 @@ import {
   removeBundleOrigin,
   removeLogindSession,
   resourceLimit,
+  reachDir,
   runInSandbox,
   sandboxProcesses,
+  secretServiceEntries,
   startScreenSavers,
-  startSecrets,
+  startSecretPortal,
   stopScreenSavers,
-  stopSecrets,
+  stopSecretPortal,
   terminateApp,
   uninstallApp,
 } from "../support/flatpak";
@@ -129,6 +132,16 @@ describe("011 US5 - The Flatpak Is Tested in Its Sandbox, Away From Real Data", 
       (candidate) => candidate.command[0] === "hoplodex" && candidate.exe === "/app/bin/hoplodex",
     );
     expect(app).toBeDefined();
+
+    // What `Reach` found at startup: the shipped three grants, with the Documents one
+    // resolved from the host's user-dirs.dirs, which the sandbox sees without the home
+    // folder (011 research.md §5, "To confirm first").
+    const line = appLog()
+      .split("\n")
+      .find((candidate) => candidate.startsWith("[INFO] running in a Flatpak; reach: "));
+    expect(line).toBeDefined();
+    const granted = /reach: \[(.*?)\]/.exec(line!)![1].split(", ").sort();
+    expect(granted).toEqual([reachDir(), "/media", "/run/media"].sort());
   });
 
   it("011 SC-007: the app's data went under the run's throwaway home, not the real one", () => {
@@ -210,11 +223,14 @@ const SEED_PHOTOS = fileURLToPath(
   new URL("../../src-tauri/examples/seed-photos/", import.meta.url),
 );
 /** A tmpfs standing in for a removable drive (the dev container makes it,
- * scripts/dev-container.sh); the manifest grants `/mnt` (011 FR-003). */
-const REMOVABLE = "/mnt/hoplodex-check";
-/** A folder the container makes for the check that no Flatpak permission
- * covers (Dockerfile; 011 research.md §16). */
+ * scripts/dev-container.sh); the manifest grants `/run/media` (011 FR-003). */
+const REMOVABLE = "/run/media/dev/hoplodex-check";
+/** Folders the container makes for the check that no Flatpak permission
+ * covers: `/srv` (Dockerfile) and `/mnt`, which the shipped permissions no
+ * longer grant (scripts/dev-container.sh; 011 research.md §16). */
 const OUTSIDE = "/srv/hoplodex-check";
+const OUTSIDE_MNT = "/mnt/hoplodex-check";
+const NOT_GRANTED = [OUTSIDE, OUTSIDE_MNT];
 
 /** Every file under `dir` (none if it isn't there). */
 function filesUnder(dir: string): string[] {
@@ -302,8 +318,9 @@ function clearRemovable() {
 
 describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their Collection in It", () => {
   /** Where the suggested location is (011 US1-2): `HoploDex` in the Documents
-   * folder the sandbox reads from `xdg-user-dir`. */
-  const folder = () => path.join(currentRun().documents, "HoploDex");
+   * folder the sandbox reads from `xdg-user-dir`, the one folder of the home the
+   * manifest grants (`--filesystem=xdg-documents/HoploDex:create`). */
+  const folder = () => reachDir();
   const database = () => path.join(folder(), "Journey.hoplodex");
   const backups = () => path.join(folder(), "HoploDex backups");
   /** The firearm the journey keeps, and its display name. */
@@ -314,17 +331,20 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     type: "Handgun" as const,
     serial: "FLAT-001",
   };
-  /** The journey's files from the file manager, in the throwaway home. */
-  const scans = () => path.join(currentRun().documents, "Scans");
-  const exportFolder = () => path.join(currentRun().documents, "Export");
+  /** The journey's files from the file manager: inside the one folder of the
+   * home the Flatpak reaches (011 FR-003). */
+  const scans = () => path.join(folder(), "Scans");
+  const exportFolder = () => path.join(folder(), "Export");
 
   before(async () => {
     await waitForChooser();
     clearRemovable();
-    if (fs.readdirSync(OUTSIDE).length > 0) {
-      throw new Error(
-        `${OUTSIDE} is not empty: the refusal is shown by nothing being written there`,
-      );
+    for (const outside of NOT_GRANTED) {
+      if (fs.readdirSync(outside).length > 0) {
+        throw new Error(
+          `${outside} is not empty: the refusal is shown by nothing being written there`,
+        );
+      }
     }
   });
 
@@ -483,13 +503,42 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     await search("");
   });
 
-  it("011 US1-5, 011 US1-6: a photo dropped from the file manager is attached and shown", async function () {
+  it("011 US1-5, 011 FR-007: a photo dropped from outside what the Flatpak reaches is refused, saying to attach it from the file chooser, and nothing is attached", async function () {
     this.timeout(120000);
+    // The home folder is not in reach (011 FR-003): a drop from Pictures is a path the
+    // sandbox cannot see, and the refusal says how to attach the file from there.
     const pictures = path.join(currentRun().home, "Pictures");
     fs.mkdirSync(pictures, { recursive: true });
     const photo = path.join(pictures, "range-day.jpg");
     fs.copyFileSync(path.join(SEED_PHOTOS, "glock-19-gen3.jpg"), photo);
 
+    await openFirearm("FlatpakGlock 19");
+    await dropFiles([photo]);
+    await browser.waitUntil(
+      async () =>
+        (await toastTexts()).some((text) => text.includes("This copy of HoploDex is a Flatpak")),
+      { timeout: 15000, timeoutMsg: "the refused drop showed no message" },
+    );
+    const message = (await toastTexts()).find((text) =>
+      text.includes("This copy of HoploDex is a Flatpak"),
+    )!;
+    expect(message).toContain(
+      `it can only reach the HoploDex folder in your Documents folder (\`${folder()}\`) and removable drives`,
+    );
+    expect(message).toContain(`it can't use \`${photo}\``);
+    expect(message).toContain("To attach it from where it is, use Add photos and choose it there.");
+    expect(message).toContain(`flatpak override --user --filesystem=${pictures} ${FLATPAK_APP_ID}`);
+    expect(await $(".hd-photo").isExisting()).toBe(false);
+    // Nothing was made or moved: the file is where it was.
+    expect(fs.readdirSync(pictures)).toEqual(["range-day.jpg"]);
+  });
+
+  it("011 US1-5, 011 US1-6: a photo dropped from inside what the Flatpak reaches is attached and shown", async function () {
+    this.timeout(120000);
+    const photo = path.join(folder(), "range-day.jpg");
+    fs.copyFileSync(path.join(SEED_PHOTOS, "glock-19-gen3.jpg"), photo);
+
+    await goTo("Collection");
     await openFirearm("FlatpakGlock 19");
     await dropFiles([photo]);
     await $(".hd-photo").waitForExist({
@@ -625,10 +674,12 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     expect(lockProbe(database())).toBe(false);
   });
 
-  it("011 US1-4, 011 US5-2: a saved passphrase lands in the real keyring and opens the database from the recent list after a restart, without typing it", async function () {
+  it("011 US1-4, 011 US5-2: a saved passphrase lands in the app's own keyring file, encrypted with the Secret portal's key, and opens the database from the recent list after a restart, without typing it", async function () {
     this.timeout(120000);
-    // The check variant uses the real Secret Service backend (011 research.md §6),
-    // here a headless gnome-keyring-daemon on the run's bus: nothing is saved yet.
+    // The Flatpak keeps saved passphrases in oo7's file keyring under its own data
+    // folder, encrypted with the key the Secret portal gave it (011 research.md §7).
+    // Here the portal is the stand-in's, with a fixed key for the run: nothing is
+    // saved yet.
     expect(keyringEntries()).toEqual([]);
     await ensureSelected("Journey");
     await toggle("Remember on this computer");
@@ -638,13 +689,21 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     await unlock(E2E_PASSPHRASE);
     await switchDatabase();
 
-    // `secret-tool` reads it back from the keyring: one entry under the app's
-    // service, named for the database's id, holding the passphrase.
+    // The file read back with the run's key: one entry under the app's service,
+    // named for the database's id, holding the passphrase.
     const saved = keyringEntries();
     expect(saved).toHaveLength(1);
     expect(saved[0].attributes.service).toBe(FLATPAK_APP_ID);
     expect(saved[0].attributes.username).toMatch(/^passphrase:[0-9a-f]+$/);
     expect(saved[0].secret).toBe(E2E_PASSPHRASE);
+    // It is in the sandbox's own data folder and encrypted, not the passphrase as text.
+    expect(keyringFile()).toBe(
+      path.join(appDataDir(currentRun().home), "data", "keyrings", "default.keyring"),
+    );
+    expect(fs.readFileSync(keyringFile()).includes(Buffer.from(E2E_PASSPHRASE))).toBe(false);
+    // The real Secret Service on the bus was never used, and has nothing of the app's
+    // (011 FR-006: no fallback).
+    expect(secretServiceEntries()).toEqual([]);
 
     await relaunchApp();
     await waitForChooser();
@@ -689,31 +748,38 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     await switchDatabase();
   });
 
-  it("011 US1-8, 011 SC-003: a typed location outside what the Flatpak reaches is refused on the folder field, and nothing is written there", async function () {
+  it("011 US1-8, 011 SC-003: a typed location outside what the Flatpak reaches, /srv or /mnt, is refused on the folder field, and nothing is written there", async function () {
     this.timeout(120000);
-    await clickButton("Create a new database…");
-    await $('[role="dialog"]').waitForExist();
-    await fill("Name", "Nowhere");
-    await fill("Folder", OUTSIDE);
-    await fill("Passphrase", E2E_PASSPHRASE);
-    await fill("Confirm passphrase", E2E_PASSPHRASE);
-    await toggle(ACKNOWLEDGEMENT);
-    await clickButton("Create database");
-
-    await browser.waitUntil(async () => (await dialogFieldError("Folder")) !== null, {
-      timeout: 15000,
-      timeoutMsg: "the folder field showed no refusal",
-    });
-    const message = (await dialogFieldError("Folder"))!;
-    expect(message).toContain("This copy of HoploDex is a Flatpak");
-    expect(message).toContain("it can only reach your home folder and removable drives");
-    expect(message).toContain(`${OUTSIDE}/Nowhere.hoplodex`);
-    expect(message).toContain(`flatpak override --user --filesystem=${OUTSIDE} ${FLATPAK_APP_ID}`);
-    // The dialog stays for another folder, and nothing was made outside reach.
-    await expect($('[role="dialog"]')).toExist();
-    expect(fs.readdirSync(OUTSIDE)).toEqual([]);
-    await clickButton("Cancel");
-    await $('[role="dialog"]').waitForExist({ reverse: true });
+    for (const outside of NOT_GRANTED) {
+      await clickButton("Create a new database…");
+      await $('[role="dialog"]').waitForExist();
+      await fill("Name", "Nowhere");
+      await fill("Folder", outside);
+      await fill("Passphrase", E2E_PASSPHRASE);
+      await fill("Confirm passphrase", E2E_PASSPHRASE);
+      await toggle(ACKNOWLEDGEMENT);
+      await clickButton("Create database");
+      await browser.waitUntil(
+        async () =>
+          ((await dialogFieldError("Folder")) ?? "").includes(`${outside}/Nowhere.hoplodex`),
+        { timeout: 15000, timeoutMsg: `the folder field showed no refusal of ${outside}` },
+      );
+      const message = (await dialogFieldError("Folder"))!;
+      expect(message).toContain("This copy of HoploDex is a Flatpak");
+      expect(message).toContain(
+        `it can only reach the HoploDex folder in your Documents folder (\`${folder()}\`) and removable drives`,
+      );
+      expect(message).toContain(
+        `flatpak override --user --filesystem=${outside} ${FLATPAK_APP_ID}`,
+      );
+      // A create, not an attach: no advice about the file chooser's buttons.
+      expect(message).not.toContain("To attach it from where it is");
+      // The dialog stays for another folder, and nothing was made outside reach.
+      await expect($('[role="dialog"]')).toExist();
+      expect(fs.readdirSync(outside)).toEqual([]);
+      await clickButton("Cancel");
+      await $('[role="dialog"]').waitForExist({ reverse: true });
+    }
     expect(await chooserNames()).not.toContain("Nowhere");
   });
 });
@@ -853,13 +919,13 @@ function processLines(processes: { pid: number; ppid?: number; command: string[]
 }
 
 describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
-  const folder = () => path.join(currentRun().documents, "HoploDex");
+  const folder = () => reachDir();
   const database = () => path.join(folder(), `${PROTECTED}.hoplodex`);
-  const scans = () => path.join(currentRun().documents, "Protected scans");
+  const scans = () => path.join(folder(), "Protected scans");
   /** `flatpak-spawn`'s own flags for a sandboxed web process, as WebKit passed
    * them (read from the running process by the test that follows the launch). */
   let webKitSpawnFlags: string[] = [];
-  const slowSpreadsheet = () => path.join(currentRun().documents, "Protected scans", "slow.csv");
+  const slowSpreadsheet = () => path.join(scans(), "slow.csv");
 
   before(async () => {
     await waitForChooser();
@@ -870,7 +936,7 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     // What a test may have left changed for the others.
     fs.rmSync(slowSpreadsheet(), { force: true });
     if (currentRun().screenSavers.length === 0) await startScreenSavers();
-    if (!currentRun().secrets) await startSecrets();
+    if (!currentRun().secretPortal) await startSecretPortal();
     try {
       addLogindSession();
     } catch {
@@ -1183,7 +1249,18 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     // What the research record reads (011 research.md §9): the portal's
     // `flatpak-spawn --sandbox` command line, and what the web process sees of
     // its sandbox against what the app sees of its own.
-    const looked = ["/", "/home", "/tmp", "/run/user/1000", "/run/flatpak", "/app", "/var/data"];
+    const looked = [
+      "/",
+      "/home",
+      "/tmp",
+      "/media",
+      "/run/media",
+      "/mnt",
+      "/run/user/1000",
+      "/run/flatpak",
+      "/app",
+      "/var/data",
+    ];
     const web = webProcesses[0];
     const viewLines = (name: string, pid: number) => {
       const view = processView(pid, looked);
@@ -1231,7 +1308,7 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     expect(webKitSpawnFlags).toContain("--sandbox");
     const script = [
       "import json, os, socket, subprocess, sys",
-      "home, database = sys.argv[1], sys.argv[2]",
+      "home, database, keyring = sys.argv[1], sys.argv[2], sys.argv[3]",
       "out = {}",
       'out["interfaces"] = [name for _, name in socket.if_nameindex()]',
       "def listing(path):",
@@ -1242,7 +1319,16 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
       'out["home"] = listing(home)',
       'out["documents"] = listing(os.path.join(home, "Documents"))',
       'out["/media"] = listing("/media")',
+      'out["/run/media"] = listing("/run/media")',
       'out["/mnt"] = listing("/mnt")',
+      // The app's own data folder, where its keyring file is (011 research.md §9):
+      // `--sandbox` mounts no ~/.var/app.
+      'out[".var"] = listing(os.path.join(home, ".var"))',
+      "try:",
+      '    open(keyring, "rb").read(16)',
+      '    out["keyring file"] = "read"',
+      "except OSError as error:",
+      '    out["keyring file"] = "error: " + error.strerror',
       "try:",
       '    open(database, "rb").read(16)',
       '    out["database"] = "read"',
@@ -1267,14 +1353,26 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
       '    ("org.freedesktop.portal.Flatpak", "/org/freedesktop/portal/Flatpak"),',
       "]:",
       '    out["session bus " + name] = ping(name, path)',
+      // The Secret portal answers every sandbox with an app id (011 research.md §9): its
+      // interface reads a version here. The key itself is one D-Bus call away.
+      "secret = subprocess.run(",
+      '    ["gdbus", "call", "--session", "--dest", "org.freedesktop.portal.Desktop",',
+      '     "--object-path", "/org/freedesktop/portal/desktop", "--method",',
+      '     "org.freedesktop.DBus.Properties.Get", "org.freedesktop.portal.Secret", "version"],',
+      "    capture_output=True, text=True, timeout=20)",
+      'out["Secret portal version"] = (secret.stdout.strip() if secret.returncode == 0',
+      '    else "refused: " + (secret.stderr.strip().splitlines() or ["?"])[-1])',
       // The portal that started this sandbox is among the names it can reach:
       // asking it for another process must not give that process more than
       // this one has.
       "nested = subprocess.run(",
       '    ["flatpak-spawn", "--directory=/", "python3", "-I", "-c",',
-      '     "import os, sys; print(os.listdir(sys.argv[1]))", os.path.join(home, "Documents")],',
+      // (the header of the keyring file is plain ASCII)
+      `     "import os, sys; print(os.listdir(sys.argv[1])); print(open(sys.argv[2], errors='replace').read(12))",`,
+      '     os.path.join(home, "Documents"), keyring],',
       "    capture_output=True, text=True, timeout=30)",
-      'out["nested flatpak-spawn lists Documents"] = (nested.stdout.strip() if nested.returncode == 0',
+      'out["nested flatpak-spawn lists Documents, reads the keyring file"] = (nested.stdout.strip().replace(chr(10), " / ")',
+      "    if nested.returncode == 0",
       '    else "failed: " + (nested.stderr.strip().splitlines() or ["?"])[-1])',
       "print(json.dumps(out))",
     ].join("\n");
@@ -1289,6 +1387,7 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
       script,
       home,
       database(),
+      keyringFile(),
     ]);
     const lines = (result.stdout ?? "").trim().split("\n");
     fs.appendFileSync(
@@ -1301,20 +1400,30 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     expect(reach.interfaces).toEqual(["lo"]);
     // No file of the home folder or of a removable drive.
     expect(String(reach.database)).toMatch(/^error/);
-    for (const folder of ["documents", "/media", "/mnt"]) {
+    for (const folder of ["documents", "/media", "/run/media", "/mnt"]) {
       expect(JSON.stringify(reach[folder])).not.toContain("hoplodex-check");
     }
     expect(JSON.stringify(reach.documents)).not.toContain("HoploDex");
+    // Not the app's own data folder either, so not its keyring file (011 research.md §9):
+    // the file is encrypted with a key that one D-Bus call to the Secret portal gives
+    // back, and the file is out of this sandbox's reach.
+    expect(JSON.stringify(reach[".var"])).not.toContain("app");
+    expect(String(reach["keyring file"])).toMatch(/^error/);
+    expect(reach["Secret portal version"]).toContain("1");
     // Not asserted: a second process asked of the Flatpak portal from inside
     // the sub-sandbox (`flatpak-spawn` without `--sandbox`) runs with the app's
     // own permissions, as the line written above shows. That is how the portal
     // works, and 011 research.md §9 and §20 record it as a limit of what WebKit's
     // sandbox keeps from a compromised web process (011 US2-7). The line is
     // there to be read, and to be updated if Flatpak ever stops it.
-    console.log(`011 US2-7: ${reach["nested flatpak-spawn lists Documents"]}`);
+    console.log(
+      `011 US2-7: ${reach["nested flatpak-spawn lists Documents, reads the keyring file"]}`,
+    );
     // Neither the system bus nor any name the app talks to on the session bus,
     // apart from the desktop portals, which every sandbox can reach.
     expect(String(reach["system bus"])).toMatch(/^error/);
+    // The Secret Service is among them while a real daemon owns its name on the run's bus
+    // (support/flatpak.ts), so its refusal is the manifest's, not an absent service (011 SC-011).
     for (const name of [
       "org.freedesktop.secrets",
       "org.gnome.ScreenSaver",
@@ -1346,12 +1455,13 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     await switchDatabase();
   });
 
-  it("011 US2-5: with no keyring on the bus, the chooser and Database settings show saving a passphrase as unavailable, and nothing fails", async function () {
+  it("011 US2-5: with no Secret portal on the desktop, the chooser and Database settings show saving a passphrase as unavailable, though a Secret Service is on the bus, and nothing fails", async function () {
     this.timeout(180000);
     const unavailable = "Not available: this computer has no keyring service.";
-    // The real keyring is stopped, so nothing owns the Secret Service's name for
-    // the app (as on a .deb without one); its data stays for the tests after this.
-    await stopSecrets();
+    // The stand-in portal loses its Secret interface, as on a desktop with no Secret
+    // portal backend. The real Secret Service still owns its name on the bus, and the
+    // app must not fall back to it (011 FR-006).
+    await stopSecretPortal();
     await relaunchApp();
     await waitForChooser();
     await ensureSelected(PROTECTED);
@@ -1373,8 +1483,10 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     await clickButton("Cancel");
     await switchDatabase();
 
-    // And the keyring comes back with what it held.
-    await startSecrets();
+    // Nothing went to the Secret Service, and the portal comes back with the same key
+    // and what the file held.
+    expect(secretServiceEntries()).toEqual([]);
+    await startSecretPortal();
     expect(keyringEntries().some((entry) => entry.secret === E2E_PASSPHRASE)).toBe(true);
   });
 });
@@ -1409,7 +1521,7 @@ function openingChecked(label: string): Promise<boolean> {
 }
 
 describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Runtime From Flathub", () => {
-  const folder = () => path.join(currentRun().documents, "HoploDex");
+  const folder = () => reachDir();
   const database = () => path.join(folder(), "Upgrade.hoplodex");
   /** This computer's settings and recent list (011 FR-009). */
   const machineJson = () =>
@@ -1476,6 +1588,9 @@ describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Run
     await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await unlock(E2E_PASSPHRASE);
     await switchDatabase();
+    // The entry is in the app's keyring file, read with the portal's key.
+    const savedBefore = keyringEntries().filter((entry) => entry.secret === E2E_PASSPHRASE);
+    expect(savedBefore.length).toBeGreaterThanOrEqual(1);
     expect(fs.existsSync(machineJson())).toBe(true);
     const before = JSON.parse(fs.readFileSync(machineJson(), "utf-8"));
     expect(JSON.stringify(before.recentDatabases)).toContain("Upgrade.hoplodex");
@@ -1497,6 +1612,11 @@ describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Run
     expect(after.machineId).toBe(before.machineId);
     expect(after.documentOpening).toBe("external");
     expect(after.recentDatabases).toEqual(before.recentDatabases);
+    // The saved passphrase's entry is in the same keyring file, unchanged (the install
+    // replaced /app, not ~/.var/app).
+    expect(keyringEntries().filter((entry) => entry.secret === E2E_PASSPHRASE)).toEqual(
+      savedBefore,
+    );
     expect(await chooserNames()).toContain("Upgrade");
     expect(await selectedChooserRow()).toBe("Upgrade");
     await expect($(".hd-db-row--selected .hd-db-row__saved")).toHaveText(

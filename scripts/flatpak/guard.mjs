@@ -78,7 +78,7 @@ export function decide({ env, hostname, argv, home, fs: reader }) {
     return refuse(
       "This command runs only in the dev container, never on a host (011 FR-023): the check needs " +
         "the container's own stand-ins, which a host does not have, namely folders outside any home " +
-        "that the container's user can write (/mnt/hoplodex-check, /srv/hoplodex-check), private " +
+        "that the container's user can write (/run/media/dev/hoplodex-check, /mnt/hoplodex-check, /srv/hoplodex-check), private " +
         "D-Bus buses with a headless keyring and scripted portals, and an Xvfb display. " +
         "Run it through `scripts/dev-container.sh --flatpak <command>`. " +
         "`npm run bundle:flatpak` does build on a host, against a throwaway FLATPAK_USER_DIR.",
