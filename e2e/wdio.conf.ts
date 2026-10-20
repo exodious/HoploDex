@@ -19,6 +19,7 @@ import {
   isolateAppData,
   removeSandbox,
   seedCollection,
+  STORE_SHOTS_SANDBOX,
   sweepStaleSandboxes,
 } from "./support/sandbox";
 
@@ -162,7 +163,10 @@ export const config: WebdriverIO.Config = {
   },
 
   beforeSession: async (config, _capabilities, specs, cid) => {
-    const sandbox = isolateAppData();
+    // The store shots (`npm run screenshots:store`, 011 FR-017) run in a
+    // sandbox at the same path every time, which the chooser's shot shows.
+    const storeShots = specs.some((spec) => spec.endsWith("/e2e/screenshots/store.e2e.ts"));
+    const sandbox = isolateAppData(storeShots ? { fixedDir: STORE_SHOTS_SANDBOX } : {});
     // The Flatpak check's home, buses and stand-in services; the app is started
     // by support/app.ts's default launcher, which is the Flatpak's under
     // HOPLODEX_E2E_FLATPAK=1.
@@ -186,13 +190,14 @@ export const config: WebdriverIO.Config = {
       specs.some(
         (spec) =>
           spec.endsWith("/e2e/screenshots/screens.e2e.ts") ||
+          storeShots ||
           spec.endsWith("/e2e/specs/document-preview.e2e.ts") ||
           spec.endsWith("/e2e/specs/document-open-elsewhere.e2e.ts") ||
           spec.endsWith("/e2e/specs/document-open-setting.e2e.ts") ||
           spec.endsWith("/e2e/specs/session-isolation.e2e.ts"),
       )
     ) {
-      seedCollection();
+      seedCollection({ fixedTimes: storeShots });
     }
     await startDisplay();
     await launchApp();

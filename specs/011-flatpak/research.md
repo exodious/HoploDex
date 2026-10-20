@@ -915,6 +915,14 @@ _Amended 2026-10-19 (owner's decision):_
     or the seed gets a record with fixed dates for it. It writes
     `flatpak/screenshots/`; a build never retakes them. A test checks the
     recorded list above (records, photos, licences) against the script's._
+    _Amended 2026-10-20 (T124): the script is `e2e/screenshots/store.e2e.ts`
+    (`npm run screenshots:store`), and what it records is
+    `e2e/screenshots/store-shots.json`, tested by
+    `scripts/flatpak/storeShots.test.ts`. The seed itself is unchanged for a
+    normal run; with `--fixed-times` it stamps the main collection's backups
+    and last open at today 10:30 and every document's date at 2025-09-15, which
+    the chooser and the viewer show, and the $2,500 edit is made through the
+    record's form. See DEVELOPMENT.md, "The Flatpak's store shots"._
   - `share/icons/hicolor/<size>x<size>/apps/io.github.exodious.HoploDex.png`
     at 32, 64, 128, 256 and 512, copied from `src-tauri/icons/`, which
     `npm run icons` generates from `tools/icons/AppIcon.tsx`, so the program

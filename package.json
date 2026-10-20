@@ -25,6 +25,7 @@
     "test:watch": "vitest",
     "test:e2e": "node e2e/run-e2e.mjs",
     "screenshots": "node e2e/run-e2e.mjs --screenshots",
+    "screenshots:store": "node e2e/run-e2e.mjs --store-shots",
     "session": "node --import tsx e2e/session.ts",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",

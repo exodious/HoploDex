@@ -65,6 +65,38 @@ function writeUserDirs(configDir: string, documents: string) {
  */
 export const SHADER_CACHE = path.join(repoRoot, "node_modules", ".cache", "hoplodex-e2e-shaders");
 
+/** Where the store shots' sandbox is (011 FR-017): the chooser shows the
+ * path of the databases, so it is the same one on every run. Not under
+ * {@link SANDBOX_PREFIX} with six random characters, so a sweep leaves it to
+ * the run that owns it. */
+export const STORE_SHOTS_SANDBOX = "/tmp/hoplodex-store-shots";
+
+function makeSandbox(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
+}
+
+/**
+ * A sandbox at the fixed path `dir`: one an earlier run left is removed first,
+ * but only a directory holding an owner marker (a plain file) whose process
+ * has ended; anything else there, or a run still in progress, is an error
+ * and nothing is removed.
+ */
+function makeFixedSandbox(dir: string): string {
+  if (!path.isAbsolute(dir)) throw new Error(`${dir} is not an absolute path`);
+  if (fs.existsSync(dir)) {
+    const owner = ownerOf(dir);
+    if (owner === undefined) {
+      throw new Error(`${dir} exists and is not an E2E sandbox (no owner marker); not removing it`);
+    }
+    if (owner !== process.pid && processRunning(owner)) {
+      throw new Error(`${dir} belongs to the running process ${owner}; wait for it to end`);
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(dir);
+  return dir;
+}
+
 /**
  * Points the app at a throwaway data, config, cache and documents directory
  * for this session, so each spec starts at a first run and E2E runs never
@@ -77,8 +109,8 @@ export const SHADER_CACHE = path.join(repoRoot, "node_modules", ".cache", "hoplo
  * Specs read HOPLODEX_E2E_DOCUMENTS to type locations inside the sandbox.
  * Returns the sandbox's directory.
  */
-export function isolateAppData(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX));
+export function isolateAppData(options: { fixedDir?: string } = {}): string {
+  const root = options.fixedDir ? makeFixedSandbox(options.fixedDir) : makeSandbox();
   state.dir = root;
   // Says whose sandbox this is, so a later run can tell it from one still in
   // use and sweep it if this process never got to removeSandbox() (#111).
@@ -231,13 +263,18 @@ function runSeed(args: string[], stdio: "inherit" | "pipe") {
  *
  * Shared collection's pending changes are kept by this build; with
  * `pendingFrom` they were kept by that version of HoploDex, in a form this
- * build can't resume (008 FR-016).
+ * build can't resume (008 FR-016). With `fixedTimes` the seed stamps its
+ * backups, last open and documents so the screens read the same on any day
+ * (the store shots, 011 FR-017).
  */
-export function seedCollection(options: { pendingFrom?: string } = {}): string {
+export function seedCollection(
+  options: { pendingFrom?: string; fixedTimes?: boolean } = {},
+): string {
   if (!state.dir) throw new Error("seedCollection() needs isolateAppData() first");
   const dir = path.join(state.dir, "seed");
   const seedArgs = ["--dir", dir];
   if (options.pendingFrom) seedArgs.push("--pending-from", options.pendingFrom);
+  if (options.fixedTimes) seedArgs.push("--fixed-times");
   if (runSeed(seedArgs, "inherit").status !== 0) {
     throw new Error("seeding the screenshot collection failed");
   }

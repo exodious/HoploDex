@@ -562,10 +562,24 @@ first run then fetches the 2 GB into those two folders, and deleting both
 removes everything it made. **`npm run test:flatpak` does not run on a
 host, with or without that flag** (`011 FR-023`): it refuses before it
 touches anything, saying so. The check needs what only the dev container
-has: folders outside any home that its user can write (`/mnt/hoplodex-check`
-and `/srv/hoplodex-check`, which the container makes), private D-Bus buses with a
-headless keyring and scripted portals started by the script, and an Xvfb
-display of its own.
+has: a tmpfs at `/run/media/dev/hoplodex-check` standing in for a removable
+drive (`--flatpak` mounts it; the Flatpak reaches `/run/media`), two folders
+outside what it reaches for the check to show refused (`/mnt/hoplodex-check`,
+another tmpfs `--flatpak` mounts, and `/srv/hoplodex-check`, which the
+`Dockerfile` makes), private D-Bus buses with scripted portals and a headless
+keyring daemon started by the script, and an Xvfb display of its own.
+
+**What the Flatpak reaches, and where it keeps passphrases.** It is built with
+`--filesystem=xdg-documents/HoploDex`, `/media` and `/run/media` and no home
+folder, so a database in `<Documents>/HoploDex` or on a removable drive works,
+and a location anywhere else (`/mnt`, `/srv`, a Downloads folder) is refused
+before anything is written, with the `flatpak override --user
+--filesystem=<folder>` command that would grant it (`011 FR-003`, `011 FR-007`;
+`011 research.md` §5). Saved passphrases do not use the Secret Service, which the
+Flatpak is not granted: inside it they are kept in the app's own file keyring
+under `$XDG_DATA_HOME/keyrings/`, encrypted with a key the Secret portal
+returns, and saving is unavailable where the desktop has no Secret portal
+(`011 FR-006`; `011 research.md` §7).
 
 **The source lists.** The offline build can only use what the lists name, so
 `flatpak/cargo-sources.json` (from `src-tauri/Cargo.lock`) and
@@ -763,8 +777,9 @@ The `flatpak-check` feature builds on `e2e` for the Flatpak check alone
 and every other build never do). It keeps the WebDriver server and the
 `HOPLODEX_E2E_*` seams, and leaves out two of `e2e`'s stand-ins: `build.rs`
 turns it into the `app_opener` and `mock_keyring` cfgs, so the check variant
-has the real `AppOpener` (the OpenURI portal inside a Flatpak) and the OS
-keyring (the Secret Service) in place of `E2eOpener` and the in-memory store.
+has the real `AppOpener` (the OpenURI portal inside a Flatpak) and the real
+keyring (inside a Flatpak, the Secret portal's file keyring) in place of
+`E2eOpener` and the in-memory store.
 "The Flatpak check" below says what it talks to.
 
 The harness, not a driver, owns the app's process (`e2e/support/app.ts`):
@@ -856,28 +871,42 @@ What it does, in order:
    changed, so it runs with the permissions the Flatpak ships with
    (`manifest.test.ts` compares the two). `flatpak-check` is the `e2e` build
    with the real routes: its `AppOpener` hands a document to the OpenURI
-   portal and its keyring is the OS's (the Secret Service) instead of the
-   `e2e` build's log and in-memory store. The consent dialog is still the
+   portal and its keyring is the real one (inside the Flatpak, the file keyring
+   keyed by the Secret portal) instead of the `e2e` build's log and in-memory
+   store. The consent dialog is still the
    `e2e` build's, which no WebDriver could click. Only the Flatpak check
    builds it; the main E2E suite and every shipped build are unchanged.
-3. Starts a private session bus with a real, headless `gnome-keyring-daemon`
+3. Starts a private session bus with a scripted desktop portal
+   (`scripts/flatpak/openuri_mock.py`, a dbusmock template with two interfaces:
+   OpenURI, which records each `OpenFile`'s descriptor and answers `Response`,
+   and Secret, whose `RetrieveSecret` hands back a fixed key for the run, the
+   stand-in for the Secret portal; started without the key it has no Secret
+   interface, as a desktop with no Secret portal backend), stand-ins for both
+   screen savers and a name the manifest does not grant, and a stand-in logind
+   on the private system bus. A real, headless `gnome-keyring-daemon`
    (unlocked, its data in the run's throwaway folder, started by
    `scripts/flatpak/keyring-daemon.sh`, which refuses the container's own bus)
-   for the Secret Service, a scripted OpenURI portal
-   (`scripts/flatpak/openuri_mock.py`, a dbusmock template that records each
-   `OpenFile`'s descriptor and answers `Response`), stand-ins for both screen
-   savers and a name the manifest does not grant, and a stand-in logind on the
-   private system bus. From inside the sandbox it shows that each granted name
-   answers, that logind's `Inhibit` returns a descriptor through the bus proxy,
-   that the name not granted is refused while it answers outside the sandbox,
-   and that, with the keyring stopped, the Secret Service's name has no owner.
+   stays on the same bus for one reason only: to show that
+   `org.freedesktop.secrets` is refused to the sandbox while it answers
+   outside it. From inside the sandbox the check also shows that each granted
+   name answers, that logind's `Inhibit` returns a descriptor through the bus
+   proxy, and that the stand-in name the manifest does not grant is refused
+   while it answers outside the sandbox.
 4. Shows the shipped permissions have no network: it listens on the container's
    own non-loopback address, then a `python3` run in the sandbox without
    `--share=network` sees only the loopback interface and cannot connect to it.
 5. Builds the `e2e` binary outside the sandbox and runs
    `e2e/specs/flatpak.e2e.ts` (`HOPLODEX_E2E_FLATPAK=1`), whose journeys run the
    check variant with the run's throwaway home, buses and stand-ins, and add
-   `--share=network` only for the WebDriver port. One of its tests prints the
+   `--share=network` only for the WebDriver port. They show that the sandbox
+   sees the host's user directories without the home folder; that a database
+   is made, backed up and reopened under the stand-in drive; that `/mnt` and
+   `/srv` are refused on the folder field with nothing written; that a photo
+   dropped from `~/Pictures` is refused with the advice to attach it from the
+   file chooser; and that a saved passphrase lands in the app's keyring file,
+   which the check reads back with the stand-in portal's key
+   (`src-tauri/examples/flatpak_keyring_read.rs`) and which opens the database
+   from the recent list after a restart. One of its tests prints the
    cold start to the chooser for the Flatpak and for the `e2e` build outside it
    and fails on a difference over a second (`011 SC-006`).
 6. Uninstalls the check variant whatever happened, and fails unless the
@@ -1492,6 +1521,47 @@ moves the app's config directory there so its recent list names the seeded
 databases. Specs read the seed's passphrase from
 `HOPLODEX_E2E_SEED_PASSPHRASE`, and the sandbox's documents folder from
 `HOPLODEX_E2E_DOCUMENTS`.
+
+### The Flatpak's store shots
+
+The five images the Flatpak's AppStream metadata points at
+(`flatpak/screenshots/`: `chooser`, `collection`, `record`, `document-preview`
+and `accessories`) are taken by their own command, not by the walk above, and
+**only when someone retakes them on purpose** (to show a new feature, say):
+a build, `npm test`, `npm run screenshots` and `npm run test:e2e` never touch
+them (`011 FR-017`; `011 research.md` §13).
+
+```bash
+scripts/dev-container.sh bash -c 'npm run build && npm run screenshots:store'
+```
+
+It runs `e2e/screenshots/store.e2e.ts` on Linux in the dev container, in the
+walk's setting (Xvfb, 1200×800, light theme), and only when the run passes
+replaces the five files in `flatpak/screenshots/` together; the run itself
+writes to `e2e/screenshots-out/store/`. Run twice on the same build, it gives
+byte-identical files. To make that so:
+
+- The sandbox is at `/tmp/hoplodex-store-shots`, the same path every time (the
+  chooser shows it), and the seed is run with `--fixed-times`: the backups, the
+  last open and the documents' dates are stamped so the chooser reads "Today at
+  10:30 AM" and the viewer "added Sep 15, 2025" whatever day it is. No text in
+  view may depend on the day or time of the run; where one would, change the
+  view, or give the seed a record with fixed dates, never the test.
+- The seed's $99,999,999 firearm (#67, kept in the seed) has its estimated
+  replacement value set to $2,500 through the app's edit form, so the total
+  reads $51,300, and the collection is grouped by Type so no photo that needs a
+  credit line is in view.
+- `e2e/screenshots/store-shots.json` records what each shot shows, by record and
+  photo with its licence, and the text the page must carry. The spec checks the
+  app's view against it before every shot and fails rather than take one that
+  differs; `scripts/flatpak/storeShots.test.ts` (in `npm test`) checks the file
+  against `011 research.md` §13's list, the seed-photos README's licences and
+  the metainfo. A retake that shows another record or photo changes that file,
+  and the research note, on purpose.
+
+Look at the five files before committing them. A different WebKitGTK, font or
+Mesa in the dev container image can change every pixel, so retake all five
+together, never one.
 
 ## Tuning the chooser's drawing
 
