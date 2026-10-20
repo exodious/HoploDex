@@ -475,8 +475,12 @@ fn creating_at_the_suggested_folder_with_no_grantable_documents_is_refused_and_n
             Some(&refused.message),
             "the message is on the folder field: {refused:?}"
         );
+        // The grants as the message prints them: a path's separators are the
+        // computer's own, which on Windows turns `/media` into `\media`.
+        let [media, run_media] = reach.grants() else { panic!("two grants") };
+        let (media, run_media) = (media.root.display(), run_media.root.display());
         assert!(
-            refused.message.contains("it can only reach `/media` and `/run/media`, so"),
+            refused.message.contains(&format!("it can only reach `{media}` and `{run_media}`, so")),
             "{}",
             refused.message
         );

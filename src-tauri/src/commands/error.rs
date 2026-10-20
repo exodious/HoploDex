@@ -349,17 +349,20 @@ impl CommandError {
     ) -> Self {
         let roots: Vec<String> =
             grants.iter().map(|grant| grant.root.to_string_lossy().into_owned()).collect();
-        let default_folder = documents.map(|documents| documents.join("HoploDex"));
+        // A host path is a POSIX one whatever builds the message, so the default
+        // folder is joined with a slash, not with `Path::join` (a backslash on
+        // Windows, where the unit tests run).
+        let default_folder = documents.map(|documents| {
+            format!("{}/HoploDex", documents.to_string_lossy().trim_end_matches('/'))
+        });
         let shipped = default_folder.as_ref().is_some_and(|default_folder| {
-            let default_folder = default_folder.to_string_lossy();
             grants.len() == 3
                 && grants.iter().all(|grant| grant.writable)
-                && [default_folder.as_ref(), "/media", "/run/media"]
+                && [default_folder.as_str(), "/media", "/run/media"]
                     .iter()
                     .all(|shipped| roots.iter().any(|root| root == shipped))
         });
         let (reach, moving) = if let (true, Some(default_folder)) = (shipped, &default_folder) {
-            let default_folder = default_folder.display();
             (
                 format!(
                     "the HoploDex folder in your Documents folder (`{default_folder}`) and \
