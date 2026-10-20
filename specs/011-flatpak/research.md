@@ -1073,6 +1073,12 @@ _Amended 2026-10-19 (011 T078): checked against what was built._
   key or secret were read and none prints one; the rest were not reviewed line
   by line for collection data. The journal is local and the user's own; the
   release review should decide whether paths belong there.
+  _Amended 2026-10-19: every line was then read for collection data. The owner
+  accepts database, backup and app-file paths; nothing from inside a database
+  is logged (no record values, no original photo or document file name, nor
+  its source path or a copy named after it, no draft text), and the lines that
+  could were changed (`logging.rs`, `logging::folder_of`, `logging::json_error`).
+  A log a user can send, at a level they choose, is #128._
 - **The runtime** is Flathub's, updated by Flathub, and ends with GNOME 51
   (§1). A WebKitGTK security fix reaches users when Flathub updates the
   runtime, without a HoploDex release.
