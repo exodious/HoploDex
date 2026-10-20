@@ -1,5 +1,6 @@
 {
-  "_about": "011 research.md §13: what each of the Flatpak's five store shots (flatpak/screenshots/<name>.png, in this order, the metainfo's order) shows, by record and photo, with each photo's licence as src-tauri/examples/seed-photos/README.md records it. store.e2e.ts checks the app's view against it as it takes them; scripts/flatpak/storeShots.test.ts checks it against research.md and the README. A retake that shows another record or photo changes this file on purpose. `shows` is text that must be on the page (it is what the fixed-time seed and the value edit make of it); `generated` names records whose picture is a generated gradient, not a seed photo.",
+  "_about": "011 research.md §13: what each of the Flatpak's five store shots (flatpak/screenshots/<name>.png, in this order, the metainfo's order) shows, by record and photo, with each photo's licence as src-tauri/examples/seed-photos/README.md records it. store.e2e.ts checks the app's view against it as it takes them; scripts/flatpak/storeShots.test.ts checks it against 011 research.md §13 and the README. A retake that shows another record or photo changes this file on purpose. `shows` is text that must be on the page (it is what the fixed-time seed and the value edit make of it); `generated` names records whose picture is a generated gradient, not a seed photo. `seedDir` is the folder the seed is made in, so the chooser shows /home/alex/Documents/HoploDex: `scripts/dev-container.sh --store-shots` mounts a tmpfs there for the one command.",
+  "seedDir": "/home/alex/Documents",
   "window": {
     "width": 1200,
     "height": 800
@@ -10,7 +11,7 @@
       "photos": [],
       "drawings": [],
       "shows": [
-        "/tmp/hoplodex-store-shots/seed/HoploDex",
+        "/home/alex/Documents/HoploDex",
         "Today at 10:30 AM",
         "Today at 10:31 AM",
         "3 kept, the oldest from yesterday"

@@ -17,7 +17,7 @@ import { SCREENSHOT_WINDOW, chooseTheme, screenshotsEnabled, shot } from "../sup
 import { readStoreShots, type StoreShot } from "./storeShots";
 
 /**
- * The Flatpak's five store shots (011 FR-017, research.md §13), retaken on
+ * The Flatpak's five store shots (011 FR-017, 011 research.md §13), retaken on
  * purpose with `npm run screenshots:store`, never by a build or by
  * `npm run screenshots`, and not part of `npm run test:e2e`. Where they differ
  * from the walk's (screens.e2e.ts):
@@ -134,7 +134,7 @@ async function viewportRows(): Promise<{ name: string; thumb: "photo" | "drawing
 /** Fails unless the rows in view are those `store-shots.json` records for the
  * shot: a photo only on a record it lists (or one whose picture is generated),
  * a drawing on the rest, and every record it names in view. This is what
- * keeps a photo that needs a credit line out of the shot (research.md §13). */
+ * keeps a photo that needs a credit line out of the shot (011 research.md §13). */
 async function assertRows(shotName: string) {
   const shot = shotNamed(shotName);
   const withPhoto = [...shot.photos.map((p) => p.record), ...shot.generated];

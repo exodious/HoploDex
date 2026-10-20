@@ -1532,7 +1532,7 @@ a build, `npm test`, `npm run screenshots` and `npm run test:e2e` never touch
 them (`011 FR-017`; `011 research.md` §13).
 
 ```bash
-scripts/dev-container.sh bash -c 'npm run build && npm run screenshots:store'
+scripts/dev-container.sh --store-shots bash -c 'npm run build && npm run screenshots:store'
 ```
 
 It runs `e2e/screenshots/store.e2e.ts` on Linux in the dev container, in the
@@ -1541,8 +1541,13 @@ replaces the five files in `flatpak/screenshots/` together; the run itself
 writes to `e2e/screenshots-out/store/`. Run twice on the same build, it gives
 byte-identical files. To make that so:
 
-- The sandbox is at `/tmp/hoplodex-store-shots`, the same path every time (the
-  chooser shows it), and the seed is run with `--fixed-times`: the backups, the
+- The seed is made in `/home/alex/Documents`, so the chooser shows
+  `/home/alex/Documents/HoploDex`, a path that reads like a user's own. That
+  folder is a tmpfs `scripts/dev-container.sh --store-shots` mounts for that one
+  command (never the `/home/dev` volume, never the host), emptied when the run
+  ends; the command refuses to run without it. The rest of the sandbox is at
+  `/tmp/hoplodex-store-shots`, the same path every time, and the seed is run
+  with `--fixed-times`: the backups, the
   last open and the documents' dates are stamped so the chooser reads "Today at
   10:30 AM" and the viewer "added Sep 15, 2025" whatever day it is. No text in
   view may depend on the day or time of the run; where one would, change the

@@ -26,6 +26,9 @@ import { repoRoot, seedBinary } from "./build";
  */
 interface SandboxState {
   dir: string | undefined;
+  /** A folder outside the sandbox the seed was made in (see
+   * {@link seedCollection}'s `seedDir`), emptied when the sandbox goes. */
+  seedDir?: string;
 }
 /** The name every sandbox directory starts with, in the system's temp folder
  * (`fs.mkdtempSync` adds six random letters and digits). */
@@ -265,13 +268,18 @@ function runSeed(args: string[], stdio: "inherit" | "pipe") {
  * `pendingFrom` they were kept by that version of HoploDex, in a form this
  * build can't resume (008 FR-016). With `fixedTimes` the seed stamps its
  * backups, last open and documents so the screens read the same on any day
- * (the store shots, 011 FR-017).
+ * (the store shots, 011 FR-017). With `seedDir` the seed is made in that
+ * existing, empty folder instead of the sandbox's `seed` (the store shots'
+ * chooser shows its path); it is emptied again by {@link removeSandbox}.
  */
 export function seedCollection(
-  options: { pendingFrom?: string; fixedTimes?: boolean } = {},
+  options: { pendingFrom?: string; fixedTimes?: boolean; seedDir?: string } = {},
 ): string {
   if (!state.dir) throw new Error("seedCollection() needs isolateAppData() first");
-  const dir = path.join(state.dir, "seed");
+  const dir = options.seedDir
+    ? prepareMountedFolder(options.seedDir)
+    : path.join(state.dir, "seed");
+  if (options.seedDir) state.seedDir = dir;
   const seedArgs = ["--dir", dir];
   if (options.pendingFrom) seedArgs.push("--pending-from", options.pendingFrom);
   if (options.fixedTimes) seedArgs.push("--fixed-times");
@@ -285,6 +293,37 @@ export function seedCollection(
 
   process.env.HOPLODEX_E2E_CONFIG_HOME = path.join(dir, "config");
   return passphrase;
+}
+
+/** The marker `examples/support/sandbox.rs` leaves in a folder it seeded. */
+const SEED_MARKER = ".hoplodex-sandbox";
+
+/**
+ * `dir`, an existing folder that something mounted for this run (a tmpfs:
+ * `scripts/dev-container.sh --store-shots`), made ready for a seed: empty, or
+ * holding only what an earlier seed made (it has the seed's marker), which is
+ * removed. Nothing else is ever removed, and a folder that isn't there is an
+ * error, so the seed is never made in (or the sandbox's removal run on) a real
+ * folder by accident.
+ */
+function prepareMountedFolder(dir: string): string {
+  if (!path.isAbsolute(dir) || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    throw new Error(
+      `${dir} is not a folder here: run through \`scripts/dev-container.sh --store-shots\``,
+    );
+  }
+  const entries = fs.readdirSync(dir);
+  if (entries.length > 0 && !entries.includes(SEED_MARKER)) {
+    throw new Error(`${dir} is not empty and was not made by the seed; not touching it`);
+  }
+  emptyFolder(dir);
+  return dir;
+}
+
+/** Removes what is in `dir`, leaving `dir` itself (it may be a mount point). */
+function emptyFolder(dir: string) {
+  for (const name of fs.readdirSync(dir))
+    fs.rmSync(path.join(dir, name), { recursive: true, force: true });
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -343,6 +382,9 @@ const REMOVE_TIMEOUT_MS = 30_000;
 /** Removes the sandbox. It tries again for up to 30 s, and logs a sandbox it
  * could not remove rather than dropping it silently. */
 export async function removeSandbox() {
+  const seedDir = state.seedDir;
+  state.seedDir = undefined;
+  if (seedDir && fs.existsSync(path.join(seedDir, SEED_MARKER))) emptyFolder(seedDir);
   const root = state.dir;
   if (!root) return;
   state.dir = undefined;

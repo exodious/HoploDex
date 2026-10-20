@@ -2,7 +2,7 @@
 // The Flatpak's store shots (011 FR-017; 011 research.md §13): the script's
 // record of what each shows (e2e/screenshots/store-shots.json, which
 // store.e2e.ts checks the app's view against as it takes them) agrees with
-// research.md's recorded list, with the photos' licences as the seed-photos
+// 011 research.md's recorded list, with the photos' licences as the seed-photos
 // README records them, and with the files the metainfo points at. The shots
 // are retaken only on purpose, by `npm run screenshots:store`.
 import fs from "node:fs";
@@ -18,13 +18,14 @@ const SEED_SOURCE = path.join(ROOT, "src-tauri/examples/support/main_collection.
 const METAINFO = path.join(ROOT, "flatpak/io.github.exodious.HoploDex.metainfo.xml");
 const STORE_DIR = path.join(ROOT, "flatpak/screenshots");
 
-const { window, shots } = readStoreShots();
+const { window, shots, seedDir } = readStoreShots();
 
-/** research.md §13's bullets, one per shot: `chooser.png` to its text. */
+/** 011 research.md §13's bullets, one per shot: `chooser.png` to its text. */
 function researchBullets(): Map<string, string> {
   const section = fs.readFileSync(RESEARCH, "utf8");
   const start = section.indexOf("What each\n    shot shows, with the photos' licences:");
-  if (start < 0) throw new Error("research.md §13 no longer has the list of what each shot shows");
+  if (start < 0)
+    throw new Error("011 research.md §13 no longer has the list of what each shot shows");
   const end = section.indexOf("A retake of any of them must keep to this list", start);
   const list = section.slice(start, end);
   const bullets = new Map<string, string>();
@@ -69,7 +70,7 @@ describe("011 FR-017 - the store shots' recorded list", () => {
     }
   });
 
-  it("research.md §13 lists the same photos for each shot, and the same kind of licence", () => {
+  it("011 research.md §13 lists the same photos for each shot, and the same kind of licence", () => {
     const bullets = researchBullets();
     expect([...bullets.keys()]).toEqual(shots.map((s) => s.name));
     for (const shot of shots) {
@@ -83,7 +84,7 @@ describe("011 FR-017 - the store shots' recorded list", () => {
         const next = text.slice(from).search(/`[a-z0-9-]+\.jpg`/);
         const given = next < 0 ? text.slice(from) : text.slice(from, from + next);
         const kind = photo.licence.startsWith("CC0") ? /CC0/ : /public domain/i;
-        expect(given, `${photo.file}'s licence in research.md`).toMatch(kind);
+        expect(given, `${photo.file}'s licence in 011 research.md §13`).toMatch(kind);
       }
     }
   });
@@ -122,7 +123,20 @@ describe("011 FR-017 - the store shots' recorded list", () => {
     ]);
   });
 
-  it("is retaken only by `npm run screenshots:store`: no build, test or other script runs it", () => {
+  it("shows a Documents folder the container mounts for the store run alone", () => {
+    expect(seedDir).toBe("/home/alex/Documents");
+    const container = fs.readFileSync(path.join(ROOT, "scripts/dev-container.sh"), "utf8");
+    // A tmpfs, only under --store-shots: not a volume, not a bind mount of the host.
+    const mount =
+      /if \[\[ \$store_shots -eq 1 \]\]; then\n\s*args\+=\(--tmpfs ([^:\s]+):rw[^)]*\)\nfi/.exec(
+        container,
+      );
+    expect(mount?.[1]).toBe(seedDir);
+    const chooser = shots.find((s) => s.name === "chooser")!;
+    expect(chooser.shows).toContain(`${seedDir}/HoploDex`);
+  });
+
+  it("is retaken only by `npm run screenshots:store`: no build, test or other script runs it (the container script only mounts its folder)", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as {
       scripts: Record<string, string>;
     };
@@ -140,7 +154,12 @@ describe("011 FR-017 - the store shots' recorded list", () => {
       recursive: true,
     }) as string[]) {
       const full = path.join(ROOT, "scripts", file);
-      if (!fs.statSync(full).isFile() || file.endsWith("storeShots.test.ts")) continue;
+      if (
+        !fs.statSync(full).isFile() ||
+        file.endsWith("storeShots.test.ts") ||
+        file === "dev-container.sh"
+      )
+        continue;
       expect(fs.readFileSync(full, "utf8"), file).not.toMatch(/screenshots:store|--store-shots/);
     }
   });

@@ -13,6 +13,7 @@ import {
   findStaleSandboxes,
   isolateAppData,
   removeSandbox,
+  seedCollection,
   sha256Of,
   sweepStaleSandboxes,
 } from "./sandbox";
@@ -66,6 +67,26 @@ describe("the E2E sandbox", () => {
 
 // 011 FR-017: the store shots' sandbox is at the same path on every run, so
 // the chooser's path in the shot is too.
+describe("a mounted folder for the seed (011 FR-017)", () => {
+  let parent: string;
+  beforeEach(() => {
+    parent = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-mounted-test-"));
+    isolateAppData();
+  });
+  afterEach(() => {
+    fs.rmSync(parent, { recursive: true, force: true });
+  });
+
+  it("refuses a folder that isn't there, and one with anything else in it", () => {
+    expect(() => seedCollection({ seedDir: path.join(parent, "missing") })).toThrow(
+      /dev-container.sh --store-shots/,
+    );
+    fs.writeFileSync(path.join(parent, "precious"), "x");
+    expect(() => seedCollection({ seedDir: parent })).toThrow(/not empty/);
+    expect(fs.readFileSync(path.join(parent, "precious"), "utf-8")).toBe("x");
+  });
+});
+
 describe("a sandbox at a fixed path", () => {
   const DEAD = 2_000_000_001;
   let parent: string;

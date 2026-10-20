@@ -5,6 +5,7 @@ import { browser } from "@wdio/globals";
 import { SevereServiceError } from "webdriverio";
 import { SCREENSHOT_WINDOW, screenshotsEnabled } from "./support/screenshots";
 import { assignWorkerPort, killApp, launchApp } from "./support/app";
+import { readStoreShots } from "./screenshots/storeShots";
 import { buildApp } from "./support/build";
 import { startDisplay, stopDisplay } from "./support/display";
 import {
@@ -197,7 +198,10 @@ export const config: WebdriverIO.Config = {
           spec.endsWith("/e2e/specs/session-isolation.e2e.ts"),
       )
     ) {
-      seedCollection({ fixedTimes: storeShots });
+      seedCollection({
+        fixedTimes: storeShots,
+        seedDir: storeShots ? readStoreShots().seedDir : undefined,
+      });
     }
     await startDisplay();
     await launchApp();

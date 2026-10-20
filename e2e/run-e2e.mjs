@@ -37,6 +37,17 @@ if (storeShots) {
     );
     process.exit(2);
   }
+  // The chooser's shot shows the seed's folder, so it is the same every time:
+  // a tmpfs the dev container mounts for this one command (and no other).
+  const { seedDir } = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, "e2e/screenshots/store-shots.json"), "utf8"),
+  );
+  if (!fs.existsSync(seedDir)) {
+    console.error(
+      `${seedDir} is not here: run through \`scripts/dev-container.sh --store-shots npm run screenshots:store\``,
+    );
+    process.exit(2);
+  }
   fs.rmSync(STORE_STAGING, { recursive: true, force: true });
 }
 
