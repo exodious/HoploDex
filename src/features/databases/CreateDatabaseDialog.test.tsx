@@ -223,7 +223,7 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
   it("puts a location out of the Flatpak's reach on the folder, and focuses it", async () => {
     const user = userEvent.setup();
     const message =
-      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /srv/hoplodex-check/My collection.hoplodex. Move the file into your home folder or onto a removable drive, or give HoploDex access to /srv/hoplodex-check by running: flatpak override --user --filesystem=/srv/hoplodex-check io.github.exodious.HoploDex and then restarting HoploDex.";
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/hoplodex-check/My collection.hoplodex. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/hoplodex-check by running: flatpak override --user --filesystem=/srv/hoplodex-check io.github.exodious.HoploDex and then restarting HoploDex.";
     onCreate.mockRejectedValue(
       new CommandFailure({
         code: "LOCATION_OUT_OF_REACH",
@@ -232,7 +232,7 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
         details: {
           path: "/srv/hoplodex-check/My collection.hoplodex",
           folder: "/srv/hoplodex-check",
-          grants: ["your home folder", "removable drives"],
+          grants: ["/home/sam/Documents/HoploDex", "/media", "/run/media"],
         },
       }),
     );

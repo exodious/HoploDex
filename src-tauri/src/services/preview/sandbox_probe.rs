@@ -55,6 +55,32 @@ unsafe fn name_default_application() {
     }
 }
 
+/// The file a Flatpak puts at the root of every app's sandbox, and nowhere
+/// else.
+const FLATPAK_INFO: &str = "/.flatpak-info";
+
+/// Whether to name the default application: only inside a Flatpak, which is
+/// where the portal checks the a11y bus name. On a `.deb` or `.rpm` install
+/// nothing is named, so they behave as before 011 (011 FR-011, 011
+/// research.md §9). A pure function of the file's path, so a test can pass
+/// one that exists and one that doesn't.
+fn names_default_application(flatpak_info: &Path) -> bool {
+    flatpak_info.exists()
+}
+
+/// [`name_default_application`] when [`names_default_application`] says so
+/// for this computer's [`FLATPAK_INFO`]; the one call both the app and the
+/// probe child make, so they cannot differ.
+///
+/// # Safety
+/// As [`name_default_application`].
+unsafe fn name_default_application_in_flatpak() {
+    if names_default_application(Path::new(FLATPAK_INFO)) {
+        // SAFETY: the caller upholds `name_default_application`'s contract.
+        unsafe { name_default_application() };
+    }
+}
+
 /// This process's own executable, as the kernel has it.
 const SELF_EXE: &str = "/proc/self/exe";
 
@@ -120,8 +146,8 @@ pub fn decide(markers: &[&Path], probe: impl FnOnce() -> ProbeOutcome) -> WebKit
 
 /// Runs the probe where the app starts: decides for this computer, and when
 /// the sandbox works sets `WEBKIT_FORCE_SANDBOX=1` for this process (and so
-/// for every web view it makes) and names its default application
-/// ([`name_default_application`]). Call it first in `main()`, before any
+/// for every web view it makes) and, inside a Flatpak only, names its default
+/// application ([`name_default_application_in_flatpak`]). Call it first in `main()`, before any
 /// thread and before Tauri.
 pub fn decide_and_apply() -> WebKitSandbox {
     let markers: Vec<&Path> = SKIP_MARKERS.iter().map(Path::new).collect();
@@ -131,7 +157,7 @@ pub fn decide_and_apply() -> WebKitSandbox {
         // else reads or writes the environment.
         unsafe {
             std::env::set_var("WEBKIT_FORCE_SANDBOX", "1");
-            name_default_application();
+            name_default_application_in_flatpak();
         }
     }
     decision
@@ -215,7 +241,7 @@ pub fn run_child_probe() -> ! {
         }
         // The app names its default application the same way when the probe
         // passes ([`decide_and_apply`]), so the probe must too.
-        name_default_application();
+        name_default_application_in_flatpak();
         let view = webkit2gtk::ffi::webkit_web_view_new();
         let main_loop = g_main_loop_new(std::ptr::null_mut(), 0);
         let probe = Box::into_raw(Box::new(Probe { main_loop }));
@@ -265,6 +291,18 @@ mod tests {
         assert!(!SKIP_MARKERS.contains(&"/.flatpak-info"));
         assert!(SKIP_MARKERS.contains(&"/run/.containerenv"));
         assert!(SKIP_MARKERS.contains(&"/.dockerenv"));
+    }
+
+    /// 011 FR-011, 011 research.md §9 (2026-10-19): the default application is
+    /// named only where `/.flatpak-info` exists.
+    #[test]
+    fn the_default_application_is_named_only_inside_a_flatpak() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = dir.path().join(".flatpak-info");
+        assert!(!names_default_application(&info));
+        std::fs::write(&info, "[Application]\nname=io.github.exodious.HoploDex\n").unwrap();
+        assert!(names_default_application(&info));
+        assert_eq!(FLATPAK_INFO, "/.flatpak-info");
     }
 
     #[test]

@@ -160,7 +160,7 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
   it("shows a custom location refused as out of reach on the location field", async () => {
     const user = userEvent.setup();
     const message =
-      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /srv/hoplodex-backups. Move the file into your home folder or onto a removable drive, or give HoploDex access to /srv/hoplodex-backups by running: flatpak override --user --filesystem=/srv/hoplodex-backups io.github.exodious.HoploDex and then restarting HoploDex.";
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/hoplodex-backups. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/hoplodex-backups by running: flatpak override --user --filesystem=/srv/hoplodex-backups io.github.exodious.HoploDex and then restarting HoploDex.";
     vi.mocked(openFolderDialog).mockResolvedValue("/srv/hoplodex-backups");
     vi.mocked(databasesService.updateBackupSettings).mockRejectedValue(
       new CommandFailure({

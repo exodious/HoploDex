@@ -119,13 +119,17 @@ describe("DatabaseGuide", () => {
       const section = several(LINUX);
 
       expect(section).toHaveTextContent("If you have installed HoploDex as a Flatpak");
-      expect(section).toHaveTextContent(/separate recent lists and settings/i);
+      expect(section).toHaveTextContent(/separate recent lists, settings and saved passphrases/i);
       expect(section).toHaveTextContent(/\.deb or \.rpm/);
+      expect(section).toHaveTextContent(/a passphrase saved in one is not seen by the other/i);
+      expect(section).not.toHaveTextContent(/shared when both reach the same keyring/i);
       expect(section).toHaveTextContent(
-        /saved passphrases are shared when both reach the same keyring/i,
+        "By default a Flatpak reaches only the HoploDex folder in your Documents folder and removable drives.",
       );
-      expect(section).toHaveTextContent(/only the home folder and removable drives/i);
-      expect(section).toHaveTextContent("flatpak override");
+      expect(section).not.toHaveTextContent(/home folder/i);
+      expect(section).toHaveTextContent(
+        "flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex and restart HoploDex",
+      );
     });
 
     it.each([

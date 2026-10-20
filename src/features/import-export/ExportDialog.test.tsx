@@ -302,12 +302,12 @@ describe("ExportDialog refused as out of reach (011 US1-8, 011 FR-004)", () => {
   it("shows the backend's message and stays open for another folder", async () => {
     const user = userEvent.setup();
     const message =
-      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /srv/out. Move the file into your home folder or onto a removable drive, or give HoploDex access to /srv/out by running: flatpak override --user --filesystem=/srv/out io.github.exodious.HoploDex and then restarting HoploDex.";
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/out. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/out by running: flatpak override --user --filesystem=/srv/out io.github.exodious.HoploDex and then restarting HoploDex.";
     vi.mocked(importExportService.exportCollection).mockRejectedValue(
       new CommandFailure({
         code: "LOCATION_OUT_OF_REACH",
         message,
-        details: { path: "/srv/out", folder: "/srv/out", grants: ["your home folder"] },
+        details: { path: "/srv/out", folder: "/srv/out", grants: ["/home/sam/Documents/HoploDex", "/media", "/run/media"] },
       }),
     );
     await renderDialog();

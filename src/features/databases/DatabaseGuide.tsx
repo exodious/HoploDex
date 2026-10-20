@@ -85,7 +85,7 @@ const SECTIONS: Section[] = [
     // 011 FR-009, 011 research.md §11: text, not a command, so it needs no
     // backend help to know it is a Flatpak and reads correctly on any Linux install.
     linuxParagraphs: [
-      `If you have installed HoploDex as a Flatpak, it and a .deb or .rpm of HoploDex on the same computer keep separate recent lists and settings, so each shows only the databases opened with it. Saved passphrases are shared when both reach the same keyring. A Flatpak reaches only the home folder and removable drives unless you give it more: to give it a folder elsewhere, run flatpak override --user --filesystem=<folder> ${FLATPAK_APP_ID} and restart HoploDex.`,
+      `If you have installed HoploDex as a Flatpak, it and a .deb or .rpm of HoploDex on the same computer keep separate recent lists, settings and saved passphrases, so each shows only the databases opened with it, and a passphrase saved in one is not seen by the other. By default a Flatpak reaches only the HoploDex folder in your Documents folder and removable drives. To give it another folder, run flatpak override --user --filesystem=<folder> ${FLATPAK_APP_ID} and restart HoploDex.`,
     ],
   },
   {

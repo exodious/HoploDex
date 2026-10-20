@@ -556,7 +556,7 @@ describe("ImportDialog files and the two tables (006 US5)", () => {
   it("shows a file refused as out of reach in the alert banner, with the file still listed", async () => {
     const user = userEvent.setup();
     const message =
-      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /srv/data/firearms.csv. Move the file into your home folder or onto a removable drive, or give HoploDex access to /srv/data by running: flatpak override --user --filesystem=/srv/data io.github.exodious.HoploDex and then restarting HoploDex.";
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/data/firearms.csv. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/data by running: flatpak override --user --filesystem=/srv/data io.github.exodious.HoploDex and then restarting HoploDex.";
     vi.mocked(importExportService.importCollection).mockRejectedValue(
       new CommandFailure({
         code: "LOCATION_OUT_OF_REACH",
@@ -564,7 +564,7 @@ describe("ImportDialog files and the two tables (006 US5)", () => {
         details: {
           path: "/srv/data/firearms.csv",
           folder: "/srv/data",
-          grants: ["your home folder"],
+          grants: ["/home/sam/Documents/HoploDex", "/media", "/run/media"],
         },
       }),
     );

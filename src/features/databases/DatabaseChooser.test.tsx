@@ -316,7 +316,7 @@ describe("DatabaseChooser (003 US2)", () => {
   it("shows an open refused as out of reach in the open-failure line, and the passphrase stays", async () => {
     const user = userEvent.setup();
     const message =
-      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /home/sam/Documents/HoploDex/Main collection.hoplodex. Move the file into your home folder or onto a removable drive, or give HoploDex access to /home/sam/Documents/HoploDex by running: flatpak override --user --filesystem=/home/sam/Documents/HoploDex io.github.exodious.HoploDex and then restarting HoploDex.";
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /home/sam/Documents/HoploDex/Main collection.hoplodex. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /home/sam/Documents/HoploDex by running: flatpak override --user --filesystem=/home/sam/Documents/HoploDex io.github.exodious.HoploDex and then restarting HoploDex.";
     renderChooser({
       openDatabase: vi.fn().mockRejectedValue(
         new CommandFailure({
@@ -325,7 +325,7 @@ describe("DatabaseChooser (003 US2)", () => {
           details: {
             path: main.path,
             folder: "/home/sam/Documents/HoploDex",
-            grants: ["your home folder", "removable drives"],
+            grants: ["/home/sam/Documents/HoploDex", "/media", "/run/media"],
           },
         }),
       ),
@@ -363,7 +363,7 @@ describe("DatabaseChooser (003 US2)", () => {
     const user = userEvent.setup();
     const found = "/srv/guns/Shared collection.hoplodex";
     const message =
-      "This copy of HoploDex is a Flatpak, and it can only reach your home folder and removable drives, so it can't use /srv/guns/Shared collection.hoplodex. Move the file into your home folder or onto a removable drive, or give HoploDex access to /srv/guns by running: flatpak override --user --filesystem=/srv/guns io.github.exodious.HoploDex and then restarting HoploDex.";
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/guns/Shared collection.hoplodex. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/guns by running: flatpak override --user --filesystem=/srv/guns io.github.exodious.HoploDex and then restarting HoploDex.";
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ recent: [main, { ...shared, available: false }] }),
     );
@@ -1577,7 +1577,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
 
       const asked = await screen.findByRole("dialog", { name: "Save the backup somewhere else?" });
       expect(asked).toHaveTextContent(
-        `HoploDex couldn't save the backup it makes before upgrading “Main collection” in ${BACKUPS}. This copy of HoploDex can't reach this folder. It is a Flatpak, and by default it can reach only your home folder and removable drives. Choose a folder in your home folder or on a removable drive, or give HoploDex access to ${BACKUPS} by running: flatpak override --user --filesystem='${BACKUPS}' io.github.exodious.HoploDex and then restarting HoploDex. You can save this one backup in a folder you choose instead, or cancel. “Main collection” isn't upgraded without a backup.`,
+        `HoploDex couldn't save the backup it makes before upgrading “Main collection” in ${BACKUPS}. This copy of HoploDex can't reach this folder. It is a Flatpak, and by default it can reach only the HoploDex folder in your Documents folder and removable drives. Choose a folder in the HoploDex folder in your Documents folder or on a removable drive, or give HoploDex access to ${BACKUPS} by running: flatpak override --user --filesystem='${BACKUPS}' io.github.exodious.HoploDex and then restarting HoploDex. You can save this one backup in a folder you choose instead, or cancel. “Main collection” isn't upgraded without a backup.`,
       );
       expect(within(asked).getByRole("button", { name: "Choose a folder…" })).toBeInTheDocument();
     });
