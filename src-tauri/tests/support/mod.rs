@@ -1,5 +1,7 @@
 pub mod hostile_documents;
 pub mod hostile_spreadsheets;
+#[cfg(target_os = "linux")]
+pub mod private_bus;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};

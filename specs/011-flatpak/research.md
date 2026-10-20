@@ -1273,6 +1273,8 @@ _Amended 2026-10-19 (011 T078): checked against what was built._
 - **Shipped**: no new crate or npm package. The OpenURI and Documents
   portal calls use `zbus`, already a Linux dependency for the OS notices.
   The runtime's libraries are the runtime's (010 FR-017).
+  _Amended 2026-10-19 (owner's decision): `oo7` 0.6 and its new crates
+  ship on Linux, for the Flatpak's saved passphrases ([§7](#7-saved-passphrases-fr-006))._
 - **Build and test only**, all in the dev container: the GNOME 51 SDK and
   the two SDK extensions, `flatpak`, `flatpak-builder`, the two
   flatpak-builder-tools generators, Flathub's linter (§15), `appstream`,

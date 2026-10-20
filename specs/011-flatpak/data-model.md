@@ -226,6 +226,10 @@ _Added 2026-10-19 (owner's decision; FR-006; research.md §7)._
 | Available when | the OS keyring answers (003 FR-019) | `org.freedesktop.portal.Desktop` has an owner and its Secret interface's `version` reads; never by calling `RetrieveSecret` |
 | When it isn't | saving shows unavailable | the same, with no fallback to the Secret Service |
 
+_Amended 2026-10-19: the store is not installed with `set_default_store`. It
+is held in `Keyring`'s own `Backend::Portal`, because `keyring::Entry::new`
+makes the Secret Service the default store on first use and would replace it._
+
 `e2e` builds keep the mock store, except `flatpak-check`, which uses the
 portal store against the check's stand-in portal (research.md §16).
 

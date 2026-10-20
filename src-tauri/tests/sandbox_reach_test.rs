@@ -215,7 +215,6 @@ impl World {
                 Grant { root: tmp.path().join("ro"), writable: false },
             ],
             Vec::new(),
-            home,
             Arc::new(FixedHostPaths(HashMap::new())),
         ));
         let opened = config.path().join("opened-documents");
@@ -1161,11 +1160,9 @@ impl World {
     /// that maps `picked` to `host`, keeping the same grants, folders and
     /// clock.
     fn reach_for_portal(&mut self, picked: &Path, host: &Path) {
-        let home = self.home();
         self.reach = Arc::new(Reach::flatpak(
             self.reach.grants().to_vec(),
             Vec::new(),
-            home,
             Arc::new(FixedHostPaths(HashMap::from([(picked.to_owned(), host.to_owned())]))),
         ));
         let (boxed, _) = support::test_session_reaching(
@@ -1190,7 +1187,6 @@ impl World {
         self.reach = Arc::new(Reach::flatpak(
             self.reach.grants().to_vec(),
             Vec::new(),
-            self.home(),
             Arc::new(ByDocument(move |id: &str, _entry: &Path| documents.get(id).cloned())),
         ));
         let (boxed, _) = support::test_session_reaching(

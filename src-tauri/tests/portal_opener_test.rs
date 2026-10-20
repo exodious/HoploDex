@@ -41,11 +41,9 @@ use crate::{preview_support, support};
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -55,6 +53,7 @@ use hoplodex_lib::commands::documents::{OpenFailure, Opener, portal_open};
 use hoplodex_lib::services::consent::{Consent, ConsentAnswer, ConsentRequest};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::session::lifecycle;
+use support::private_bus::Bus;
 use support::{document_fixture, passphrase};
 use tempfile::TempDir;
 use zbus::zvariant::{OwnedFd, OwnedObjectPath, OwnedValue, Value};
@@ -66,73 +65,6 @@ const WAITING: Duration = Duration::from_secs(10);
 const SHORT: Duration = Duration::from_millis(400);
 /// No call that gets an answer, or none to wait for, takes this long.
 const PROMPT: Duration = Duration::from_secs(5);
-
-// ------------------------------------------------------------------ the bus
-
-const BUS_CONFIG: &str = r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig>
-  <type>session</type>
-  <listen>unix:dir=@DIR@</listen>
-  <auth>EXTERNAL</auth>
-  <policy context="default">
-    <allow send_destination="*" eavesdrop="true"/>
-    <allow eavesdrop="true"/>
-    <allow own="*"/>
-  </policy>
-</busconfig>
-"#;
-
-/// A private `dbus-daemon`, killed when this is dropped.
-struct Bus {
-    child: Child,
-    address: String,
-    _stdout: BufReader<ChildStdout>,
-    _dir: TempDir,
-}
-
-impl Bus {
-    fn start() -> Self {
-        let dir = TempDir::new().unwrap();
-        let config = dir.path().join("bus.conf");
-        fs::write(&config, BUS_CONFIG.replace("@DIR@", &dir.path().to_string_lossy())).unwrap();
-        let mut child = Command::new("dbus-daemon")
-            .arg("--config-file")
-            .arg(&config)
-            .args(["--nofork", "--print-address"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .unwrap_or_else(|err| {
-                panic!(
-                    "this test needs `dbus-daemon` (it is in the dev container, started through \
-                     scripts/dev-container.sh), and starting it failed: {err}"
-                )
-            });
-        let mut stdout = BufReader::new(child.stdout.take().unwrap());
-        let mut line = String::new();
-        stdout.read_line(&mut line).unwrap();
-        let address = line.trim().to_owned();
-        assert!(!address.is_empty(), "`dbus-daemon` printed no address");
-        Self { child, address, _stdout: stdout, _dir: dir }
-    }
-
-    /// A connection to this bus, as the app's portal route would make.
-    fn connect(&self) -> zbus::Connection {
-        zbus::block_on(async {
-            zbus::connection::Builder::address(self.address.as_str())?.build().await
-        })
-        .expect("connecting to the test bus")
-    }
-}
-
-impl Drop for Bus {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
 
 // ------------------------------------------------------------------ the portal
 
@@ -268,14 +200,8 @@ impl Portal {
     fn serve(bus: &Bus, answer: Answer) -> Self {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let service = OpenUri { answer, seen: Arc::clone(&seen) };
-        let connection = zbus::block_on(async {
-            zbus::connection::Builder::address(bus.address.as_str())?
-                .name("org.freedesktop.portal.Desktop")?
-                .serve_at("/org/freedesktop/portal/desktop", service)?
-                .build()
-                .await
-        })
-        .expect("serving the stand-in portal");
+        let connection =
+            bus.serve("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop", service);
         Self { _connection: connection, seen }
     }
 

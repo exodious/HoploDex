@@ -213,7 +213,6 @@ pub enum Reach {
         /// grant are equally close to a path, the removal wins, so a mistake
         /// narrows reach and never widens it.
         removed: Vec<PathBuf>,
-        home: PathBuf,
         /// The user's Documents folder, where the shipped default reaches
         /// `HoploDex` (`None` when it is unset or is the home folder), so a
         /// refusal can tell the default from a set the user changed.
@@ -226,11 +225,10 @@ impl fmt::Debug for Reach {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unconfined => f.write_str("Unconfined"),
-            Self::Flatpak { grants, removed, home, documents, .. } => f
+            Self::Flatpak { grants, removed, documents, .. } => f
                 .debug_struct("Flatpak")
                 .field("grants", grants)
                 .field("removed", removed)
-                .field("home", home)
                 .field("documents", documents)
                 .finish_non_exhaustive(),
         }
@@ -262,10 +260,9 @@ impl Reach {
     pub fn flatpak(
         grants: Vec<Grant>,
         removed: Vec<PathBuf>,
-        home: PathBuf,
         host_paths: Arc<dyn HostPaths>,
     ) -> Self {
-        Self::Flatpak { grants, removed, home, documents: None, host_paths }
+        Self::Flatpak { grants, removed, documents: None, host_paths }
     }
 
     /// This reach with the user's Documents folder named, which is how a
@@ -290,8 +287,8 @@ impl Reach {
     ) -> Self {
         match std::fs::read_to_string(info_path) {
             Ok(text) => match Self::from_flatpak_info(&text, home, user_dirs) {
-                Self::Flatpak { grants, removed, home, documents, .. } => {
-                    Self::Flatpak { grants, removed, home, documents, host_paths }
+                Self::Flatpak { grants, removed, documents, .. } => {
+                    Self::Flatpak { grants, removed, documents, host_paths }
                 }
                 unconfined => unconfined,
             },
@@ -301,7 +298,7 @@ impl Reach {
                     "{} can't be read, so nothing is within reach: {err}",
                     info_path.display()
                 );
-                Self::flatpak(Vec::new(), Vec::new(), home.to_owned(), host_paths)
+                Self::flatpak(Vec::new(), Vec::new(), host_paths)
                     .with_documents(user_dirs.documents().map(Path::to_owned))
             }
         }
@@ -333,7 +330,7 @@ impl Reach {
                 }
             }
         }
-        Self::flatpak(grants, removed, home.to_owned(), Arc::new(NoHostPaths))
+        Self::flatpak(grants, removed, Arc::new(NoHostPaths))
             .with_documents(user_dirs.documents().map(Path::to_owned))
     }
 
@@ -1077,7 +1074,6 @@ mod tests {
                 Grant { root: root.join("ro"), writable: false },
             ],
             Vec::new(),
-            root.join("home"),
             host_paths,
         );
         World { _dir: dir, root, reach }
@@ -1495,7 +1491,6 @@ mod tests {
             Reach::flatpak(
                 vec![Grant { root: self.root.join(grant), writable: true }],
                 removed.iter().map(|r| self.root.join(r)).collect(),
-                self.root.join(grant),
                 Arc::new(NoHostPaths),
             )
         }

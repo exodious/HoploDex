@@ -178,7 +178,7 @@ fn read_reach(app: &AppHandle) -> Reach {
         app_dirs::home_dir(app).ok().or_else(|| std::env::var_os("HOME").map(PathBuf::from))
     else {
         log::error!("the home folder is unknown, so nothing is within reach");
-        return Reach::flatpak(Vec::new(), Vec::new(), PathBuf::new(), host_paths);
+        return Reach::flatpak(Vec::new(), Vec::new(), host_paths);
     };
     // `user-dirs.dirs` is in the config home (`XDG_CONFIG_HOME`; Flatpak points
     // it at the app's own folder and binds the host's file into it).
