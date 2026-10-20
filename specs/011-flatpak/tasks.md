@@ -443,3 +443,53 @@ The smallest useful increment is a Flatpak a Linux user can keep their collectio
 - [X] T114 Final gates once Phase 9 is done, alone: on Linux the whole suite (T073's commands), `npm run build && npm run test:e2e`, `npm run bundle:flatpak`, `npm run build && npm run test:flatpak` and `npm run test:flatpak -- --fresh-install`; on macOS and Windows, `cargo nextest`, `npm test` and the E2E files that T098–T100's changes touch (`databases.e2e.ts`, `backups.e2e.ts`)
 
 **Order**: T094, T095, T096, T097, T101 and T112 share `sandbox.rs` and its tests (one agent, in that order). T098–T100 are the frontend (one agent). T102 then T103 (one agent, alone for the Flatpak runs). T104 and T105 share `scripts/flatpak/` (one agent, after T102–T103's `check.sh` changes). T106 needs an app build (alone). T107–T109 are docs. T113 goes to the Windows session. T114 last.
+
+## Phase 10: Convergence
+
+The owner's decisions of 2026-10-19 (spec, Clarifications "Session 2026-10-19"; plan.md "Decisions for the owner" 7, 8):
+
+- Secure defaults: `xdg-documents/HoploDex:create`, `/media` and `/run/media`. There is no `home`, no `/mnt` and no Secret Service. Whatever a user grants later is honoured.
+- Saved passphrases inside a Flatpak go through the Secret portal, with oo7's portal-only path behind a keyring-core store. If the desktop has no portal, saving is unavailable, with no fallback.
+- A drop from outside reach is refused, and the message points to the file chooser.
+- With no grantable Documents folder, creating at the suggested location is refused.
+- `name_default_application` runs inside a Flatpak only.
+- The store screenshots come from a scripted, reproducible command.
+
+Read research.md §4, §5, §7, §9, §13 and §16's 2026-10-19 notes, data-model.md's new sections and both contracts' notes first.
+
+- [ ] T115 [US1] **HIGH** (contradicts; `011 FR-003`, `011 FR-006`, `011 SC-011`): set `flatpak/io.github.exodious.HoploDex.yml`'s `finish-args` to contracts/flatpak-bundle.md's ten, each with its reason. Drop `finish-args-home-filesystem-access` from `flatpak/linter-exceptions.json`. In `scripts/flatpak/manifest.test.ts`, change FINISH_ARGS and the counts, and add SC-011's check: it fails on `home`, `~`, `host`, `~/…`, any `xdg-*` other than `xdg-documents/HoploDex`, a mount root other than `/media` and `/run/media`, or a talk-name of `org.freedesktop.secrets`. Give each a red fixture, and update the existing manifest fixtures. If the build's linter warns about a narrower grant, record it in research.md §4
+- [ ] T116 [US2] **HIGH** (missing; `011 FR-006`, `011 US2-5`; research.md §7): inside a Flatpak, store saved passphrases through the Secret portal. Add `oo7` 0.6 as a Linux-only dependency (`default-features = false, features = ["async-std", "native_crypto"]`). Write a keyring-core `CredentialStoreApi` over `oo7::file::UnlockedKeyring` at `$XDG_DATA_HOME/keyrings/default.keyring`, with its secret from `oo7::ashpd::desktop::secret::retrieve()` (never `Keyring::new()`). Install it with `set_default_store` when `Reach` is `Flatpak`, keeping the service and user names. Availability: `org.freedesktop.portal.Desktop` has an owner and the Secret interface's `version` reads, never by calling `RetrieveSecret`. No path names `org.freedesktop.secrets`. The `flatpak-check` build uses this store; other `e2e` builds keep the mock. Rust tests on real files with a test secret:
+  - save, read and forget round trip;
+  - unavailable with no portal owner, and with a portal that has no Secret interface (private bus);
+  - unavailable with a Secret Service on the bus and no portal.
+
+  Then run `npm run flatpak:sources`, the license audit and the notices (no `native-code.json` entry is expected; say if one is), and update CLAUDE.md's `services::keyring` line
+- [ ] T117 [US1] **HIGH** (partial; `011 FR-003`; research.md §5): `UserDirs` in `src-tauri/src/services/sandbox.rs` counts no `xdg-*` folder that is unset or equal to the home folder, as Flatpak grants none for it. Unit tests for both, including `xdg-documents/HoploDex` with Documents set to `$HOME`
+- [ ] T118 [US1] **HIGH** (partial; `011 FR-004`, `011 FR-007`; data-model.md "Error `LOCATION_OUT_OF_REACH`"): `CommandError::out_of_reach` recognises the shipped default of three (`<Documents>/HoploDex`, `/media`, `/run/media`, all writable) and uses data-model.md's wording for it. It takes which advice to give: `add_photo_from_path` and `add_document_from_path` (`commands/photos.rs`, `commands/documents.rs`) give the attach advice, using the real button labels. Update `error.rs`'s tests and `tests/sandbox_reach_test.rs`, and CLAUDE.md's "the shipped four"
+- [ ] T119 [US1] **HIGH** (partial; `011 FR-004`; contracts/tauri-commands.md): in `src/features/databases/outOfReach.ts`, say "by default it can reach only the HoploDex folder in your Documents folder and removable drives". Update the tests that carry the old text: `outOfReach.test.ts`, `ImportDialog.test.tsx`, `ExportDialog.test.tsx`, `useFileDrop.test.tsx`, `DatabaseSettingsDialog.test.tsx`, `CreateDatabaseDialog.test.tsx`, and any other. Depends on T118's wording
+- [ ] T120 [US5] **HIGH** (partial; `011 US1`, `011 US2-5`, `011 US5-2`, `011 SC-011`; research.md §16): rework the Flatpak check for the narrower defaults. First confirm on the narrower manifest that US1-2's `xdg-user-dir DOCUMENTS` inside the sandbox matches the host's (research.md §5, "To confirm first"), and report if it doesn't before going on. Then:
+  - Move the stand-in drive from `/mnt/hoplodex-check` to under `/run/media` (`scripts/dev-container.sh --flatpak`, `guard.mjs`'s text, `env.sh`/`check.sh`).
+  - Move the journey's files inside `Documents/HoploDex`.
+  - A drop from `~/Pictures` is refused with the attach advice; a drop from inside reach is attached.
+  - A typed `/mnt` location joins `/srv` as refused.
+  - Add the Secret portal to `scripts/flatpak/openuri_mock.py` (`version` 1; `RetrieveSecret` writing a fixed per-run key to the descriptor and answering `Response`).
+  - The saved-passphrase, reopen and US4-3 journeys read the entry from the sandbox's `keyrings/default.keyring` with that key, not `secret-tool`.
+  - US2-5 is a run whose portal has no Secret interface.
+  - The bus check shows `org.freedesktop.secrets` refused while the headless gnome-keyring-daemon owns it.
+  - Update the sub-sandbox listing's expectations (research.md §9's note).
+  - Update `e2e/support/flatpak.ts`, `flatpak.test.ts` and `scripts.test.ts` to match.
+
+  Run `npm run bundle:flatpak`, `npm run test:flatpak` and `-- --fresh-install`, alone. Depends on T115–T118
+- [ ] T121 [US1] MEDIUM (partial; `011 FR-009`): `src/features/databases/DatabaseGuide.tsx`'s Linux paragraph says that a Flatpak keeps its own recent list, settings and saved passphrases, that by default it reaches the HoploDex folder in Documents and removable drives, and how to give it another folder. Update `DatabaseGuide.test.tsx`
+- [ ] T122 [US1] MEDIUM (missing; `011 FR-010`, `011 FR-003`): a Rust test in `tests/sandbox_reach_test.rs`: with the Flatpak's reach and Documents unset or set to `$HOME`, creating at `suggested_folder`'s location is refused with `LOCATION_OUT_OF_REACH` and the override, and nothing is written. Depends on T117
+- [ ] T123 MEDIUM (contradicts; plan.md "Decisions for the owner" 8; research.md §9): `name_default_application` (`src-tauri/src/services/preview/sandbox_probe.rs`) runs only inside a Flatpak (`/.flatpak-info`), in `decide_and_apply` and the probe child. Make the choice a pure function with a unit test
+- [ ] T124 [US4] MEDIUM (missing; plan.md "Decisions for the owner" 8; research.md §13; `011 FR-017`): add `npm run screenshots:store` (dev container). It takes the five store shots from the seed in the walk's setting, with the value edit and the grouping scripted and no text in view that depends on the day it runs, and writes `flatpak/screenshots/`. Add a test that the script's records and photos match research.md §13's list. Retake the five with it, alone (it builds the app), and check the metainfo test stays green. DEVELOPMENT.md says how, and that a build never retakes them
+- [ ] T125 LOW (partial; `011 FR-023`): update DEVELOPMENT.md's Flatpak sections (the stand-in drive, the Secret portal stand-in, the keyring notes, the default reach) and CLAUDE.md's `flatpak/` and `services::sandbox` lines for the new defaults
+- [ ] T126 Final gates once Phase 10 is done, alone: on Linux the whole suite, `npm run build && npm run test:e2e`, `npm run bundle:flatpak`, `npm run build && npm run test:flatpak` and `-- --fresh-install`. On macOS and Windows (the new dependency and `keyring.rs` touch every build): `cargo clippy` with both feature sets, `cargo nextest`, `npm test`, and the E2E files that use saved passphrases (`databases.e2e.ts`)
+
+**Order**:
+- **T116 (keyring), T117–T118 and T122 (sandbox.rs, error.rs, the reach tests), and T123 (sandbox_probe.rs):** three backend agents, on separate files. T118's `photos.rs` and `documents.rs` edits are T118's only.
+- **T119 and T121 (frontend):** one agent, after T118's wording.
+- **T115 (manifest), then T120 (the check):** one agent, alone for the Flatpak runs, after T116–T118.
+- **T124:** alone (an app build), after T120.
+- **T125:** docs, last before **T126**.
