@@ -553,6 +553,13 @@ Windows keep the `keyring` crate, unchanged._
   KWallet's ksecretd (`kwallet.portal`, KDE Frameworks 6.2 and later); and
   oo7-portal (Fedora's oo7-daemon, which replaces both there). Where none is
   configured, saving shows as unavailable._
+- _**Not checked**: Xfce, Cinnamon, MATE and wlroots desktops such as Sway.
+  gnome-keyring's portal file says `UseIn=gnome`, so on those the portal
+  likely finds no Secret backend unless the user's `portals.conf` names one,
+  and saving shows as unavailable. Nothing in this is specific to one
+  distribution: `oo7` is only the client, and any desktop with a Secret
+  portal backend serves it. A manual check on one such desktop before a
+  release would confirm it (quickstart.md M5)._
 - _**What it reaches.** The portal takes the app id from the caller's
   `.flatpak-info`, never from its arguments. The backend keeps one random
   64-byte key per app id in the user's login keyring ("Application key for
