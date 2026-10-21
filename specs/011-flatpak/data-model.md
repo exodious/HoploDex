@@ -213,6 +213,12 @@ it is, use Add photos and choose it there." from `add_photo_from_path`
 file into a folder it can reach" (the default's folder and drives are not
 promised there), followed by the same override fix._
 
+_Amended 2026-10-20 (owner's decision): the backticks in the wordings above
+are this document's formatting, not the message's. The message names its
+paths, grants and the override command as plain text, as the frontend's own
+out-of-reach text (`outOfReach.ts`) does; the app shows it as written, so
+backticks appeared on screen._
+
 ## Saved passphrases inside a Flatpak (`services/keyring.rs`)
 
 _Added 2026-10-19 (owner's decision; FR-006; research.md §7)._

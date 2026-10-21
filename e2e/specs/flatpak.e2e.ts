@@ -523,9 +523,9 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
       text.includes("This copy of HoploDex is a Flatpak"),
     )!;
     expect(message).toContain(
-      `it can only reach the HoploDex folder in your Documents folder (\`${folder()}\`) and removable drives`,
+      `it can only reach the HoploDex folder in your Documents folder (${folder()}) and removable drives`,
     );
-    expect(message).toContain(`it can't use \`${photo}\``);
+    expect(message).toContain(`it can't use ${photo}`);
     expect(message).toContain("To attach it from where it is, use Add photos and choose it there.");
     expect(message).toContain(`flatpak override --user --filesystem=${pictures} ${FLATPAK_APP_ID}`);
     expect(await $(".hd-photo").isExisting()).toBe(false);
@@ -767,7 +767,7 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
       const message = (await dialogFieldError("Folder"))!;
       expect(message).toContain("This copy of HoploDex is a Flatpak");
       expect(message).toContain(
-        `it can only reach the HoploDex folder in your Documents folder (\`${folder()}\`) and removable drives`,
+        `it can only reach the HoploDex folder in your Documents folder (${folder()}) and removable drives`,
       );
       expect(message).toContain(
         `flatpak override --user --filesystem=${outside} ${FLATPAK_APP_ID}`,

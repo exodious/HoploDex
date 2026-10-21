@@ -480,7 +480,7 @@ fn creating_at_the_suggested_folder_with_no_grantable_documents_is_refused_and_n
         let [media, run_media] = reach.grants() else { panic!("two grants") };
         let (media, run_media) = (media.root.display(), run_media.root.display());
         assert!(
-            refused.message.contains(&format!("it can only reach `{media}` and `{run_media}`, so")),
+            refused.message.contains(&format!("it can only reach {media} and {run_media}, so")),
             "{}",
             refused.message
         );

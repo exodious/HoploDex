@@ -365,10 +365,10 @@ impl CommandError {
         let (reach, moving) = if let (true, Some(default_folder)) = (shipped, &default_folder) {
             (
                 format!(
-                    "the HoploDex folder in your Documents folder (`{default_folder}`) and \
+                    "the HoploDex folder in your Documents folder ({default_folder}) and \
                      removable drives"
                 ),
-                format!("Move the file into `{default_folder}` or onto a removable drive"),
+                format!("Move the file into {default_folder} or onto a removable drive"),
             )
         } else if grants.is_empty() {
             ("none of your folders".to_owned(), "Move the file into a folder it can reach".into())
@@ -377,7 +377,7 @@ impl CommandError {
                 .iter()
                 .map(|grant| {
                     let read_only = if grant.writable { "" } else { " (read only)" };
-                    format!("`{}`{read_only}", grant.root.display())
+                    format!("{}{read_only}", grant.root.display())
                 })
                 .collect();
             let listed = match named.split_last() {
@@ -401,9 +401,9 @@ impl CommandError {
             "LOCATION_OUT_OF_REACH",
             format!(
                 "This copy of HoploDex is a Flatpak, and it can only reach {reach}, so it can't \
-                 use `{path}`.{attach} {moving}, or give HoploDex access to `{folder}` by \
-                 running: `flatpak override --user --filesystem={quoted} \
-                 io.github.exodious.HoploDex` and then restarting HoploDex.",
+                 use {path}.{attach} {moving}, or give HoploDex access to {folder} by \
+                 running: flatpak override --user --filesystem={quoted} \
+                 io.github.exodious.HoploDex and then restarting HoploDex.",
                 path = path.display(),
                 folder = folder.display(),
                 quoted = shell_quote(&folder.to_string_lossy()),
@@ -694,7 +694,7 @@ mod tests {
     }
 
     const DEFAULT_REACH: &str = "it can only reach the HoploDex folder in your Documents folder \
-        (`/home/someone/Documents/HoploDex`) and removable drives";
+        (/home/someone/Documents/HoploDex) and removable drives";
 
     #[test]
     fn out_of_reach_has_its_code_and_camel_case_details() {
@@ -732,11 +732,11 @@ mod tests {
         assert_eq!(
             err.message,
             "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in \
-             your Documents folder (`/home/someone/Documents/HoploDex`) and removable drives, so \
-             it can't use `/srv/guns/a.hoplodex`. Move the file into \
-             `/home/someone/Documents/HoploDex` or onto a removable drive, or give HoploDex \
-             access to `/srv/guns` by running: `flatpak override --user --filesystem=/srv/guns \
-             io.github.exodious.HoploDex` and then restarting HoploDex."
+             your Documents folder (/home/someone/Documents/HoploDex) and removable drives, so \
+             it can't use /srv/guns/a.hoplodex. Move the file into \
+             /home/someone/Documents/HoploDex or onto a removable drive, or give HoploDex \
+             access to /srv/guns by running: flatpak override --user --filesystem=/srv/guns \
+             io.github.exodious.HoploDex and then restarting HoploDex."
         );
     }
 
@@ -750,8 +750,8 @@ mod tests {
         assert_eq!(
             photo,
             moved.replace(
-                "can't use `/x/y`. Move",
-                "can't use `/x/y`. To attach it from where it is, use Add photos and choose it \
+                "can't use /x/y. Move",
+                "can't use /x/y. To attach it from where it is, use Add photos and choose it \
                  there. Move"
             )
         );
@@ -759,8 +759,8 @@ mod tests {
         assert_eq!(
             document,
             moved.replace(
-                "can't use `/x/y`. Move",
-                "can't use `/x/y`. To attach it from where it is, use Attach and choose it \
+                "can't use /x/y. Move",
+                "can't use /x/y. To attach it from where it is, use Attach and choose it \
                  there. Move"
             )
         );
@@ -776,8 +776,8 @@ mod tests {
         assert!(
             err.message.starts_with(
                 "This copy of HoploDex is a Flatpak, and it can only reach \
-                 `/home/someone/Documents/HoploDex`, `/media`, `/run/media`, `/srv/archive` and \
-                 `/data` (read only), so it can't use `/x/y`."
+                 /home/someone/Documents/HoploDex, /media, /run/media, /srv/archive and \
+                 /data (read only), so it can't use /x/y."
             ),
             "{}",
             err.message
@@ -786,8 +786,8 @@ mod tests {
         // The advice after the first sentence does not name a folder it
         // can't know.
         assert!(err.message.ends_with(
-            "Move the file into a folder it can reach, or give HoploDex access to `/x` by \
-             running: `flatpak override --user --filesystem=/x io.github.exodious.HoploDex` and \
+            "Move the file into a folder it can reach, or give HoploDex access to /x by \
+             running: flatpak override --user --filesystem=/x io.github.exodious.HoploDex and \
              then restarting HoploDex."
         ));
         assert_eq!(
@@ -813,14 +813,14 @@ mod tests {
             more.push(grant(extra, true));
             let message = say(&more);
             assert!(!message.contains(DEFAULT_REACH), "{extra}: {message}");
-            assert!(message.contains(&format!("`{extra}`")), "{extra}: {message}");
+            assert!(message.contains(&format!(" and {extra}, so")), "{extra}: {message}");
         }
         // One made read-only.
         let mut read_only = shipped();
         read_only[2].writable = false;
         let message = say(&read_only);
         assert!(!message.contains(DEFAULT_REACH), "{message}");
-        assert!(message.contains("`/run/media` (read only)"), "{message}");
+        assert!(message.contains("/run/media (read only)"), "{message}");
         // A removable folder missing and another put in its place.
         let mut swapped = shipped();
         swapped[2] = grant("/srv/archive", true);
@@ -840,7 +840,7 @@ mod tests {
         ];
         let message = refusal(&elsewhere, OutOfReachAdvice::Move).message;
         assert!(!message.contains(DEFAULT_REACH), "{message}");
-        assert!(message.contains("it can only reach `/srv/Documents/HoploDex`, `/media` and"));
+        assert!(message.contains("it can only reach /srv/Documents/HoploDex, /media and"));
         // The same grants are the default when that is the Documents folder.
         let message = CommandError::out_of_reach(
             Path::new("/x/y"),
@@ -850,8 +850,8 @@ mod tests {
             OutOfReachAdvice::Move,
         )
         .message;
-        assert!(message.contains("(`/srv/Documents/HoploDex`) and removable drives"), "{message}");
-        assert!(message.contains("Move the file into `/srv/Documents/HoploDex` or onto"));
+        assert!(message.contains("(/srv/Documents/HoploDex) and removable drives"), "{message}");
+        assert!(message.contains("Move the file into /srv/Documents/HoploDex or onto"));
         // No Documents folder the Flatpak can be granted: the drives only.
         let drives = vec![grant("/media", true), grant("/run/media", true)];
         let message = CommandError::out_of_reach(
@@ -862,7 +862,7 @@ mod tests {
             OutOfReachAdvice::Move,
         )
         .message;
-        assert!(message.contains("it can only reach `/media` and `/run/media`, so"), "{message}");
+        assert!(message.contains("it can only reach /media and /run/media, so"), "{message}");
         assert!(!message.contains("Documents"), "{message}");
     }
 
@@ -887,7 +887,7 @@ mod tests {
             .message
         };
         let message = say("/srv/my guns");
-        assert!(message.contains("access to `/srv/my guns` by running"), "{message}");
+        assert!(message.contains("access to /srv/my guns by running"), "{message}");
         assert!(message.contains("--filesystem='/srv/my guns' io.github"), "{message}");
         let message = say("/srv/it's $HOME");
         assert!(message.contains(r"--filesystem='/srv/it'\''s $HOME' io.github"), "{message}");
