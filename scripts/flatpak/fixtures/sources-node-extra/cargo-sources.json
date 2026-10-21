@@ -1,0 +1,34 @@
+[
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/foo/foo-1.2.3.crate",
+    "sha256": "45b593694ffbea195d7d6830f5ea6e6e647d9a109f237e84cbaf40d028caddd4",
+    "dest": "cargo/vendor/foo-1.2.3"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"45b593694ffbea195d7d6830f5ea6e6e647d9a109f237e84cbaf40d028caddd4\",\"files\":{}}",
+    "dest": "cargo/vendor/foo-1.2.3",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "archive",
+    "archive-type": "tar-gzip",
+    "url": "https://static.crates.io/crates/bar/bar-0.4.0.crate",
+    "sha256": "99539f381c1b1a72d4d2c67442a0bbbc42623d1a6d006aa42f7c78f031d43b4b",
+    "dest": "cargo/vendor/bar-0.4.0"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"package\":\"99539f381c1b1a72d4d2c67442a0bbbc42623d1a6d006aa42f7c78f031d43b4b\",\"files\":{}}",
+    "dest": "cargo/vendor/bar-0.4.0",
+    "dest-filename": ".cargo-checksum.json"
+  },
+  {
+    "type": "inline",
+    "contents": "[source.vendored-sources]\ndirectory = \"cargo/vendor\"\n\n[source.crates-io]\nreplace-with = \"vendored-sources\"\n",
+    "dest": "cargo",
+    "dest-filename": "config"
+  }
+]

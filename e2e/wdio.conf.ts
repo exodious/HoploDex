@@ -5,13 +5,22 @@ import { browser } from "@wdio/globals";
 import { SevereServiceError } from "webdriverio";
 import { SCREENSHOT_WINDOW, screenshotsEnabled } from "./support/screenshots";
 import { assignWorkerPort, killApp, launchApp } from "./support/app";
+import { readStoreShots } from "./screenshots/storeShots";
 import { buildApp } from "./support/build";
 import { startDisplay, stopDisplay } from "./support/display";
+import {
+  buildAndInstallCheck,
+  endFlatpakRun,
+  flatpakMode,
+  startFlatpakRun,
+  uninstallCheck,
+} from "./support/flatpak";
 import {
   applySessionSettings,
   isolateAppData,
   removeSandbox,
   seedCollection,
+  STORE_SHOTS_SANDBOX,
   sweepStaleSandboxes,
 } from "./support/sandbox";
 
@@ -78,10 +87,22 @@ if (missing.length > 0) {
   );
 }
 
+/**
+ * The Flatpak check (HOPLODEX_E2E_FLATPAK=1, by `npm run test:flatpak`; 011
+ * research.md §16) runs one spec file against the check variant installed in
+ * its sandbox, with one worker, and no other run includes that file: it needs
+ * the container's Flatpak installation and buses, and builds its own app.
+ */
+const FLATPAK_SPEC = "./specs/flatpak.e2e.ts";
+const flatpakRun = flatpakMode();
+/** Whether this process installed the check variant, and so uninstalls it. */
+let installedCheck = false;
+
 export const config: WebdriverIO.Config = {
   runner: "local",
-  specs: [...LONGEST_FIRST, "./specs/**/*.e2e.ts"],
-  maxInstances: workerCount(),
+  specs: flatpakRun ? [FLATPAK_SPEC] : [...LONGEST_FIRST, "./specs/**/*.e2e.ts"],
+  exclude: flatpakRun ? [] : [FLATPAK_SPEC],
+  maxInstances: flatpakRun ? 1 : workerCount(),
   // Each worker starts its own display in beforeSession (Linux), so the
   // testrunner mustn't start the one shared display it otherwise starts for
   // the whole run when DISPLAY is unset.
@@ -118,6 +139,18 @@ export const config: WebdriverIO.Config = {
   onPrepare: async () => {
     // Sandboxes an interrupted run left in the temp folder (#111).
     await sweepStaleSandboxes();
+    if (flatpakRun) {
+      // The check variant is built inside flatpak-builder from the derived
+      // manifest, so the host's `e2e` build is not made here. It is installed
+      // before any worker starts, because a worker's session needs the app.
+      try {
+        installedCheck = buildAndInstallCheck().installedHere;
+      } catch (error) {
+        console.error(error);
+        throw new SevereServiceError("building and installing the Flatpak check variant failed");
+      }
+      return;
+    }
     if (!buildApp()) throw new SevereServiceError("building the app for E2E failed");
   },
 
@@ -127,10 +160,18 @@ export const config: WebdriverIO.Config = {
   // run's at the start of the next (#111).
   onComplete: async () => {
     await sweepStaleSandboxes(undefined, undefined, 15_000);
+    if (installedCheck) uninstallCheck();
   },
 
   beforeSession: async (config, _capabilities, specs, cid) => {
-    isolateAppData();
+    // The store shots (`npm run screenshots:store`, 011 FR-017) run in a
+    // sandbox at the same path every time, which the chooser's shot shows.
+    const storeShots = specs.some((spec) => spec.endsWith("/e2e/screenshots/store.e2e.ts"));
+    const sandbox = isolateAppData(storeShots ? { fixedDir: STORE_SHOTS_SANDBOX } : {});
+    // The Flatpak check's home, buses and stand-in services; the app is started
+    // by support/app.ts's default launcher, which is the Flatpak's under
+    // HOPLODEX_E2E_FLATPAK=1.
+    if (flatpakRun) await startFlatpakRun({ sandbox });
     // WebdriverIO connects with this same config object once the hook
     // returns, so the session goes to this worker's app.
     config.port = assignWorkerPort(cid);
@@ -150,13 +191,17 @@ export const config: WebdriverIO.Config = {
       specs.some(
         (spec) =>
           spec.endsWith("/e2e/screenshots/screens.e2e.ts") ||
+          storeShots ||
           spec.endsWith("/e2e/specs/document-preview.e2e.ts") ||
           spec.endsWith("/e2e/specs/document-open-elsewhere.e2e.ts") ||
           spec.endsWith("/e2e/specs/document-open-setting.e2e.ts") ||
           spec.endsWith("/e2e/specs/session-isolation.e2e.ts"),
       )
     ) {
-      seedCollection();
+      seedCollection({
+        fixedTimes: storeShots,
+        seedDir: storeShots ? readStoreShots().seedDir : undefined,
+      });
     }
     await startDisplay();
     await launchApp();
@@ -164,6 +209,7 @@ export const config: WebdriverIO.Config = {
 
   afterSession: async () => {
     await killApp();
+    if (flatpakRun) await endFlatpakRun();
     await stopDisplay();
     await removeSandbox();
   },

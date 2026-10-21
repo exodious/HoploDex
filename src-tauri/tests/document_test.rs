@@ -12,6 +12,7 @@ use hoplodex_lib::models::document_attachment::{DocumentAttachment, DocumentSumm
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::preview::availability::{PdfAvailability, UnavailableReason};
+use hoplodex_lib::services::sandbox::Reach;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use support::hostile_documents as hostile;
@@ -147,9 +148,13 @@ fn attaches_a_document_dropped_as_a_file_path() {
     let path = dir.path().join("Appraisal 2026.pdf");
     std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
 
-    let attached =
-        document_ops::add_document_from_path(&db.conn, RecordRef::Firearm(firearm.id), &path)
-            .unwrap();
+    let attached = document_ops::add_document_from_path(
+        &db.conn,
+        RecordRef::Firearm(firearm.id),
+        &path,
+        &Reach::Unconfined,
+    )
+    .unwrap();
 
     assert_eq!(attached.original_filename, "Appraisal 2026.pdf");
     assert_eq!(attached.mime_type, "application/pdf");
@@ -162,9 +167,13 @@ fn a_dropped_folder_is_not_attached() {
     let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let dir = tempfile::tempdir().unwrap();
 
-    let err =
-        document_ops::add_document_from_path(&db.conn, RecordRef::Firearm(firearm.id), dir.path())
-            .expect_err("folders can't be attachments");
+    let err = document_ops::add_document_from_path(
+        &db.conn,
+        RecordRef::Firearm(firearm.id),
+        dir.path(),
+        &Reach::Unconfined,
+    )
+    .expect_err("folders can't be attachments");
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(
         document_ops::list_documents(&db.conn, RecordRef::Firearm(firearm.id)).unwrap().is_empty()
@@ -308,8 +317,13 @@ fn attaches_a_document_dropped_on_an_accessory_as_a_file_path() {
     let path = dir.path().join("Manual.pdf");
     std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
 
-    let attached =
-        document_ops::add_document_from_path(&db.conn, RecordRef::Accessory(id), &path).unwrap();
+    let attached = document_ops::add_document_from_path(
+        &db.conn,
+        RecordRef::Accessory(id),
+        &path,
+        &Reach::Unconfined,
+    )
+    .unwrap();
 
     assert_eq!(attached.owner, RecordRef::Accessory(id));
     assert_eq!(attached.original_filename, "Manual.pdf");
@@ -505,8 +519,8 @@ fn refuses_what_is_not_a_document_and_stores_nothing() {
 
         let path = dir.path().join(&file.name);
         std::fs::write(&path, &file.bytes).unwrap();
-        let err =
-            document_ops::add_document_from_path(&db.conn, owner, &path).expect_err(&file.name);
+        let err = document_ops::add_document_from_path(&db.conn, owner, &path, &Reach::Unconfined)
+            .expect_err(&file.name);
         assert_eq!(err.code, code, "{} from a path", file.name);
 
         assert_eq!(document_count(&db), 0, "{} left a row", file.name);
@@ -561,7 +575,8 @@ fn records_the_canonical_type_whatever_the_names_case() {
 
     let path = dir.path().join("Round Count.CSV");
     std::fs::write(&path, b"date,rounds\n2026-01-01,150\n").unwrap();
-    let csv = document_ops::add_document_from_path(&db.conn, owner, &path).unwrap();
+    let csv =
+        document_ops::add_document_from_path(&db.conn, owner, &path, &Reach::Unconfined).unwrap();
     assert_eq!(csv.mime_type, "text/csv");
 }
 
@@ -687,7 +702,8 @@ fn a_firearm_with_50_documents_refuses_another_and_stores_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("dropped.pdf");
     std::fs::write(&path, SAMPLE_PDF_BYTES).unwrap();
-    let err = document_ops::add_document_from_path(&db.conn, owner, &path).unwrap_err();
+    let err = document_ops::add_document_from_path(&db.conn, owner, &path, &Reach::Unconfined)
+        .unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
     assert_eq!(count(&db, "document_attachments"), 50);
 

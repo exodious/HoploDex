@@ -8,11 +8,13 @@
 //! once with [`ARGUMENT`] and the variable set: the child makes a real web
 //! view, loads `about:blank` and exits 0 when it has loaded. Only an exit of
 //! 0 turns the sandbox on; a crash, another exit status or a time-out means
-//! it stays off. A container or Flatpak is not probed at all: WebKit won't
-//! sandbox in the first, and the second has a sandbox of its own.
+//! it stays off. A container is not probed at all: WebKit won't sandbox in
+//! it. A Flatpak is probed like any other install: WebKit sandboxes there
+//! through `flatpak-spawn --sandbox`, so the probe's child shows whether it
+//! works (011 research.md §9).
 
 use std::{
-    ffi::{c_int, c_void},
+    ffi::{CStr, c_int, c_void},
     path::Path,
     process::{Command, Stdio},
     time::{Duration, Instant},
@@ -27,14 +29,67 @@ use webkit2gtk::glib::{
 /// checked before anything else, as the render helper's is.
 pub const ARGUMENT: &str = "--webkit-sandbox-probe";
 
+/// The application id WebKit names its sandboxed web processes after (Tauri's
+/// bundle identifier, which is the Flatpak's app id).
+const APPLICATION_ID: &CStr = c"io.github.exodious.HoploDex";
+
+/// Gives the process a default `GApplication` with [`APPLICATION_ID`], never
+/// registered or run. WebKit names a sandboxed web process's accessibility bus
+/// name after the default application's id, or, with none, after a hash, and
+/// the Flatpak portal behind `flatpak-spawn --sandbox` refuses a name that
+/// doesn't start with the Flatpak's app id ("Invalid sandbox a11y own name"),
+/// which ended the app at its first web view once the probe passed. Tauri's
+/// own GTK application (tao's) has no id unless the config sets
+/// `enableGTKAppId`, which would also make a second HoploDex on the same
+/// session bus hand over to the first and exit (tao), so this stands in for
+/// it. Call it before tao creates its application, which then isn't the
+/// default (011 research.md §9, 011 FR-011).
+///
+/// # Safety
+/// Call it from `main()` before it starts a thread, or in the probe child.
+unsafe fn name_default_application() {
+    // SAFETY: GIO's C API; the application lives for the process.
+    unsafe {
+        let application = webkit2gtk::gio::ffi::g_application_new(APPLICATION_ID.as_ptr(), 0);
+        webkit2gtk::gio::ffi::g_application_set_default(application);
+    }
+}
+
+/// The file a Flatpak puts at the root of every app's sandbox, and nowhere
+/// else.
+const FLATPAK_INFO: &str = "/.flatpak-info";
+
+/// Whether to name the default application: only inside a Flatpak, which is
+/// where the portal checks the a11y bus name. On a `.deb` or `.rpm` install
+/// nothing is named, so they behave as before 011 (011 FR-011, 011
+/// research.md §9). A pure function of the file's path, so a test can pass
+/// one that exists and one that doesn't.
+fn names_default_application(flatpak_info: &Path) -> bool {
+    flatpak_info.exists()
+}
+
+/// [`name_default_application`] when [`names_default_application`] says so
+/// for this computer's [`FLATPAK_INFO`]; the one call both the app and the
+/// probe child make, so they cannot differ.
+///
+/// # Safety
+/// As [`name_default_application`].
+unsafe fn name_default_application_in_flatpak() {
+    if names_default_application(Path::new(FLATPAK_INFO)) {
+        // SAFETY: the caller upholds `name_default_application`'s contract.
+        unsafe { name_default_application() };
+    }
+}
+
 /// This process's own executable, as the kernel has it.
 const SELF_EXE: &str = "/proc/self/exe";
 
 /// How long the probe may take before it counts as having failed.
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The files that say this is a container or Flatpak.
-pub const SKIP_MARKERS: [&str; 3] = ["/run/.containerenv", "/.dockerenv", "/.flatpak-info"];
+/// The files that say this is a container, where the probe doesn't run.
+/// `/.flatpak-info` is not one: a Flatpak runs the probe (011 FR-011).
+pub const SKIP_MARKERS: [&str; 2] = ["/run/.containerenv", "/.dockerenv"];
 
 /// What the probe child did.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,7 +125,7 @@ pub fn decide(markers: &[&Path], probe: impl FnOnce() -> ProbeOutcome) -> WebKit
     if let Some(found) = markers.iter().find(|marker| marker.exists()) {
         return WebKitSandbox::Off {
             reason: format!(
-                "this is a container or Flatpak ({} exists), where WebKit doesn't sandbox",
+                "this is a container ({} exists), where WebKit doesn't sandbox",
                 found.display()
             ),
         };
@@ -91,7 +146,8 @@ pub fn decide(markers: &[&Path], probe: impl FnOnce() -> ProbeOutcome) -> WebKit
 
 /// Runs the probe where the app starts: decides for this computer, and when
 /// the sandbox works sets `WEBKIT_FORCE_SANDBOX=1` for this process (and so
-/// for every web view it makes). Call it first in `main()`, before any
+/// for every web view it makes) and, inside a Flatpak only, names its default
+/// application ([`name_default_application_in_flatpak`]). Call it first in `main()`, before any
 /// thread and before Tauri.
 pub fn decide_and_apply() -> WebKitSandbox {
     let markers: Vec<&Path> = SKIP_MARKERS.iter().map(Path::new).collect();
@@ -99,7 +155,10 @@ pub fn decide_and_apply() -> WebKitSandbox {
     if matches!(decision, WebKitSandbox::On) {
         // SAFETY: called from `main()` before it starts a thread, so nothing
         // else reads or writes the environment.
-        unsafe { std::env::set_var("WEBKIT_FORCE_SANDBOX", "1") };
+        unsafe {
+            std::env::set_var("WEBKIT_FORCE_SANDBOX", "1");
+            name_default_application_in_flatpak();
+        }
     }
     decision
 }
@@ -180,6 +239,9 @@ pub fn run_child_probe() -> ! {
         if gtk_init_check(std::ptr::null_mut(), std::ptr::null_mut()) == 0 {
             std::process::exit(2);
         }
+        // The app names its default application the same way when the probe
+        // passes ([`decide_and_apply`]), so the probe must too.
+        name_default_application_in_flatpak();
         let view = webkit2gtk::ffi::webkit_web_view_new();
         let main_loop = g_main_loop_new(std::ptr::null_mut(), 0);
         let probe = Box::into_raw(Box::new(Probe { main_loop }));
@@ -215,4 +277,45 @@ pub fn run_child_probe() -> ! {
         g_main_loop_run(main_loop);
     }
     std::process::exit(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    /// 011 FR-011, 011 research.md §9: the Flatpak runs the probe, so its
+    /// marker is not one that skips it; a container's two still are.
+    #[test]
+    fn flatpak_marker_no_longer_skips_the_probe() {
+        assert!(!SKIP_MARKERS.contains(&"/.flatpak-info"));
+        assert!(SKIP_MARKERS.contains(&"/run/.containerenv"));
+        assert!(SKIP_MARKERS.contains(&"/.dockerenv"));
+    }
+
+    /// 011 FR-011, 011 research.md §9 (2026-10-19): the default application is
+    /// named only where `/.flatpak-info` exists.
+    #[test]
+    fn the_default_application_is_named_only_inside_a_flatpak() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = dir.path().join(".flatpak-info");
+        assert!(!names_default_application(&info));
+        std::fs::write(&info, "[Application]\nname=io.github.exodious.HoploDex\n").unwrap();
+        assert!(names_default_application(&info));
+        assert_eq!(FLATPAK_INFO, "/.flatpak-info");
+    }
+
+    #[test]
+    fn a_container_marker_skips_the_probe() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join(".containerenv");
+        std::fs::write(&marker, "").unwrap();
+        let ran = Cell::new(false);
+        let decision = decide(&[marker.as_path()], || {
+            ran.set(true);
+            ProbeOutcome::Exited(0)
+        });
+        assert!(!ran.get());
+        assert!(matches!(decision, WebKitSandbox::Off { .. }));
+    }
 }

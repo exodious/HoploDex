@@ -37,13 +37,14 @@ pub mod ops {
     use crate::db::{self, OpenError, cipher, raw_file::RawFile};
     use crate::models::database::{
         BackupCheck, BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind,
-        PassphraseChanged, PendingState, RestorePhase, UpgradedNote,
+        PassphraseChanged, PendingState, RestorePhase, UnavailableReason, UpgradedNote,
     };
     use crate::services::backups::{self, BackupFailure, BackupJob, BackupKind, CopyError};
     use crate::services::disk_space;
     use crate::services::file_swap;
     use crate::services::machine_settings::MachineSettings;
     use crate::services::passphrase::{Passphrase, new_passphrase_problem};
+    use crate::services::sandbox::{Need, Reach};
     use crate::services::scratch;
     use crate::services::secure_delete::{self, WipeControl, Wiped};
     use crate::session::fingerprint::FingerprintCheck;
@@ -54,7 +55,9 @@ pub mod ops {
 
     /// Where a database's backups are and what is there (003 FR-028): the open
     /// database's, or, for one that doesn't open, the folder and id this
-    /// computer cached when it last opened it (003 research.md §8).
+    /// computer cached when it last opened it (003 research.md §8). A folder
+    /// out of reach is `available: false` with the reason, not an error, and
+    /// is not looked into (011 FR-004).
     pub fn list_backups(
         session: &Session,
         machine: &MachineSettings,
@@ -66,12 +69,21 @@ pub mod ops {
             })?,
             Target::At(path) => cached_backups_of(machine, Path::new(path))?,
         };
+        if session.reach().check(&folder, Need::BackupFolder).is_err() {
+            return Ok(BackupList {
+                available: false,
+                unavailable_reason: Some(UnavailableReason::OutOfReach),
+                folder: folder.to_string_lossy().into_owned(),
+                backups: Vec::new(),
+            });
+        }
         let backups = backups::list(&folder, &database_id).unwrap_or_else(|err| {
             log::warn!("could not list the backups in {}: {err}", folder.display());
             Vec::new()
         });
         Ok(BackupList {
             available: folder.is_dir(),
+            unavailable_reason: None,
             folder: folder.to_string_lossy().into_owned(),
             backups,
         })
@@ -162,6 +174,12 @@ pub mod ops {
     /// A backup in an older layout is refused with `UPGRADE_NEEDED` before
     /// anything is copied, unless `upgrade` says the user was told (009
     /// FR-019): then the restored copy is upgraded before it replaces anything.
+    ///
+    /// Inside a Flatpak the backup file must be within reach, and, with nothing
+    /// open, so must the `databasePath` (whose reach may have changed since it
+    /// was last open): both are checked before anything is let go of, copied or
+    /// made, the backup file first (011 FR-004, 011 US1-8). The open database
+    /// acts on its own path, which `open_database` already found within reach.
     pub fn restore_backup(
         session: &Session,
         machine: &MachineSettings,
@@ -169,20 +187,26 @@ pub mod ops {
         backup_passphrase: &Passphrase,
         target: Target<'_>,
         upgrade: bool,
+        reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
-        let backup = Path::new(backup_path);
+        let backup = reach.check(Path::new(backup_path), Need::ReadFile)?;
+        let backup = backup.as_path();
+        let damaged = match target {
+            Target::At(path) => Some(reach.check(Path::new(path), Need::DatabaseFolder)?),
+            Target::Open(_) => None,
+        };
         // Whatever waits for an upgrade is let go of first (009 research.md §4).
         session.drop_awaiting_upgrade();
-        match target {
-            Target::Open(id) => {
-                restore_open(session, id, machine, backup, backup_passphrase, upgrade)
+        match (target, damaged) {
+            (Target::Open(id), _) => {
+                restore_open(session, id, machine, backup, backup_passphrase, upgrade, reach)
             }
-            Target::At(path) => restore_damaged(
+            (Target::At(path), damaged) => restore_damaged(
                 session,
                 machine,
                 backup,
                 backup_passphrase,
-                Path::new(path),
+                &damaged.unwrap_or_else(|| PathBuf::from(path)),
                 upgrade,
             ),
         }
@@ -202,7 +226,8 @@ pub mod ops {
         passphrase: &Passphrase,
         target: Target<'_>,
     ) -> Result<BackupCheck, CommandError> {
-        let backup = Path::new(backup_path);
+        let backup = session.reach().check(Path::new(backup_path), Need::ReadFile)?;
+        let backup = backup.as_path();
         let (database_path, expected_id) = match target {
             Target::Open(id) => (session.inspect(id, |open| Ok(open.path.clone()))?, None),
             Target::At(path) => {
@@ -407,6 +432,7 @@ pub mod ops {
         backup: &Path,
         passphrase: &Passphrase,
         upgrade: bool,
+        reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
         let operation = session.operations().begin(OperationKind::Restore, None)?;
         let events = session.events();
@@ -418,7 +444,8 @@ pub mod ops {
 
         // 1. Before anything is written: the backup location, and room for
         // the restored copy and the "before restoring" backup.
-        backups::check_location(&settings.folder, settings.is_default).map_err(|problem| {
+        backups::check_location(&settings.folder, settings.is_default, Need::BackupFolder, reach)
+            .map_err(|problem| {
             CommandError::backup_location_unavailable(&settings.folder, problem.as_reason())
         })?;
         let restored_len = backup_len(backup)?;
@@ -465,6 +492,8 @@ pub mod ops {
                 name: &open.name,
                 database_id: &open.database_id,
                 folder: &settings.folder,
+                reach,
+                need: Need::BackupFolder,
                 make_folder: settings.is_default,
                 now: session.clock().now(),
                 kind: BackupKind::Regular,
@@ -522,7 +551,7 @@ pub mod ops {
             restored.upgraded.then(|| upgraded_note(backup, at_backup_location));
         // A saved passphrase now opens it only if it is the backup's.
         refresh_saved(machine, &path, &reopened.database_id, passphrase);
-        let status = status(&reopened, machine);
+        let status = status(&reopened, machine, reach);
         // The backup's lock settings come with it.
         session.reinstalled(&reopened);
         *slot = Some(reopened);
@@ -1158,6 +1187,7 @@ pub async fn restore_backup(
         &backup_passphrase,
         target,
         upgrade.unwrap_or(false),
+        session.reach(),
     )
 }
 

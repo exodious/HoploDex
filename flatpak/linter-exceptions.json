@@ -1,0 +1,5 @@
+{
+  "io.github.exodious.HoploDex": {
+    "finish-args-login1-system-talk-name": "HoploDex locks and closes before sleep and shutdown through logind's sleep and shutdown notices and its delay inhibitor, so it needs --system-talk-name=org.freedesktop.login1 (011 research.md §4, §6; 011 FR-005)."
+  }
+}

@@ -1,0 +1,101 @@
+# The Flatpak manifest for HoploDex (011 data-model.md "The manifest").
+#
+# This manifest is AI-assisted, so it is not submittable to Flathub as it is
+# (011 research.md §19 item 1). It builds the checkout it sits in, offline:
+# `flatpak-builder --download-only` fetches every source, then
+# `--disable-download` builds with the build sandbox's network off
+# (011 research.md §2). scripts/flatpak/manifest.test.ts holds its rules: one
+# module, three sources, no network anywhere, and the finish-args below.
+id: io.github.exodious.HoploDex
+runtime: org.gnome.Platform
+runtime-version: "51"
+sdk: org.gnome.Sdk
+# Build tools only; they ship nothing. Both are on the Freedesktop SDK's stable
+# 26.08 branch, which GNOME 51 is built on (011 research.md §1, T012).
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node24
+command: hoplodex
+
+# Exactly 011 research.md §4's table as amended 2026-10-19 (ten arguments), in
+# contracts/flatpak-bundle.md's order. There is no --share=network: HoploDex is
+# local-only. Nothing grants the home folder, the Secret Service or /mnt
+# (011 SC-011): a process that compromised HoploDex reaches only what is below.
+finish-args:
+  # X11's shared memory, which GTK uses under X11.
+  - --share=ipc
+  # The window, on Wayland.
+  - --socket=wayland
+  # The window, on X11 only when there is no Wayland.
+  - --socket=fallback-x11
+  # WebKit's GPU rendering; without it, it renders on the CPU.
+  - --device=dri
+  # Databases and their backups in the suggested folder, made if it is missing
+  # (011 FR-003, FR-010). The rest of the home folder is not granted.
+  - --filesystem=xdg-documents/HoploDex:create
+  # Databases and backups on removable drives (011 FR-003).
+  - --filesystem=/media
+  - --filesystem=/run/media
+  # Locking when the screen locks (003 FR-038; 011 FR-005).
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.gnome.ScreenSaver
+  # The sleep and shutdown notices and their delay, and the session's lock
+  # signals (003 research.md §14; 011 FR-005).
+  - --system-talk-name=org.freedesktop.login1
+
+build-options:
+  # The extensions' toolchains: cargo (and ld.mold) and node/npm.
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node24/bin
+  # No build-args: the build has no network (011 SC-004).
+  env:
+    # Where the cargo source list puts the vendored crates and the config that
+    # replaces crates.io with them (cargo-sources.json, dest `cargo`).
+    CARGO_HOME: /run/build/hoplodex/cargo
+    CARGO_NET_OFFLINE: "true"
+    npm_config_offline: "true"
+    # Where the node source list puts the npm cache and the tools' caches (esbuild's
+    # binary among them): flatpak-node-generator's XDG layout.
+    XDG_CACHE_HOME: /run/build/hoplodex/flatpak-node/cache
+    npm_config_cache: /run/build/hoplodex/flatpak-node/npm-cache
+
+modules:
+  - name: hoplodex
+    buildsystem: simple
+    build-commands:
+      # 011 research.md §2, in order. The npm packages come from the cache the node
+      # list fills.
+      - npm ci --offline
+      # The type check, then vite build, which writes dist/ with NOTICES.txt (010).
+      - npm run build
+      # The same features and profile as a release `tauri build`, without the CLI.
+      - cd src-tauri && cargo build --release --offline --locked --features custom-protocol --bin hoplodex
+      # The E2E-only WebDriver server must never ship (#29).
+      - node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
+      # What the bundle carries, and nothing else (011 research.md §13).
+      - install -Dm755 src-tauri/target/release/hoplodex /app/bin/hoplodex
+      - install -Dm644 flatpak/io.github.exodious.HoploDex.desktop /app/share/applications/io.github.exodious.HoploDex.desktop
+      - install -Dm644 flatpak/io.github.exodious.HoploDex.metainfo.xml /app/share/metainfo/io.github.exodious.HoploDex.metainfo.xml
+      - install -Dm644 dist/NOTICES.txt /app/share/licenses/io.github.exodious.HoploDex/NOTICES.txt
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/io.github.exodious.HoploDex.png
+      - install -Dm644 src-tauri/icons/64x64.png /app/share/icons/hicolor/64x64/apps/io.github.exodious.HoploDex.png
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.exodious.HoploDex.png
+      # 128x128@2x.png is 256 pixels wide.
+      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/io.github.exodious.HoploDex.png
+      - install -Dm644 src-tauri/icons/512x512.png /app/share/icons/hicolor/512x512/apps/io.github.exodious.HoploDex.png
+    sources:
+      # The checkout, uncommitted changes included, as every other local build is
+      # (011 research.md §2). The dev container's own build output and data, and
+      # the worktrees and history, never enter the build.
+      - type: dir
+        path: ..
+        skip:
+          - node_modules
+          - dist
+          - src-tauri/target
+          - flatpak/out
+          - .human-testing
+          - .claude
+          - .git
+          - .wdio
+      - cargo-sources.json
+      - node-sources.json

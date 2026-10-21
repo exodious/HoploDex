@@ -74,6 +74,16 @@ text_enum!(BackupFailureReason {
     Interrupted => "interrupted",
     Io => "io",
     DatabaseUnreachable => "databaseUnreachable",
+    // 011 FR-004: inside a Flatpak, the custom backup location is outside
+    // what this copy may reach.
+    OutOfReach => "outOfReach",
+});
+
+// Why something is `available: false` when the reason is not that it is
+// missing (011 contracts/tauri-commands.md "Shared types"): set only because of
+// reach, so a Flatpak's row or setting says so instead of "not found".
+text_enum!(UnavailableReason {
+    OutOfReach => "outOfReach",
 });
 
 // A note shown once in the collection (003 contracts/ui-databases.md §10).
@@ -163,8 +173,13 @@ pub struct RecentDatabase {
     pub name: String,
     /// ISO-8601 UTC.
     pub last_opened_at: String,
-    /// The file exists at `path`.
+    /// The file exists at `path`, and, inside a Flatpak, its folder is within
+    /// reach.
     pub available: bool,
+    /// 011 FR-004: set only when `available` is false because the file's
+    /// folder is out of reach.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<UnavailableReason>,
     /// 003 FR-017, on this computer.
     pub passphrase_saved: bool,
     /// The backups at its backup location (003 FR-040), or `None` when this
@@ -266,6 +281,10 @@ pub struct BackupLocation {
     /// Resolved on this computer.
     pub path: String,
     pub available: bool,
+    /// 011 FR-004: set only when `available` is false because the folder is
+    /// out of reach.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<UnavailableReason>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -443,6 +462,10 @@ pub struct BackupList {
     pub folder: String,
     /// The folder exists on this computer.
     pub available: bool,
+    /// 011 FR-004: set only when `available` is false because the folder is
+    /// out of reach.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<UnavailableReason>,
     /// Newest first.
     pub backups: Vec<BackupInfo>,
 }

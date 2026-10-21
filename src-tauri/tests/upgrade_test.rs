@@ -42,6 +42,7 @@ use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::clock::Clock;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::upgrade::testing as waiting;
@@ -487,6 +488,7 @@ impl World {
                 location: BackupLocationInput::Default,
                 existing_backups: None,
             },
+            &Reach::Unconfined,
         )
         .unwrap();
     }
@@ -971,6 +973,7 @@ mod remembering {
             &text(&world.path()),
             Unlock::Typed { passphrase: &passphrase(), remember: true },
             false,
+            &Reach::Unconfined,
         )
         .expect_err("an older database must ask first")
     }
@@ -1053,6 +1056,7 @@ mod remembering {
             &text(&world.path()),
             Unlock::typed(&passphrase()),
             false,
+            &Reach::Unconfined,
         )
         .unwrap_err();
         let id = awaiting_id_of(&refused);
@@ -1749,6 +1753,7 @@ fn a_restore_drops_the_waiting_database() {
         &passphrase(),
         Target::At(&text(&other_path)),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 

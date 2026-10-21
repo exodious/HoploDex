@@ -33,6 +33,10 @@ export interface RecentDatabase {
   lastOpenedAt: string;
   /** The file exists at `path` (003 FR-012). */
   available: boolean;
+  /** Set only when `available` is false because its folder is out of this
+   * copy's reach (a Flatpak), so the row says so instead of "not found"
+   * (011 FR-004). */
+  unavailableReason?: "outOfReach";
   /** 003 FR-017, on this computer. */
   passphraseSaved: boolean;
   /** Its backups, by file name (003 FR-040); `null` when this computer doesn't
@@ -71,9 +75,25 @@ export type ChooserNotice =
       kind: "backupFailed";
       databasePath: string;
       reason:
-        "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" | "databaseUnreachable";
+        | "locationUnavailable"
+        | "insufficientSpace"
+        | "interrupted"
+        | "io"
+        | "databaseUnreachable"
+        /** The custom backup location is out of this copy's reach (011 FR-004). */
+        | "outOfReach";
     }
   | { kind: "takenOver"; databasePath: string };
+
+/** Where backups go, resolved on this computer. */
+export interface BackupLocation {
+  kind: "default" | "custom";
+  path: string;
+  available: boolean;
+  /** Set only when `available` is false because the folder is out of this
+   * copy's reach (011 FR-004). */
+  unavailableReason?: "outOfReach";
+}
 
 export interface CollectionSettings {
   backups: {
@@ -81,7 +101,7 @@ export interface CollectionSettings {
     /** 1–100. */
     keepCount: number;
     /** `path` is resolved on this computer. */
-    location: { kind: "default" | "custom"; path: string; available: boolean };
+    location: BackupLocation;
   };
   /** `idleMinutes` is 1–240. */
   lock: { idleEnabled: boolean; idleMinutes: number; onScreenLock: boolean };
@@ -166,7 +186,13 @@ export interface UpgradedNote {
 
 export interface CloseOutcome {
   backup: "made" | "notDue" | "alreadyToday" | "off" | "skipped" | "failed" | "notAttempted";
-  failureReason?: "locationUnavailable" | "insufficientSpace" | "io" | "databaseUnreachable";
+  failureReason?:
+    | "locationUnavailable"
+    | "insufficientSpace"
+    | "io"
+    | "databaseUnreachable"
+    /** The custom backup location is out of this copy's reach (011 FR-004). */
+    | "outOfReach";
 }
 
 export interface BackupInfo {
@@ -218,6 +244,9 @@ export interface BackupList {
   folder: string;
   /** The folder exists on this computer. */
   available: boolean;
+  /** Set only when `available` is false because the folder is out of this
+   * copy's reach (011 FR-004). */
+  unavailableReason?: "outOfReach";
   /** Newest first. */
   backups: BackupInfo[];
 }
@@ -267,6 +296,13 @@ export type ExistingBackupsOutcome =
 export interface BackupSettingsSaved {
   settings: CollectionSettings;
   existingBackups: ExistingBackupsOutcome | null;
+}
+
+/** `BACKUP_LOCATION_UNAVAILABLE`'s details: the folder and why it can't be
+ * used. `outOfReach` is a Flatpak's (011 contracts/tauri-commands.md). */
+export interface BackupLocationUnavailableDetails {
+  path: string;
+  reason: "missing" | "notWritable" | "insufficientSpace" | "outOfReach";
 }
 
 /** `BACKUPS_AT_OLD_LOCATION`'s details: the backups the question is

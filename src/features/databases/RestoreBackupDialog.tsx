@@ -17,6 +17,7 @@ import { SessionScopeContext } from "../session/sessionScope";
 import { useSession } from "../session/sessionStore";
 import * as databasesService from "./databasesService";
 import type { BackupInfo, BackupList, RestoreProgress } from "./types";
+import { BACKUP_OUT_OF_REACH_REASON, outOfReachText } from "./outOfReach";
 import "../firearms/forms.css";
 import "./databases.css";
 
@@ -204,10 +205,21 @@ function RestoreForm({
         });
         return;
       case "BACKUP_LOCATION_UNAVAILABLE": {
+        // A folder out of this copy's reach is named, with the override
+        // command, as the other refusals do (011 T100, 011 FR-004).
+        if (details.reason === "outOfReach" && typeof details.path === "string") {
+          setRefusal({
+            text: `The database can't be backed up first, because the backup folder is out of reach. ${outOfReachText("folder", details.path)} Nothing has been changed.`,
+            changeLocation: true,
+          });
+          return;
+        }
         const why =
           details.reason === "insufficientSpace"
             ? "there is not enough space there"
-            : "the backup location is not available";
+            : details.reason === "outOfReach"
+              ? BACKUP_OUT_OF_REACH_REASON
+              : "the backup location is not available";
         setRefusal({
           text: `The database can't be backed up first, because ${why}. Nothing has been changed.`,
           changeLocation: true,
@@ -272,7 +284,9 @@ function RestoreForm({
           <p className="hd-field__hint">Looking for backups…</p>
         ) : !list.available ? (
           <p className="hd-banner">
-            The backup folder {list.folder} isn't available on this computer.
+            {list.unavailableReason === "outOfReach"
+              ? outOfReachText("folder", list.folder)
+              : `The backup folder ${list.folder} isn't available on this computer.`}
           </p>
         ) : backups.length === 0 ? (
           <p className="hd-banner">

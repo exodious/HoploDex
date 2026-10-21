@@ -67,6 +67,7 @@ use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::preview::protocol_handler;
 use hoplodex_lib::services::preview::surface;
 use hoplodex_lib::services::preview::text as preview_text;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::valuation::get_value_summary;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
@@ -669,7 +670,11 @@ impl LargeDatabase {
     fn new() -> Self {
         let config = TempDir::new().unwrap();
         let events = Arc::new(TestEvents::default());
-        let session = Session::new(events.clone(), Some(config.path().join("opened-documents")));
+        let session = Session::new(
+            events.clone(),
+            Some(config.path().join("opened-documents")),
+            Arc::new(Reach::Unconfined),
+        );
         let large = Self {
             dir: TempDir::new().unwrap(),
             machine: MachineSettings::load(config.path()).unwrap(),
@@ -700,6 +705,7 @@ impl LargeDatabase {
             &self.path().to_string_lossy(),
             Unlock::typed(&typed),
             false,
+            &Reach::Unconfined,
         )
         .unwrap();
     }
@@ -908,6 +914,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
             &passphrase(),
             Target::Open(large.session.current_id()),
             false,
+            &Reach::Unconfined,
         )
     });
     restored.unwrap();
@@ -931,6 +938,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
                 },
                 existing_backups: Some(ExistingBackupsChoice::Move),
             },
+            &Reach::Unconfined,
         )
     });
     assert_eq!(serde_json::to_value(moved.unwrap().existing_backups).unwrap()["movedCount"], 2);

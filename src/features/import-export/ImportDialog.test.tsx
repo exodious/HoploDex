@@ -552,6 +552,35 @@ describe("ImportDialog files and the two tables (006 US5)", () => {
     expect(screen.getByText(FIREARMS)).toBeInTheDocument();
   });
 
+  // 011 US1-8, 011 FR-004: a file outside every grant is refused before the import helper starts.
+  it("shows a file refused as out of reach in the alert banner, with the file still listed", async () => {
+    const user = userEvent.setup();
+    const message =
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/data/firearms.csv. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/data by running: flatpak override --user --filesystem=/srv/data io.github.exodious.HoploDex and then restarting HoploDex.";
+    vi.mocked(importExportService.importCollection).mockRejectedValue(
+      new CommandFailure({
+        code: "LOCATION_OUT_OF_REACH",
+        message,
+        details: {
+          path: "/srv/data/firearms.csv",
+          folder: "/srv/data",
+          grants: ["/home/sam/Documents/HoploDex", "/media", "/run/media"],
+        },
+      }),
+    );
+    picks("/srv/data/firearms.csv");
+    renderDialog();
+
+    await choose(user);
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("list", { name: "Files to import" })).toHaveTextContent(
+      "/srv/data/firearms.csv",
+    );
+    expect(screen.getByRole("button", { name: "Import" })).toBeEnabled();
+  });
+
   it("shows the stop message that names the file, and stays on the file step", async () => {
     const user = userEvent.setup();
     const message =

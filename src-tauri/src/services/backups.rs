@@ -20,6 +20,7 @@ use crate::models::database::{
 };
 use crate::services::disk_space::{self, InsufficientSpace};
 use crate::services::machine_settings::{MachineSettings, UnfinishedBackup, UnfinishedBackupMove};
+use crate::services::sandbox::{Need, Reach};
 use crate::services::scratch;
 use crate::services::secure_delete::{self, WipeControl};
 
@@ -565,6 +566,9 @@ pub enum LocationProblem {
     /// The folder's disk is full: not even the check's probe file fits
     /// (issue #110).
     InsufficientSpace,
+    /// Inside a Flatpak, the folder is outside what this copy may reach
+    /// (011 FR-004). Judged before the folder is made or probed.
+    OutOfReach,
 }
 
 impl LocationProblem {
@@ -574,6 +578,7 @@ impl LocationProblem {
             Self::Missing => "missing",
             Self::NotWritable => "notWritable",
             Self::InsufficientSpace => "insufficientSpace",
+            Self::OutOfReach => "outOfReach",
         }
     }
 }
@@ -581,8 +586,22 @@ impl LocationProblem {
 /// Checks backups can be written to `folder`. The default folder is made
 /// when missing (at the first backup); a custom one that is missing is on a
 /// drive or share that isn't there, and is not made (003 FR-024, FR-027).
-/// Writability is tried with a probe file, removed at once.
-pub fn check_location(folder: &Path, make_if_missing: bool) -> Result<(), LocationProblem> {
+/// Writability is tried with a probe file, removed at once. Inside a Flatpak a
+/// folder outside what this copy may reach (`Need::BackupFolder`) is refused
+/// first, before the folder is made or the probe is written (011 FR-004,
+/// 011 SC-003). `need` is `Need::BackupFolder` for a stored backup location,
+/// which a Documents-portal path outside reach never is, and
+/// `Need::WriteFolder` for a folder chosen for one write (the upgrade's, 011
+/// T097 amendment).
+pub fn check_location(
+    folder: &Path,
+    make_if_missing: bool,
+    need: Need,
+    reach: &Reach,
+) -> Result<(), LocationProblem> {
+    if reach.check(folder, need).is_err() {
+        return Err(LocationProblem::OutOfReach);
+    }
     if !folder.is_dir() {
         if !make_if_missing || folder.exists() {
             return Err(LocationProblem::Missing);
@@ -619,6 +638,8 @@ pub struct ChosenFolder {
     /// The folder is the database's backup location, so the backup is listed
     /// and rotated with the others; any other folder is outside both.
     pub is_backup_location: bool,
+    /// What the job writing there must be judged against.
+    pub need: Need,
 }
 
 /// Checks a folder the user chose for the backup before an upgrade
@@ -626,18 +647,23 @@ pub struct ChosenFolder {
 /// never created. Room for the copy is checked by [`make_backup`], which also
 /// creates the file exclusively and never overwrites one (003 FR-026). A
 /// folder that is [`same_path`] as `backup_location` is the backup location.
-/// Pass the result's `folder` as the job's, with `make_folder: false`.
+/// Pass the result's `folder` as the job's, with `make_folder: false` and
+/// `need` as [`ChosenFolder::need`] says. A folder chosen for this one backup
+/// is a one-off write (`Need::WriteFolder`, as for an export), unless it is
+/// the backup location itself, which is stored (`Need::BackupFolder`).
 pub fn check_chosen_folder(
     chosen: &Path,
     backup_location: &Path,
+    reach: &Reach,
 ) -> Result<ChosenFolder, LocationProblem> {
     if !chosen.is_absolute() {
         return Err(LocationProblem::Missing);
     }
-    check_location(chosen, false)?;
     let is_backup_location = same_path(chosen, backup_location);
+    let need = if is_backup_location { Need::BackupFolder } else { Need::WriteFolder };
+    check_location(chosen, false, need, reach)?;
     let folder = if is_backup_location { backup_location } else { chosen };
-    Ok(ChosenFolder { folder: folder.to_owned(), is_backup_location })
+    Ok(ChosenFolder { folder: folder.to_owned(), is_backup_location, need })
 }
 
 /// Why [`make_backup`] made no backup.
@@ -665,6 +691,7 @@ impl BackupFailure {
             Self::Location(LocationProblem::InsufficientSpace) | Self::InsufficientSpace(_) => {
                 Some(BackupFailureReason::InsufficientSpace)
             }
+            Self::Location(LocationProblem::OutOfReach) => Some(BackupFailureReason::OutOfReach),
             Self::Location(_) => Some(BackupFailureReason::LocationUnavailable),
             Self::Stopped => None,
             // The disk filled while the copy was being written (issue #110).
@@ -684,6 +711,12 @@ pub struct BackupJob<'a> {
     pub name: &'a str,
     pub database_id: &'a str,
     pub folder: &'a Path,
+    /// What this run may reach: the folder is judged against it before it is
+    /// made or probed (011 FR-004).
+    pub reach: &'a Reach,
+    /// What the folder is judged as: `Need::BackupFolder` for a stored backup
+    /// location, `Need::WriteFolder` for a folder chosen for this one backup.
+    pub need: Need,
     /// The folder is the default one, made if missing.
     pub make_folder: bool,
     pub now: DateTime<FixedOffset>,
@@ -727,7 +760,8 @@ pub fn make_backup(
         Some(job.conn),
         if job.kind.is_before_upgrade()
     );
-    check_location(job.folder, job.make_folder).map_err(BackupFailure::Location)?;
+    check_location(job.folder, job.make_folder, job.need, job.reach)
+        .map_err(BackupFailure::Location)?;
     let source = RawFile::of(job.conn).map_err(BackupFailure::Io)?;
     let len = source.size().map_err(BackupFailure::Io)?;
     disk_space::check_room_for_copy(len, job.folder).map_err(BackupFailure::InsufficientSpace)?;
@@ -1314,21 +1348,41 @@ mod tests {
         let elsewhere = root.path().join("usb");
         fs::create_dir(&elsewhere).unwrap();
 
-        let chosen = check_chosen_folder(&elsewhere, &location).unwrap();
-        assert_eq!(chosen, ChosenFolder { folder: elsewhere.clone(), is_backup_location: false });
+        let chosen = check_chosen_folder(&elsewhere, &location, &Reach::Unconfined).unwrap();
+        assert_eq!(
+            chosen,
+            ChosenFolder {
+                folder: elsewhere.clone(),
+                is_backup_location: false,
+                need: Need::WriteFolder
+            }
+        );
         let respelled = elsewhere.join("..").join("HoploDex backups");
-        let chosen = check_chosen_folder(&respelled, &location).unwrap();
-        assert_eq!(chosen, ChosenFolder { folder: location.clone(), is_backup_location: true });
+        let chosen = check_chosen_folder(&respelled, &location, &Reach::Unconfined).unwrap();
+        assert_eq!(
+            chosen,
+            ChosenFolder {
+                folder: location.clone(),
+                is_backup_location: true,
+                need: Need::BackupFolder
+            }
+        );
 
         let missing = root.path().join("not there");
-        assert_eq!(check_chosen_folder(&missing, &location), Err(LocationProblem::Missing));
+        assert_eq!(
+            check_chosen_folder(&missing, &location, &Reach::Unconfined),
+            Err(LocationProblem::Missing)
+        );
         assert!(!missing.exists(), "a chosen folder is never made");
         assert_eq!(
-            check_chosen_folder(Path::new("relative/folder"), &location),
+            check_chosen_folder(Path::new("relative/folder"), &location, &Reach::Unconfined),
             Err(LocationProblem::Missing)
         );
         let file = root.path().join("a file");
         fs::write(&file, b"x").unwrap();
-        assert_eq!(check_chosen_folder(&file, &location), Err(LocationProblem::Missing));
+        assert_eq!(
+            check_chosen_folder(&file, &location, &Reach::Unconfined),
+            Err(LocationProblem::Missing)
+        );
     }
 }

@@ -9,6 +9,7 @@ import {
   chooseMenuItem,
   clickButton,
   createDatabase,
+  dialogFieldError,
   expect,
   fill,
   goTo,
@@ -59,24 +60,6 @@ async function relaunch() {
     { timeout: 10000, timeoutMsg: "the relaunched app never finished loading" },
   );
   await waitForChooser();
-}
-
-/** The error shown for the field labelled `label` in the open dialog: the
- * text of the element its `aria-describedby` names when it is `aria-invalid`,
- * or `null` when the field shows none. */
-async function dialogFieldError(label: string): Promise<string | null> {
-  return browser.execute((label: string) => {
-    const labelEl = [...document.querySelectorAll('[role="dialog"] label')].find(
-      (l) => l.textContent?.trim() === label,
-    ) as HTMLLabelElement | undefined;
-    const field = labelEl && document.getElementById(labelEl.htmlFor);
-    if (!field || field.getAttribute("aria-invalid") !== "true") return null;
-    for (const id of (field.getAttribute("aria-describedby") ?? "").split(" ")) {
-      const el = document.getElementById(id);
-      if (el?.classList.contains("hd-field__error")) return el.textContent?.trim() ?? "";
-    }
-    return null;
-  }, label);
 }
 
 describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databases)", () => {

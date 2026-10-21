@@ -18,6 +18,7 @@ use hoplodex_lib::models::database::{CloseReason, DatabaseStatus};
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use support::{ManualClock, TEST_PASSPHRASE, TestEvents, passphrase, test_session_at};
@@ -113,7 +114,14 @@ impl World {
     }
 
     fn open(&self, name: &str, unlock: Unlock<'_>) -> Result<DatabaseStatus, CommandError> {
-        ops::open_database(&self.session, &self.machine, &self.path_text(name), unlock, false)
+        ops::open_database(
+            &self.session,
+            &self.machine,
+            &self.path_text(name),
+            unlock,
+            false,
+            &Reach::Unconfined,
+        )
     }
 
     fn open_typed(&self, name: &str, text: &str) -> Result<DatabaseStatus, CommandError> {
@@ -214,7 +222,7 @@ fn a_saved_passphrase_opens_its_database_while_another_still_asks() {
     assert!(!world.session.is_open());
     assert_eq!(stored(&other_id), None);
 
-    let state = ops::chooser_state(&world.session, &world.machine, None, None);
+    let state = ops::chooser_state(&world.session, &world.machine, None, None, &Reach::Unconfined);
     let saved: Vec<(&str, bool)> =
         state.recent.iter().map(|r| (r.name.as_str(), r.passphrase_saved)).collect();
     assert_eq!(saved, [("Saved", true), ("Other", false)], "most recent first");
@@ -351,6 +359,7 @@ fn a_passphrase_change_updates_the_saved_one_and_a_restore_sets_the_backups() {
         &passphrase(),
         Target::Open(world.session.current_id()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
     assert!(restored.passphrase_saved);
@@ -402,6 +411,7 @@ fn a_backup_opened_directly_does_not_inherit_the_saved_passphrase() {
         &backup.to_string_lossy(),
         Unlock::typed(&passphrase()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
     let backup_id = world.database_id();
@@ -416,6 +426,7 @@ fn a_backup_opened_directly_does_not_inherit_the_saved_passphrase() {
         &backup.to_string_lossy(),
         Unlock::Saved,
         false,
+        &Reach::Unconfined,
     )
     .unwrap_err();
     assert!(saved_failed(&err), "{err:?}");
@@ -446,7 +457,7 @@ fn without_a_keyring_nothing_is_saved_and_everything_else_works() {
     // keyring never installs one.
     Keyring::mock(None);
     let world = World::with_keyring(Keyring::off());
-    let state = ops::chooser_state(&world.session, &world.machine, None, None);
+    let state = ops::chooser_state(&world.session, &world.machine, None, None, &Reach::Unconfined);
     assert!(!state.keyring_available);
 
     world.create("Main");
@@ -480,7 +491,7 @@ fn the_pre_feature_sqlcipher_key_entry_is_never_touched() {
     world.create("Main");
     world.save(TEST_PASSPHRASE).unwrap();
     world.close();
-    ops::chooser_state(&world.session, &world.machine, None, None);
+    ops::chooser_state(&world.session, &world.machine, None, None, &Reach::Unconfined);
     world.open("Main", Unlock::Saved).unwrap();
     backups_ops::change_passphrase(
         &world.session,

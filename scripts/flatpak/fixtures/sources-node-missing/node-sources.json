@@ -1,0 +1,21 @@
+[
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+    "sha512": "6373dc9c5f5acddcb799fd30fbca14d0f21bce2709322c79cfd3a3faad5e03ff8605838cec17c7d8bdf0a9bfa018c1464439644669ab5cc82836524a0c46c1ac",
+    "dest": "flatpak-node/cache/_cacache/content-v2/sha512/63/73",
+    "dest-filename": "dc9c5f5acddcb799fd30fbca14d0f21bce2709322c79cfd3a3faad5e03ff8605838cec17c7d8bdf0a9bfa018c1464439644669ab5cc82836524a0c46c1ac"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"key\":\"make-fetch-happen:request-cache:https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz\"}",
+    "dest": "flatpak-node/cache/_cacache/index-v5/00/00",
+    "dest-filename": "leftpad130"
+  },
+  {
+    "type": "script",
+    "commands": ["export npm_config_cache=$FLATPAK_BUILDER_BUILDDIR/flatpak-node/cache"],
+    "dest-filename": "setup_sdk_node_headers.sh",
+    "dest": "flatpak-node"
+  }
+]

@@ -164,6 +164,8 @@ type DocumentOpening = "preview" | "external";
   - `NOT_FOUND`;
   - the session's codes.
 
+  _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#open_document-amended-inside-flatpak-only): inside a Flatpak, step 5 hands the copy to the OpenURI portal instead of `xdg-open`; input, output and errors are unchanged, and `NO_APP_FOR_DOCUMENT` means the portal said no application could open it, or there is no portal (011 FR-008)._
+
 ## Preview commands *(new)*
 
 All refuse with `DATABASE_CLOSED` when nothing is open. They need no

@@ -10,7 +10,7 @@
 //!   editing or copying: an allowlist, so an item a later macOS adds is
 //!   removed until someone looks at it. It also turns off the menu's plug-in
 //!   items (`allowsContextMenuPlugIns`). It logs every item it saw and what
-//!   it did (`log::info!`, target `window_controls`).
+//!   it did (`log::info!`).
 //! - `validRequestorForSendType:returnType:`, returning nil: no Services menu.
 //!   AppKit adds Services after the hook has run, so the menu's items can't
 //!   remove it.
@@ -150,7 +150,7 @@ pub(crate) fn apply<R: Runtime>(window: &WebviewWindow<R>, log_items: bool) -> t
     window.with_webview(move |platform| {
         LOG_ITEMS.store(log_items, Ordering::Relaxed);
         if let Err(err) = install(platform.inner()) {
-            log::error!(target: "window_controls", "the macOS menu filter isn't in place: {err}");
+            log::error!("the macOS menu filter isn't in place: {err}");
         }
     })
 }
@@ -215,7 +215,7 @@ fn add_methods(web_view: *mut c_void) -> Result<(), String> {
         )?;
     }
     let _ = SUPERCLASS.set(superclass);
-    log::info!(target: "window_controls", "menu filter installed on WryWebView");
+    log::info!("menu filter installed on WryWebView");
     Ok(())
 }
 
@@ -278,7 +278,7 @@ unsafe extern "C-unwind" fn quick_look_with_event(
     _cmd: Sel,
     _event: &AnyObject,
 ) {
-    log::info!(target: "window_controls", "quickLookWithEvent: ignored");
+    log::info!("quickLookWithEvent: ignored");
 }
 
 /// `-[WryWebView willOpenMenu:withEvent:]`.
@@ -389,7 +389,6 @@ fn filter_level(menu: &AnyObject, level: usize) {
         let submenu = submenu_of(object);
         if log_items {
             log::info!(
-                target: "window_controls",
                 "menu item (level {level}): title={:?} identifier={:?} action={:?} tag={} \
                  separator={} submenu={} -> {}",
                 title_of(object),
@@ -408,7 +407,6 @@ fn filter_level(menu: &AnyObject, level: usize) {
                 // What is inside an item that is going, for the record.
                 for (sub_object, sub_item) in items_of(submenu) {
                     log::info!(
-                        target: "window_controls",
                         "  inside {:?}: title={:?} identifier={:?} action={:?} separator={}",
                         title_of(object),
                         title_of(&sub_object),

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ use crate::services::entry_text::{EntryField, check_entry_text};
 use crate::services::import_reader::read_files;
 use crate::services::mounts::{self, MountGraph};
 use crate::services::record_id;
+use crate::services::sandbox::{Need, Reach};
 use crate::services::spreadsheet::{
     AccessoryExportRow, FirearmExportRow, RawAccessoryRow, RawImportRow, ReadTable,
     SpreadsheetFormat, TableKind, TableRows, dollars_to_string, parse_scaled_decimal,
@@ -504,6 +505,7 @@ pub mod ops {
         format: SpreadsheetFormat,
         records: &ExportRecords,
         on_progress: &mut dyn FnMut(usize, usize),
+        reach: &Reach,
     ) -> Result<ExportResult, CommandError> {
         let never = || false;
         export_collection_stoppable(
@@ -514,6 +516,7 @@ pub mod ops {
             records,
             on_progress,
             &never,
+            reach,
         )
     }
 
@@ -526,6 +529,13 @@ pub mod ops {
     /// and `{base_name}-2`, `-3`, ... otherwise, so an earlier export's
     /// spreadsheet and photos folder are never overwritten, reused or
     /// cleared. The names actually used are in the result.
+    ///
+    /// Inside a Flatpak a destination folder out of reach (or read only) is
+    /// refused with `LOCATION_OUT_OF_REACH` first, before any output or scratch
+    /// file is made (011 FR-004, 011 SC-003).
+    // One more than clippy likes: the reach joins the arguments every caller already
+    // passes, and grouping them would only move them into a struct.
+    #[allow(clippy::too_many_arguments)]
     pub fn export_collection_stoppable(
         conn: &Connection,
         destination_folder: &Path,
@@ -534,7 +544,10 @@ pub mod ops {
         records: &ExportRecords,
         on_progress: &mut dyn FnMut(usize, usize),
         is_cancelled: &dyn Fn() -> bool,
+        reach: &Reach,
     ) -> Result<ExportResult, CommandError> {
+        let destination_folder = reach.check(destination_folder, Need::WriteFolder)?;
+        let destination_folder = destination_folder.as_path();
         let mut reserved = ExportFiles::reserve(
             destination_folder,
             base_name,
@@ -2078,16 +2091,31 @@ pub mod ops {
     /// (`cancel_import`) is `OPERATION_STOPPED`; the session ending, or a
     /// sleep or quit beginning its close, is `DATABASE_CLOSED` (008 research.md
     /// §11).
+    ///
+    /// Inside a Flatpak each file is checked first (`Need::ReadFile`): one that
+    /// can't be seen and lies outside reach refuses the whole import with
+    /// `LOCATION_OUT_OF_REACH`, before the import helper starts (011 FR-004).
+    /// `import_collection` takes the tables this reads, not paths.
     pub fn read_import_files(
         helper_exe: &Path,
         files: &[ImportFile],
         operation: &OperationGuard<'_>,
         session_is_current: &dyn Fn() -> bool,
         progress: &mut dyn FnMut(&str, u64, u64),
+        reach: &Reach,
     ) -> Result<Vec<ReadTable>, CommandError> {
+        let files = files
+            .iter()
+            .map(|file| {
+                Ok(ImportFile {
+                    file_path: reach.check(&file.file_path, Need::ReadFile)?,
+                    format: file.format,
+                })
+            })
+            .collect::<Result<Vec<_>, CommandError>>()?;
         read_files(
             helper_exe,
-            files,
+            &files,
             &|| operation.is_stopped_by_user(),
             // A stop that isn't the user's has begun a close, whose session
             // is not yet gone.
@@ -2436,6 +2464,7 @@ pub async fn export_collection(
     input: ExportCollectionInput,
     app: tauri::AppHandle,
     session: ScopedSession,
+    reach: tauri::State<'_, Arc<Reach>>,
 ) -> Result<ExportResult, CommandError> {
     if !session.is_current() {
         return Err(CommandError::database_closed());
@@ -2458,6 +2487,7 @@ pub async fn export_collection(
                     app.emit("export_collection:progress", ProgressPayload { processed, total });
             },
             &|| operation.is_cancelled(),
+            &reach,
         )
     })
 }
@@ -2501,6 +2531,7 @@ pub async fn import_collection(
     input: ImportCollectionInput,
     app: tauri::AppHandle,
     session: ScopedSession,
+    reach: tauri::State<'_, Arc<Reach>>,
 ) -> Result<ImportResult, CommandError> {
     if !session.is_current() {
         return Err(CommandError::database_closed());
@@ -2556,6 +2587,7 @@ pub async fn import_collection(
                 },
             );
         },
+        &reach,
     )?;
     operation.set_user_stoppable(false);
     // Phase two: the rows are saved under the session's lock, as before.
