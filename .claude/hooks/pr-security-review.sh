@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse hook for Bash: a `gh pr create` goes ahead only once the branch has
+# PreToolUse hook for Bash: a `gh pr create` (or `gh-axi pr create`) goes ahead only once the branch has
 # a saved /security-review result and the PR body carries it.
 #
 # The result is saved, never committed (constitution: security findings are not
@@ -13,9 +13,10 @@ command=$(jq -r '.tool_input.command // ""' <<<"$input")
 cwd=$(jq -r '.cwd // empty' <<<"$input")
 [[ -n "$cwd" ]] && cd "$cwd"
 
-# Only `gh` in command position (line start, or after ; & | ( or $( ), so a
-# commit message or echo that mentions the command doesn't count.
-grep -qE '(^|[;&|(]|\$\()[[:space:]]*gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' <<<"$command" || exit 0
+# Only `gh` or `gh-axi` in command position (line start, or after ; & | ( or
+# $( ), so a commit message or echo that mentions the command doesn't count.
+# An early warning only: .github/workflows/pr-body.yml holds whoever opens the PR.
+grep -qE '(^|[;&|(]|\$\()[[:space:]]*gh(-axi)?[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' <<<"$command" || exit 0
 grep -qE '(^|[[:space:]])(-h|--help)([[:space:]]|$)' <<<"$command" && exit 0
 
 decide() { # decision, reason
@@ -41,7 +42,7 @@ body_file=$(grep -oE -- '(--body-file|-F)([[:space:]]+|=)("[^"]+"|'"'"'[^'"'"']+
 if [[ -n "$body_file" && "$body_file" != "-" && -f "$body_file" ]]; then
   body+=$'\n'$(cat -- "$body_file")
 fi
-if ! grep -qiE '^[[:space:]]*##[[:space:]]+Security review' <<<"$body"; then
+if ! grep -qiE '^[[:space:]]*##[[:space:]]+Security review([^[:alnum:]]|$)' <<<"$body"; then
   decide deny "The PR body has no \"## Security review\" section. Add the review saved in $file under that heading, then open the PR."
 fi
 
