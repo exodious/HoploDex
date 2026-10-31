@@ -35,7 +35,14 @@ in the checkout, so they don't collide with host builds:
   links against its own system libraries, so its builds can't share these
   with the host. On first run the container fills `node_modules` with
   `npm ci`, and the first cargo build starts from scratch, so the first run
-  of anything is slow.
+  of anything is slow. A no-mistakes review run gets a new worktree under
+  `~/.no-mistakes/worktrees/` (or `$NM_HOME`) each time, so its pair is
+  keyed by the run's branch instead, read from the daemon's run record:
+  reruns of a PR reuse a warm build, and different PRs never share one. If
+  the branch can't be read (no `sqlite3` on the host, or no record), the run
+  gets anonymous volumes, deleted when its container exits. A reviewed
+  branch's `hoplodex-review-<hash>-*` volumes stay until you remove them
+  (`podman volume ls -q | grep '^hoplodex-review-' | xargs -r podman volume rm`).
 - `/home/dev`, shared by all checkouts: shell history, the cargo crate cache,
   the keyring, and `gh` / `claude` logins. Log in once with `gh auth login` and
   `claude` inside the container.

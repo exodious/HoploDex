@@ -121,10 +121,29 @@ fi
 
 # Per-checkout volume names, so worktrees don't share build output.
 checkout="$(printf '%s' "$repo" | sha256sum | cut -c1-8)"
+# no-mistakes makes a new worktree per review run, so key those by branch (from its run record) to
+# reuse a PR's warm build without leaving volumes per run; failing that, anonymous volumes --rm deletes.
+nm_home="$(cd "${NM_HOME:-$HOME/.no-mistakes}" 2>/dev/null && pwd -P)" || nm_home=
+repo_physical="$(cd "$repo" && pwd -P)"
+anonymous_volumes=0
+if [[ -n "$nm_home" && "$(dirname "$(dirname "$repo_physical")")" == "$nm_home/worktrees" ]]; then
+  run_id="$(basename "$repo_physical")"
+  nm_repo_id="$(basename "$(dirname "$repo_physical")")"
+  [[ "$run_id" =~ ^[0-9A-Za-z]+$ ]] &&
+    branch="$(sqlite3 -readonly "$nm_home/state.sqlite" \
+      "select branch from runs where id = '$run_id'" 2>/dev/null)" || branch=
+  if [[ -n "$branch" ]]; then
+    checkout="review-$(printf '%s' "$nm_repo_id/$branch" | sha256sum | cut -c1-8)"
+  else
+    anonymous_volumes=1
+    echo "note: no branch found for no-mistakes run $run_id; using throwaway volumes" >&2
+  fi
+fi
 home_volume=hoplodex-home
 node_modules_volume="hoplodex-$checkout-node-modules"
 target_volume="hoplodex-$checkout-target"
 flatpak_state_volume="hoplodex-$checkout-flatpak-state"
+[[ $anonymous_volumes -eq 1 ]] && node_modules_volume= target_volume= flatpak_state_volume=
 flatpak_state_dir=/var/lib/hoplodex-flatpak-state
 
 # Deleted volumes are recreated empty by the run below. Removal fails, and so
@@ -133,7 +152,7 @@ if [[ -n "$reset_volumes" ]]; then
   volumes=("$node_modules_volume" "$target_volume" "$flatpak_state_volume")
   [[ "$reset_volumes" == all ]] && volumes+=("$home_volume")
   for volume in "${volumes[@]}"; do
-    if "$engine" volume inspect "$volume" >/dev/null 2>&1; then
+    if [[ -n "$volume" ]] && "$engine" volume inspect "$volume" >/dev/null 2>&1; then
       "$engine" volume rm "$volume" >/dev/null
       echo "removed volume $volume" >&2
     fi
@@ -155,8 +174,8 @@ args=(
   --pids-limit 16384
   -v "$repo:/workspace"
   -v "$home_volume:/home/dev"
-  -v "$node_modules_volume:/workspace/node_modules"
-  -v "$target_volume:/workspace/src-tauri/target"
+  -v "${node_modules_volume:+$node_modules_volume:}/workspace/node_modules"
+  -v "${target_volume:+$target_volume:}/workspace/src-tauri/target"
   -w /workspace
 )
 
@@ -174,7 +193,7 @@ fi
 if [[ $flatpak -eq 1 ]]; then
   args+=(
     --security-opt 'unmask=/proc/*'
-    -v "$flatpak_state_volume:$flatpak_state_dir"
+    -v "${flatpak_state_volume:+$flatpak_state_volume:}$flatpak_state_dir"
     -e "HOPLODEX_FLATPAK_STATE=$flatpak_state_dir"
     --tmpfs /run/media/dev/hoplodex-check:rw,mode=1777
     --tmpfs /mnt/hoplodex-check:rw,mode=1777
