@@ -12,9 +12,10 @@
 # to check, so the job passes without running it (constitution, Development
 # Workflow & Quality Gates). Nor does one that changes only the other
 # workflows' files (codeql.yml, its config, pr-body.yml), which nothing the
-# audit runs reads; audit.yml itself, and everything else, still counts. It skips by step rather than by a `paths` filter or
-# a job-level `if`, so the required check always reports a result, and a fault
-# in deciding fails the job rather than skipping the audit.
+# audit runs reads; audit.yml itself, and everything else, still counts. It
+# skips by step rather than by a `paths` filter or a job-level `if`, so the
+# required check always reports a result, and a fault in deciding fails the job
+# rather than skipping the audit.
 name: Dependency audit
 
 on:

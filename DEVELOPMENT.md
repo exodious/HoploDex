@@ -2166,7 +2166,8 @@ result. A fault in deciding fails the job rather than skipping it. Pushes to
   files), `index.html`, the `tsconfig*.json` files, `src-tauri/` (but not
   `tests/` or `examples/`; the manifest, lockfile, `tauri.conf.json` and
   capabilities change what the Rust extractor compiles), and `codeql.yml` or
-  `.github/codeql/` themselves. The lists are `CODE_PATHS` and
+  `.github/codeql/` themselves, and any file name git quotes (non-ASCII, or
+  with a quote, backslash or control character). The lists are `CODE_PATHS` and
   `NOT_CODE_PATHS` in `codeql.yml`; keep them in step with
   `.github/codeql/codeql-config.yml`.
 - **The audit** runs unless the pull request changes only Markdown or only
