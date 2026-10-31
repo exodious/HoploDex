@@ -1535,16 +1535,20 @@ the images, flat at the top, named `before-<shot>.png` and `after-<shot>.png`.
    (git-ignored, and inside the checkout, so the dev container's shots reach
    the host). Keep only the shots the change affects.
 2. Commit them without switching the working tree, so it works from any
-   checkout or worktree, then push the commit as the branch:
+   checkout or worktree, then push the commit as the branch. It stops before
+   the push when there are no shots, and the `[]` it prints after the commit's
+   hash shows it has no parent:
 
    ```bash
    name=my-feature
-   tree=$(for d in before after; do for f in e2e/screenshots-out/$d/*.png; do
-     printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$d-$(basename "$f")"
-   done; done | git mktree)
-   commit=$(git commit-tree "$tree" -m "Screenshots for $name")
-   git log --format='%H [%P]' -1 "$commit"   # the [] after the hash: no parent
-   git push origin "${commit}:refs/heads/evidence/${name}-screenshots"
+   tree=$(find e2e/screenshots-out/before e2e/screenshots-out/after -name '*.png' |
+     while read -r f; do
+       printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$(basename "$(dirname "$f")")-$(basename "$f")"
+     done | git mktree)
+   test -n "$(git ls-tree "$tree")" &&
+     commit=$(git commit-tree "$tree" -m "Screenshots for $name") &&
+     git log --format='%H [%P]' -1 "$commit" &&
+     git push origin "${commit}:refs/heads/evidence/${name}-screenshots"
    ```
 
    To replace the shots, rerun the snippet and push with `--force`.
