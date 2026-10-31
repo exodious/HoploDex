@@ -256,6 +256,36 @@ and catches the clicks. The tart VM and podman's VM together can need more
 memory than a host has; if so, run the dev container's checks on another
 computer.
 
+**Driving the Mac from Linux, over SSH.** Agents run on Linux and reach
+macOS through the Mac host, the Mac that runs the tart VM, over SSH;
+`scripts/tart-vm.sh` there does the rest. A non-interactive SSH session
+doesn't read the login profile, so Homebrew's tart isn't on its `PATH`:
+start every command with `export PATH=/opt/homebrew/bin:$PATH`.
+
+```bash
+mac() { ssh -n <user>@<mac-host> "export PATH=/opt/homebrew/bin:\$PATH; cd ~/hoplodex-<task> && $1"; }
+ssh -n <user>@<mac-host> 'git clone -q -b <branch> <repository> ~/hoplodex-<task>'   # once per task, after pushing <branch>
+mac 'git pull -q --ff-only'                     # after each push
+mac 'scripts/tart-vm.sh start'
+mac 'scripts/tart-vm.sh test'                   # or sync, then gui for one command:
+mac 'scripts/tart-vm.sh sync && scripts/tart-vm.sh gui npm run test:e2e -- --spec e2e/specs/record-firearm.e2e.ts'
+mac 'scripts/tart-vm.sh fetch e2e/screenshots-out'
+mac 'scripts/tart-vm.sh stop'                   # always, even after a failure
+scp -r '<user>@<mac-host>:hoplodex-<task>/e2e/screenshots-out' e2e/   # results back to Linux
+```
+
+- **The checkout** is a clone of its own for each task, in the host
+  account's home, never someone's existing checkout, which may hold work
+  in progress. Code goes over through GitHub: push the branch, then pull it
+  there. `sync` (and `test`, which syncs first) copies it into the VM.
+- **The order** is `start`, then `test` (or `sync` and `gui`), then `fetch`,
+  then `stop`. Stop the VM even when a step fails, so the next run finds the
+  host free.
+- **One VM at a time** on the host, with at most 8 GB
+  (`HOPLODEX_VM_MEMORY`, 8192 by default): if `tart list` shows one
+  running, wait for it rather than starting another.
+- **One GUI or E2E run at a time** in the VM, as on Windows.
+
 ### Windows
 
 x64 Windows 10 or 11 (Pro, Enterprise or Education), or Windows Server
@@ -266,7 +296,7 @@ section, skipping what's already there, so they can be run again:
 # 1. Once per computer, from an elevated PowerShell; -AutoLogon (test machines) and -GitHubCli optional
 powershell -ExecutionPolicy Bypass -File scripts\windows\setup-system.ps1 -User alice
 # 2. Signed in as that user, from a new PowerShell that isn't elevated;
-#    -ClaudeCode or -ClaudeRemoteControl <checkout> optional
+#    -ClaudeCode optional
 powershell -ExecutionPolicy Bypass -File scripts\windows\setup-user.ps1
 ```
 
@@ -404,37 +434,6 @@ scp -r '<user>@<windows-host>:C:/HoploDex/e2e/screenshots-out' e2e/   # results 
   command running, and its log stays in `%LOCALAPPDATA%\HoploDex\gui\<run>\`
   (named at the start). The user must be signed in at the console and not
   disconnected, which auto-logon gives you. Run one of these at a time.
-
-**Claude Code on a test machine (`-ClaudeRemoteControl <checkout>`)** isn't
-how agents reach it any more (see above); the option stays for running a
-Claude session in the machine's desktop yourself. It installs Claude Code,
-copies `scripts/windows/claude-remote-control.ps1` to
-`%LOCALAPPDATA%\HoploDex`, and adds a Startup-folder shortcut that runs it
-minimized at each sign-in. The script keeps
-`claude --remote-control --name <host>-hoplodex --permission-mode auto`
-running in the checkout (`<host>` is the machine's short host name, in lower
-case), reachable through [Remote Control](https://code.claude.com/docs/en/remote-control):
-it starts it again whenever it stops, 30 seconds later. Before the first
-sign-in, answer Claude Code's one-time questions over SSH, since the
-minimized window would wait on them: in the checkout, run `claude` and
-`/login`, then `claude --remote-control --permission-mode auto`, trust the
-folder, enable Remote Control, accept auto mode if asked, and `/exit`. After
-changing the script, rerun `setup-user.ps1 -ClaudeRemoteControl` (or copy it
-to `%LOCALAPPDATA%\HoploDex`) and restart it with `-Restart`.
-
-Claude Code downloads updates in the background, but a running `claude`
-keeps its version until it restarts. So during one hour a day (`-UpdateHour`
-on the script, 5 a.m. by default, `-1` for never) the script restarts it
-if a newer version is installed. To restart it now, from SSH:
-
-```powershell
-powershell -File $env:LOCALAPPDATA\HoploDex\claude-remote-control.ps1 -Restart
-```
-
-Either way it stops `claude` with Ctrl+C, and forcibly only if that
-doesn't work within 30 seconds, and the new `claude` starts a new
-conversation under the same name. Whatever the old one was doing stops, so
-restart between tasks. To stop it until the next sign-in, close its window.
 
 **E2E on Windows:** `npm run test:e2e` runs there (over SSH, through
 `gui.ps1`), through the embedded WebDriver server, with no driver to
