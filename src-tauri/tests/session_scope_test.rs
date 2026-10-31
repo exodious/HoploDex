@@ -25,6 +25,7 @@ use hoplodex_lib::models::database::{CloseReason, Draft, DraftKind, DraftMode};
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::scoped::{SESSION_HEADER, ScopedSession, Target};
 use hoplodex_lib::session::{Session, SessionId, lifecycle};
 use preview_support::TestPreview;
@@ -317,6 +318,7 @@ fn a_restore_of_the_open_database_is_a_new_session() {
         &passphrase(),
         Target::Open(ended),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -334,6 +336,7 @@ fn a_restore_of_the_open_database_is_a_new_session() {
         &passphrase(),
         Target::Open(ended),
         false,
+        &Reach::Unconfined,
     );
     assert_eq!(late.unwrap_err().code, "DATABASE_CLOSED");
     assert_eq!(world.session.current_id(), current, "the open session is left as it was");
@@ -695,14 +698,21 @@ fn with_colliding_ids_a_late_add_after_a_switch_writes_nothing_to_the_other_data
     fs::write(&document, b"late").unwrap();
 
     let before = world.footprint(b);
-    let late_photo =
-        world.session.write(a, |conn| photos::add_photo_from_path(conn, owner, &photo));
+    let late_photo = world
+        .session
+        .write(a, |conn| photos::add_photo_from_path(conn, owner, &photo, &Reach::Unconfined));
     assert_eq!(late_photo.unwrap_err().code, "DATABASE_CLOSED");
-    let late_document =
-        world.session.write(a, |conn| documents::add_document_from_path(conn, owner, &document));
+    let late_document = world.session.write(a, |conn| {
+        documents::add_document_from_path(conn, owner, &document, &Reach::Unconfined)
+    });
     assert_eq!(late_document.unwrap_err().code, "DATABASE_CLOSED");
     let late_accessory = world.session.write(a, |conn| {
-        photos::add_photo_from_path(conn, RecordRef::Accessory(ids.accessory), &photo)
+        photos::add_photo_from_path(
+            conn,
+            RecordRef::Accessory(ids.accessory),
+            &photo,
+            &Reach::Unconfined,
+        )
     });
     assert_eq!(late_accessory.unwrap_err().code, "DATABASE_CLOSED");
 
@@ -710,7 +720,10 @@ fn with_colliding_ids_a_late_add_after_a_switch_writes_nothing_to_the_other_data
     let kept = world.session.read(b, |conn| photos::list_photos(conn, owner)).unwrap();
     assert_eq!(kept.len(), 1);
     // The control: B's own session adds.
-    world.session.write(b, |conn| photos::add_photo_from_path(conn, owner, &photo)).unwrap();
+    world
+        .session
+        .write(b, |conn| photos::add_photo_from_path(conn, owner, &photo, &Reach::Unconfined))
+        .unwrap();
     assert_eq!(world.footprint(b).photos, before.photos + 1);
 }
 

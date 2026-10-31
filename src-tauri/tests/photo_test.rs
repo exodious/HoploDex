@@ -9,6 +9,7 @@ use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::record::RecordRef;
+use hoplodex_lib::services::sandbox::Reach;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use support::{TestDb, sample_png_bytes};
@@ -191,8 +192,13 @@ fn adds_a_photo_dropped_as_a_file_path() {
     let path = dir.path().join("Range Day.PNG");
     std::fs::write(&path, sample_png_bytes()).unwrap();
 
-    let photo =
-        photo_ops::add_photo_from_path(&db.conn, RecordRef::Firearm(firearm.id), &path).unwrap();
+    let photo = photo_ops::add_photo_from_path(
+        &db.conn,
+        RecordRef::Firearm(firearm.id),
+        &path,
+        &Reach::Unconfined,
+    )
+    .unwrap();
 
     assert_eq!(photo.original_filename, "Range Day.PNG");
     assert_eq!(photo.mime_type, "image/png");
@@ -209,8 +215,13 @@ fn a_dropped_path_that_is_not_a_photo_is_rejected() {
     let path = dir.path().join("receipt.pdf");
     std::fs::write(&path, b"%PDF-1.4").unwrap();
 
-    let err = photo_ops::add_photo_from_path(&db.conn, RecordRef::Firearm(firearm.id), &path)
-        .expect_err("a PDF isn't a photo");
+    let err = photo_ops::add_photo_from_path(
+        &db.conn,
+        RecordRef::Firearm(firearm.id),
+        &path,
+        &Reach::Unconfined,
+    )
+    .expect_err("a PDF isn't a photo");
     assert_eq!(err.code, "VALIDATION_ERROR");
     assert!(photo_ops::list_photos(&db.conn, RecordRef::Firearm(firearm.id)).unwrap().is_empty());
 }
@@ -225,6 +236,7 @@ fn a_dropped_path_that_no_longer_exists_is_reported() {
         &db.conn,
         RecordRef::Firearm(firearm.id),
         &dir.path().join("gone.png"),
+        &Reach::Unconfined,
     )
     .expect_err("a missing file can't be added");
     assert_eq!(err.code, "NOT_FOUND");
@@ -292,7 +304,13 @@ fn an_accessory_photo_dropped_as_a_file_path_becomes_its_thumbnail() {
     let path = dir.path().join("Scope.PNG");
     std::fs::write(&path, sample_png_bytes()).unwrap();
 
-    let photo = photo_ops::add_photo_from_path(&db.conn, RecordRef::Accessory(id), &path).unwrap();
+    let photo = photo_ops::add_photo_from_path(
+        &db.conn,
+        RecordRef::Accessory(id),
+        &path,
+        &Reach::Unconfined,
+    )
+    .unwrap();
 
     assert_eq!(photo.owner, RecordRef::Accessory(id));
     assert_eq!(photo.original_filename, "Scope.PNG");
@@ -503,7 +521,8 @@ fn a_firearm_with_50_photos_refuses_another_and_stores_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("dropped.png");
     std::fs::write(&path, sample_png_bytes()).unwrap();
-    let err = photo_ops::add_photo_from_path(&db.conn, owner, &path).unwrap_err();
+    let err =
+        photo_ops::add_photo_from_path(&db.conn, owner, &path, &Reach::Unconfined).unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
     assert_eq!(count(&db, "photos"), 50);
 }

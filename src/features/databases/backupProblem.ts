@@ -5,7 +5,7 @@ import { CommandFailure } from "../../services/tauriClient";
 export interface BackupProblem {
   /** The folder it couldn't be saved in. */
   folder: string;
-  reason: "missing" | "notWritable" | "insufficientSpace" | "failed";
+  reason: "missing" | "notWritable" | "insufficientSpace" | "outOfReach" | "failed";
   /** With `insufficientSpace` from `INSUFFICIENT_SPACE`, which knows them. */
   bytesNeeded?: number;
   bytesAvailable?: number;
@@ -24,7 +24,10 @@ export function backupProblemOf(error: unknown, folder: string): BackupProblem |
       return {
         folder: named(details.path),
         reason:
-          reason === "notWritable" || reason === "insufficientSpace" || reason === "missing"
+          reason === "notWritable" ||
+          reason === "insufficientSpace" ||
+          reason === "missing" ||
+          reason === "outOfReach"
             ? reason
             : "missing",
       };

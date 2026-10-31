@@ -9,10 +9,10 @@ use std::thread;
 use std::time::Duration;
 
 use hoplodex_lib::app_dirs;
-#[cfg(not(feature = "e2e"))]
-use hoplodex_lib::commands::documents::AppOpener;
-#[cfg(feature = "e2e")]
+#[cfg(not(app_opener))]
 use hoplodex_lib::commands::documents::E2eOpener;
+#[cfg(app_opener)]
+use hoplodex_lib::commands::documents::{AppOpener, opener_route};
 use hoplodex_lib::commands::documents::{
     OPENED_DOCUMENTS_DIR, Opener, clear_opened_documents_cache,
 };
@@ -33,6 +33,7 @@ use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide
 #[cfg(target_os = "linux")]
 use hoplodex_lib::services::preview::sandbox_probe;
 use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
 use tauri::webview::NewWindowResponse;
@@ -158,6 +159,42 @@ fn tick_idle_clock(app: AppHandle) {
     }
 }
 
+/// What this run may reach on the filesystem (011 research.md §5): inside a
+/// Flatpak, the grants `/.flatpak-info` lists; everywhere else, and on macOS
+/// and Windows always, everything.
+#[cfg(target_os = "linux")]
+fn read_reach(app: &AppHandle) -> Reach {
+    use hoplodex_lib::services::sandbox::{FLATPAK_INFO, PortalHostPaths, UserDirs};
+    use std::path::{Path, PathBuf};
+
+    let info = Path::new(FLATPAK_INFO);
+    // Outside a Flatpak nothing below is read, so a run in a sandbox of the
+    // E2E harness never looks at the developer's own folders.
+    if !info.exists() {
+        return Reach::Unconfined;
+    }
+    let host_paths = Arc::new(PortalHostPaths::new());
+    let Some(home) =
+        app_dirs::home_dir(app).ok().or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+    else {
+        log::error!("the home folder is unknown, so nothing is within reach");
+        return Reach::flatpak(Vec::new(), Vec::new(), host_paths);
+    };
+    // `user-dirs.dirs` is in the config home (`XDG_CONFIG_HOME`; Flatpak points
+    // it at the app's own folder and binds the host's file into it).
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .unwrap_or_else(|| home.join(".config"));
+    let user_dirs = UserDirs::read(&config_home, &home);
+    Reach::detect(info, &home, &user_dirs, host_paths)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_reach(_app: &AppHandle) -> Reach {
+    Reach::Unconfined
+}
+
 fn main() {
     // The render helper, the import helper and the sandbox probe are this executable started
     // again (007 research.md §9, §11; 008 research.md §8): before any Tauri, keyring, session
@@ -186,6 +223,8 @@ fn main() {
         );
         std::process::exit(1);
     }
+    // The log goes to standard error from here on (the helpers above have none).
+    hoplodex_lib::logging::init();
     // WebKit's sandbox, on only where a probe shows it works, and decided
     // here because the variable that turns it on must be set before the
     // first web context exists (007 research.md §9).
@@ -230,11 +269,20 @@ fn main() {
             // No database is open at startup: the user chooses one and gives
             // its passphrase (specs/003-database-protection-management).
             let opened_documents = app_dirs::cache_dir(app.handle())?.join(OPENED_DOCUMENTS_DIR);
-            app.manage(Session::new(Arc::new(app.handle().clone()), Some(opened_documents)));
+            // What this run may reach: read once, and the one value the
+            // commands and the session both ask (011 research.md §5).
+            let reach = Arc::new(read_reach(app.handle()));
+            log::info!("{}", reach.describe());
+            app.manage(reach.clone());
+            app.manage(Session::new(
+                Arc::new(app.handle().clone()),
+                Some(opened_documents),
+                reach.clone(),
+            ));
             // Saved passphrases (003 FR-017); the keyring itself is first asked
             // about when the chooser needs to know whether it is there.
             let machine = MachineSettings::load(&app_dirs::config_dir(app.handle())?)?
-                .with_keyring(Keyring::system());
+                .with_keyring(Keyring::for_reach(&reach));
             // A backup a crash or forced quit cut short (003 research.md §7).
             backups::sweep_unfinished(&machine);
             // Copies the macOS PDF viewer left behind in a run that couldn't
@@ -259,16 +307,21 @@ fn main() {
             // and the launcher that hands it on. An E2E build answers from
             // its environment and logs the hand-over instead (007 research.md
             // §16).
+            //
+            // The Flatpak check variant (`flatpak-check`) answers the dialog
+            // the same way but keeps the real launcher, which inside a Flatpak
+            // is the OpenURI portal (011 research.md §6, 011 T102).
             #[cfg(not(feature = "e2e"))]
-            {
-                app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
-                app.manage::<Arc<dyn Opener>>(Arc::new(AppOpener::new(app.handle().clone())));
-            }
+            app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
             #[cfg(feature = "e2e")]
-            {
-                app.manage::<Arc<dyn Consent>>(Arc::new(E2eConsent));
-                app.manage::<Arc<dyn Opener>>(Arc::new(E2eOpener));
-            }
+            app.manage::<Arc<dyn Consent>>(Arc::new(E2eConsent));
+            #[cfg(app_opener)]
+            app.manage::<Arc<dyn Opener>>(Arc::new(AppOpener::new(
+                app.handle().clone(),
+                opener_route(&reach),
+            )));
+            #[cfg(not(app_opener))]
+            app.manage::<Arc<dyn Opener>>(Arc::new(E2eOpener));
             // Sleep, wake, screen lock and shutdown (003 FR-037, FR-038), and
             // the idle lock (003 FR-034).
             let (sender, events) = mpsc::channel();

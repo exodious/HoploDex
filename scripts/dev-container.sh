@@ -9,18 +9,33 @@
 #                                                 also show windows on your desktop
 #   scripts/dev-container.sh --build              (re)build the image first
 #   scripts/dev-container.sh --reset-volumes      start from empty build volumes
+#   scripts/dev-container.sh --flatpak npm run bundle:flatpak
+#                                                 build the Flatpak (see --flatpak)
 #   scripts/dev-container.sh --git-config --ssh-agent
 #                                                 commit and push from inside
 #
 # Options (before the command):
 #   --build              (re)build the image first
 #   --reset-volumes[=all]
-#                        delete this checkout's node_modules and target volumes
+#                        delete this checkout's node_modules, target and Flatpak state volumes
 #                        first; =all also deletes the shared /home/dev volume
 #                        (logins, caches, history). Bind mounts are untouched.
 #   --gui                forward your Wayland/X11 display and /dev/dri. On
 #                        macOS the engine runs in a VM, so this reaches
 #                        XQuartz over TCP instead; see DEVELOPMENT.md.
+#   --flatpak            for the Flatpak build and check (011 research.md §15):
+#                        unmasks /proc (bwrap needs it under rootless podman),
+#                        mounts a per-checkout volume for flatpak-builder's
+#                        state at /var/lib/hoplodex-flatpak-state (named in
+#                        HOPLODEX_FLATPAK_STATE), a tmpfs at
+#                        /run/media/dev/hoplodex-check standing in for a
+#                        removable drive (inside the Flatpak's reach), and one
+#                        at /mnt/hoplodex-check (outside it, a location the
+#                        check shows refused). Opt-in: no other run loses
+#                        /proc's masking.
+#   --store-shots        for `npm run screenshots:store` (011 FR-017): mounts a tmpfs at
+#                        /home/alex/Documents, the folder the store shots' seed is made in,
+#                        so the chooser's shot shows a realistic path. This command only.
 #   --git-config[=FILE]  mount your git config read-only (default ~/.gitconfig,
 #                        else ~/.config/git/config)
 #   --ssh-agent          forward your SSH agent socket ($SSH_AUTH_SOCK)
@@ -51,6 +66,8 @@ reset_volumes=
 gui=0
 git_config=
 ssh_agent=0
+flatpak=0
+store_shots=0
 env_vars=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -62,6 +79,8 @@ while [[ $# -gt 0 ]]; do
       exit 1
       ;;
     --gui) gui=1; shift ;;
+    --flatpak) flatpak=1; shift ;;
+    --store-shots) store_shots=1; shift ;;
     --git-config)
       git_config="$HOME/.gitconfig"
       [[ -f "$git_config" ]] || git_config="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
@@ -105,11 +124,13 @@ checkout="$(printf '%s' "$repo" | sha256sum | cut -c1-8)"
 home_volume=hoplodex-home
 node_modules_volume="hoplodex-$checkout-node-modules"
 target_volume="hoplodex-$checkout-target"
+flatpak_state_volume="hoplodex-$checkout-flatpak-state"
+flatpak_state_dir=/var/lib/hoplodex-flatpak-state
 
 # Deleted volumes are recreated empty by the run below. Removal fails, and so
 # does the script, if a running container still uses one.
 if [[ -n "$reset_volumes" ]]; then
-  volumes=("$node_modules_volume" "$target_volume")
+  volumes=("$node_modules_volume" "$target_volume" "$flatpak_state_volume")
   [[ "$reset_volumes" == all ]] && volumes+=("$home_volume")
   for volume in "${volumes[@]}"; do
     if "$engine" volume inspect "$volume" >/dev/null 2>&1; then
@@ -148,6 +169,24 @@ else
 fi
 
 [[ -t 0 && -t 1 ]] && args+=(-it)
+
+# The Flatpak build and check, only with --flatpak (011 research.md §15).
+if [[ $flatpak -eq 1 ]]; then
+  args+=(
+    --security-opt 'unmask=/proc/*'
+    -v "$flatpak_state_volume:$flatpak_state_dir"
+    -e "HOPLODEX_FLATPAK_STATE=$flatpak_state_dir"
+    --tmpfs /run/media/dev/hoplodex-check:rw,mode=1777
+    --tmpfs /mnt/hoplodex-check:rw,mode=1777
+  )
+fi
+
+# The Flatpak store shots, only with --store-shots (011 FR-017): the chooser's shot
+# shows the folder the seed is in, so a tmpfs stands in for a user's Documents folder
+# for this one command. It is never the /home/dev volume and never the host's.
+if [[ $store_shots -eq 1 ]]; then
+  args+=(--tmpfs /home/alex/Documents:rw,mode=1777)
+fi
 
 # Your git config, only with --git-config (as the system config, so the
 # container's own ~/.gitconfig stays writable), and your SSH agent for pushes,

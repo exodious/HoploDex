@@ -1,0 +1,16 @@
+bin/hoplodex
+share/applications/io.github.exodious.HoploDex.desktop
+share/metainfo/io.github.exodious.HoploDex.metainfo.xml
+share/icons/hicolor/32x32/apps/io.github.exodious.HoploDex.png
+share/icons/hicolor/64x64/apps/io.github.exodious.HoploDex.png
+share/icons/hicolor/128x128/apps/io.github.exodious.HoploDex.png
+share/icons/hicolor/256x256/apps/io.github.exodious.HoploDex.png
+share/icons/hicolor/512x512/apps/io.github.exodious.HoploDex.png
+manifest.json
+export/share/applications/io.github.exodious.HoploDex.desktop
+export/share/metainfo/io.github.exodious.HoploDex.metainfo.xml
+export/share/icons/hicolor/32x32/apps/io.github.exodious.HoploDex.png
+export/share/icons/hicolor/64x64/apps/io.github.exodious.HoploDex.png
+export/share/icons/hicolor/128x128/apps/io.github.exodious.HoploDex.png
+export/share/icons/hicolor/256x256/apps/io.github.exodious.HoploDex.png
+export/share/icons/hicolor/512x512/apps/io.github.exodious.HoploDex.png

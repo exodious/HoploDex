@@ -16,6 +16,7 @@ use hoplodex_lib::db;
 use hoplodex_lib::models::database::{BackupSummary, CloseReason, RecentDatabase};
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::{self, MachineSettings};
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::{Session, lifecycle};
 use support::{other_machine, passphrase, test_session};
 use tempfile::TempDir;
@@ -62,7 +63,8 @@ impl World {
     }
 
     fn listed(&self) -> RecentDatabase {
-        let state = ops::chooser_state(&self.session, &self.machine, None, None);
+        let state =
+            ops::chooser_state(&self.session, &self.machine, None, None, &Reach::Unconfined);
         state.recent.into_iter().find(|r| Path::new(&r.path) == self.path()).unwrap()
     }
 
@@ -189,8 +191,13 @@ fn a_located_file_starts_with_the_time_unknown() {
     let found = world.dir.path().join("found.hoplodex");
     fs::rename(world.path(), &found).unwrap();
 
-    ops::locate_database(&world.machine, &world.path().to_string_lossy(), &found.to_string_lossy())
-        .unwrap();
+    ops::locate_database(
+        &world.machine,
+        &world.path().to_string_lossy(),
+        &found.to_string_lossy(),
+        &Reach::Unconfined,
+    )
+    .unwrap();
 
     assert_eq!(world.machine.recent_entry(&found).unwrap().left_modified_at, None);
 }

@@ -1,9 +1,11 @@
 import { useContext, useId, useState } from "react";
 import type { ReactNode } from "react";
 import { Dialog } from "../../components";
+import { platformFrom } from "../app/browserControls";
 import { SessionContext } from "../session/sessionStore";
 import { backupRows, DEFAULT_SETTINGS, lockRows, minutesLabel } from "./settings";
 import type { SettingRow } from "./settings";
+import { FLATPAK_APP_ID } from "./outOfReach";
 import type { DatabaseStatus } from "./types";
 import "./databases.css";
 
@@ -15,6 +17,8 @@ export interface DatabaseGuideProps {
 interface Section {
   title: string;
   paragraphs: ReactNode[];
+  /** Paragraphs shown after `paragraphs` on Linux only. */
+  linuxParagraphs?: ReactNode[];
   /** The open database's settings this section explains, beside their
    * defaults. */
   settings?: (status: DatabaseStatus) => SettingRow[];
@@ -78,6 +82,11 @@ const SECTIONS: Section[] = [
       "If that computer crashed, lost its connection, or hasn't finished syncing, you can choose Take over. If the other computer does still have the database open, or its latest changes haven't synced yet, changes can be lost. Once it notices, the other computer stops saving to the database.",
       "The backup and lock settings travel inside the database, so it works the same way on every computer. The list of recent databases and a remembered passphrase stay on each computer. A backup folder chosen on one computer may not exist on another. There, Database settings shows the folder as not available, and HoploDex tells you when a backup couldn't be made, so you can choose another folder on that computer.",
     ],
+    // 011 FR-009, 011 research.md §11: text, not a command, so it needs no
+    // backend help to know it is a Flatpak and reads correctly on any Linux install.
+    linuxParagraphs: [
+      `If you have installed HoploDex as a Flatpak, it and a .deb or .rpm of HoploDex on the same computer keep separate recent lists, settings and saved passphrases, so each shows only the databases opened with it, and a passphrase saved in one is not seen by the other. By default a Flatpak reaches only the HoploDex folder in your Documents folder and removable drives. To give it another folder, run flatpak override --user --filesystem=<folder> ${FLATPAK_APP_ID} and restart HoploDex.`,
+    ],
   },
   {
     title: "Whole-disk encryption",
@@ -96,6 +105,7 @@ export function DatabaseGuide({ open, onOpenChange }: DatabaseGuideProps) {
   const id = useId();
   // Also shown where no session is, such as a test of the dialog alone.
   const status = useContext(SessionContext)?.status ?? null;
+  const onLinux = platformFrom(navigator.userAgent) === "linux";
   return (
     <Dialog
       open={open}
@@ -117,6 +127,8 @@ export function DatabaseGuide({ open, onOpenChange }: DatabaseGuideProps) {
             {section.paragraphs.map((paragraph, n) => (
               <p key={n}>{paragraph}</p>
             ))}
+            {onLinux &&
+              section.linuxParagraphs?.map((paragraph, n) => <p key={`linux-${n}`}>{paragraph}</p>)}
             {status && section.settings && (
               <DatabaseSettingsTable rows={section.settings(status)} />
             )}

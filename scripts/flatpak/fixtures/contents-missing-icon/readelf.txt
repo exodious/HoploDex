@@ -1,0 +1,14 @@
+
+Dynamic section at offset 0x5a1e000 contains 11 entries:
+  Tag        Type                         Name/Value
+ 0x0000000000000001 (NEEDED)             Shared library: [libwebkit2gtk-4.1.so.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgtk-3.so.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgdk-3.so.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libsoup-3.0.so.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libssl.so.3]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x000000000000000c (INIT)               0x4c000
+ 0x000000000000000d (FINI)               0x4d000
+ 0x000000000000001d (RUNPATH)            Library runpath: [$ORIGIN]
+ 0x0000000000000000 (NULL)               0x0

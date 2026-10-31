@@ -9,6 +9,7 @@ use hoplodex_lib::commands::import_export::ImportSessionStore;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::firearm::{DispositionType, FirearmInput};
 use hoplodex_lib::models::record::RecordRef;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::{TestDb, csv_file, csv_firearm, firearm};
 use tempfile::TempDir;
@@ -241,6 +242,7 @@ fn the_nickname_round_trips_through_export_and_import() {
         SpreadsheetFormat::Csv,
         &support::firearm_records(&[created.id]),
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
     let text = std::fs::read_to_string(&exported.spreadsheet_path).unwrap();

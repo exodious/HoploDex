@@ -17,6 +17,7 @@ use hoplodex_lib::models::database::{
 };
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::fingerprint::FileFingerprint;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::json;
@@ -89,6 +90,7 @@ impl World {
             &self.path_text(),
             databases::Unlock::typed(&passphrase()),
             false,
+            &Reach::Unconfined,
         )
         .unwrap();
     }
@@ -361,6 +363,7 @@ fn a_lock_while_resuming_with_nothing_staged_leaves_the_row_and_the_next_open_st
         &world.path_text(),
         databases::Unlock::typed(&passphrase()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
     let pending = status.pending_changes.expect("the next open reports the changes");

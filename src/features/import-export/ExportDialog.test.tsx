@@ -4,6 +4,7 @@ import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
+import { CommandFailure } from "../../services/tauriClient";
 import { ExportDialog } from "./ExportDialog";
 import * as importExportService from "./importExportService";
 import type { ExportScope } from "./types";
@@ -292,6 +293,34 @@ describe("ExportDialog with accessories (006 US5)", () => {
       await screen.findByText("/out/hoplodex-export-20261001-120000.xlsx"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/-accessories\.csv/)).not.toBeInTheDocument();
+  });
+});
+
+// 011 US1-8, 011 FR-004: inside a Flatpak a destination outside every grant is refused before
+// anything is written (011 contracts/tauri-commands.md, "Commands that check reach").
+describe("ExportDialog refused as out of reach (011 US1-8, 011 FR-004)", () => {
+  it("shows the backend's message and stays open for another folder", async () => {
+    const user = userEvent.setup();
+    const message =
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/out. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/out by running: flatpak override --user --filesystem=/srv/out io.github.exodious.HoploDex and then restarting HoploDex.";
+    vi.mocked(importExportService.exportCollection).mockRejectedValue(
+      new CommandFailure({
+        code: "LOCATION_OUT_OF_REACH",
+        message,
+        details: {
+          path: "/srv/out",
+          folder: "/srv/out",
+          grants: ["/home/sam/Documents/HoploDex", "/media", "/run/media"],
+        },
+      }),
+    );
+    await renderDialog();
+
+    await user.type(screen.getByLabelText(/Save to folder/), "/srv/out");
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });
 });
 

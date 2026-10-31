@@ -123,7 +123,7 @@ fn count(conns: &[Connection], sql: &str) -> i64 {
 #[test]
 fn the_seed_uses_every_column_of_every_table() {
     let dir = TempDir::new().unwrap();
-    let paths = human_seed::seed_sandbox(dir.path(), 0, None);
+    let paths = human_seed::seed_sandbox(dir.path(), 0, None, false);
     let open = |path| {
         // "Shared collection" is marked open on another computer.
         let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
@@ -413,7 +413,7 @@ fn the_dispose_receiver_sample_lists_everything_mounted_on_the_receiver() {
     use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 
     let dir = TempDir::new().unwrap();
-    let paths = human_seed::seed_sandbox(dir.path(), 0, None);
+    let paths = human_seed::seed_sandbox(dir.path(), 0, None, false);
     let samples = human_seed::write_import_samples(&dir.path().join("import-samples"));
     let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
     let conn = db::open_database(
@@ -459,7 +459,7 @@ fn the_seeded_pending_changes_name_the_version_that_kept_them() {
         [(None, hoplodex_lib::APP_VERSION, true), (Some("1.2.0"), "1.2.0", false)]
     {
         let dir = TempDir::new().unwrap();
-        let paths = human_seed::seed_sandbox(dir.path(), 0, pending_from);
+        let paths = human_seed::seed_sandbox(dir.path(), 0, pending_from, false);
         let conn = db::open_database(
             &paths.shared,
             &Passphrase::from_input(human_seed::PASSPHRASE.into()),
@@ -512,4 +512,50 @@ fn the_over_limit_sample_is_refused_for_its_sheets() {
         "{}",
         error.message
     );
+}
+
+/// 011 FR-017: with `--fixed-times` the seed's backups, last open and
+/// documents carry times the store shots show the same on any day: today at
+/// 10:30 local for the first two, and a fixed date for the documents.
+#[test]
+fn fixed_times_stamp_the_backups_the_last_open_and_the_documents() {
+    use chrono::{DateTime, Local, Timelike};
+
+    let dir = TempDir::new().unwrap();
+    let paths = human_seed::seed_sandbox(dir.path(), 0, None, true);
+    let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
+    let conn = db::open_database(
+        &paths.main,
+        &Passphrase::from_input(human_seed::PASSPHRASE.into()),
+        &machine,
+        true,
+    )
+    .unwrap()
+    .expect_ready();
+
+    let dates: Vec<String> = conn
+        .prepare("SELECT DISTINCT created_at FROM document_attachments")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(dates, ["2025-09-15 14:20:00"]);
+
+    let machine_json: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(paths.config.join("machine.json")).expect("machine.json"),
+    )
+    .unwrap();
+    let opened = DateTime::parse_from_rfc3339(
+        machine_json["recentDatabases"][0]["lastOpenedAt"].as_str().unwrap(),
+    )
+    .unwrap()
+    .with_timezone(&Local);
+    assert_eq!(opened.date_naive(), Local::now().date_naive());
+    assert_eq!((opened.hour(), opened.minute(), opened.second()), (10, 30, 0));
+
+    // The database's own record of its last backup is the same moment.
+    let last_backup: String =
+        conn.query_row("SELECT last_backup_at FROM app_state", [], |row| row.get(0)).unwrap();
+    assert_eq!(last_backup, machine_json["recentDatabases"][0]["lastOpenedAt"].as_str().unwrap());
 }

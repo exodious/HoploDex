@@ -14,6 +14,7 @@ use hoplodex_lib::db::{self, OpenError};
 use hoplodex_lib::models::database::{BackupOutcome, ChooserState, CloseReason};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::{Session, lifecycle};
 use rusqlite::Connection;
 use serde_json::json;
@@ -148,7 +149,7 @@ impl Setup {
     }
 
     fn chooser(&self) -> ChooserState {
-        ops::chooser_state(&self.session, &self.machine, None, None)
+        ops::chooser_state(&self.session, &self.machine, None, None, &Reach::Unconfined)
     }
 
     fn path_text(&self, name: &str) -> String {
@@ -449,7 +450,7 @@ fn a_new_run_selects_the_most_recent() {
     // A new run: a new session, the same machine.json.
     let (session, _events) = test_session(&setup.documents());
 
-    let state = ops::chooser_state(&session, &setup.machine, None, None);
+    let state = ops::chooser_state(&session, &setup.machine, None, None, &Reach::Unconfined);
 
     assert_eq!(state.selected_path, Some(setup.path_text("First")));
     assert_eq!(state.recent[0].name, "First");
@@ -468,14 +469,23 @@ fn locate_and_remove_through_the_commands() {
     fs::create_dir_all(found.parent().unwrap()).unwrap();
     fs::rename(&moved, &found).unwrap();
 
-    let located =
-        ops::locate_database(&setup.machine, &moved.to_string_lossy(), &found.to_string_lossy())
-            .unwrap();
+    let located = ops::locate_database(
+        &setup.machine,
+        &moved.to_string_lossy(),
+        &found.to_string_lossy(),
+        &Reach::Unconfined,
+    )
+    .unwrap();
 
     assert_eq!(located.path, found.to_string_lossy());
     assert_eq!(located.name, "Moved");
     assert!(located.available);
-    let missing = ops::locate_database(&setup.machine, "/no/such.hoplodex", "/x.hoplodex");
+    let missing = ops::locate_database(
+        &setup.machine,
+        "/no/such.hoplodex",
+        "/x.hoplodex",
+        &Reach::Unconfined,
+    );
     assert_eq!(missing.unwrap_err().code, "NOT_FOUND");
 
     let kept = setup.db_path("Kept");
@@ -514,6 +524,7 @@ fn open_through_the_command(
         &setup.path_text(name),
         ops::Unlock::typed(&passphrase()),
         false,
+        &Reach::Unconfined,
     )
 }
 
@@ -561,6 +572,7 @@ fn a_newer_database_this_computer_has_never_opened_names_no_backup_folder() {
         &path.to_string_lossy(),
         ops::Unlock::typed(&passphrase()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap_err();
 

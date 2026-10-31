@@ -19,6 +19,7 @@ use hoplodex_lib::models::database::{
 };
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::{Session, lifecycle};
 #[cfg(unix)]
 use serde_json::Value;
@@ -323,6 +324,7 @@ fn the_next_open_reports_the_pending_changes() {
         &world.path_text(),
         databases::Unlock::typed(&passphrase()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -719,6 +721,7 @@ fn an_accessory_draft_in_each_mode_is_kept_by_a_lock_and_resumed_with_its_label(
             &world.path_text(),
             databases::Unlock::typed(&passphrase()),
             false,
+            &Reach::Unconfined,
         )
         .unwrap();
 

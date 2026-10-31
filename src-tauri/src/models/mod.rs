@@ -28,8 +28,9 @@ macro_rules! text_enum {
                 let text = value.as_str()?;
                 match text {
                     $($text => Ok(Self::$variant)),+,
-                    other => Err(rusqlite::types::FromSqlError::Other(
-                        format!("unrecognized {} value: {other}", stringify!($name)).into(),
+                    _ => Err(rusqlite::types::FromSqlError::Other(
+                        // Not the value: it came from the database (logging.rs).
+                        format!("unrecognized {} value", stringify!($name)).into(),
                     )),
                 }
             }

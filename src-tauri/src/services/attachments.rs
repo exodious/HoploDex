@@ -28,7 +28,8 @@ pub fn read_attachment_file(path: &Path) -> Result<AttachmentFile, CommandError>
         ));
     }
     let bytes = std::fs::read(path).map_err(|err| {
-        log::error!("couldn't read {}: {err}", path.display());
+        // Not the path: its file name becomes the attachment's (logging.rs).
+        log::error!("couldn't read a file to attach: {err}");
         CommandError::not_found(format!("{filename} couldn't be read."))
     })?;
     Ok(AttachmentFile { bytes, filename })

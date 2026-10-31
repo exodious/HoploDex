@@ -29,6 +29,7 @@ use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackup};
+use hoplodex_lib::services::sandbox::{Need, Reach};
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::{Value, json};
@@ -160,6 +161,7 @@ impl World {
             self.session.current_id(),
             &self.machine,
             &BackupSettingsInput { enabled, keep_count, location, existing_backups },
+            &Reach::Unconfined,
         )
         .unwrap();
     }
@@ -573,6 +575,7 @@ fn the_upgrade_stamp_is_cleared_when_a_backup_is_restored() {
         &passphrase(),
         Target::Open(world.session.current_id()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -1100,6 +1103,7 @@ fn every_firearms_identifier_is_equal_in_the_backup_and_after_restoring_it() {
         &passphrase(),
         Target::Open(world.session.current_id()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -1221,6 +1225,7 @@ fn an_accessory_its_photo_and_its_identifier_survive_a_backup_and_a_restore_of_i
         &passphrase(),
         Target::Open(world.session.current_id()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -1321,6 +1326,7 @@ fn a_mount_of_an_accessory_on_a_firearm_and_of_a_firearm_on_an_accessory_survive
         &passphrase(),
         Target::Open(world.session.current_id()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -1345,6 +1351,8 @@ impl World {
                         name: &open.name,
                         database_id: &open.database_id,
                         folder: &self.default_folder(),
+                        reach: self.session.reach(),
+                        need: Need::BackupFolder,
                         make_folder: true,
                         now: self.session.clock().now(),
                         kind: backups::BackupKind::BeforeUpgrade { to_version: version },
@@ -1579,6 +1587,7 @@ fn moving_the_backup_location_moves_the_ones_made_before_an_upgrade_too() {
             location: BackupLocationInput::Custom { path: path_text(&elsewhere) },
             existing_backups: Some(ExistingBackupsChoice::Move),
         },
+        &Reach::Unconfined,
     )
     .unwrap();
 

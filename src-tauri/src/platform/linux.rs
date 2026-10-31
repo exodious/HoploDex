@@ -9,7 +9,7 @@ use std::thread;
 
 use zbus::blocking::fdo::DBusProxy;
 use zbus::blocking::{Connection, Proxy};
-use zbus::zvariant::{OwnedFd, OwnedObjectPath};
+use zbus::zvariant::OwnedFd;
 
 use super::{Ack, SystemEvent};
 
@@ -17,6 +17,12 @@ const LOGIND: &str = "org.freedesktop.login1";
 const LOGIND_PATH: &str = "/org/freedesktop/login1";
 const LOGIND_MANAGER: &str = "org.freedesktop.login1.Manager";
 const LOGIND_SESSION: &str = "org.freedesktop.login1.Session";
+
+/// The logind session the lock listeners use. logind resolves `auto` from
+/// the caller's own credentials on the bus, so it is right inside a Flatpak,
+/// where the app's PID is its namespace's and a `GetSessionByPID` lookup
+/// would name another process (011 research.md §6).
+const SESSION_PATH: &str = "/org/freedesktop/login1/session/auto";
 
 /// The ScreenSaver interfaces that report `ActiveChanged`, with their
 /// object paths.
@@ -117,19 +123,14 @@ fn send_lock(sender: &Sender<SystemEvent>, locked: &AtomicBool, now_locked: bool
     sender.send(event).is_ok()
 }
 
-/// This process's logind session: its `Lock` and `Unlock` signals and its
+/// The logind session at [`SESSION_PATH`]: its `Lock` and `Unlock` signals and its
 /// `LockedHint` property. Returns whether the session object is reachable.
 fn listen_to_session(
     system: &Connection,
     sender: &Sender<SystemEvent>,
     locked: &Arc<AtomicBool>,
 ) -> bool {
-    let path = Proxy::new(system, LOGIND, LOGIND_PATH, LOGIND_MANAGER)
-        .and_then(|manager| {
-            manager.call::<_, _, OwnedObjectPath>("GetSessionByPID", &(std::process::id(),))
-        })
-        .map(|path| path.to_string())
-        .unwrap_or_else(|_| format!("{LOGIND_PATH}/session/auto"));
+    let path = SESSION_PATH.to_owned();
     let reachable = Proxy::new(system, LOGIND, path.as_str(), LOGIND_SESSION)
         .and_then(|session| session.get_property::<bool>("LockedHint"))
         .is_ok();
@@ -202,4 +203,32 @@ fn listen_to_screensaver(
         log::error!("could not start the {name} listener: {err}");
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 011 research.md §6: inside Flatpak the app's PID is its namespace's,
+    /// so the listener always names logind's own `auto` session.
+    #[test]
+    fn session_path_is_always_auto() {
+        assert_eq!(SESSION_PATH, "/org/freedesktop/login1/session/auto");
+    }
+
+    /// 011 research.md §6: no `GetSessionByPID` lookup remains in the
+    /// listener (in code; the comments may name it).
+    #[test]
+    fn no_get_session_by_pid_call_remains() {
+        let source = include_str!("linux.rs");
+        let code: String = source
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect();
+        assert!(!code.contains(concat!("GetSession", "ByPID")));
+        assert!(!code.contains("std::process::id"));
+    }
 }

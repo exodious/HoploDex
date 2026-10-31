@@ -1,4 +1,5 @@
-import type { CollectionSettings } from "./types";
+import { outOfReachText } from "./outOfReach";
+import type { BackupLocation, CollectionSettings } from "./types";
 
 /** A new database's backup and lock settings, as the `collection_settings`
  * defaults in src-tauri/src/db/migrations/0001_initial.sql give them
@@ -33,6 +34,18 @@ export interface SettingRow {
 
 const onOff = (on: boolean) => (on ? "On" : "Off");
 
+/** What to say about a backup location that isn't there on this computer, or
+ * `undefined` when it is: out of this copy's reach (a Flatpak) is said with
+ * the fix (011 FR-004). */
+export function unavailableNote(
+  location: Pick<BackupLocation, "path" | "available" | "unavailableReason">,
+): string | undefined {
+  if (location.available) return undefined;
+  return location.unavailableReason === "outOfReach"
+    ? outOfReachText("folder", location.path)
+    : "Not available on this computer";
+}
+
 /** The backup settings of an open database, beside their defaults. */
 export function backupRows(backups: CollectionSettings["backups"]): SettingRow[] {
   const nextToDatabase = "Next to the database";
@@ -51,7 +64,7 @@ export function backupRows(backups: CollectionSettings["backups"]): SettingRow[]
       label: "Folder",
       value: backups.location.kind === "default" ? nextToDatabase : backups.location.path,
       defaultValue: nextToDatabase,
-      note: backups.location.available ? undefined : "Not available on this computer",
+      note: unavailableNote(backups.location),
     },
   ];
 }

@@ -264,6 +264,30 @@ describe("ExistingBackupsDialog (003 contracts/ui-databases.md §7, FR-026, US3-
     );
   });
 
+  // 011 FR-004, contracts/tauri-commands.md "Commands that check reach": update_backup_settings
+  // with `move` into a folder out of reach.
+  it("says this copy of HoploDex can't reach the new folder, in the settings dialog's words", async () => {
+    const user = userEvent.setup();
+    const send = vi.fn().mockRejectedValue(
+      new CommandFailure({
+        code: "BACKUP_LOCATION_UNAVAILABLE",
+        message: "The backup folder can't be used.",
+        details: { path: NEW, reason: "outOfReach" },
+      }),
+    );
+    renderQuestion(send);
+
+    await user.click(changeLocation());
+
+    const alert = await within(question()).findByRole("alert");
+    expect(alert).toHaveTextContent("This copy of HoploDex can't reach this folder.");
+    expect(alert).toHaveTextContent(
+      `give HoploDex access to ${NEW} by running: flatpak override --user --filesystem=${NEW} io.github.exodious.HoploDex and then restarting HoploDex.`,
+    );
+    expect(alert).not.toHaveTextContent("isn't available");
+    expect(within(question()).getByRole("radiogroup")).toBeInTheDocument();
+  });
+
   it("says which backups couldn't be deleted, and Close returns to the settings", async () => {
     const user = userEvent.setup();
     const stuck = `${OLD}/Main collection 2026-09-25 143005 3fa2c9d1.hoplodex`;
