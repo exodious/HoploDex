@@ -6,9 +6,9 @@
 # holds whoever opens the PR. It runs again on "edited", since the description
 # may be filled in after the PR opens.
 #
-# Dependabot's pull requests and those that change only Markdown (`*.md`) are
-# exempt, as in audit.yml. They skip by step rather than by a job-level `if`,
-# so the check always reports a result if it is made required.
+# Only Dependabot's pull requests are exempt, since Dependabot can't write a
+# review. They skip by step rather than by a job-level `if`, so the check
+# always reports a result if it is made required.
 name: PR description
 
 on:
@@ -33,8 +33,8 @@ jobs:
     steps:
       # The body comes in through the environment, never the script text, so
       # nothing in it can run. The file list is the API's (no checkout); a
-      # renamed file counts under both names, so renaming code to `.md` isn't a
-      # docs-only change.
+      # renamed file counts under both names, so moving a file out of src/
+      # still needs screenshots.
       - name: Check the description's sections
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,10 +53,6 @@ jobs:
           changed=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/files" \
             --jq '.[] | .filename, (.previous_filename // empty)')
           printf 'Changed files:\n%s\n' "$changed"
-          if ! grep -v -q -E '\.md$' <<<"$changed"; then
-            echo "::notice::Only Markdown changed, so the description's sections aren't required."
-            exit 0
-          fi
 
           body=$(tr -d '\r' <<<"$BODY")
           has() { grep -q -i -E "^[[:space:]]*##[[:space:]]+$1([^[:alnum:]]|\$)" <<<"$body"; }

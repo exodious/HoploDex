@@ -42,7 +42,7 @@ body_file=$(grep -oE -- '(--body-file|-F)([[:space:]]+|=)("[^"]+"|'"'"'[^'"'"']+
 if [[ -n "$body_file" && "$body_file" != "-" && -f "$body_file" ]]; then
   body+=$'\n'$(cat -- "$body_file")
 fi
-if ! grep -qiE '^[[:space:]]*##[[:space:]]+Security review' <<<"$body"; then
+if ! grep -qiE '^[[:space:]]*##[[:space:]]+Security review([^[:alnum:]]|$)' <<<"$body"; then
   decide deny "The PR body has no \"## Security review\" section. Add the review saved in $file under that heading, then open the PR."
 fi
 
