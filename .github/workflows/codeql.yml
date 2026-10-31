@@ -50,7 +50,7 @@ env:
   # tests and examples). Keep both in step with codeql-config.yml. A name git
   # quotes ("...": a non-ASCII byte, a quote, a backslash or a control
   # character) always counts, so an odd name can't slip past the patterns.
-  CODE_PATHS: '^("|src/|index\.html$|tsconfig[^/]*\.json$|src-tauri/)' # TEMP experiment: the CodeQL files don't count
+  CODE_PATHS: '^("|src/|index\.html$|tsconfig[^/]*\.json$|src-tauri/|\.github/workflows/codeql\.yml$|\.github/codeql/)'
   NOT_CODE_PATHS: '^(src/test/|src-tauri/tests/|src-tauri/examples/)|\.test\.tsx?$|\.md$'
 
 jobs:
