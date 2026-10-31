@@ -1,0 +1,23 @@
+# no-mistakes pipeline settings (https://github.com/kunchenguid/no-mistakes,
+# docs/src/content/docs/reference/repo-config.md). The daemon reads `commands`
+# from the default branch only, so a change here applies once it is merged.
+#
+# The commands are DEVELOPMENT.md's "Linting & formatting" and "Test" lists,
+# run in the dev container (CLAUDE.md, "Run tests in the dev container").
+# Each run gets its own worktree, so the wrapper's per-checkout node_modules
+# and target volumes start empty and the first command builds from scratch.
+
+commands:
+  lint: >-
+    scripts/dev-container.sh bash -c '
+    cargo fmt --check --manifest-path src-tauri/Cargo.toml &&
+    cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml --features test-kdf -- -D warnings &&
+    cargo clippy --lib --bins --examples --manifest-path src-tauri/Cargo.toml -- -D warnings &&
+    npm run lint &&
+    npm run format:check'
+  test: >-
+    scripts/dev-container.sh bash -c '
+    cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf &&
+    npm test &&
+    npm run build &&
+    npm run test:e2e'
