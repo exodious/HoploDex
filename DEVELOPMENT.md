@@ -35,7 +35,14 @@ in the checkout, so they don't collide with host builds:
   links against its own system libraries, so its builds can't share these
   with the host. On first run the container fills `node_modules` with
   `npm ci`, and the first cargo build starts from scratch, so the first run
-  of anything is slow.
+  of anything is slow. A no-mistakes review run gets a new worktree under
+  `~/.no-mistakes/worktrees/` (or `$NM_HOME`) each time, so its pair is
+  keyed by the run's branch instead, read from the daemon's run record:
+  reruns of a PR reuse a warm build, and different PRs never share one. If
+  the branch can't be read (no `sqlite3` on the host, or no record), the run
+  gets anonymous volumes, deleted when its container exits. A reviewed
+  branch's `hoplodex-review-<hash>-*` volumes stay until you remove them
+  (`podman volume ls -q | grep '^hoplodex-review-' | xargs -r podman volume rm`).
 - `/home/dev`, shared by all checkouts: shell history, the cargo crate cache,
   the keyring, and `gh` / `claude` logins. Log in once with `gh auth login` and
   `claude` inside the container.
@@ -1503,8 +1510,8 @@ names don't change between runs, so for before/after pairs, run it on the base
 branch and then on yours:
 
 ```bash
-git switch develop && npm run build && npm run screenshots -- --screenshots=/tmp/before
-git switch my-branch && npm run build && npm run screenshots -- --screenshots=/tmp/after
+git switch main && npm run build && npm run screenshots -- --screenshots=e2e/screenshots-out/before
+git switch my-branch && npm run build && npm run screenshots -- --screenshots=e2e/screenshots-out/after
 ```
 
 When a change adds a screen, add it to the walk. For a one-off shot inside
@@ -1521,6 +1528,50 @@ moves the app's config directory there so its recent list names the seeded
 databases. Specs read the seed's passphrase from
 `HOPLODEX_E2E_SEED_PASSPHRASE`, and the sandbox's documents folder from
 `HOPLODEX_E2E_DOCUMENTS`.
+
+### Screenshots in a pull request
+
+GitHub has no place on a pull request to keep images, so each UI pull request
+keeps its screenshots on an orphan branch, `evidence/<name>-screenshots`
+(`<name>` is the feature's folder, such as `011-flatpak`, or the fix's branch
+name, such as `fix-114-116-117-122`): one commit with no parent, holding only
+the images, flat at the top, named `before-<shot>.png` and `after-<shot>.png`.
+
+1. Take the before shots on `main` and the after shots on your branch, as
+   above, into `e2e/screenshots-out/before` and `e2e/screenshots-out/after`
+   (git-ignored, and inside the checkout, so the dev container's shots reach
+   the host). Keep only the shots the change affects.
+2. Commit them without switching the working tree, so it works from any
+   checkout or worktree, then push the commit as the branch. It stops before
+   the push when there are no shots, and the `[]` it prints after the commit's
+   hash shows it has no parent:
+
+   ```bash
+   name=my-feature
+   tree=$(find e2e/screenshots-out/before e2e/screenshots-out/after -name '*.png' |
+     while read -r f; do
+       printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$(basename "$(dirname "$f")")-$(basename "$f")"
+     done | git mktree)
+   test -n "$(git ls-tree "$tree")" &&
+     commit=$(git commit-tree "$tree" -m "Screenshots for $name") &&
+     git log --format='%H [%P]' -1 "$commit" &&
+     git push origin "${commit}:refs/heads/evidence/${name}-screenshots"
+   ```
+
+   To replace the shots, rerun the snippet and push with `--force`.
+
+3. In the pull request's description, a `## Screenshots` section says where
+   and how the shots were taken (what before and after are, and the branch
+   they are on) and shows them in before | after tables, each image linked as
+   `https://github.com/exodious/HoploDex/raw/evidence/<name>-screenshots/<file>.png`:
+
+   ```markdown
+   | Before | After |
+   |---|---|
+   | ![The guide, before](https://github.com/exodious/HoploDex/raw/evidence/my-feature-screenshots/before-07-guide-light.png) | ![The guide, after](https://github.com/exodious/HoploDex/raw/evidence/my-feature-screenshots/after-07-guide-light.png) |
+   ```
+
+The evidence branches are kept after the merge, so the links keep working.
 
 ### The Flatpak's store shots
 

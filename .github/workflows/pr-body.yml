@@ -1,0 +1,68 @@
+# The pull request description's required sections (constitution, Development
+# Workflow & Quality Gates): every pull request carries a "## Security review",
+# and one that changes anything under src/ (the UI) carries "## Screenshots"
+# with its before/after shots. The Claude hook .claude/hooks/pr-security-review.sh
+# warns early, but only for a PR opened through Claude's Bash tool; this check
+# holds whoever opens the PR. It runs again on "edited", since the description
+# may be filled in after the PR opens.
+#
+# Only Dependabot's pull requests are exempt, since Dependabot can't write a
+# review. They skip by step rather than by a job-level `if`, so the check
+# always reports a result if it is made required.
+name: PR description
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: pr-body-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sections:
+    name: PR description
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+
+    steps:
+      # The body comes in through the environment, never the script text, so
+      # nothing in it can run. The file list is the API's (no checkout); a
+      # renamed file counts under both names, so moving a file out of src/
+      # still needs screenshots.
+      - name: Check the description's sections
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          BODY: ${{ github.event.pull_request.body }}
+        # Here-strings, not `printf | grep -q`: under pipefail, grep quitting
+        # early can fail the pipeline on printf's SIGPIPE.
+        run: |
+          if [ "$AUTHOR" = "dependabot[bot]" ]; then
+            echo "::notice::Dependabot's pull request is exempt."
+            exit 0
+          fi
+
+          changed=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)')
+          printf 'Changed files:\n%s\n' "$changed"
+
+          body=$(tr -d '\r' <<<"$BODY")
+          has() { grep -q -i -E "^[[:space:]]*##[[:space:]]+$1([^[:alnum:]]|\$)" <<<"$body"; }
+          failed=0
+          if ! has 'Security review'; then
+            echo "::error::The description has no \"## Security review\" section."
+            failed=1
+          fi
+          if grep -q '^src/' <<<"$changed" && ! has 'Screenshots'; then
+            echo "::error::This pull request changes src/, so its description needs a \"## Screenshots\" section with before/after screenshots."
+            failed=1
+          fi
+          exit "$failed"
