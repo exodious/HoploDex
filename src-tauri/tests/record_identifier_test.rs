@@ -29,6 +29,7 @@ use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::preview::availability::PdfAvailability;
 use hoplodex_lib::services::record_id;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
@@ -769,6 +770,7 @@ fn a_backup_a_restore_and_a_passphrase_change_keep_every_identifier() {
         &passphrase(),
         Target::Open(world.session.current_id()),
         false,
+        &Reach::Unconfined,
     )
     .unwrap();
     assert_eq!(world.identifiers(), before, "restored");
@@ -927,6 +929,7 @@ fn no_identifier_of_a_policy_photo_or_document_is_serialized_or_exported() {
         SpreadsheetFormat::Csv,
         &records,
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
     returned.push(("ExportResult", serde_json::to_value(&exported).unwrap()));

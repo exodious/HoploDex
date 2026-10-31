@@ -42,7 +42,7 @@ pub fn validate_draft(draft: &Draft) -> Result<String, CommandError> {
         return invalid("label", "Use at most 200 characters.");
     }
     let values = serde_json::to_string(&draft.values).map_err(|err| {
-        log::error!("could not serialize a draft: {err}");
+        log::error!("could not serialize a draft: {}", crate::logging::json_error(&err));
         CommandError::new("INTERNAL_ERROR", "The unsaved changes couldn't be kept.")
     })?;
     if values.len() > MAX_VALUES_BYTES {
@@ -190,7 +190,7 @@ fn kept_draft(conn: &Connection) -> Result<Option<Draft>, CommandError> {
         return Ok(None);
     };
     let values = serde_json::from_str(&values).map_err(|err| {
-        log::error!("kept pending changes are not JSON: {err}");
+        log::error!("kept pending changes are not JSON: {}", crate::logging::json_error(&err));
         CommandError::new("INTERNAL_ERROR", "The unsaved changes couldn't be read.")
     })?;
     Ok(Some(Draft { form_version, kind, mode, target_id, label, values }))

@@ -30,6 +30,7 @@ use hoplodex_lib::platform::WakeWatchdog;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
@@ -293,7 +294,8 @@ fn lock_now_keeps_the_draft_then_closes_like_a_normal_close() {
         "reason": "lockedByUser",
         "databasePath": world.path_text(),
     })));
-    let chooser = databases::chooser_state(&world.session, &world.machine, None, None);
+    let chooser =
+        databases::chooser_state(&world.session, &world.machine, None, None, &Reach::Unconfined);
     assert_eq!(chooser.selected_path, Some(world.path_text()), "the locked database is selected");
     world.open();
     assert_eq!(world.firearm_count_after_discard(), 1);
@@ -618,6 +620,7 @@ fn a_close_during_the_reading_of(way: &str, go: impl FnOnce(&World)) {
                         reading.store(true, Ordering::SeqCst);
                     }
                 },
+                &Reach::Unconfined,
             );
             let ended = Instant::now();
             drop(operation);
@@ -728,6 +731,7 @@ fn a_sleep_abandons_an_export_and_removes_what_it_wrote() {
                 }
             },
             &|| operation.is_cancelled(),
+            &Reach::Unconfined,
         )
     });
     drop(operation);
@@ -798,6 +802,7 @@ fn a_sleep_abandons_a_restore_and_leaves_the_database_as_it_was() {
         &passphrase(),
         Target::Open(world.session.current_id()),
         false,
+        &Reach::Unconfined,
     );
     join(&sleeper);
     world.events.on_event(|_, _| {});
@@ -898,6 +903,7 @@ fn change_location(
             location: BackupLocationInput::Custom { path: folder.to_string_lossy().into_owned() },
             existing_backups: Some(choice),
         },
+        &Reach::Unconfined,
     )
 }
 

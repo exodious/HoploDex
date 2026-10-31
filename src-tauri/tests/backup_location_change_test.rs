@@ -24,6 +24,7 @@ use hoplodex_lib::models::database::{
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackupMove};
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::{Value, json};
@@ -134,6 +135,7 @@ impl World {
             self.session.current_id(),
             &self.machine,
             &BackupSettingsInput { enabled: true, keep_count, location, existing_backups },
+            &Reach::Unconfined,
         )
     }
 

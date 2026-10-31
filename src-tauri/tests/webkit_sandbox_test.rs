@@ -13,7 +13,7 @@
 //! #[derive(Debug)]
 //! pub enum WebKitSandbox { On, Off { reason: String } }
 //! pub const PROBE_TIMEOUT: Duration;        // 5 s
-//! pub const SKIP_MARKERS: [&str; 3];        // the container and Flatpak files
+//! pub const SKIP_MARKERS: [&str; 2];        // the container files (not Flatpak's, 011 research.md §9)
 //! pub fn decide(markers: &[&Path], probe: impl FnOnce() -> ProbeOutcome) -> WebKitSandbox;
 //! ```
 //!
@@ -167,6 +167,7 @@ fn the_sandbox_is_never_on_unless_the_probe_exited_zero_and_no_marker_was_found(
 }
 
 #[test]
-fn the_markers_the_app_looks_for_are_the_container_and_flatpak_files() {
-    assert_eq!(SKIP_MARKERS, ["/run/.containerenv", "/.dockerenv", "/.flatpak-info"]);
+fn the_markers_the_app_looks_for_are_the_container_files_and_not_flatpaks() {
+    // 011 FR-011, 011 research.md §9: a Flatpak runs the probe.
+    assert_eq!(SKIP_MARKERS, ["/run/.containerenv", "/.dockerenv"]);
 }

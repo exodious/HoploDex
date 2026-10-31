@@ -113,8 +113,10 @@ mod resolve {
         sandbox_dir(DOCUMENTS)
     }
 
+    /// Unset outside macOS by design ([`HOME`]), so its absence is not
+    /// logged: the chooser asks on every load (011's logger made it visible).
     pub fn home_dir<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<PathBuf> {
-        sandbox_dir(HOME)
+        super::sandbox_dir(std::env::var_os(HOME)).ok_or(tauri::Error::UnknownPath)
     }
 
     fn sandbox_dir(variable: &str) -> tauri::Result<PathBuf> {

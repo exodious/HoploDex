@@ -243,6 +243,7 @@ mod through_commands {
     use hoplodex_lib::models::database::{CloseReason, NoteKind};
     use hoplodex_lib::services::machine_settings::MachineSettings;
     use hoplodex_lib::services::passphrase::Passphrase;
+    use hoplodex_lib::services::sandbox::Reach;
     use hoplodex_lib::session::Session;
     use hoplodex_lib::session::lifecycle;
     use tempfile::TempDir;
@@ -287,6 +288,7 @@ mod through_commands {
                 name,
                 &passphrase(),
                 true,
+                &Reach::Unconfined,
             )
             .map(|_| ())
         }
@@ -320,6 +322,7 @@ mod through_commands {
             "Main",
             &passphrase(),
             true,
+            &Reach::Unconfined,
         )
         .unwrap();
         assert_eq!(status.name, "Main");
@@ -346,6 +349,7 @@ mod through_commands {
             &world.path("Main").to_string_lossy(),
             ops::Unlock::typed(&passphrase()),
             false,
+            &Reach::Unconfined,
         )
         .unwrap();
         assert_eq!(status.name, "Main");
@@ -378,6 +382,7 @@ mod through_commands {
             &world.path("Main").to_string_lossy(),
             ops::Unlock::typed(&Passphrase::from_input("not the passphrase at all".into())),
             false,
+            &Reach::Unconfined,
         )
         .unwrap_err();
 
@@ -399,6 +404,7 @@ mod through_commands {
             "Main",
             &Passphrase::from_input("too short".into()),
             false,
+            &Reach::Unconfined,
         )
         .unwrap_err();
 
@@ -421,6 +427,7 @@ mod through_commands {
             &path.to_string_lossy(),
             ops::Unlock::typed(&passphrase()),
             false,
+            &Reach::Unconfined,
         )
         .unwrap_err();
 
@@ -459,6 +466,7 @@ mod through_commands {
             &world.path("Main").to_string_lossy(),
             ops::Unlock::typed(&passphrase()),
             false,
+            &Reach::Unconfined,
         )
         .unwrap();
         assert!(!status.notes.disk_encryption, "the note stays dismissed (003 FR-008)");
@@ -503,6 +511,7 @@ mod through_commands {
                 name,
                 &passphrase(),
                 true,
+                &Reach::Unconfined,
             )
             .unwrap_err();
             assert_eq!(err.code, "VALIDATION_ERROR", "{name:?}");
@@ -542,6 +551,7 @@ mod through_commands {
                 "Main",
                 &passphrase(),
                 true,
+                &Reach::Unconfined,
             )
             .unwrap_err();
             assert_eq!(err.code, "VALIDATION_ERROR", "{folder:?}");
@@ -577,6 +587,7 @@ mod through_commands {
             "My collection",
             &passphrase(),
             true,
+            &Reach::Unconfined,
         )
         .unwrap();
 
@@ -604,8 +615,13 @@ mod through_commands {
         let world = World::new();
         let documents = world.folder.path().join("Documents");
 
-        let state =
-            ops::chooser_state(&world.session, &world.machine, Some(documents.clone()), None);
+        let state = ops::chooser_state(
+            &world.session,
+            &world.machine,
+            Some(documents.clone()),
+            None,
+            &Reach::Unconfined,
+        );
         assert!(state.recent.is_empty());
         assert_eq!(state.selected_path, None);
         assert_eq!(state.suggested.folder, documents.join("HoploDex").to_string_lossy());
@@ -618,7 +634,13 @@ mod through_commands {
         world.create("Second").unwrap();
         world.close();
 
-        let state = ops::chooser_state(&world.session, &world.machine, Some(documents), None);
+        let state = ops::chooser_state(
+            &world.session,
+            &world.machine,
+            Some(documents),
+            None,
+            &Reach::Unconfined,
+        );
         let names: Vec<&str> = state.recent.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Second", "First"], "most recent first");
         assert!(state.recent.iter().all(|r| r.available));
@@ -651,6 +673,7 @@ mod through_commands {
             &world.path("Main").to_string_lossy(),
             ops::Unlock::typed(&passphrase()),
             false,
+            &Reach::Unconfined,
         )
         .unwrap();
 

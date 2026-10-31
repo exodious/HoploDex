@@ -25,7 +25,7 @@ import { folderOf, joinPath } from "./paths";
 import { DatabaseGuideLink } from "./DatabaseGuide";
 import { ExistingBackupsDialog } from "./ExistingBackupsDialog";
 import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
-import { minutesLabel } from "./settings";
+import { minutesLabel, unavailableNote } from "./settings";
 import type {
   BackupLocationInput,
   BackupSettingsInput,
@@ -141,6 +141,7 @@ interface ShownLocation {
   input: BackupLocationInput;
   path: string;
   available: boolean;
+  unavailableReason?: "outOfReach";
 }
 
 function SettingsForm({
@@ -167,6 +168,7 @@ function SettingsForm({
         : { kind: "custom", path: saved.location.path },
     path: saved.location.path,
     available: saved.location.available,
+    unavailableReason: saved.location.unavailableReason,
   });
   const toast = useToast();
   const [enabled, setEnabled] = useState(saved.enabled);
@@ -431,9 +433,7 @@ function SettingsForm({
                   <span className="hd-settings-location__note">(next to the database)</span>
                 )}
                 {!location.available && (
-                  <span className="hd-settings-location__warning">
-                    Not available on this computer
-                  </span>
+                  <span className="hd-settings-location__warning">{unavailableNote(location)}</span>
                 )}
               </p>
               <div className="hd-settings-location__actions">

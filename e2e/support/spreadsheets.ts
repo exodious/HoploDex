@@ -61,16 +61,26 @@ function storedZip(parts: Record<string, string>): Buffer {
   return Buffer.concat([...locals, centralBytes, end]);
 }
 
-/**
- * Writes a workbook of `sheetCount` sheets, each with `x` in A1, to `file`.
- * With more than 16 sheets it is over the import's limit
- * (008 data-model.md "Import limits").
- */
-export function writeSheetsWorkbook(file: string, sheetCount: number): void {
+function escapeXml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** A column's letter in a cell reference (A, B, … Z, AA, …). */
+function columnLetters(index: number): string {
+  let letters = "";
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) {
+    letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+  }
+  return letters;
+}
+
+/** A workbook file of `sheets`, each a list of rows of text cells, written to
+ * `file`. */
+function writeWorkbook(file: string, sheets: string[][][]): void {
   const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
   const rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
   const decl = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-  const numbers = Array.from({ length: sheetCount }, (_, i) => i + 1);
+  const numbers = sheets.map((_, i) => i + 1);
   const parts: Record<string, string> = {
     "[Content_Types].xml":
       `${decl}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
@@ -102,9 +112,42 @@ export function writeSheetsWorkbook(file: string, sheetCount: number): void {
       "</Relationships>",
   };
   for (const n of numbers) {
+    const rows = sheets[n - 1]
+      .map(
+        (cells, r) =>
+          `<row r="${r + 1}">` +
+          cells
+            .map(
+              (text, c) =>
+                `<c r="${columnLetters(c)}${r + 1}" t="inlineStr"><is><t>${escapeXml(text)}</t></is></c>`,
+            )
+            .join("") +
+          "</row>",
+      )
+      .join("");
     parts[`xl/worksheets/sheet${n}.xml`] =
-      `${decl}<worksheet xmlns="${main}"><sheetData><row r="1">` +
-      '<c r="A1" t="inlineStr"><is><t>x</t></is></c></row></sheetData></worksheet>';
+      `${decl}<worksheet xmlns="${main}"><sheetData>${rows}</sheetData></worksheet>`;
   }
   fs.writeFileSync(file, storedZip(parts));
+}
+
+/**
+ * Writes a workbook of `sheetCount` sheets, each with `x` in A1, to `file`.
+ * With more than 16 sheets it is over the import's limit
+ * (008 data-model.md "Import limits").
+ */
+export function writeSheetsWorkbook(file: string, sheetCount: number): void {
+  writeWorkbook(
+    file,
+    Array.from({ length: sheetCount }, () => [["x"]]),
+  );
+}
+
+/**
+ * Writes a workbook of one sheet holding `rows` (the first is the header) to
+ * `file`, every cell text, as the import reads a sheet exported from a
+ * spreadsheet program with text cells.
+ */
+export function writeTableWorkbook(file: string, rows: string[][]): void {
+  writeWorkbook(file, [rows]);
 }

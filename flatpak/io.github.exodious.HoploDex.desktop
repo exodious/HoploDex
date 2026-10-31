@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=HoploDex
+Comment=Inventory of a firearm collection, kept on your computer
+Exec=hoplodex
+Icon=io.github.exodious.HoploDex
+Terminal=false
+Categories=Office;Database;
+StartupWMClass=hoplodex

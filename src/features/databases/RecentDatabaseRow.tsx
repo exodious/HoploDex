@@ -13,6 +13,7 @@ import type { PassphraseFieldHandle } from "../../components";
 import { formatDateTime, formatRecentDay, formatRecentMoment } from "../../lib/dates";
 import type { BackupSummary } from "./types";
 import { folderOf, middleTruncate } from "./paths";
+import { outOfReachText } from "./outOfReach";
 import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
 
 export interface ChooserRow {
@@ -20,6 +21,9 @@ export interface ChooserRow {
   name: string;
   /** The file is at `path` (003 FR-012). */
   available: boolean;
+  /** Set only when `available` is false because its folder is out of this
+   * copy's reach (a Flatpak), so the row says so (011 FR-004). */
+  unavailableReason?: "outOfReach";
   /** Its passphrase is saved on this computer (003 FR-017). */
   passphraseSaved: boolean;
   /** What this computer knows about it, for a database in the recent list
@@ -144,7 +148,12 @@ export function RecentDatabaseRow({
           <Identity name={entry.name} folder={folder} />
         </div>
         <div className="hd-db-row__detail">
-          <p className="hd-db-row__note">{unavailableNote ?? "Not found at this location"}</p>
+          <p className="hd-db-row__note">
+            {unavailableNote ??
+              (entry.unavailableReason === "outOfReach"
+                ? outOfReachText("database", folder)
+                : "Not found at this location")}
+          </p>
           <div className="hd-db-row__actions">
             <Button size="sm" icon="folder" disabled={disabled} onClick={onLocate}>
               Locate…

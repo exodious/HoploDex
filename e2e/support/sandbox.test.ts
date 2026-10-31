@@ -13,6 +13,7 @@ import {
   findStaleSandboxes,
   isolateAppData,
   removeSandbox,
+  seedCollection,
   sha256Of,
   sweepStaleSandboxes,
 } from "./sandbox";
@@ -61,6 +62,72 @@ describe("the E2E sandbox", () => {
 
     await removeSandbox();
     expect(fs.existsSync(root)).toBe(false);
+  });
+});
+
+// 011 FR-017: the store shots' sandbox is at the same path on every run, so
+// the chooser's path in the shot is too.
+describe("a mounted folder for the seed (011 FR-017)", () => {
+  let parent: string;
+  beforeEach(() => {
+    parent = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-mounted-test-"));
+    isolateAppData();
+  });
+  afterEach(() => {
+    fs.rmSync(parent, { recursive: true, force: true });
+  });
+
+  it("refuses a folder that isn't there, and one with anything else in it", () => {
+    expect(() => seedCollection({ seedDir: path.join(parent, "missing") })).toThrow(
+      /dev-container.sh --store-shots/,
+    );
+    fs.writeFileSync(path.join(parent, "precious"), "x");
+    expect(() => seedCollection({ seedDir: parent })).toThrow(/not empty/);
+    expect(fs.readFileSync(path.join(parent, "precious"), "utf-8")).toBe("x");
+  });
+});
+
+describe("a sandbox at a fixed path", () => {
+  const DEAD = 2_000_000_001;
+  let parent: string;
+  beforeEach(() => {
+    parent = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-fixed-test-"));
+  });
+  afterEach(() => {
+    fs.rmSync(parent, { recursive: true, force: true });
+  });
+
+  it("is made at that path, owned by this process, and removeSandbox removes it", async () => {
+    const dir = path.join(parent, "shots");
+    expect(isolateAppData({ fixedDir: dir })).toBe(dir);
+    expect(fs.readFileSync(path.join(dir, OWNER_MARKER), "utf-8").trim()).toBe(String(process.pid));
+    expect(process.env.HOPLODEX_E2E_DOCUMENTS?.startsWith(dir)).toBe(true);
+    await removeSandbox();
+    expect(fs.existsSync(dir)).toBe(false);
+  });
+
+  it("replaces what a run that ended left there, and nothing else", () => {
+    const dir = path.join(parent, "shots");
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, OWNER_MARKER), `${DEAD}\n`);
+    fs.writeFileSync(path.join(dir, "old"), "x");
+    expect(isolateAppData({ fixedDir: dir })).toBe(dir);
+    expect(fs.existsSync(path.join(dir, "old"))).toBe(false);
+
+    // A folder that isn't a sandbox is left alone and refused.
+    const other = path.join(parent, "mine");
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, "precious"), "x");
+    expect(() => isolateAppData({ fixedDir: other })).toThrow(/not an E2E sandbox/);
+    expect(fs.readFileSync(path.join(other, "precious"), "utf-8")).toBe("x");
+  });
+
+  it("refuses a path another running process owns", () => {
+    const dir = path.join(parent, "shots");
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, OWNER_MARKER), `${process.ppid}\n`);
+    expect(() => isolateAppData({ fixedDir: dir })).toThrow(/running process/);
+    expect(fs.existsSync(path.join(dir, OWNER_MARKER))).toBe(true);
   });
 });
 

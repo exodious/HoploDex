@@ -2,6 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { browser } from "@wdio/globals";
+import { flatpakLauncher, flatpakMode } from "./flatpak";
 
 /**
  * Starts, ends and restarts the app under test. An E2E build (the `e2e`
@@ -27,6 +28,20 @@ export const application = path.resolve(
   `src-tauri/target/${buildProfile}/hoplodex` + (process.platform === "win32" ? ".exe" : ""),
 );
 
+/**
+ * How a run starts its app. The default starts the built binary directly; the
+ * Flatpak check's starts it inside its sandbox (`flatpakLauncher`, 011
+ * research.md §16). Everything else about a launch, the port clean-up, waiting
+ * for the WebDriver server and the app's process, is the same for both.
+ */
+export interface Launcher {
+  /** Starts the app with its WebDriver server on `port` and returns its process. */
+  start(port: number): ChildProcess;
+  /** Called after the app's process was killed, to end what that left running
+   * (the Flatpak's sandbox). */
+  afterKill?(): Promise<void>;
+}
+
 /** The first worker's WebDriver port; each later worker of a run takes the
  * next one up. */
 const FIRST_PORT = 4445;
@@ -46,11 +61,17 @@ interface WorkerApp {
   /** Where this worker's app's WebDriver server listens. */
   port: number;
   app: ChildProcess | undefined;
+  /** What started `app`, so that a relaunch starts it the same way. */
+  launcher: Launcher | undefined;
 }
 
 const stateKey = Symbol.for("io.github.exodious.HoploDex.e2e.workerApp");
 const globals = globalThis as { [stateKey]?: WorkerApp };
-const state: WorkerApp = (globals[stateKey] ??= { port: FIRST_PORT, app: undefined });
+const state: WorkerApp = (globals[stateKey] ??= {
+  port: FIRST_PORT,
+  app: undefined,
+  launcher: undefined,
+});
 
 /**
  * Gives this worker a WebDriver port of its own, so the apps of workers
@@ -137,22 +158,39 @@ function appEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+/** Starts the built binary directly, with this process's environment (the
+ * default launcher). */
+export const binaryLauncher: Launcher = {
+  start: () =>
+    spawn(application, [], {
+      env: appEnv(),
+      stdio: ["ignore", "inherit", "inherit"],
+    }),
+};
+
+/** The launcher a launch without one uses: the one this worker last used, so
+ * a relaunch starts the app the way the first launch did; else the Flatpak's
+ * under HOPLODEX_E2E_FLATPAK=1 (011 research.md §16), else the binary. */
+function defaultLauncher(): Launcher {
+  return state.launcher ?? (flatpakMode() ? flatpakLauncher() : binaryLauncher);
+}
+
 /**
- * Launches the app with this process's environment (the sandbox, the
- * worker's display and the per-spec settings `wdio.conf.ts` sets) and waits
- * until its WebDriver server says it is ready on the worker's port: it
- * answers `/status` as soon as it listens, but says `ready` only once the
- * page has loaded (the vendored plugin's #77 patch). A session's first script
- * sent before that could wait out the whole script timeout on macOS.
+ * Launches the app with `launcher` (by default the one this worker last used,
+ * else the binary, or the Flatpak's under HOPLODEX_E2E_FLATPAK=1) and this
+ * process's environment (the sandbox, the worker's display and the per-spec
+ * settings `wdio.conf.ts` sets), and waits until its WebDriver server says it
+ * is ready on the worker's port: it answers `/status` as soon as it listens,
+ * but says `ready` only once the page has loaded (the vendored plugin's #77
+ * patch). A session's first script sent before that could wait out the whole
+ * script timeout on macOS.
  */
-export async function launchApp(timeout = 30000) {
+export async function launchApp(launcher: Launcher = defaultLauncher(), timeout = 30000) {
   if (running(state.app)) throw new Error("the app is already running");
   clearPort(state.port);
-  const child = spawn(application, [], {
-    env: appEnv(),
-    stdio: ["ignore", "inherit", "inherit"],
-  });
+  const child = launcher.start(state.port);
   state.app = child;
+  state.launcher = launcher;
   const deadline = Date.now() + timeout;
   for (;;) {
     if (exited(child)) {
@@ -201,21 +239,24 @@ export async function waitForAppToQuit(timeout = 15000) {
  */
 export async function killApp() {
   const child = state.app;
+  const launcher = state.launcher;
   state.app = undefined;
-  if (!running(child)) return;
-  const exited = new Promise((resolve) => child.once("exit", resolve));
-  child.kill("SIGKILL");
-  await exited;
+  if (running(child)) {
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.kill("SIGKILL");
+    await exited;
+  }
+  await launcher?.afterKill?.();
 }
 
 /**
  * Ends the app (killing it if it is still running) and starts it again
  * against the same sandbox, display and port, with a new WebDriver session
- * on it.
+ * on it. It is started the way the last launch was, or with `launcher`.
  */
-export async function relaunchApp() {
+export async function relaunchApp(launcher: Launcher | undefined = state.launcher) {
   await killApp();
-  await launchApp();
+  await launchApp(launcher);
   // The old session's delete fails, since the new app never knew it, and
   // WebdriverIO only warns about that.
   await browser.reloadSession();

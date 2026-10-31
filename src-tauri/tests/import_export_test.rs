@@ -7,6 +7,7 @@ use crate::support;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::import_export::{ImportFile, ImportSessionStore};
+use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use support::{TestDb, csv_file, csv_firearm};
 use tempfile::TempDir;
@@ -383,6 +384,7 @@ fn a_scheduled_firearm_survives_an_export_and_re_import() {
         SpreadsheetFormat::Csv,
         &support::firearm_records(&[created.id, plain.id]),
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
     firearm_ops::delete_firearm(&db.conn, created.id, true).unwrap();
@@ -517,6 +519,7 @@ fn export_writes_whole_dollars_with_no_separators_and_they_import_back_unchanged
         SpreadsheetFormat::Csv,
         &support::firearm_records(&[id]),
         &mut |_, _| {},
+        &Reach::Unconfined,
     )
     .unwrap();
 
@@ -673,6 +676,7 @@ fn an_export_re_imports_with_all_six_intact() {
             format,
             &support::firearm_records(&[created.id]),
             &mut |_, _| {},
+            &Reach::Unconfined,
         )
         .unwrap();
 
@@ -736,6 +740,7 @@ mod identification_spreadsheet {
             SpreadsheetFormat::Csv,
             &support::firearm_records(&[created.id]),
             &mut |_, _| {},
+            &Reach::Unconfined,
         )
         .unwrap();
 
@@ -793,6 +798,7 @@ mod identification_spreadsheet {
             SpreadsheetFormat::Csv,
             &support::firearm_records(&[created.id]),
             &mut |_, _| {},
+            &Reach::Unconfined,
         )
         .unwrap();
 
@@ -862,6 +868,7 @@ mod identification_spreadsheet {
             SpreadsheetFormat::Csv,
             &support::firearm_records(&[domestic.id, imported.id, unspecified.id]),
             &mut |_, _| {},
+            &Reach::Unconfined,
         )
         .unwrap();
 
@@ -1116,6 +1123,7 @@ fn a_stopped_export_removes_its_partial_output() {
         &support::firearm_records(&ids),
         &mut |done, _| cancelled.set(done == 2),
         &|| cancelled.get(),
+        &Reach::Unconfined,
     )
     .unwrap_err();
 
@@ -1144,6 +1152,7 @@ fn a_stopped_export_leaves_a_photos_folder_it_did_not_make() {
         &support::firearm_records(&[id]),
         &mut |_, _| {},
         &|| true,
+        &Reach::Unconfined,
     )
     .unwrap_err();
 
@@ -1213,6 +1222,7 @@ mod cartridge_spreadsheet {
             SpreadsheetFormat::Csv,
             &support::firearm_records(&ids),
             &mut |_, _| {},
+            &Reach::Unconfined,
         )
         .unwrap()
         .spreadsheet_path
@@ -1762,6 +1772,7 @@ mod registration_spreadsheet {
             SpreadsheetFormat::Csv,
             &support::firearm_records(&ids),
             &mut |_, _| {},
+            &Reach::Unconfined,
         )
         .unwrap()
         .spreadsheet_path

@@ -21,6 +21,7 @@ use crate::services::backups::{
 };
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
+use crate::services::sandbox::Need;
 use crate::session::{
     AwaitingBackupStamp, AwaitingGeneration, AwaitingUpgrade, OpenDatabase, Session, SessionId,
     database_name, lifecycle,
@@ -197,15 +198,26 @@ pub fn upgrade_database(
     }
 
     // 3 and 4. The folder, its room, and the backup.
-    let (folder, make_folder, at_backup_location) = match backup_folder {
-        Some(chosen) => match backups::check_chosen_folder(chosen, &waiting.backup_folder) {
-            Ok(ChosenFolder { folder, is_backup_location }) => (folder, false, is_backup_location),
-            Err(problem) => {
-                let error = location_problem(chosen, problem);
-                return Err(wait_again(session, waiting, generation, error));
+    // The backup location is stored; a folder chosen for this one backup is a
+    // one-off write (011 T097 amendment).
+    let (folder, make_folder, at_backup_location, need) = match backup_folder {
+        Some(chosen) => {
+            match backups::check_chosen_folder(chosen, &waiting.backup_folder, session.reach()) {
+                Ok(ChosenFolder { folder, is_backup_location, need }) => {
+                    (folder, false, is_backup_location, need)
+                }
+                Err(problem) => {
+                    let error = location_problem(chosen, problem);
+                    return Err(wait_again(session, waiting, generation, error));
+                }
             }
-        },
-        None => (waiting.backup_folder.clone(), waiting.backup_folder_is_default, true),
+        }
+        None => (
+            waiting.backup_folder.clone(),
+            waiting.backup_folder_is_default,
+            true,
+            Need::BackupFolder,
+        ),
     };
     let named_for = waiting
         .backup_stamp
@@ -233,6 +245,8 @@ pub fn upgrade_database(
                 name: &waiting.name,
                 database_id: &named_for,
                 folder: &folder,
+                reach: session.reach(),
+                need,
                 make_folder,
                 now: session.clock().now(),
                 kind: BackupKind::BeforeUpgrade { to_version: APP_VERSION },

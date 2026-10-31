@@ -480,6 +480,118 @@ or your real data, run it under `xvfb-run` with throwaway `HOME` and `XDG_*`
 directories and no session D-Bus. The broken build aborts at once with the EGL error, and the
 fixed one shows the chooser.
 
+### Flatpak
+
+`npm run bundle:flatpak` builds the Flatpak from this checkout, offline, checks
+it and installs it (`011 US3-6`, `011 FR-014`; the reasons are in
+[011's research.md §2, §13 and §15](specs/011-flatpak/research.md)):
+
+```bash
+scripts/dev-container.sh --flatpak npm run bundle:flatpak       # build, check, install
+scripts/dev-container.sh --flatpak npm run flatpak:sources      # after any lockfile change
+```
+
+It prints each step as it starts and stops at the first one that fails,
+naming it:
+
+1. Installs the GNOME 51 runtime and SDK and the two SDK extensions (Rust and
+   Node) from Flathub, only the ones missing (network).
+2. `flatpak-builder --download-only` fetches every source the manifest names
+   (network): the checkout, and the crates and npm packages in
+   `flatpak/cargo-sources.json` and `flatpak/node-sources.json`.
+3. `flatpak-builder --disable-download` builds with the build sandbox's
+   network off (`011 SC-004`): `npm ci --offline`, `npm run build`, a release
+   `cargo build --offline --locked --features custom-protocol`,
+   `scripts/check-no-webdriver.mjs` on the binary, and the installs. The
+   notices step of `npm run build` runs its `cargo fetch --locked`,
+   `cargo metadata` and `cargo tree` against the vendored crates, offline.
+4. `scripts/flatpak/contents.mjs` lists what the build carries and fails on
+   any file or shared library not in
+   [011's data-model.md "The bundle's contents"](specs/011-flatpak/data-model.md)
+   (`011 FR-017`, `011 FR-018`).
+5. `desktop-file-validate` and `appstreamcli validate --no-net`.
+6. Compares the notices the Flatpak carries with those the other Linux builds
+   make from the same lockfiles (`011 FR-019`); only the copyright years may
+   differ, because `git` isn't in the build.
+7. Installs the build into the container's Flatpak installation.
+8. Installs Flathub's linter (`org.flatpak.Builder`, network, only if missing)
+   and runs `flatpak-builder-lint` on the manifest and on the repository with
+   `flatpak/linter-exceptions.json` (`--exceptions --user-exceptions`; the
+   repository also gets the two screenshot rules a local build cannot satisfy,
+   `011 research.md` §4).
+9. Writes `flatpak/out/HoploDex-<version>-x86_64.flatpak` with
+   `flatpak build-bundle --runtime-repo=<Flathub's>` and prints its path. It
+   attaches and publishes nothing (`011 SC-009`).
+
+The build is of the checkout as it is, uncommitted changes included, except
+`node_modules`, `dist`, `src-tauri/target`, `.git`, `.claude`, `flatpak/out`,
+`.human-testing` and `.wdio`. `flatpak/out/` is git-ignored, so the host can
+reach the `.flatpak` file there.
+
+**Where it runs.** Only in the dev container started with `--flatpak`
+(`011 FR-023`). `flatpak-builder` and a running Flatpak use `bwrap`, which
+needs the real `/proc`, and a rootless container masks parts of it, so
+`--flatpak` unmasks `/proc` for that run only
+(`--security-opt unmask=/proc/*`). It also mounts a volume for
+`flatpak-builder`'s state (downloads, build folders; several gigabytes) per
+checkout, named in `HOPLODEX_FLATPAK_STATE`. The runtime, SDK and extensions
+(about 2 GB) go in the container's own user installation in the shared
+`/home/dev` volume, so the first run in a container fetches them and later
+ones, in any checkout, don't; the first run also fetches every crate and npm
+package. Run it in the background with a log (the first run is long), and
+see [Development container](#development-container-linux-recommended) for
+`--reset-volumes`, which also deletes the state volume.
+
+**Without podman,** a Linux host needs `flatpak`, `flatpak-builder`,
+`appstream` (`appstreamcli`), `desktop-file-utils`, `binutils` (`readelf`),
+`dbus` (`dbus-daemon`), `python3-dbusmock`, and the generators' Python modules
+(`aiohttp`, `tomlkit`, `PyYAML`) with
+[flatpak-builder-tools](https://github.com/flatpak/flatpak-builder-tools) at
+the commit the `Dockerfile` pins (`FLATPAK_BUILDER_TOOLS_COMMIT`, cloned to
+`/opt/flatpak-builder-tools`, or wherever `HOPLODEX_FLATPAK_BUILDER_TOOLS`
+says). The scripts must never use your own Flatpak installation, so they
+refuse on a host unless `FLATPAK_USER_DIR` names an absolute, empty or
+throwaway folder and `--i-know-this-is-a-host` follows the command
+(`FLATPAK_USER_DIR=/var/tmp/hoplodex-flatpak npm run bundle:flatpak -- --i-know-this-is-a-host`);
+the guard (`scripts/flatpak/guard.mjs`) says what to change otherwise. The
+build's state folder (downloads, build folders and the repository)
+defaults to a folder beside it, `<FLATPAK_USER_DIR>-state`
+(`/var/tmp/hoplodex-flatpak-state` above), so no other variable is needed;
+set `HOPLODEX_FLATPAK_STATE` to an absolute path to put it elsewhere. The
+first run then fetches the 2 GB into those two folders, and deleting both
+removes everything it made. **`npm run test:flatpak` does not run on a
+host, with or without that flag** (`011 FR-023`): it refuses before it
+touches anything, saying so. The check needs what only the dev container
+has: a tmpfs at `/run/media/dev/hoplodex-check` standing in for a removable
+drive (`--flatpak` mounts it; the Flatpak reaches `/run/media`), two folders
+outside what it reaches for the check to show refused (`/mnt/hoplodex-check`,
+another tmpfs `--flatpak` mounts, and `/srv/hoplodex-check`, which the
+`Dockerfile` makes), private D-Bus buses with scripted portals and a headless
+keyring daemon started by the script, and an Xvfb display of its own.
+
+**What the Flatpak reaches, and where it keeps passphrases.** It is built with
+`--filesystem=xdg-documents/HoploDex`, `/media` and `/run/media` and no home
+folder, so a database in `<Documents>/HoploDex` or on a removable drive works,
+and a location anywhere else (`/mnt`, `/srv`, a Downloads folder) is refused
+before anything is written, with the `flatpak override --user
+--filesystem=<folder>` command that would grant it (`011 FR-003`, `011 FR-007`;
+`011 research.md` §5). Saved passphrases do not use the Secret Service, which the
+Flatpak is not granted: inside it they are kept in the app's own file keyring
+under `$XDG_DATA_HOME/keyrings/`, encrypted with a key the Secret portal
+returns, and saving is unavailable where the desktop has no Secret portal
+(`011 FR-006`; `011 research.md` §7).
+
+**The source lists.** The offline build can only use what the lists name, so
+`flatpak/cargo-sources.json` (from `src-tauri/Cargo.lock`) and
+`flatpak/node-sources.json` (from `package-lock.json`) are generated and
+committed. After any change to either lockfile, run
+`scripts/dev-container.sh --flatpak npm run flatpak:sources` and commit both
+lists. Until you do, `scripts/flatpak/sources.test.ts` fails in every
+`npm test`, naming the list and the first package that differs (`011 US3-2`,
+`011 FR-015`). That includes a dependency update pull request, Dependabot's or
+one by hand: regenerate the lists in the dev container and commit them to its
+branch before `npm test` passes.
+
 ## Test
 
 ```bash
@@ -660,6 +772,16 @@ as one minute (default 60). The harness sets it to 3 for
 the notice and the settings still say "1 minute". The scaling's unit tests
 (`session/idle.rs`) run in the default Rust test run.
 
+The `flatpak-check` feature builds on `e2e` for the Flatpak check alone
+(`scripts/flatpak/checkManifest.mjs` turns it on; the `e2e` suite, the `.deb`
+and every other build never do). It keeps the WebDriver server and the
+`HOPLODEX_E2E_*` seams, and leaves out two of `e2e`'s stand-ins: `build.rs`
+turns it into the `app_opener` and `mock_keyring` cfgs, so the check variant
+has the real `AppOpener` (the OpenURI portal inside a Flatpak) and the real
+keyring (inside a Flatpak, the Secret portal's file keyring) in place of
+`E2eOpener` and the in-memory store.
+"The Flatpak check" below says what it talks to.
+
 The harness, not a driver, owns the app's process (`e2e/support/app.ts`):
 `wdio.conf.ts` launches the app before each spec file's session, with the
 sandbox's environment and `TAURI_WEBDRIVER_PORT`, waits for its server to
@@ -726,6 +848,110 @@ check, just as one with the WebDriver server does.
 WebDriver drives only the main web view. What goes on inside the PDF surface,
 a child web view, is the PDF surface check's.
 
+### The Flatpak check
+
+`npm run test:flatpak` builds the Flatpak's check variant, installs it into the
+dev container's Flatpak installation and drives it through WebDriver in its
+sandbox (`011 US5-1`, `011 FR-021`, `011 FR-023`; the reasons are in
+[011's research.md §15, §16 and §18](specs/011-flatpak/research.md)). It runs
+only in the dev container started with `--flatpak`, after `npm run build`, and
+**ordinary test runs skip it**:
+
+```bash
+scripts/dev-container.sh --flatpak bash -c 'npm run build && npm run test:flatpak'
+scripts/dev-container.sh --flatpak bash -c 'npm run build && npm run test:flatpak -- --fresh-install'
+```
+
+What it does, in order:
+
+1. Removes any HoploDex build already installed (`npm run bundle:flatpak`
+   leaves the shipped one there) and notes which apps the installation lists.
+2. Builds the check variant offline and installs it. It is the shipped manifest
+   with only the `e2e` and `flatpak-check` cargo features and the profile
+   changed, so it runs with the permissions the Flatpak ships with
+   (`manifest.test.ts` compares the two). `flatpak-check` is the `e2e` build
+   with the real routes: its `AppOpener` hands a document to the OpenURI
+   portal and its keyring is the real one (inside the Flatpak, the file keyring
+   keyed by the Secret portal) instead of the `e2e` build's log and in-memory
+   store. The consent dialog is still the
+   `e2e` build's, which no WebDriver could click. Only the Flatpak check
+   builds it; the main E2E suite and every shipped build are unchanged.
+3. Starts a private session bus with a scripted desktop portal
+   (`scripts/flatpak/openuri_mock.py`, a dbusmock template with two interfaces:
+   OpenURI, which records each `OpenFile`'s descriptor and answers `Response`,
+   and Secret, whose `RetrieveSecret` hands back a fixed key for the run, the
+   stand-in for the Secret portal; started without the key it has no Secret
+   interface, as a desktop with no Secret portal backend), stand-ins for both
+   screen savers and a name the manifest does not grant, and a stand-in logind
+   on the private system bus. A real, headless `gnome-keyring-daemon`
+   (unlocked, its data in the run's throwaway folder, started by
+   `scripts/flatpak/keyring-daemon.sh`, which refuses the container's own bus)
+   stays on the same bus for one reason only: to show that
+   `org.freedesktop.secrets` is refused to the sandbox while it answers
+   outside it. From inside the sandbox the check also shows that each granted
+   name answers, that logind's `Inhibit` returns a descriptor through the bus
+   proxy, and that the stand-in name the manifest does not grant is refused
+   while it answers outside the sandbox.
+4. Shows the shipped permissions have no network: it listens on the container's
+   own non-loopback address, then a `python3` run in the sandbox without
+   `--share=network` sees only the loopback interface and cannot connect to it.
+5. Builds the `e2e` binary outside the sandbox and runs
+   `e2e/specs/flatpak.e2e.ts` (`HOPLODEX_E2E_FLATPAK=1`), whose journeys run the
+   check variant with the run's throwaway home, buses and stand-ins, and add
+   `--share=network` only for the WebDriver port. They show that the sandbox
+   sees the host's user directories without the home folder; that a database
+   is made, backed up and reopened under the stand-in drive; that `/mnt` and
+   `/srv` are refused on the folder field with nothing written; that a photo
+   dropped from `~/Pictures` is refused with the advice to attach it from the
+   file chooser; and that a saved passphrase lands in the app's keyring file,
+   which the check reads back with the stand-in portal's key
+   (`src-tauri/examples/flatpak_keyring_read.rs`) and which opens the database
+   from the recent list after a restart. One of its tests prints the
+   cold start to the chooser for the Flatpak and for the `e2e` build outside it
+   and fails on a difference over a second (`011 SC-006`).
+6. Uninstalls the check variant whatever happened, and fails unless the
+   installation lists the same apps as at the start.
+
+Its logs are in `flatpak/out/check/` (`check.log`, one per stand-in and per app
+start, which holds what the app logged to standard error: whether WebKit's
+sandbox is on and what the helpers are confined with, see `src-tauri/src/logging.rs`;
+and `openuri.log`, one JSON line for each descriptor the scripted portal was handed).
+`lock-times.log` has each lock's time from the signal, in the Flatpak and outside
+the sandbox for a sleep, a screen lock, a shutdown and a SIGTERM, each Flatpak
+time within a second of its outside time (`011 SC-002`), and
+`webkit-sandbox.txt` the `flatpak-spawn --sandbox` command line, what the web
+process sees of its sandbox and what a process started with WebKit's flags
+reaches (`011 research.md` §9).
+
+`-- --fresh-install` runs a different check (`011 US4-2`, `011 SC-010`; it needs
+the network and the file `npm run bundle:flatpak` wrote). It installs that file
+into a second, empty installation with no remotes under the state volume
+(`flatpak install --user --bundle`), shows that the installation gained the
+`flathub` remote and `org.gnome.Platform//51` and that the installed app's
+`files/` pass `contents.mjs` (no runtime library came from the file), starts the
+shipped build once under a throwaway home on a virtual display with the stand-in
+buses, and finds where it keeps its own data: `machine.json` and the main web
+view's data folder under `~/.var/app/io.github.exodious.HoploDex/`, and nothing
+under the home's own `.config` or `.cache` (`011 FR-009`). The second
+installation is removed whatever happened; the shipped build has no WebDriver
+and no log line for its window, so the check waits for the log line that says it
+runs in a Flatpak and for the two folders.
+
+Run it before each release and for a pull request that changes any of these
+paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,
+`e2e/specs/flatpak.e2e.ts`, `e2e/support/flatpak.ts`,
+`src-tauri/src/platform/linux.rs`, `src-tauri/src/main.rs`,
+`src-tauri/src/app_dirs.rs`, `src-tauri/src/session/lifecycle.rs`; under
+`src-tauri/src/services/`: `sandbox.rs`, `keyring.rs`, `file_swap.rs`,
+`backups.rs`, `scratch.rs`, `helper/`, `import_reader/`, `preview/helper.rs`,
+`preview/sandbox_probe.rs`; under `src-tauri/src/commands/`: `databases.rs`,
+`backups.rs`, `import_export.rs`, `documents.rs`, `photos.rs`; and
+`src/features/media/useFileDrop.ts`.
+
+It never touches your Flatpak installation, your `~/.var/app`, your buses or
+your keyring: the container has its own (`011 SC-007`), and the script refuses
+anywhere else (the guard described under "Flatpak" above).
+
 ### E2E files
 
 An E2E file is named for the area of the app whose setup its tests share
@@ -740,6 +966,11 @@ the story's heading exactly. To find a story's tests,
 `grep -rl '"006 US2 -' e2e/specs`. A title that ends in `(was us9-locking)`
 gives the file's name before #121, when a `usN` number, unrelated to the
 specs' story numbers, began every name.
+
+`flatpak.e2e.ts` is the exception: it has its own setup (the container's Flatpak
+installation, private buses and stand-in services, `support/flatpak.ts`) and
+runs only under `npm run test:flatpak`; `wdio.conf.ts` excludes it from every
+other run and runs nothing else under `test:flatpak`.
 
 A new journey goes into a new `describe()` in the existing file whose setup
 it shares (the same seed, the same databases, the same relaunch or idle-lock
@@ -866,7 +1097,8 @@ probe doesn't run there either. So the container's E2E and surface-check runs
 are unsandboxed. Before merging a change to the preview, run the E2E suite once
 on a Linux host (`npm run build && npm run test:e2e`) and the surface check
 there (`scripts/pdf-surface-check.sh`, without the container) and note the
-result in the pull request.
+result in the pull request. A Flatpak runs the same probe (WebKit sandboxes
+there through `flatpak-spawn --sandbox`); only a container skips it.
 
 A checkout you also use with the container has an empty `node_modules` on the
 host, since the container keeps its own in a volume mounted there, and the
@@ -1290,6 +1522,52 @@ databases. Specs read the seed's passphrase from
 `HOPLODEX_E2E_SEED_PASSPHRASE`, and the sandbox's documents folder from
 `HOPLODEX_E2E_DOCUMENTS`.
 
+### The Flatpak's store shots
+
+The five images the Flatpak's AppStream metadata points at
+(`flatpak/screenshots/`: `chooser`, `collection`, `record`, `document-preview`
+and `accessories`) are taken by their own command, not by the walk above, and
+**only when someone retakes them on purpose** (to show a new feature, say):
+a build, `npm test`, `npm run screenshots` and `npm run test:e2e` never touch
+them (`011 FR-017`; `011 research.md` §13).
+
+```bash
+scripts/dev-container.sh --store-shots bash -c 'npm run build && npm run screenshots:store'
+```
+
+It runs `e2e/screenshots/store.e2e.ts` on Linux in the dev container, in the
+walk's setting (Xvfb, 1200×800, light theme), and only when the run passes
+replaces the five files in `flatpak/screenshots/` together; the run itself
+writes to `e2e/screenshots-out/store/`. Run twice on the same build, it gives
+byte-identical files. To make that so:
+
+- The seed is made in `/home/alex/Documents`, so the chooser shows
+  `/home/alex/Documents/HoploDex`, a path that reads like a user's own. That
+  folder is a tmpfs `scripts/dev-container.sh --store-shots` mounts for that one
+  command (never the `/home/dev` volume, never the host), emptied when the run
+  ends; the command refuses to run without it. The rest of the sandbox is at
+  `/tmp/hoplodex-store-shots`, the same path every time, and the seed is run
+  with `--fixed-times`: the backups, the
+  last open and the documents' dates are stamped so the chooser reads "Today at
+  10:30 AM" and the viewer "added Sep 15, 2025" whatever day it is. No text in
+  view may depend on the day or time of the run; where one would, change the
+  view, or give the seed a record with fixed dates, never the test.
+- The seed's $99,999,999 firearm (#67, kept in the seed) has its estimated
+  replacement value set to $2,500 through the app's edit form, so the total
+  reads $51,300, and the collection is grouped by Type so no photo that needs a
+  credit line is in view.
+- `e2e/screenshots/store-shots.json` records what each shot shows, by record and
+  photo with its licence, and the text the page must carry. The spec checks the
+  app's view against it before every shot and fails rather than take one that
+  differs; `scripts/flatpak/storeShots.test.ts` (in `npm test`) checks the file
+  against `011 research.md` §13's list, the seed-photos README's licences and
+  the metainfo. A retake that shows another record or photo changes that file,
+  and the research note, on purpose.
+
+Look at the five files before committing them. A different WebKitGTK, font or
+Mesa in the dev container image can change every pixel, so retake all five
+together, never one.
+
 ## Tuning the chooser's drawing
 
 The database chooser's catalogue plate (the hoplon with its owl, the Greek
@@ -1521,6 +1799,10 @@ A license that's only acceptable for particular packages goes in `EXCEPTIONS`
 in `policy.mjs`, scoped to those packages or hand-recorded entries, with the
 reason. Today they are OFL-1.1 for the `@fontsource` fonts, and four licenses
 for data the strength hint's dictionary uses (below).
+
+The Flatpak ships the same binary, built from the same lockfiles, and adds no
+module of its own, so these checks already cover it; `scripts/flatpak/manifest.test.ts`
+fails if its manifest gains a module or a source ([011's research.md §13](specs/011-flatpak/research.md)).
 
 The passphrase strength hint's dictionary (`src/components/strength/estimate.ts`)
 is built from `@zxcvbn-ts`'s word lists, and the package's MIT license doesn't

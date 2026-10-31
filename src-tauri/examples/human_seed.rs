@@ -26,13 +26,18 @@
 //! `support/sandbox.rs`, never to the real data, config or documents
 //! directory, and never touches the keyring (constitution 1.2.0).
 //!
+//! With `--fixed-times` (the store shots, 011 FR-017) what the screens show of
+//! the seed's times reads the same on any day: see [`FIXED_DOCUMENT_ADDED`] and
+//! [`FIXED_CLOCK`].
+//!
 //! Usage: cargo run --example human_seed -- [--dir <path>] [--extra <n>] [--reset]
 //!                                          [--pending-from <version>] [--older]
+//!                                          [--fixed-times]
 //!        cargo run --example human_seed -- --print-passphrase
 
 use std::path::{Path, PathBuf};
 
-use chrono::{Duration, Local};
+use chrono::{DateTime, Duration, FixedOffset, Local, TimeZone};
 use hoplodex_lib::APP_VERSION;
 use hoplodex_lib::commands::firearms::ListFirearmsInput;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
@@ -83,6 +88,14 @@ const FIREARM_FORM_VERSION: i64 = 4;
 /// (`--pending-from`): one this build doesn't know, so they can't be resumed.
 const OTHER_FORM_VERSION: i64 = 3;
 
+/// With `--fixed-times`, the local time of day the seed's clock stands at
+/// ("Today at 10:30 AM" in the chooser, whatever day the seed runs on).
+const FIXED_CLOCK: (u32, u32) = (10, 30);
+/// With `--fixed-times`, when every document was added, in the format SQLite's
+/// `datetime('now')` writes: the record page's viewer says "added" with an
+/// absolute date, which no clock could make the same on every day.
+const FIXED_DOCUMENT_ADDED: &str = "2025-09-15 14:20:00";
+
 struct Args {
     dir: PathBuf,
     extra: usize,
@@ -91,6 +104,9 @@ struct Args {
     pending_from: Option<String>,
     /// Also copy the stored 0.1.0 database in, as "Older collection".
     older: bool,
+    /// Stamp the times the screens show with ones that read the same on any
+    /// day (011 FR-017): the store shots are retaken only on purpose.
+    fixed_times: bool,
 }
 
 fn parse_args() -> Args {
@@ -100,6 +116,7 @@ fn parse_args() -> Args {
         reset: false,
         pending_from: None,
         older: false,
+        fixed_times: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -120,6 +137,7 @@ fn parse_args() -> Args {
                 );
             }
             "--older" => args.older = true,
+            "--fixed-times" => args.fixed_times = true,
             "--print-passphrase" => {
                 println!("{PASSPHRASE}");
                 std::process::exit(0);
@@ -145,6 +163,8 @@ fn usage(problem: &str) -> ! {
          \x20                     <ver> (an older form that can't be resumed); without it, by this build\n\
          --older               also add \"Older collection\", a copy of the stored 0.1.0 database\n\
          \x20                     (passphrase \"release fixture 0.1.0\"), which needs an upgrade to open\n\
+         --fixed-times         stamp the backups, the last open and the documents' dates so the\n\
+         \x20                     screens read the same on any day (the store shots)\n\
          --print-passphrase    print the seeded databases' passphrase and exit"
     );
     std::process::exit(if problem.is_empty() { 0 } else { 2 });
@@ -177,7 +197,7 @@ fn main() {
         paths.remove();
     }
 
-    seed_sandbox(&args.dir, args.extra, args.pending_from.as_deref());
+    seed_sandbox(&args.dir, args.extra, args.pending_from.as_deref(), args.fixed_times);
     let samples = write_import_samples(&args.dir.join("import-samples"));
     if args.older {
         let older = seed_older(&args.dir);
@@ -242,8 +262,17 @@ impl SandboxPaths {
 /// Seeds both databases and `machine.json` into `dir`, which the caller has
 /// checked is a sandbox. The shared collection's pending changes were kept by
 /// this build, or, with `pending_from`, by that version of HoploDex, with a
-/// form version this build doesn't know (008 FR-015, FR-016).
-pub fn seed_sandbox(dir: &Path, extra: usize, pending_from: Option<&str>) -> SandboxPaths {
+/// form version this build doesn't know (008 FR-015, FR-016). With
+/// `fixed_times`, "Main collection"'s backups, its last open and its
+/// documents' dates are the ones [`FIXED_CLOCK`] and [`FIXED_DOCUMENT_ADDED`]
+/// name, so what the chooser and the viewer say of them doesn't depend on when
+/// the seed ran (011 FR-017).
+pub fn seed_sandbox(
+    dir: &Path,
+    extra: usize,
+    pending_from: Option<&str>,
+    fixed_times: bool,
+) -> SandboxPaths {
     let paths = SandboxPaths::new(dir);
     must(std::fs::create_dir_all(&paths.databases), "the databases folder");
     let machine = must(MachineSettings::load(&paths.config), "machine.json");
@@ -323,7 +352,7 @@ pub fn seed_sandbox(dir: &Path, extra: usize, pending_from: Option<&str>) -> San
     // third a minute later, made before an upgrade (009 FR-013), so the
     // dialog shows its "before upgrading" label and a backup opened directly
     // shows its note.
-    let now = Local::now().fixed_offset();
+    let now = seed_clock(fixed_times);
     let backups_made = [
         (now - Duration::days(1), BackupKind::Regular),
         (now, BackupKind::Regular),
@@ -339,6 +368,8 @@ pub fn seed_sandbox(dir: &Path, extra: usize, pending_from: Option<&str>) -> San
                     name: MAIN_NAME,
                     database_id: &database_id(&main),
                     folder: &paths.main_backups,
+                    reach: &hoplodex_lib::services::sandbox::Reach::Unconfined,
+                    need: hoplodex_lib::services::sandbox::Need::BackupFolder,
                     make_folder: true,
                     now: made_at,
                     kind,
@@ -358,9 +389,45 @@ pub fn seed_sandbox(dir: &Path, extra: usize, pending_from: Option<&str>) -> San
         ),
         "the main database's backup record",
     );
+    if fixed_times {
+        must(
+            main.execute("UPDATE document_attachments SET created_at = ?1", [FIXED_DOCUMENT_ADDED]),
+            "the documents' dates",
+        );
+    }
     // Opened last, so the chooser selects it.
     machine.touch_recent(&paths.main, MAIN_NAME, &database_id(&main), &paths.main_backups);
+    if fixed_times {
+        set_last_opened(&paths.config, &backups::utc_text(&now));
+    }
     paths
+}
+
+/// What the seed stamps its backups with: now, or with `fixed_times` today at
+/// [`FIXED_CLOCK`], local time ("Today at 10:30 AM", and "yesterday" for the
+/// earlier backup, on whatever day it runs).
+fn seed_clock(fixed_times: bool) -> DateTime<FixedOffset> {
+    if !fixed_times {
+        return Local::now().fixed_offset();
+    }
+    let (hour, minute) = FIXED_CLOCK;
+    let day = Local::now().date_naive().and_hms_opt(hour, minute, 0).expect("a real time of day");
+    Local.from_local_datetime(&day).earliest().expect("a local time that exists").fixed_offset()
+}
+
+/// Sets every recent database's last open in `machine.json` (in the config
+/// directory `config`) to `moment`, which `touch_recent` always sets to now.
+fn set_last_opened(config: &Path, moment: &str) {
+    let file = config.join("machine.json");
+    let mut json: serde_json::Value =
+        must(serde_json::from_slice(&must(std::fs::read(&file), "machine.json")), "machine.json");
+    for entry in json["recentDatabases"].as_array_mut().expect("a recent list") {
+        entry["lastOpenedAt"] = moment.into();
+    }
+    must(
+        std::fs::write(&file, must(serde_json::to_vec_pretty(&json), "machine.json")),
+        "machine.json",
+    );
 }
 
 /// Copies the stored 0.1.0 database into `<dir>/Older/` and lists it first in

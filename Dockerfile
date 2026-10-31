@@ -18,6 +18,9 @@ ARG RUST_TOOLCHAIN=stable
 ARG CARGO_DENY_VERSION=0.20.2
 ARG CARGO_NEXTEST_VERSION=0.9.146
 ARG SPEC_KIT_VERSION=v1.0.8
+# 011 research.md §3, §21: the Flatpak source-list generators, at one commit
+# (the newest on the default branch, master, on 2026-10-19).
+ARG FLATPAK_BUILDER_TOOLS_COMMIT=74697c75b630d7330e77250fc13cb5ea688d9479
 ARG USERNAME=dev
 ARG USER_UID=1000
 ARG USER_GID=1000
@@ -25,7 +28,8 @@ ARG USER_GID=1000
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    NPM_CONFIG_UPDATE_NOTIFIER=false
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    HOPLODEX_DEV_CONTAINER=1
 
 # System packages:
 # - Tauri/WebKitGTK build deps and rusqlite's bundled SQLCipher (perl, libssl)
@@ -38,14 +42,24 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # - human testing: a session D-Bus and gnome-keyring for the real keyring
 # - python3-gi + GTK typelibs for the native drag-and-drop test technique
 # - imagemagick to crop screenshots, fonts for anything the app doesn't bundle
+# - the Flatpak build and check (011 research.md §15, §21; nothing here ships):
+#   flatpak, flatpak-builder, appstream and desktop-file-utils for the build and
+#   its validators; python3-dbusmock for the check's stand-in services; and
+#   the generators' Python modules (aiohttp, tomlkit, PyYAML) from Debian, so
+#   no pip install is needed. readelf comes with build-essential's binutils
+#   and dbus-daemon with dbus.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        appstream \
         build-essential \
         ca-certificates \
         curl \
         dbus \
         dbus-x11 \
+        desktop-file-utils \
         file \
+        flatpak \
+        flatpak-builder \
         fonts-dejavu-core \
         fonts-noto-core \
         fonts-noto-color-emoji \
@@ -72,7 +86,11 @@ RUN apt-get update \
         procps \
         psmisc \
         python3 \
+        python3-aiohttp \
+        python3-dbusmock \
         python3-gi \
+        python3-tomlkit \
+        python3-yaml \
         sudo \
         wget \
         xauth \
@@ -121,13 +139,32 @@ RUN UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/usr/local/bin UV_PYTHON_INSTALL_D
     && chmod -R a+rX /opt/uv \
     && rm -rf /root/.cache
 
+# flatpak-builder-tools (cargo/flatpak-cargo-generator.py and the node/
+# flatpak_node_generator package) at one pinned commit, read-only for `dev`:
+# `npm run flatpak:sources` runs them (011 research.md §3). The marker file and
+# HOPLODEX_DEV_CONTAINER are what scripts/flatpak/guard.mjs reads to tell this
+# container from a host, whose own Flatpak installation the scripts must not
+# touch.
+RUN set -eux; \
+    git init -q /opt/flatpak-builder-tools; \
+    git -C /opt/flatpak-builder-tools fetch -q --depth 1 https://github.com/flatpak/flatpak-builder-tools.git "${FLATPAK_BUILDER_TOOLS_COMMIT}"; \
+    git -C /opt/flatpak-builder-tools checkout -q FETCH_HEAD; \
+    rm -rf /opt/flatpak-builder-tools/.git; \
+    printf 'HoploDex development container\n' > /etc/hoplodex-dev-container
+
 # The non-root user. Passwordless sudo is only for installing extra packages
 # while experimenting; nothing in the workflow needs it.
+# /srv/hoplodex-check is the Flatpak check's out-of-reach location, writable by
+# `dev` but granted to no Flatpak (011 research.md §16). The state directory is
+# the mount point of --flatpak's per-checkout volume (scripts/dev-container.sh);
+# existing here owned by `dev`, the new volume starts out owned by `dev` too.
 RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
     && useradd --uid "${USER_UID}" --gid "${USER_GID}" --create-home --shell /bin/bash "${USERNAME}" \
     && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" \
     && chmod 0440 "/etc/sudoers.d/${USERNAME}" \
-    && install -d -o "${USERNAME}" -g "${USERNAME}" /opt/rust /workspace
+    && install -d -o "${USERNAME}" -g "${USERNAME}" /opt/rust /workspace \
+    && install -d -m 0755 -o "${USERNAME}" -g "${USERNAME}" /srv/hoplodex-check \
+    && install -d -m 0755 -o "${USERNAME}" -g "${USERNAME}" /var/lib/hoplodex-flatpak-state
 
 # Rust, owned by the dev user so `rustup` works from inside the container.
 # CARGO_HOME points at $HOME/.cargo at run time (the crate cache and the

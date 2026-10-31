@@ -135,6 +135,50 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     expect(screen.getByRole("button", { name: "Use the default" })).toBeEnabled();
   });
 
+  // 011 FR-004, data-model.md "Backup location availability"
+  it("says this copy of HoploDex can't reach a custom location, with the fix, in place of 'Not available'", () => {
+    renderSettings(
+      status({
+        kind: "custom",
+        path: "/srv/hoplodex-backups",
+        available: false,
+        unavailableReason: "outOfReach",
+      }),
+    );
+
+    const backups = screen.getByRole("group", { name: "Backups" });
+    expect(backups).toHaveTextContent("/srv/hoplodex-backups");
+    expect(backups).toHaveTextContent("This copy of HoploDex can't reach this folder");
+    expect(backups).toHaveTextContent(
+      "give HoploDex access to /srv/hoplodex-backups by running: flatpak override --user --filesystem=/srv/hoplodex-backups io.github.exodious.HoploDex and then restarting HoploDex.",
+    );
+    expect(backups).not.toHaveTextContent("Not available on this computer");
+    expect(screen.getByRole("button", { name: "Use the default" })).toBeEnabled();
+  });
+
+  // 011 US1-8, contracts/tauri-commands.md "Commands that check reach": update_backup_settings
+  it("shows a custom location refused as out of reach on the location field", async () => {
+    const user = userEvent.setup();
+    const message =
+      "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/hoplodex-backups. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/hoplodex-backups by running: flatpak override --user --filesystem=/srv/hoplodex-backups io.github.exodious.HoploDex and then restarting HoploDex.";
+    vi.mocked(openFolderDialog).mockResolvedValue("/srv/hoplodex-backups");
+    vi.mocked(databasesService.updateBackupSettings).mockRejectedValue(
+      new CommandFailure({
+        code: "VALIDATION_ERROR",
+        message: "Check the backup settings.",
+        fieldErrors: { location: message },
+      }),
+    );
+    const props = renderSettings();
+
+    await user.click(screen.getByRole("button", { name: "Change…" }));
+    await screen.findByText("/srv/hoplodex-backups");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(message)).toHaveAttribute("role", "alert");
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+  });
+
   it("states what backups are and aren't (003 FR-029)", () => {
     renderSettings();
 
