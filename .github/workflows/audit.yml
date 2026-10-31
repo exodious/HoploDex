@@ -10,7 +10,9 @@
 #
 # A pull request that changes only Markdown (`*.md`) has nothing for the audit
 # to check, so the job passes without running it (constitution, Development
-# Workflow & Quality Gates). It skips by step rather than by a `paths` filter or
+# Workflow & Quality Gates). Nor does one that changes only the other
+# workflows' files (codeql.yml, its config, pr-body.yml), which nothing the
+# audit runs reads; audit.yml itself, and everything else, still counts. It skips by step rather than by a `paths` filter or
 # a job-level `if`, so the required check always reports a result, and a fault
 # in deciding fails the job rather than skipping the audit.
 name: Dependency audit
@@ -52,22 +54,26 @@ jobs:
           persist-credentials: false
 
       # --no-renames lists a renamed file under both names, so renaming code to
-      # `.md` doesn't count as a docs-only change.
-      - name: Check whether only Markdown changed
+      # `.md` doesn't count as a docs-only change. `match` is grep that treats
+      # no match (exit 1) as an empty result but still fails the step on an
+      # error (2), as in codeql.yml.
+      - name: Check whether anything the audit reads changed
         id: scope
         if: github.event_name == 'pull_request'
         run: |
           changed=$(git diff --name-only --no-renames HEAD^1 HEAD)
           printf 'Changed files:\n%s\n' "$changed"
-          if printf '%s\n' "$changed" | grep -v -q -E '\.md$'; then
-            echo "docs-only=false" >> "$GITHUB_OUTPUT"
+          match() { local s=0; grep "$@" || s=$?; [ "$s" -le 1 ] || exit "$s"; }
+          audited=$(match -v -E '\.md$|^\.github/workflows/(codeql|pr-body)\.yml$|^\.github/codeql/' <<<"$changed")
+          if [ -n "$audited" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           else
-            echo "docs-only=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Only Markdown changed, so the dependency audit is skipped."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Only Markdown or the other workflows changed, so the dependency audit is skipped."
           fi
 
       - uses: actions/setup-node@v7
-        if: steps.scope.outputs.docs-only != 'true'
+        if: steps.scope.outputs.skip != 'true'
         with:
           node-version: 24
           cache: npm
@@ -77,7 +83,7 @@ jobs:
       # branch per toolchain, so Dependabot may not move its pin; refresh it
       # when the toolchain changes.
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        if: steps.scope.outputs.docs-only != 'true'
+        if: steps.scope.outputs.skip != 'true'
         with:
           toolchain: 1.99.0
 
@@ -85,21 +91,21 @@ jobs:
       # cached so that only the first run pays for the build.
       - uses: actions/cache@v6
         id: cargo-deny
-        if: steps.scope.outputs.docs-only != 'true'
+        if: steps.scope.outputs.skip != 'true'
         with:
           path: ~/.cargo/bin/cargo-deny
           key: cargo-deny-${{ env.CARGO_DENY_VERSION }}-rust-1.99.0-${{ runner.os }}
 
       - name: Build cargo-deny
-        if: steps.scope.outputs.docs-only != 'true' && steps.cargo-deny.outputs.cache-hit != 'true'
+        if: steps.scope.outputs.skip != 'true' && steps.cargo-deny.outputs.cache-hit != 'true'
         run: cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked
 
       # audit-ci is a devDependency. No package install scripts: the audit
       # only reads package-lock.json and runs audit-ci.
       - name: Install npm packages
-        if: steps.scope.outputs.docs-only != 'true'
+        if: steps.scope.outputs.skip != 'true'
         run: npm ci --ignore-scripts
 
       - name: Audit
-        if: steps.scope.outputs.docs-only != 'true'
+        if: steps.scope.outputs.skip != 'true'
         run: npm run audit

@@ -6,6 +6,13 @@
 # is behind `cfg(target_os = ...)` (platform/, the PDF surface, the render
 # helper's confinement), and CodeQL extracts only the code enabled for the OS
 # it runs on. JavaScript/TypeScript is the same everywhere, so it runs once.
+#
+# A pull request that changes no code CodeQL scans passes without scanning:
+# each job decides from the pull request's diff and skips its analysis steps
+# (see CODE_PATHS below). It skips by step rather than by a `paths` filter or a
+# job-level `if`, as audit.yml does, so every job still reports a result, and a
+# fault in deciding fails the job rather than skipping the scan. Pushes to
+# main, the weekly run and a manual run always scan everything.
 name: CodeQL
 
 on:
@@ -34,6 +41,15 @@ permissions:
 # ranges".
 env:
   CODEQL_ACTION_DIFF_INFORMED_QUERIES: false
+  # What counts as a code change on a pull request (ERE, one changed path per
+  # line): what codeql-config.yml scans, what changes how it is extracted (the
+  # TypeScript configs; the rest of src-tauri/, since the manifest, lockfile,
+  # tauri.conf.json and capabilities shape what the Rust extractor compiles
+  # and expands), and the CodeQL workflow and config themselves. NOT_CODE_PATHS
+  # takes out what the config leaves out of those (the Vitest files, the Rust
+  # tests and examples). Keep both in step with codeql-config.yml.
+  CODE_PATHS: '^(src/|index\.html$|tsconfig[^/]*\.json$|src-tauri/|\.github/workflows/codeql\.yml$|\.github/codeql/)'
+  NOT_CODE_PATHS: '^(src/test/|src-tauri/tests/|src-tauri/examples/)|\.test\.tsx?$|\.md$'
 
 jobs:
   javascript-typescript:
@@ -45,18 +61,43 @@ jobs:
 
     steps:
       # No git credentials are left behind: the analysis uploads with the
-      # action's own token, not git (#72).
+      # action's own token, not git (#72). Two commits deep: on a pull
+      # request, HEAD is GitHub's merge commit and its first parent is main,
+      # so their diff is the pull request's change.
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 2
           persist-credentials: false
 
+      # --no-renames lists a renamed file under both names, so moving code out
+      # of a scanned path still counts. `match` is grep that treats no match
+      # (exit 1) as an empty result but still fails the step on an error (2).
+      - name: Check whether scanned code changed
+        id: scope
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          changed=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          printf 'Changed files:\n%s\n' "$changed"
+          match() { local s=0; grep "$@" || s=$?; [ "$s" -le 1 ] || exit "$s"; }
+          code=$(match -E "$CODE_PATHS" <<<"$changed" | match -v -E "$NOT_CODE_PATHS")
+          if [ -n "$code" ]; then
+            printf 'Changed code:\n%s\n' "$code"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::No code CodeQL scans changed, so the analysis is skipped."
+          fi
+
       - uses: github/codeql-action/init@v4
+        if: steps.scope.outputs.skip != 'true'
         with:
           languages: javascript-typescript
           build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
 
       - uses: github/codeql-action/analyze@v4
+        if: steps.scope.outputs.skip != 'true'
         with:
           category: /language:javascript-typescript
 
@@ -83,9 +124,28 @@ jobs:
       CODEQL_EXTRACTOR_RUST_OPTION_CARGO_FEATURES: custom-protocol
 
     steps:
+      # As in the JavaScript job.
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 2
           persist-credentials: false
+
+      - name: Check whether scanned code changed
+        id: scope
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          changed=$(git diff --name-only --no-renames HEAD^1 HEAD)
+          printf 'Changed files:\n%s\n' "$changed"
+          match() { local s=0; grep "$@" || s=$?; [ "$s" -le 1 ] || exit "$s"; }
+          code=$(match -E "$CODE_PATHS" <<<"$changed" | match -v -E "$NOT_CODE_PATHS")
+          if [ -n "$code" ]; then
+            printf 'Changed code:\n%s\n' "$code"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::No code CodeQL scans changed, so the analysis is skipped."
+          fi
 
       # Extraction runs `cargo check` for build-script outputs and proc
       # macros, so the libraries the -sys crates' build scripts look up with
@@ -93,7 +153,7 @@ jobs:
       # (GTK, libsoup, JavaScriptCore, D-Bus); libssl-dev is for SQLCipher.
       # Only `cargo check`'s needs, not a full build's (linking, bundling).
       - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
+        if: steps.scope.outputs.skip != 'true' && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -105,7 +165,7 @@ jobs:
       # never links, so the runner image's own OpenSSL is enough and the slow
       # vcpkg source build is only a fallback for an image without one.
       - name: Point SQLCipher at OpenSSL (Windows)
-        if: runner.os == 'Windows'
+        if: steps.scope.outputs.skip != 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
           $dir = "C:\Program Files\OpenSSL"
@@ -120,6 +180,7 @@ jobs:
       # action's `stable` branch on 2026-10-09. The Rust version is pinned
       # too: 1.99.0 was the latest stable release then.
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        if: steps.scope.outputs.skip != 'true'
         with:
           toolchain: 1.99.0
 
@@ -128,15 +189,18 @@ jobs:
       # the built frontend (the JavaScript job scans its source), only the
       # folder, so this skips `npm ci` and its packages' install scripts.
       - name: Create a placeholder frontend dist
+        if: steps.scope.outputs.skip != 'true'
         shell: bash
         run: mkdir -p dist
 
       - uses: github/codeql-action/init@v4
+        if: steps.scope.outputs.skip != 'true'
         with:
           languages: rust
           build-mode: none
           config-file: ./.github/codeql/codeql-config.yml
 
       - uses: github/codeql-action/analyze@v4
+        if: steps.scope.outputs.skip != 'true'
         with:
           category: /language:rust/os:${{ runner.os }}

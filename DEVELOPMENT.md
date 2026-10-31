@@ -1816,7 +1816,9 @@ Run it with the lint and test commands before every pull request. It fetches
 the advisory databases, so it needs network access. The `Dependency audit`
 workflow (`.github/workflows/audit.yml`) also runs it on every pull request to
 `main`, Dependabot's included, and daily on `main`. A pull request that changes
-only Markdown (`*.md`) passes without the audit running. `cargo-deny` comes with the
+only Markdown (`*.md`), or only Markdown and the other workflows' files
+([Continuous integration](#continuous-integration)), passes without the audit
+running. `cargo-deny` comes with the
 [development container](#development-container-linux-recommended). On a host,
 install it with `cargo install cargo-deny --locked`.
 
@@ -2144,12 +2146,34 @@ includes rechecking exceptions that are behind (010 research.md §8).
 
 ## Continuous integration
 
-Two focused workflows run on GitHub: CodeQL (`.github/workflows/codeql.yml`)
-on every pull request to `main`, on pushes to it and weekly, and the
-[dependency audit](#dependency-audit) (`.github/workflows/audit.yml`). In both,
-third-party actions are pinned to a commit (#72) and GitHub's own to a release
-tag. Dependabot (`.github/dependabot.yml`) opens a weekly pull request to
-update them.
+Focused workflows run on GitHub: CodeQL (`.github/workflows/codeql.yml`) on
+every pull request to `main`, on pushes to it and weekly, the
+[dependency audit](#dependency-audit) (`.github/workflows/audit.yml`), and the
+check of a pull request description's required sections
+(`.github/workflows/pr-body.yml`). In all of them, third-party actions are
+pinned to a commit (#72) and GitHub's own to a release tag. Dependabot
+(`.github/dependabot.yml`) opens a weekly pull request to update them.
+
+On a pull request, CodeQL and the audit skip their work when the change can't
+affect it. Each job diffs the pull request's merge commit against `main`
+(`--no-renames`, so a renamed file counts under both names) and skips its
+remaining steps, not the job or the workflow, so every check still reports a
+result. A fault in deciding fails the job rather than skipping it. Pushes to
+`main`, the scheduled runs and manual runs always do everything.
+
+- **CodeQL** scans when the pull request changes anything it scans or that
+  shapes how it extracts: `src/` (but not `src/test/` or the `*.test.ts(x)`
+  files), `index.html`, the `tsconfig*.json` files, `src-tauri/` (but not
+  `tests/` or `examples/`; the manifest, lockfile, `tauri.conf.json` and
+  capabilities change what the Rust extractor compiles), and `codeql.yml` or
+  `.github/codeql/` themselves. The lists are `CODE_PATHS` and
+  `NOT_CODE_PATHS` in `codeql.yml`; keep them in step with
+  `.github/codeql/codeql-config.yml`.
+- **The audit** runs unless the pull request changes only Markdown or only
+  `codeql.yml`, `.github/codeql/` and `pr-body.yml`, which nothing it runs
+  reads.
+- **The PR description check** always runs, since it checks the description,
+  not the files.
 
 Full CI, the format, lint and test commands above and the app build on
 Windows, macOS and Linux, **isn't implemented yet** (#25). Run them locally
