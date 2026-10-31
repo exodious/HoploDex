@@ -1,6 +1,6 @@
 ---
 name: "speckit-orchestrate"
-description: "Lead a feature's tasks.md to completion by delegating batches of tasks to speckit-implementer subagents (Sonnet, high effort), reviewing and committing their work, running speckit-converge at the end, and reporting only decisions and blockers."
+description: "Lead a feature's tasks.md to completion by delegating batches of tasks to speckit-implementer subagents (Sonnet, high effort; rote mechanical batches may go to speckit-implementer-light, Haiku, low effort), reviewing and committing their work, running speckit-converge at the end, and reporting only decisions and blockers."
 argument-hint: "Optional: phases to cover, concurrency limit, or when to stop (e.g. 'stop before the PR')"
 compatibility: "Requires spec-kit project structure with .specify/ directory and the speckit-implementer agent"
 user-invocable: true
@@ -27,8 +27,10 @@ all phases, at most **3** subagents at once, **stop before creating the pull req
 
 1. `.specify/feature.json` names the feature; `tasks.md` exists and is complete.
 2. The `speckit-implementer` agent type is available (`.claude/agents/speckit-implementer.md`
-   sets `model` and `effort: high`; the Agent tool can't set effort per spawn). If the
-   Agent tool says the type is not found, the session must be reloaded before it appears.
+   sets `model` and `effort: high`), and so is `speckit-implementer-light` (Haiku,
+   `effort: low`) for rote batches (§1). The tier is chosen by agent type, so each
+   definition fixes both model and effort. If the Agent tool says a type is not found,
+   the session must be reloaded before it appears.
    Stop and tell the user rather than falling back silently.
 3. Read `tasks.md`'s phase list, "Dependencies & Execution Order" (especially the
    same-file sequences) and "Parallel Opportunities". Read only those sections, not the
@@ -48,6 +50,13 @@ all phases, at most **3** subagents at once, **stop before creating the pull req
   3. The story's E2E run, alone (see §3).
 - Start independent later work (another story's tests, docs-only tasks) in a free slot
   when its files don't overlap with what's running.
+- **Tier**: every batch goes to `speckit-implementer` by default. Choose
+  `speckit-implementer-light` only for a batch that is wholly **rote mechanical**: a
+  rename, moving code with no logic change, updating call sites or citations by
+  pattern, where the result is fully determined by the task text. Anything that needs
+  judgment or design, tests of new behaviour, or touches security or data handling
+  stays on the default tier, and so does any batch you are unsure about. Don't mix
+  the two kinds in one light batch.
 - Spawn a **new** subagent for every batch. Resume one (SendMessage) only to finish
   **its own** assigned tasks, for example after a rate limit or to pass it news it needs.
 
@@ -78,6 +87,10 @@ Ground rules:
 - Final report: under 150 words — only decisions I might want to revisit, deviations,
   test changes, and anything left red. Don't summarise the tasks.
 ```
+
+On the light tier, add to the ground rules: "This batch is rote and mechanical. If a
+task needs a judgment call (a design choice, new behaviour, security or data
+handling), don't make it: stop and report it."
 
 For **test-writing** batches, ask instead for "the API your tests assume, one line each,
 then ambiguities", and pass that list to the implementer of the same story.
@@ -147,10 +160,14 @@ When a subagent reports:
 2. **Check deviations against the spec.** Revert an unrequested rule, or keep it and flag
    it (say which and why). Don't let an agent edit a spec's Source Request or other
    recorded decisions; add a dated amendment note instead.
-3. **Commit by path**, leaving out files a still-running agent is editing; push. One
+3. **Same bar for both tiers.** Verify light-tier work exactly as default work: a
+   cheaper model is no reason to check less. Re-run a light batch that failed,
+   stopped on a judgment call, or left you in doubt on `speckit-implementer`, with
+   the light agent's partial edits reverted or named in the prompt.
+4. **Commit by path**, leaving out files a still-running agent is editing; push. One
    commit per batch, message naming the task IDs. Follow CLAUDE.md's commit rules.
-4. Note follow-ups that belong to a later batch, and put them in that batch's prompt.
-5. **Retest on the OS that failed.** A fix for a failure seen on only one OS is verified
+5. Note follow-ups that belong to a later batch, and put them in that batch's prompt.
+6. **Retest on the OS that failed.** A fix for a failure seen on only one OS is verified
    only by rerunning it on that OS, several runs in a row for a flake. Passing elsewhere
    doesn't count, even when the fix is in common code. Until it passes there, call it
    "fixed, not yet verified on <OS>".
