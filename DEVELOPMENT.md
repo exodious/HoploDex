@@ -1543,7 +1543,7 @@ the images, flat at the top, named `before-<shot>.png` and `after-<shot>.png`.
    done; done | git mktree)
    commit=$(git commit-tree "$tree" -m "Screenshots for $name")
    git log --format='%H [%P]' -1 "$commit"   # the [] after the hash: no parent
-   git push origin "$commit:refs/heads/evidence/$name-screenshots"
+   git push origin "${commit}:refs/heads/evidence/${name}-screenshots"
    ```
 
 3. In the pull request's description, a `## Screenshots` section says where
