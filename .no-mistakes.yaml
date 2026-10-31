@@ -4,8 +4,9 @@
 #
 # The commands are DEVELOPMENT.md's "Linting & formatting" and "Test" lists,
 # run in the dev container (CLAUDE.md, "Run tests in the dev container").
-# Each run gets its own worktree, so the wrapper's per-checkout node_modules
-# and target volumes start empty and the first command builds from scratch.
+# Each run gets its own worktree, so the wrapper keys its node_modules and
+# target volumes by the run's branch rather than the path: a PR's reruns reuse
+# a warm build (DEVELOPMENT.md, "Development container").
 
 commands:
   lint: >-
