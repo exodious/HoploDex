@@ -1503,7 +1503,7 @@ names don't change between runs, so for before/after pairs, run it on the base
 branch and then on yours:
 
 ```bash
-git switch develop && npm run build && npm run screenshots -- --screenshots=/tmp/before
+git switch main && npm run build && npm run screenshots -- --screenshots=/tmp/before
 git switch my-branch && npm run build && npm run screenshots -- --screenshots=/tmp/after
 ```
 
@@ -1521,6 +1521,43 @@ moves the app's config directory there so its recent list names the seeded
 databases. Specs read the seed's passphrase from
 `HOPLODEX_E2E_SEED_PASSPHRASE`, and the sandbox's documents folder from
 `HOPLODEX_E2E_DOCUMENTS`.
+
+### Screenshots in a pull request
+
+GitHub has no place on a pull request to keep images, so each UI pull request
+keeps its screenshots on an orphan branch, `evidence/<name>-screenshots`
+(`<name>` is the feature's folder, such as `011-flatpak`, or the fix's branch
+name, such as `fix-114-116-117-122`): one commit with no parent, holding only
+the images, flat at the top, named `before-<shot>.png` and `after-<shot>.png`.
+
+1. Take the before shots on `main` and the after shots on your branch, as
+   above, into `/tmp/before` and `/tmp/after`. Keep only the shots the change
+   affects.
+2. Commit them without switching the working tree, so it works from any
+   checkout or worktree, then push the commit as the branch:
+
+   ```bash
+   name=my-feature
+   tree=$(for d in before after; do for f in /tmp/$d/*.png; do
+     printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$d-$(basename "$f")"
+   done; done | git mktree)
+   commit=$(git commit-tree "$tree" -m "Screenshots for $name")
+   git log --format='%H [%P]' -1 "$commit"   # the [] after the hash: no parent
+   git push origin "$commit:refs/heads/evidence/$name-screenshots"
+   ```
+
+3. In the pull request's description, a `## Screenshots` section says where
+   and how the shots were taken (what before and after are, and the branch
+   they are on) and shows them in before | after tables, each image linked as
+   `https://github.com/exodious/HoploDex/raw/evidence/<name>-screenshots/<file>.png`:
+
+   ```markdown
+   | Before | After |
+   |---|---|
+   | ![The guide, before](https://github.com/exodious/HoploDex/raw/evidence/my-feature-screenshots/before-07-guide-light.png) | ![The guide, after](https://github.com/exodious/HoploDex/raw/evidence/my-feature-screenshots/after-07-guide-light.png) |
+   ```
+
+The evidence branches are kept after the merge, so the links keep working.
 
 ### The Flatpak's store shots
 
