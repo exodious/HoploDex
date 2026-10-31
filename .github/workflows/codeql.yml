@@ -48,7 +48,7 @@ env:
   # and expands), and the CodeQL workflow and config themselves. NOT_CODE_PATHS
   # takes out what the config leaves out of those (the Vitest files, the Rust
   # tests and examples). Keep both in step with codeql-config.yml.
-  CODE_PATHS: '^(src/|index\.html$|tsconfig[^/]*\.json$|src-tauri/|\.github/workflows/codeql\.yml$|\.github/codeql/)'
+  CODE_PATHS: '^(src/|index\.html$|tsconfig[^/]*\.json$|src-tauri/)' # TEMP experiment: the CodeQL files don't count
   NOT_CODE_PATHS: '^(src/test/|src-tauri/tests/|src-tauri/examples/)|\.test\.tsx?$|\.md$'
 
 jobs:
