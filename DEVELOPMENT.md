@@ -1503,8 +1503,8 @@ names don't change between runs, so for before/after pairs, run it on the base
 branch and then on yours:
 
 ```bash
-git switch main && npm run build && npm run screenshots -- --screenshots=/tmp/before
-git switch my-branch && npm run build && npm run screenshots -- --screenshots=/tmp/after
+git switch main && npm run build && npm run screenshots -- --screenshots=e2e/screenshots-out/before
+git switch my-branch && npm run build && npm run screenshots -- --screenshots=e2e/screenshots-out/after
 ```
 
 When a change adds a screen, add it to the walk. For a one-off shot inside
@@ -1531,20 +1531,23 @@ name, such as `fix-114-116-117-122`): one commit with no parent, holding only
 the images, flat at the top, named `before-<shot>.png` and `after-<shot>.png`.
 
 1. Take the before shots on `main` and the after shots on your branch, as
-   above, into `/tmp/before` and `/tmp/after`. Keep only the shots the change
-   affects.
+   above, into `e2e/screenshots-out/before` and `e2e/screenshots-out/after`
+   (git-ignored, and inside the checkout, so the dev container's shots reach
+   the host). Keep only the shots the change affects.
 2. Commit them without switching the working tree, so it works from any
    checkout or worktree, then push the commit as the branch:
 
    ```bash
    name=my-feature
-   tree=$(for d in before after; do for f in /tmp/$d/*.png; do
+   tree=$(for d in before after; do for f in e2e/screenshots-out/$d/*.png; do
      printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$d-$(basename "$f")"
    done; done | git mktree)
    commit=$(git commit-tree "$tree" -m "Screenshots for $name")
    git log --format='%H [%P]' -1 "$commit"   # the [] after the hash: no parent
    git push origin "${commit}:refs/heads/evidence/${name}-screenshots"
    ```
+
+   To replace the shots, rerun the snippet and push with `--force`.
 
 3. In the pull request's description, a `## Screenshots` section says where
    and how the shots were taken (what before and after are, and the branch
