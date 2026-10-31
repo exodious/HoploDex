@@ -368,22 +368,53 @@ What they install, to set it up by hand instead:
   and Node's own `npm.cmd` hands off to it, for this account only.
 - **cargo-nextest and cargo-deny:** `cargo install --locked cargo-nextest cargo-deny`.
 
-**Claude Code on a test machine (`-ClaudeRemoteControl <checkout>`).**
-Claude can't live in an SSH session on Windows: `sshd` ends every process
-in a session when it disconnects (there's no `tmux` or `nohup` to escape
-it), and the session has no desktop, so the app's window can't open for
-E2E. So it runs in the auto-logon desktop session instead, and you reach
-it through [Remote Control](https://code.claude.com/docs/en/remote-control)
-from claude.ai/code, the Claude app or another Claude session. The option
-installs Claude Code, copies `scripts/windows/claude-remote-control.ps1`
-to `%LOCALAPPDATA%\HoploDex`, and adds a Startup-folder shortcut that runs
-it minimized at each sign-in. The script keeps
+**Driving a test machine from Linux, over SSH.** Agents run on Linux and
+reach a Windows test machine over SSH as its auto-logon user, which needn't
+be an administrator; no Claude session runs on Windows. That account's
+shell is `cmd`, which mangles PowerShell's quotes and pipes, so send
+PowerShell encoded, as an argument or a heredoc, and end with
+`exit $LASTEXITCODE` to get a native command's status back:
+
+```bash
+winps() { ssh -n <user>@<windows-host> "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $(printf '$ProgressPreference="SilentlyContinue"\n%s' "${1-$(cat)}" | iconv -t UTF-16LE | base64 -w0)"; }
+winps 'cd C:\HoploDex; git fetch -q; git switch <branch>; git pull --ff-only'   # after pushing <branch>
+winps 'cd C:\HoploDex; cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf; exit $LASTEXITCODE'
+winps <<'PS'
+C:\HoploDex\scripts\windows\gui.ps1 'npm run build; if ($LASTEXITCODE) { exit $LASTEXITCODE }; npm run test:e2e'
+exit $LASTEXITCODE
+PS
+scp -r '<user>@<windows-host>:C:/HoploDex/e2e/screenshots-out' e2e/   # results back
+```
+
+- **The checkout** is a git clone on the machine's own disk (a network share
+  is slow, and changes SQLite's locking and the file-identity check). Code
+  goes over through GitHub: push the branch, then pull it there.
+- **Directly over SSH:** builds, `cargo nextest`, Vitest, lint and the audits.
+  Not with `ssh -t`: an interactive session's console closes when the
+  connection drops, and its commands end with it.
+- **Through `scripts\windows\gui.ps1`:** anything that opens the app's
+  window: E2E, screenshots, `quit-cleanup.ps1`, the PDF surface and window
+  controls checks. An SSH session runs in session 0, which has no desktop,
+  so the app gets no window there. `gui.ps1` runs its PowerShell command
+  (in the checkout, or `-WorkingDirectory`) in the auto-logon user's desktop
+  session, through a scheduled task, "HoploDex gui", that it registers for
+  that user with an interactive logon, not elevated. It prints the command's
+  output as it comes and exits with its status, as `scripts/tart-vm.sh gui`
+  does on macOS. Interrupting it, or losing the connection, leaves the
+  command running, and its log stays in `%LOCALAPPDATA%\HoploDex\gui\<run>\`
+  (named at the start). The user must be signed in at the console and not
+  disconnected, which auto-logon gives you. Run one of these at a time.
+
+**Claude Code on a test machine (`-ClaudeRemoteControl <checkout>`)** isn't
+how agents reach it any more (see above); the option stays for running a
+Claude session in the machine's desktop yourself. It installs Claude Code,
+copies `scripts/windows/claude-remote-control.ps1` to
+`%LOCALAPPDATA%\HoploDex`, and adds a Startup-folder shortcut that runs it
+minimized at each sign-in. The script keeps
 `claude --remote-control --name <host>-hoplodex --permission-mode auto`
 running in the checkout (`<host>` is the machine's short host name, in lower
-case): it starts it again whenever it stops, 30 seconds later. Auto mode
-matches the lead's: a session in another mode holds each message from the
-lead for your approval. The lead sends per-OS batches, and the session runs
-each with the `speckit-os-batch` skill and reports back. Before the first
+case), reachable through [Remote Control](https://code.claude.com/docs/en/remote-control):
+it starts it again whenever it stops, 30 seconds later. Before the first
 sign-in, answer Claude Code's one-time questions over SSH, since the
 minimized window would wait on them: in the checkout, run `claude` and
 `/login`, then `claude --remote-control --permission-mode auto`, trust the
@@ -405,10 +436,11 @@ doesn't work within 30 seconds, and the new `claude` starts a new
 conversation under the same name. Whatever the old one was doing stops, so
 restart between tasks. To stop it until the next sign-in, close its window.
 
-**E2E on Windows:** `npm run test:e2e` runs there, through the embedded
-WebDriver server, with no driver to install, and is isolated from your real
-data like everywhere else (see [Test isolation](#test-isolation)). The
-real-input tests skip themselves, by decision (see
+**E2E on Windows:** `npm run test:e2e` runs there (over SSH, through
+`gui.ps1`), through the embedded WebDriver server, with no driver to
+install, and is isolated from your real data like everywhere else (see
+[Test isolation](#test-isolation)). The real-input tests skip themselves,
+by decision (see
 [Real keyboard and mouse input](#real-keyboard-and-mouse-input)).
 `npm run screenshots` runs there too, with the window on the desktop. Its
 frame takes some of the 1200×800, so the shots are 1184×761. Full-page shots
@@ -826,7 +858,8 @@ built E2E binary:
   SIGINT. It presses the close button through the Accessibility API and
   posts Cmd+Q to the app, so whatever runs it needs Accessibility.
 - **Windows:** `powershell -ExecutionPolicy Bypass -File
-  e2e/scripts/quit-cleanup.ps1`, in a desktop session. Window closed,
+  e2e/scripts/quit-cleanup.ps1`, in a desktop session (over SSH, through
+  `scripts\windows\gui.ps1`). Window closed,
   `taskkill` without /F, and a log-off (`WM_QUERYENDSESSION` and
   `WM_ENDSESSION` to every window, then the process ended at once, as
   Windows may).
@@ -1045,8 +1078,8 @@ engine is updated (Tauri, wry, WebKitGTK, WebView2):
   WebKit's PDF toolbar on and passes only if the watch on the Preview copy
   deletes it, closes the surface and sets the PDF preview hold; run it too.
 - **Windows:** `powershell -ExecutionPolicy Bypass -File
-  scripts\windows\pdf-surface-check.ps1`, in the signed-in desktop session, at
-  100% scaling.
+  scripts\windows\pdf-surface-check.ps1`, in the signed-in desktop session
+  (over SSH, through `scripts\windows\gui.ps1`), at 100% scaling.
 
 Each takes `shows` to run the 3-page PDF and take a screenshot instead. Logs and
 screenshots go to `e2e/screenshots-out/pdf-surface/`. Exit codes: 0 passed, 1 no
@@ -1081,8 +1114,8 @@ browser controls, and whenever the web view engine is updated:
   (it is added outside the menu's items) and is allowed (spec.md
   Clarifications 2026-10-11).
 - **Windows:** `powershell -ExecutionPolicy Bypass -File
-  scripts\windows\window-controls-check.ps1`, in the signed-in desktop session,
-  at 100% scaling.
+  scripts\windows\window-controls-check.ps1`, in the signed-in desktop session
+  (over SSH, through `scripts\windows\gui.ps1`), at 100% scaling.
 
 Logs and screenshots go to `e2e/screenshots-out/window-controls/`. Exit codes:
 0 passed, 1 no window, 3 usage (or a build with debug assertions), 4 a check
