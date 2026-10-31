@@ -23,6 +23,17 @@ $ARGUMENTS
 Honour it (phases to cover, a stop point, a different concurrency limit). Defaults:
 all phases, at most **3** subagents at once, **stop before creating the pull request**.
 
+## Under an orchestrator
+
+When this skill runs inside a pipeline or under an orchestrator (the task's
+instructions say so), those instructions win over this skill's defaults:
+
+- **Pushing:** commit each batch (§4), but don't push after every batch when
+  the pipeline or orchestrator owns the push; leave it to them.
+- **Decisions and manual tasks** (§6, §7) go to the channel the task's
+  instructions name, not to the user directly (no AskUserQuestion).
+- **Per-OS work** goes over SSH as in §2a.
+
 ## 0. Preconditions
 
 1. `.specify/feature.json` names the feature; `tasks.md` exists and is complete.
@@ -82,49 +93,31 @@ Ground rules:
 For **test-writing** batches, ask instead for "the API your tests assume, one line each,
 then ambiguities", and pass that list to the implementer of the same story.
 
-## 2a. Per-OS work on other machines
+## 2a. Per-OS work on other machines, over SSH
 
-The lead runs on whichever machine the user leads from (usually Linux, the
-fastest; sometimes another). Tasks that need a different OS (code behind a
-`#[cfg(target_os = ...)]`, that OS's tests, E2E, screenshots or surface check)
-need a machine with that OS.
+The lead and its agents run on Linux. Tasks that need another OS (code
+behind a `#[cfg(target_os = ...)]`, that OS's tests, E2E, screenshots or
+surface check) are written and committed here, and only run on a machine
+with that OS. The lead, or a subagent it briefs with the steps below, pushes
+the branch and runs them over SSH; no Claude session runs on the other
+machines. The user's local notes name the machines and accounts.
 
-**Windows: over SSH, from here.** No Claude session runs on Windows. The code is
-written and committed here; the Windows test machine only runs it, as
-DEVELOPMENT.md's "Windows" section shows (the user's local notes name the
-machine and account). The lead, or a subagent it briefs, pushes the branch,
-pulls it into the machine's clone and runs the commands over SSH:
-
-- Builds, `cargo nextest`, Vitest and lint run over SSH directly.
-- Anything that opens the app's window (E2E, screenshots, the surface and
-  window-controls checks, `quit-cleanup.ps1`) goes through
-  `scripts\windows\gui.ps1`, which runs it in the machine's signed-in desktop
-  session and returns its output and exit status. An SSH session has no
-  desktop, so the app gets no window there.
-- One run that builds or launches the app at a time (§3), and nobody signs in
-  to the machine over Remote Desktop: that takes the desktop session over.
-
-**Other OSes: a session on that machine,** over `SendMessage`. Each runs under
-Remote Control in a HoploDex checkout; find them with `ListAgents` (the user's
-local notes say which session is which machine).
-
-- **The batch:** write it like a subagent prompt (§2), plus the lead's
-  session name to reply to and "use the speckit-os-batch skill". That skill
-  makes the other session a **sub-lead**: it always hands the tasks to new
-  `speckit-implementer` subagents, never implements them itself, and keeps
-  its own context small, since it takes batch after batch for the whole
-  feature. It pulls, commits by path, pushes and reports the hash. Don't ask
-  the user to type a command there.
-- **Acknowledge every report:** messages between machines carry no delivery
-  receipt in either direction, so answer each report at once with a one-line
-  `SendMessage`, "Received <hash>", before anything else. The session waits for
-  it rather than repeating its report to the user.
-- **Same permission mode:** a session in a different permission mode from
-  yours holds your messages for the user's approval. The sessions run in auto
-  mode; if a message from one shows `from-mode="prompting"` and batches stall,
-  tell the user.
-- **Pulling:** pull before reviewing its commits, and never while one of your
-  own agents would have files changed under it mid-run.
+- **Windows:** as DEVELOPMENT.md's "Driving a test machine from Linux, over
+  SSH": pull the branch into the Windows test machine's clone, run builds,
+  `cargo nextest`, Vitest and lint over SSH directly, and anything that opens
+  the app's window (E2E, screenshots, the surface and window-controls checks,
+  `quit-cleanup.ps1`) through `scripts\windows\gui.ps1`. Nobody signs in to
+  the machine over Remote Desktop: that takes the desktop session over.
+- **macOS:** as DEVELOPMENT.md's "Driving the Mac from Linux, over SSH": SSH
+  to the Mac host and run `scripts/tart-vm.sh` in a clone of the task's own
+  in the host account's home, never someone's existing checkout. Start each
+  command with `export PATH=/opt/homebrew/bin:$PATH` (tart isn't on a
+  non-interactive SSH `PATH`). The order is `start`, then `test` (or `sync`
+  and `gui`), then `fetch`, then `stop`, and always `stop`, even after a
+  failure. One VM at a time on the host, with at most 8 GB.
+- **Results** (logs, screenshots) come back to Linux: `scp` them from the
+  machine, after `tart-vm.sh fetch` on macOS.
+- **One GUI or E2E run per machine at a time** (§3).
 
 ## 3. Shared build environment
 
