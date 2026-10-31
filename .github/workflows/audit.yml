@@ -57,7 +57,7 @@ jobs:
       # --no-renames lists a renamed file under both names, so renaming code to
       # `.md` doesn't count as a docs-only change. `match` is grep that treats
       # no match (exit 1) as an empty result but still fails the step on an
-      # error (2), as in codeql.yml.
+      # error (2).
       - name: Check whether anything the audit reads changed
         id: scope
         if: github.event_name == 'pull_request'

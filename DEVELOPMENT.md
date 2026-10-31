@@ -2154,27 +2154,24 @@ check of a pull request description's required sections
 pinned to a commit (#72) and GitHub's own to a release tag. Dependabot
 (`.github/dependabot.yml`) opens a weekly pull request to update them.
 
-On a pull request, CodeQL and the audit skip their work when the change can't
-affect it. Each job diffs the pull request's merge commit against `main`
-(`--no-renames`, so a renamed file counts under both names) and skips its
-remaining steps, not the job or the workflow, so every check still reports a
-result. A fault in deciding fails the job rather than skipping it. Pushes to
-`main`, the scheduled runs and manual runs always do everything.
+On a pull request, the audit skips its work when the change can't affect it:
+when the pull request changes only Markdown, or only `codeql.yml`,
+`.github/codeql/` and `pr-body.yml`, which nothing the audit runs reads. The job
+diffs the pull request's merge commit against `main` (`--no-renames`, so a
+renamed file counts under both names) and skips its remaining steps, not the
+job or the workflow, so the check still reports a result. A fault in deciding
+fails the job rather than skipping the audit. The scheduled and manual runs
+always audit.
 
-- **CodeQL** scans when the pull request changes anything it scans or that
-  shapes how it extracts: `src/` (but not `src/test/` or the `*.test.ts(x)`
-  files), `index.html`, the `tsconfig*.json` files, `src-tauri/` (but not
-  `tests/` or `examples/`; the manifest, lockfile, `tauri.conf.json` and
-  capabilities change what the Rust extractor compiles), and `codeql.yml` or
-  `.github/codeql/` themselves, and any file name git quotes (non-ASCII, or
-  with a quote, backslash or control character). The lists are `CODE_PATHS` and
-  `NOT_CODE_PATHS` in `codeql.yml`; keep them in step with
-  `.github/codeql/codeql-config.yml`.
-- **The audit** runs unless the pull request changes only Markdown or only
-  `codeql.yml`, `.github/codeql/` and `pr-body.yml`, which nothing it runs
-  reads.
-- **The PR description check** always runs, since it checks the description,
-  not the files.
+CodeQL and the PR description check always run. The description check checks
+the description, not the files. CodeQL can't skip because of the `Default`
+ruleset's code scanning rule: a pull request whose head has no CodeQL analysis
+is blocked from merging, whether the analysis was skipped by a `paths` filter,
+a job-level `if` or a skipped step. #142 showed it: with the analysis steps
+skipped, its head got no `CodeQL` code scanning check and stayed `BLOCKED`, and
+once the next head was analyzed it was `CLEAN`. Skipping CodeQL on a docs-only
+pull request would therefore need the ruleset changed, or a placeholder
+analysis uploaded.
 
 Full CI, the format, lint and test commands above and the app build on
 Windows, macOS and Linux, **isn't implemented yet** (#25). Run them locally
