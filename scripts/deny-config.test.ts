@@ -38,11 +38,32 @@ function badIgnoreEntries(text: string): string[] {
   return bad;
 }
 
+/** Lines of the file outside comments. */
+function code(text: string): string {
+  return text
+    .split("\n")
+    .map((l) => l.replace(/#.*$/, ""))
+    .join("\n");
+}
+
+/** `exclude`/`exclude-dev` anywhere would hide a crate from the check. */
+function hasExclude(text: string): boolean {
+  return /^\s*(exclude|exclude-dev)\s*=/m.test(code(text));
+}
+
+/** `[graph]` keeps `all-features = true`, so feature-gated crates are checked too. */
+function graphAllFeatures(text: string): boolean {
+  const m = /^\[graph\]\s*$([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(text);
+  return !!m && /^\s*all-features\s*=\s*true\s*$/m.test(code(m[1]));
+}
+
 const real = fs.readFileSync(DENY_TOML, "utf8");
+
+const YANKED_MSG = "a yanked crate is updated, never excepted (012 FR-014)";
 
 describe("012 US3 - A Yanked Rust Crate Always Fails the Audit", () => {
   it("012 US3-1: the advisories table sets yanked = deny", () => {
-    expect(yankedDenied(real)).toBe(true);
+    expect(yankedDenied(real), YANKED_MSG).toBe(true);
   });
 
   it("012 US3-1: the guard fails when the yanked line is removed", () => {
@@ -52,7 +73,7 @@ describe("012 US3 - A Yanked Rust Crate Always Fails the Audit", () => {
   });
 
   it("012 US3-2: ignore holds only advisory IDs", () => {
-    expect(badIgnoreEntries(real)).toEqual([]);
+    expect(badIgnoreEntries(real), YANKED_MSG).toEqual([]);
   });
 
   it("012 US3-2: the guard rejects a crate spec, inline or bare", () => {
@@ -64,5 +85,20 @@ describe("012 US3 - A Yanked Rust Crate Always Fails the Audit", () => {
     expect(
       badIgnoreEntries(wrap('{ id = "RUSTSEC-2024-0001", crate = "foo@1.0.0", reason = "x" }')),
     ).toHaveLength(1);
+  });
+
+  it("012 US3-1: no exclude or exclude-dev hides a crate, and [graph] keeps all-features", () => {
+    expect(hasExclude(real), YANKED_MSG).toBe(false);
+    expect(graphAllFeatures(real), YANKED_MSG).toBe(true);
+  });
+
+  it("012 US3-1: the guard fails on exclude, exclude-dev or a dropped all-features", () => {
+    expect(hasExclude(`${real}\n[bans]\nexclude = ["foo"]\n`)).toBe(true);
+    expect(hasExclude(real.replace("[graph]", "[graph]\nexclude-dev = true"))).toBe(true);
+    expect(hasExclude("# exclude = []\n")).toBe(false);
+    expect(graphAllFeatures(real.replace(/^all-features\s*=.*$/m, ""))).toBe(false);
+    expect(graphAllFeatures(real.replace("all-features = true", "all-features = false"))).toBe(
+      false,
+    );
   });
 });

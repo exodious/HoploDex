@@ -114,6 +114,8 @@ All findings below were checked on 2026-11-01, on the dev container (`scripts/de
   - `zvariant`, `zbus_names` and `zvariant_derive`, via zbus 5, which secret-service and tauri-plugin-opener require.
   
   None needs its comment changed.
+
+  _Amended 2026-11-01: that was wrong. Six of the nine comments had no review date, and none said "indirect" (the parent was only in the `reason`), which the constitution and FR-019 require. Each comment now says "Indirect, via <parent>." and has a "Review by 2027-01-31, or …" line; the entries are unchanged._
 - **Why no tooling**: the `ignore` entries name advisory IDs, not crates. Telling direct from indirect would mean reading the RustSec database to map an ID to its crate, and then `src-tauri/Cargo.toml`. That is real machinery, and the owner asked for it only if it was cheap.
 - **Alternatives considered**: a test that each reason names a parent (`via …`). Rejected: without the advisory database it can't tell an unmaintained entry from a vulnerability one, so it would police the wrong entries.
 

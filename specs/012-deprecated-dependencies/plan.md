@@ -102,6 +102,8 @@ DEVELOPMENT.md                         # Dependency audit: the three rules, exce
 
 **Structure Decision**: the check sits beside `check-npm-licenses.mjs` and `check-no-webdriver.mjs` in `scripts/`, with its tests beside it, as `scripts/licenses/` does. `docs/architecture.md` covers the app, not the audit tooling, so it doesn't change. CLAUDE.md's text stays correct: "the dependency and license audit" still describes the gate.
 
+_Amended 2026-11-01: `docs/architecture.md` does change, by one clause: its `scripts/licenses/` paragraph notes that `check-npm-deprecated.mjs` uses `shipped.mjs`'s npm definition. The check itself lives in `scripts/`, as decided._
+
 ### Close-out (at pull request time)
 
 Check each issue's state first (`gh issue view <n> --json state`). Don't comment on a closed issue. This lane drafts the comments in pr-notes.md for firstmate rather than posting them.

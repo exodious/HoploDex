@@ -7,7 +7,7 @@
 #
 # The bans and sources checks aren't used.
 #
-# Three separate rules, each with its own exception form:
+# Three separate rules (yanked crates have no exception form):
 #
 # 1. Advisories (vulnerabilities): any advisory fails the audit, whatever its
 #    severity: many RustSec advisories carry no CVSS score, so an unscored one
@@ -54,11 +54,17 @@ ignore = [
     { id = "RUSTSEC-2024-0429", reason = "glib 0.18 VariantStrIter: unsound, not reachable (array_iter_str is never called), via gtk-rs 0.18 in Tauri" },
     # Compile-time proc macro pulled in by the gtk-rs 0.18 macros
     # (glib-macros, gtk3-macros) under Tauri's Linux backend; it isn't in the
-    # built binary. Goes when Tauri moves off gtk-rs 0.18.
+    # built binary. Indirect, via gtk-rs 0.18's macros in Tauri.
+    #
+    # Review by 2027-01-31, or sooner if Tauri moves off gtk-rs 0.18, which
+    # removes it.
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: unmaintained, compile-time only, via gtk-rs 0.18 in Tauri" },
     # The unic-* crates come in through urlpattern in tauri-utils (Tauri's
     # URL pattern matching for capabilities). Unmaintained, no known
-    # vulnerability. Goes when tauri-utils replaces urlpattern 0.3.
+    # vulnerability. Indirect, via urlpattern in tauri-utils.
+    #
+    # Review by 2027-01-31, or sooner if tauri-utils replaces urlpattern 0.3,
+    # which removes them.
     { id = "RUSTSEC-2025-0075", reason = "unic-char-range: unmaintained, via urlpattern in tauri-utils" },
     { id = "RUSTSEC-2025-0080", reason = "unic-common: unmaintained, via urlpattern in tauri-utils" },
     { id = "RUSTSEC-2025-0081", reason = "unic-char-property: unmaintained, via urlpattern in tauri-utils" },
@@ -98,7 +104,9 @@ ignore = [
     # Linux only (HoploDex's `platform/linux.rs`, the keyring's Secret Service
     # and the opener plugin's D-Bus calls); macOS and Windows builds don't
     # link them. The advisory is about maintenance, not about code
-    # HoploDex reaches in a harmful way. Checked 2026-10-17 at zbus 5.18.0.
+    # HoploDex reaches in a harmful way. Indirect, via zbus 5, which
+    # secret-service and tauri-plugin-opener require. Checked 2026-10-17 at
+    # zbus 5.18.0.
     #
     # Review by 2027-01-31, or as soon as secret-service and
     # tauri-plugin-opener accept zbus 6.

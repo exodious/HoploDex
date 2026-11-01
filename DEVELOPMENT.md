@@ -1854,12 +1854,14 @@ Advisories and deprecations appear all the time, so the audit can start
 failing on a branch that changed no dependencies. There is no grace period: fix
 the finding in its own commit.
 
-To fix a finding, update the dependency (`npm audit fix`, `npm update <pkg>`,
+To fix an advisory, update the dependency (`npm audit fix`, `npm update <pkg>`,
 `cargo update -p <crate>`). If a parent pins a vulnerable transitive
 dependency, try an npm `overrides` entry, and test the path that uses it.
+Deprecations, unmaintained crates and yanked crates have their own sections
+below.
 
-Add an exception only when there is no fix to take: no patched release, or
-a parent that won't accept it. A critical advisory needs both, no patch
+Add an advisory exception only when there is no fix to take: no patched
+release, or a parent that won't accept it. A critical advisory needs both, no patch
 anywhere and an analysis. A high one needs a mitigation or a justification.
 Record it next to the tool's config:
 
@@ -1953,7 +1955,9 @@ review does too.
 A yanked crate version always fails `npm run audit:cargo` (`yanked = "deny"`),
 whether it ships or is only used at build time. It is never excepted, and a
 test (`scripts/deny-config.test.ts`) fails if `deny.toml` gains an entry that
-would let one through. Update the crate (`cargo update -p <crate>`), or move off
+would let one through. A crate yanked after it entered `Cargo.lock` fails a
+branch that changed nothing: update it in its own commit, like any other
+finding. Update the crate (`cargo update -p <crate>`), or move off
 the parent that pins it.
 
 ### Before a release
