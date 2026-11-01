@@ -283,3 +283,48 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 - MVP: US1 and US2, which together are the npm deprecation check (Phases 1–4).
 - Then US3 (the yanked-crate guard) and US5 (policy text and clearing glob), so the audit passes.
 - Then US4 (lint), and the polish phase.
+
+---
+
+## Phase 9: Convergence
+
+**Lead's decisions, 2026-11-01** (none goes to the owner: each is an implementation choice, or follows a rule the owner already set):
+
+- The unmaintained entries' missing review dates are an older gap. Fix them here: the constitution requires a review date on every exception, and FR-019 requires "direct" or "indirect" in each comment. The comments change; the entries don't.
+- Two exceptions that match one finding: every matching exception counts as matched. The finding is excepted if any of them hasn't expired, and an expired one is still reported as expired.
+- US4's Independent Test asks for linting a sample with a deprecated use. Add that test if ESLint's `lintText` works with the project service; otherwise keep the config-only test and record the reason in research.md §7. Enforcing the `-- reason` text is left to review, because a plugin for it would be a new dependency.
+- The two commits on `main` since the branch (including the vitest bump) are left to the pipeline's rebase, per the lane brief.
+
+- [ ] T031 [US2] Read every comparator of every `||` alternative when validating a range, so that `"<11 || garbage"` and `"* || latest"` are unreadable (FR-011). Add both to the US2-4 tests. Source: converge S1-F1, partial, MEDIUM. Files: scripts/check-npm-deprecated.mjs, scripts/check-npm-deprecated.test.ts.
+- [ ] T032 [US2] Implement the multiple-match rule above: mark every matching valid exception `matched`, and except the finding when any match hasn't expired. Add a test with two matching exceptions, one expired and one not: the finding is excepted, the expired one is reported, and neither is called stale. Source: converge S1-D1. Files: scripts/check-npm-deprecated.mjs, scripts/check-npm-deprecated.test.ts.
+- [ ] T033 [P] [US1] Tighten the US1 tests:
+  - US1-1 asserts that the problem includes the deprecation message;
+  - US1-4 asserts "development-only";
+  - add US2-4 cases for an exception that isn't an object, and a file that isn't an object.
+
+  Source: converge S1-F2–F4, partial, LOW. File: scripts/check-npm-deprecated.test.ts.
+- [ ] T034 [US5] In src-tauri/deny.toml, add to each unmaintained entry's comment: "Indirect, via <parent>." and "Review by 2027-01-31, or …" (the existing "Goes when …" condition).
+  - proc-macro-error: via gtk-rs 0.18's macros in Tauri.
+  - the five unic-* crates: via urlpattern in tauri-utils.
+  - zvariant, zbus_names, zvariant_derive: via zbus 5, required by secret-service and tauri-plugin-opener. Their comment already has a review date.
+
+  Also reword the header's "Three separate rules, each with its own exception form", because yanked crates have none. Then update research.md §9's finding ("none needs its comment changed") with an `_Amended 2026-11-01:_` note. Source: converge S2-F1 (CRITICAL by the constitution) and S2-F5, LOW.
+- [ ] T035 [US3] Extend scripts/deny-config.test.ts:
+  - fail if deny.toml sets `exclude` or `exclude-dev` anywhere, or drops `[graph] all-features = true`, since either would hide a yanked crate from the check;
+  - give the yanked assertions the message "a yanked crate is updated, never excepted (012 FR-014)";
+  - rename scripts/eslint-config.test.ts's describe to `012 US4 - Lint Stops New Uses of Deprecated APIs`.
+
+  Source: converge S2-F2, F3, F9.
+- [ ] T036 [US4] If ESLint's `lintText` with `filePath` under `scripts/` works with the project service, add to scripts/eslint-config.test.ts:
+  - a snippet using a deprecated API (for example a `/** @deprecated */` function, declared and called in the snippet) gives a `@typescript-eslint/no-deprecated` error (US4-1);
+  - the same snippet with the justified disable comment gives none (US4-2).
+
+  Otherwise, record why in research.md §7. Source: converge S2-F8.
+- [ ] T037 [P] [US5] Fix the docs:
+  - In DEVELOPMENT.md "Dependency audit", limit "To fix a finding … Add an exception …" to advisories ("To fix an advisory"), so it no longer reads as covering deprecations, unmaintained or yanked crates.
+  - Add to "Yanked crates" that a crate yanked after it entered `Cargo.lock` fails a branch that changed nothing, and is updated in its own commit.
+  - In docs/architecture.md's `scripts/licenses/` paragraph, note that `check-npm-deprecated.mjs` (012) uses `shipped.mjs`'s npm definition too.
+  - Correct plan.md's Structure Decision with an `_Amended 2026-11-01:_` note.
+
+  Source: converge S2-F4, F6, F10.
+- [ ] T038 Rerun T026's gates (the dev container), then finish T027–T029.
