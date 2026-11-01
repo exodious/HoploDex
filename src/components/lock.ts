@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 
 /** "Ctrl+L", or "⌘L" on a Mac. */
 export const LOCK_SHORTCUT =
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- navigator.userAgentData, its replacement, isn't in WebKit
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘L" : "Ctrl+L";
 
 /** Locks the open database. Provided only while one is open, so a `Dialog`

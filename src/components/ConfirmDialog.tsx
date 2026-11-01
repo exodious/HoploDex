@@ -106,6 +106,7 @@ export function ConfirmDialog({
 
   // Enter that ends an IME composition is the input method's, not a submit.
   function handleKeyDown(event: KeyboardEvent) {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- Safari ends an IME composition with isComposing false but keyCode 229; there is no standard replacement (#44)
     if (event.key === "Enter" && (event.nativeEvent.isComposing || event.keyCode === 229)) {
       event.preventDefault();
     }

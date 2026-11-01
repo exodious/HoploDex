@@ -148,7 +148,8 @@ describe("spec citations", () => {
     }
   });
 
-  it("finds nothing wrong in the code, tests and tooling", () => {
+  // A whole-tree read; under the full suite's load it can pass 5 s.
+  it("finds nothing wrong in the code, tests and tooling", { timeout: 30_000 }, () => {
     expect(check()).toEqual([]);
   });
 });
