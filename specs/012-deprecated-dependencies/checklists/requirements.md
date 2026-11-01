@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -32,4 +32,4 @@
 ## Notes
 
 - The feature's subject is the project's own dependency tooling, so naming npm, the lockfiles, `npm run audit` and `DEVELOPMENT.md` describes the domain, not an implementation choice. How the check is built (the script, the exception file's format, range matching) is left to the plan.
-- Three [NEEDS CLARIFICATION] markers remain: FR-005 (exceptions for shipped packages), FR-012 (adding a deprecated dependency) and FR-018 (TypeScript deprecated-API lint). Per the lane's brief, they go to the owner in one batch with the issue's five decisions and clarify's questions (`questions.md`), not one at a time.
+- The three [NEEDS CLARIFICATION] markers (FR-005, FR-012, FR-018) were resolved by the owner's answers of 2026-11-01 (spec Clarifications). The constitution is unchanged; an amendment would be its own pull request.

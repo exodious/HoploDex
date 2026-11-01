@@ -21,6 +21,10 @@
 all-features = true
 
 [advisories]
+# A yanked crate version always fails, shipped or build-only, and is never
+# excepted: never add a `crate@version` entry to `ignore` for one. Update it
+# (012 FR-014).
+yanked = "deny"
 unmaintained = "all"
 # cargo-deny checks only the workspace's own crates for unsound notices
 # unless told otherwise, which let a dependency's through.
