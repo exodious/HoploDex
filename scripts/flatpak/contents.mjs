@@ -57,7 +57,13 @@ const COMPOSED = [
   ),
 ];
 
-const ALLOWED = new Set([...INSTALLED, ...ADDED, ...COMPOSED]);
+/**
+ * What newer flatpak-builder (1.4.8, not 1.4.4) adds on its own: the module source's
+ * LICENSE, under the module's name. Optional, so both builders pass (#148).
+ */
+const RECORDED = [`share/licenses/${APP_ID}/hoplodex/LICENSE`];
+
+const ALLOWED = new Set([...INSTALLED, ...ADDED, ...COMPOSED, ...RECORDED]);
 
 /** A shared library by name: `libfoo.so`, `libfoo.so.1`, `libfoo.so.1.2.3`. */
 const isSharedLibrary = (file) => /\.so(\.\d+)*$/.test(path.posix.basename(file));
