@@ -144,6 +144,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
   - `012 US3-1`: the table sets `yanked = "deny"`.
   - `012 US3-2`: every entry of its `ignore = [ … ]` array is either an inline table that has `id = "RUSTSEC-…"`, `"GHSA-…"` or `"CVE-…"` and no `crate` key, or a bare string matching `^(RUSTSEC|GHSA|CVE)-`. Strip `#` comments before parsing.
   - The guard itself: a fixture string with `{ crate = "foo@1.0.0", reason = "x" }`, and one with a bare `"foo@1.0.0"`, are both rejected. To make that testable, export the checking function from the test's own small helper, or keep it in the test file.
+  - Red step: `yanked = "deny"` landed before this test (bbc2a04). So run the guard once with that line removed from a copy of the file's text, and confirm that `US3-1` fails (constitution II).
 
 ### Implementation for User Story 3
 
