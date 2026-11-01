@@ -1,5 +1,6 @@
-# The dependency audit (`npm run audit`): npm and RustSec advisories, the
-# license audit and the check that no WebDriver code ships. The license audit
+# The dependency audit (`npm run audit`): npm and RustSec advisories,
+# deprecated npm packages, unmaintained and yanked crates, the license audit
+# and the check that no WebDriver code ships. The license audit
 # includes the third-party notices for all three operating systems
 # (`notices.mjs --check --all-targets`), which needs nothing beyond
 # `npm ci --ignore-scripts` and the Rust toolchain; `cargo fetch` reaches the
