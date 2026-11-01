@@ -373,6 +373,15 @@ describe("Issue #117 - Nothing on the page moves when a modal opens", () => {
   /** Opens something that locks scrolling with `open`, checks that every bar
    * is where it was and that the lock took the scroll bar away, then `close`s it. */
   async function expectBarsStay(open: () => Promise<void>, close: () => Promise<void>) {
+    // A toast leaves on its own timer (4 s for a success), so on a slow run
+    // one that is there for `before` can be gone by `during` and the corner
+    // narrows to its right edge (#145). Start with none: the corner's right
+    // edge is what a scroll lock could move.
+    await browser.execute(() =>
+      document.querySelectorAll<HTMLButtonElement>(".hd-toast__close").forEach((b) => b.click()),
+    );
+    await $(".hd-toast").waitForExist({ reverse: true });
+    await settle();
     const before = await snapshot();
     // On Linux the bar is there to be taken away: without this a run with
     // overlay bars would pass whatever the page did.
