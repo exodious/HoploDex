@@ -14,7 +14,7 @@
 
 The owner answered the batched decisions: "Q14A, others recommended, wait a moment on the Q17 constitution. This probably applies to the other questions here - I don't like the confluence between a deprecated dependency and a yanked crate. If a cargo crate has been yanked, that is an exceptional circumstance and it means something is very wrong. We should not be using yanked crates."
 
-- Q: Which signals count as deprecated? → A: Two signals are enforced by the audit: npm's deprecation flag on a resolved version, and a RustSec unmaintained notice (already enforced). An archived upstream repository, or a direct dependency that names a successor, is a hand check before each release. **A yanked crate is not a kind of deprecation**: it is its own failure (FR-001, FR-014).
+- Q: Which signals count as deprecated? → A: npm's deprecation flag on a resolved version is enforced by the audit. An archived upstream repository, or a direct dependency that names a successor, is a hand check before each release. **A yanked crate is not a kind of deprecation**: it is its own failure (FR-001, FR-014). The recommended answer also counted a RustSec unmaintained notice. The owner's later answer below makes that its own rule too (FR-019).
 - Q: Does a deprecation of an old major version HoploDex doesn't resolve to count? → A: No. Only the resolved version counts (FR-002).
 - Q: Can a deprecated npm package that ships in the app carry an exception? → A: Only a transitive one. A shipped direct dependency that is deprecated must be replaced (FR-005).
 - Q: What does a deprecated development-only npm package need? → A: A dated exception, whether it is direct or transitive. Without one, it fails the audit (FR-006).
@@ -30,6 +30,7 @@ The owner answered the batched decisions: "Q14A, others recommended, wait a mome
 - Q: Does lint gate the project's own use of deprecated TypeScript and JavaScript APIs? → A: Yes. A type-aware deprecation rule is turned on, and each existing hit is fixed or justified where it is (FR-018).
 - Q: How are the pinned Node.js and npm versions checked for end of life? → A: By hand, before each release (FR-016).
 - Q: What is done about `glob@10.5.0` (development-only, via `@wdio/config@10.0.1`)? → A: It is replaced, by updating the WebdriverIO packages to 10.1, whose `@wdio/config` uses a current `glob` (FR-017).
+- Q: How are crates with a RustSec unmaintained notice handled? → A: The owner said: "I want to clarify that we should not be directly using crates that have unmaintained notices, but we can except those under special circumstances, or if they come in via indirect dependencies (that's another kind of exception)". So an unmaintained crate is its own rule. It isn't folded into the npm deprecation rule and doesn't take the npm exception's shape. Its exceptions stay in `src-tauri/deny.toml` as today. A direct dependency must not be an unmaintained crate. An exception for a direct one is allowed only in special circumstances, and its comment must say that it is direct and why. An indirect one may be excepted as today, with its comment naming the parent that brings it in. The nine existing entries are all indirect, and stay (FR-019).
 - Q: Is the constitution's dependency gate amended to name deprecations? → A: Not in this feature. The owner said: "I want to see a new proposal for the constitution update when it's done. Also I think per the constitution or per speckit the constitution change is its own standalone PR". This feature changes no part of the constitution. Its rules are stricter project rules under the existing dependency-audit gate, recorded in `DEVELOPMENT.md`. An amendment would come in its own pull request, and would make a yanked crate a separate MUST NOT, apart from the deprecation rule.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -107,7 +108,7 @@ A contributor writes TypeScript that calls a function, component or option that 
 
 ### User Story 5 - The Policy Is Written Down and the Current Findings Are Cleared (Priority: P2)
 
-A contributor who meets a deprecation finding, a yanked crate, or who wants to add a dependency, finds the policy in the "Dependency audit" section of the development guide. The deprecation policy says what counts as deprecated, what fails the audit, what an exception has to record and when it is reviewed, and what to check by hand that the tools can't see: archived upstream repositories, a direct dependency that names a successor, and the end of life of the pinned Node.js and npm versions. The yanked-crate rule is stated separately, as a rule with no exceptions. Before a release, every open deprecation exception is reviewed along with the advisory exceptions. The deprecations in the lockfile today have been replaced, so the audit passes on `main`.
+A contributor who meets a deprecation finding, an unmaintained crate or a yanked crate, or who wants to add a dependency, finds the policy in the "Dependency audit" section of the development guide. The deprecation policy says what counts as deprecated, what fails the audit, what an exception has to record and when it is reviewed, and what to check by hand that the tools can't see: archived upstream repositories, a direct dependency that names a successor, and the end of life of the pinned Node.js and npm versions. The unmaintained-crate rule is stated separately: no direct dependency on one without a special circumstance recorded, and an indirect one is excepted with its parent named. The yanked-crate rule is stated separately too, as a rule with no exceptions. Before a release, every open deprecation exception is reviewed along with the advisory exceptions. The deprecations in the lockfile today have been replaced, so the audit passes on `main`.
 
 **Why this priority**: The checks enforce the rules, but without the written policy a contributor can't tell whether to replace a package or record an exception, or what goes in the exception. Clearing the current findings is the policy's first use, and the audit can't pass without it.
 
@@ -117,8 +118,9 @@ A contributor who meets a deprecation finding, a yanked crate, or who wants to a
 
 1. **Given** the development guide, **When** a contributor reads "Dependency audit", **Then** it states what counts as deprecated, the scope (shipped against development-only, direct against transitive), the rule for adding a dependency, the exception format and the expiry rule, and that a new finding on an unchanged branch is fixed in its own commit.
 2. **Given** the development guide, **When** a contributor looks up a yanked crate, **Then** they find a separate rule: it always fails, and it is updated, never excepted.
-3. **Given** a release is being prepared, **When** the maintainer follows the release checks, **Then** they include reviewing every open deprecation exception and the hand checks the tools can't make.
-4. **Given** the lockfiles at the time of this feature, **When** the full audit runs, **Then** it passes with no npm deprecation exceptions.
+3. **Given** the development guide, **When** a contributor meets a RustSec unmaintained notice, **Then** they find its own rule: a direct dependency must not be unmaintained except in special circumstances stated in its exception, and an indirect one is excepted with the parent named.
+4. **Given** a release is being prepared, **When** the maintainer follows the release checks, **Then** they include reviewing every open deprecation exception and the hand checks the tools can't make.
+5. **Given** the lockfiles at the time of this feature, **When** the full audit runs, **Then** it passes with no npm deprecation exceptions.
 
 ---
 
@@ -141,10 +143,9 @@ A contributor who meets a deprecation finding, a yanked crate, or who wants to a
 
 - **FR-001**: For this policy, a dependency is **deprecated** when one of these holds:
   - (a) the npm package version it resolves to carries a non-empty deprecation message in the lockfile;
-  - (b) RustSec has published an unmaintained notice for it, which the audit already enforces, with exceptions recorded as they are today;
-  - (c) it is a direct dependency whose upstream repository is archived, or that names a successor.
+  - (b) it is a direct dependency whose upstream repository is archived, or that names a successor.
 
-  The audit enforces (a) and (b). (c) needs network lookups, so it is a hand check before each release (FR-016). A yanked crate version is not a deprecation; FR-014 covers it.
+  The audit enforces (a). (b) needs network lookups, so it is a hand check before each release (FR-016). A crate with a RustSec unmaintained notice has its own rule (FR-019), and a yanked crate version has another (FR-014). Neither is grouped with this policy.
 - **FR-002**: A deprecation counts only when it covers the version HoploDex resolves to. A deprecation of a version or major release that the lockfile doesn't resolve to isn't a finding.
 
 **The npm deprecation check**
@@ -177,12 +178,21 @@ A contributor who meets a deprecation finding, a yanked crate, or who wants to a
 
 - **FR-015**: The "Dependency audit" section of `DEVELOPMENT.md` MUST state:
   - the deprecation policy: what counts as deprecated (FR-001, FR-002), what fails the audit (FR-005, FR-006), the rule for adding a dependency (FR-012), the exception format and its expiry (FR-007 to FR-011), and that a finding that appears on a branch which changed no dependencies is fixed in its own commit;
+  - separately, the unmaintained-crate rule (FR-019);
   - separately, the yanked-crate rule (FR-014).
 - **FR-016**: The checks made by hand before a release MUST include:
-  - reviewing every open deprecation exception, npm and RustSec unmaintained, whatever its review date;
+  - reviewing every open npm deprecation exception and every unmaintained-crate exception, whatever its review date;
   - checking each direct dependency for an archived repository or a named successor;
   - checking that the pinned Node.js version, and the npm it brings, are still supported.
 - **FR-017**: Every npm deprecation in the lockfile when this feature lands MUST be replaced where a replacement exists, or else recorded as an exception under FR-007, so that the audit passes. Today that is `glob@10.5.0`, development-only, brought in by `@wdio/config@10.0.1`, and it is replaced by updating the WebdriverIO packages to 10.1. The issue's other two, `mocha`'s nested `glob` and `inflight`, have already left the lockfile.
+
+**Unmaintained crates (their own rule)**
+
+- **FR-019**: A RustSec unmaintained notice MUST keep failing the Rust audit (`unmaintained = "all"`), and its exceptions MUST stay `ignore` entries in `src-tauri/deny.toml`, with a `reason` and, above them, a comment with the analysis and a review date. Every such comment MUST also say whether the crate is a direct dependency of HoploDex or an indirect one.
+  - **Indirect**: the comment names the parent that brings it in. The exception is allowed as today.
+  - **Direct**: HoploDex MUST NOT depend directly on an unmaintained crate. An exception is allowed only in special circumstances, and its comment MUST say that the crate is direct and why there is no alternative yet.
+
+  No tooling tells direct from indirect, because that would need the advisory database mapped to `Cargo.toml`. It is checked in review, and before each release (FR-016). The nine entries in `deny.toml` at the time of this feature are all indirect and already name their parent.
 
 **Deprecated APIs in the project's own code**
 
@@ -192,6 +202,7 @@ A contributor who meets a deprecation finding, a yanked crate, or who wants to a
 
 - **Deprecation finding**: one lockfile location whose resolved version is deprecated, with its name, version, location, scope (shipped or development-only), whether it is a shipped direct dependency, its message, and its outcome (fails, or excepted by a named exception).
 - **Deprecation exception**: a recorded decision to keep a deprecated npm package for now. It holds the package name, version range, recorded scope, reason, the package that brings it in, the successor and the review date. It is valid only while its date hasn't passed and it still matches something, and never for a shipped direct dependency.
+- **Unmaintained-crate exception**: an `ignore` entry in `src-tauri/deny.toml` for a RustSec unmaintained notice. It records whether the crate is direct or indirect, the parent (if indirect) or the special circumstance (if direct), and a review date in its comment.
 - **Yanked crate**: a crate version in `Cargo.lock` that its publisher withdrew from the registry. It is always a failure, and there is no exception entity for it.
 
 ## Success Criteria *(mandatory)*
