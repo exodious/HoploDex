@@ -167,11 +167,11 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Tests for User Story 5 (mandatory per constitution)
 
-- [ ] T014 [US5] `012 US5-5` is shown by `scripts/dev-container.sh npm run audit:deprecated` passing on the real lockfile once T018 is done. Before T018 it fails on `glob@10.5.0`, which is the red step. Record both runs in the commit message.
+- [X] T014 [US5] `012 US5-5` is shown by `scripts/dev-container.sh npm run audit:deprecated` passing on the real lockfile once T018 is done. Before T018 it fails on `glob@10.5.0`, which is the red step. Record both runs in the commit message.
 
 ### Implementation for User Story 5
 
-- [ ] T015 [US5] Rewrite "Dependency audit" in DEVELOPMENT.md (012 FR-015, FR-016, FR-019):
+- [X] T015 [US5] Rewrite "Dependency audit" in DEVELOPMENT.md (012 FR-015, FR-016, FR-019):
   - Add `npm run audit:deprecated` to the command list, and change "all four" to "all five".
   - "What fails the audit": add an npm bullet for deprecated versions without a valid exception (always, for a shipped direct dependency). Add a separate Rust bullet for yanked crates (always, never excepted).
   - A new `### Deprecated npm packages` subsection covers:
@@ -190,17 +190,17 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
     - check `NODE_VERSION` in Dockerfile against Node's release schedule.
 
   Keep the three rules apart: no sentence groups yanked crates with deprecations.
-- [ ] T016 [P] [US5] Extend "Linting & formatting" in DEVELOPMENT.md:
+- [X] T016 [P] [US5] Extend "Linting & formatting" in DEVELOPMENT.md:
   - ESLint's `@typescript-eslint/no-deprecated` reads the TypeScript types, so lint takes about 12 s instead of about 4 s.
   - How to justify a use: `// eslint-disable-next-line @typescript-eslint/no-deprecated -- <reason>`.
   - Rust's `deprecated` warnings already fail through clippy's `-D warnings` (012 FR-018, research.md §7).
-- [ ] T017 [P] [US5] Update the header comment of audit-ci.jsonc only if it now reads as the whole npm policy: point to the deprecation check (`npm run audit:deprecated`, audit-deprecated.json) in one line.
-- [ ] T018 [US5] Clear `glob@10.5.0` (012 FR-017, research.md §2):
+- [X] T017 [P] [US5] Update the header comment of audit-ci.jsonc only if it now reads as the whole npm policy: point to the deprecation check (`npm run audit:deprecated`, audit-deprecated.json) in one line.
+- [X] T018 [US5] Clear `glob@10.5.0` (012 FR-017, research.md §2):
   - In package.json, raise `@wdio/cli`, `@wdio/display-server`, `@wdio/globals`, `@wdio/local-runner`, `@wdio/mocha-framework`, `@wdio/spec-reporter` and `webdriverio` to `^10.1.0`.
   - Run `scripts/dev-container.sh npm install`.
   - Confirm that `package-lock.json` has no `deprecated` entry, and that `node_modules/glob` is gone or no longer deprecated.
-- [ ] T019 [US5] Regenerate the Flatpak's npm sources for the new lockfile: `scripts/dev-container.sh --flatpak npm run flatpak:sources`. Commit flatpak/node-sources.json.
-- [ ] T020 [US5] On Linux, run `scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e'` after T018. Expected: the suite passes.
+- [X] T019 [US5] Regenerate the Flatpak's npm sources for the new lockfile: `scripts/dev-container.sh --flatpak npm run flatpak:sources`. Commit flatpak/node-sources.json.
+- [X] T020 [US5] On Linux, run `scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e'` after T018. Expected: the suite passes.
 - [ ] T021 [P] [US5] On Windows, run the E2E suite after T018. Not verified on Windows in this lane: leave it unchecked and list it in the PR.
 - [ ] T022 [P] [US5] On macOS, run the E2E suite after T018. Not verified on macOS in this lane: leave it unchecked and list it in the PR.
 
