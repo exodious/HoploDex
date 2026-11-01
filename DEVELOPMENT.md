@@ -353,7 +353,15 @@ What they install, to set it up by hand instead:
 
   Then set `OPENSSL_DIR=C:\vcpkg\installed\x64-windows-static-md` and
   `OPENSSL_STATIC=1`, machine-wide or for the user. The build stops with
-  "Missing environment variable OPENSSL_DIR" otherwise.
+  "Missing environment variable OPENSSL_DIR" otherwise. Static matters for
+  tests and E2E too, not only releases: the app starts its render and import
+  helpers with an empty environment, so a DLL-linked build's helpers can't
+  find `libcrypto-3-x64.dll` and exit before they serve (the log shows only
+  "started --render-helper", a preview never appears, and an import says
+  "could not read the file"). After changing `OPENSSL_DIR`,
+  `OPENSSL_LIB_DIR` or `OPENSSL_INCLUDE_DIR`, run
+  `cargo clean -p libsqlite3-sys`: its build script doesn't watch them, so
+  SQLCipher keeps the old link.
 - **Long paths:** `LongPathsEnabled` = 1 under
   `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`, and
   `git config --system core.longpaths true`, for deep `node_modules` and
