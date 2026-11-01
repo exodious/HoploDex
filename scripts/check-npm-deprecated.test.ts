@@ -85,6 +85,18 @@ describe("012 US1 - a deprecated package with no decision fails", () => {
     expect(problems.some((p) => p.includes("can't be excepted"))).toBe(true);
   });
 
+  it("012 US1-5: the matching exception for a shipped direct dependency isn't also reported as stale", () => {
+    const packages = { "node_modules/shipdep": { version: "1.0.0", deprecated: "use other" } };
+    const { problems } = checkDeprecated(
+      lock(packages),
+      file(exception({ package: "shipdep", range: "1", scope: "shipped" })),
+      TODAY,
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("can't be excepted");
+    expect(problems.some((p) => p.includes("remove the exception"))).toBe(false);
+  });
+
   it("012 US1-6: a nested and a top-level copy are judged separately on their own versions", () => {
     const packages = {
       ...devGlob(),

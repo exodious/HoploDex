@@ -174,10 +174,6 @@ export function checkDeprecated(lock, exceptionsFile, today) {
       scope === "dev"
         ? `is development-only and deprecated: ${message}`
         : `${direct ? "ships in the app as a direct dependency" : "ships in the app"} and is deprecated: ${message}`;
-    if (scope === "shipped" && direct) {
-      problems.push(`${id} ${what}. Replace it: a shipped direct dependency can't be excepted.`);
-      continue;
-    }
     const matches = valid.filter((e) => {
       if (e.package !== pkg.name || e.scope !== scope) return false;
       try {
@@ -186,6 +182,11 @@ export function checkDeprecated(lock, exceptionsFile, today) {
         return false;
       }
     });
+    if (scope === "shipped" && direct) {
+      for (const e of matches) e.matched = true;
+      problems.push(`${id} ${what}. Replace it: a shipped direct dependency can't be excepted.`);
+      continue;
+    }
     if (matches.length === 0) {
       problems.push(
         `${id} ${what}. Replace it, or add an exception to ${EXCEPTIONS_FILE} (DEVELOPMENT.md, "Dependency audit").`,
