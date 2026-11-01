@@ -1479,13 +1479,19 @@ export async function killApp(timeout = 10000): Promise<void> {
  * not pass the signal on.
  */
 export async function terminateApp(timeout = 15000): Promise<void> {
-  const [init] = instances();
-  if (init === undefined) throw new Error("the app is not running in a Flatpak sandbox");
-  const app = procNumbers().find(
-    (pid) =>
-      readStat(pid)?.ppid === init && path.basename(readCommand(pid)[0] ?? "") === "hoplodex",
-  );
-  if (app === undefined) throw new Error(`no hoplodex process under the sandbox's init (${init})`);
+  // Every instance: WebKit's sub-sandbox is one too, and `flatpak ps` may list it first (#149).
+  const inits = instances();
+  if (inits.length === 0) throw new Error("the app is not running in a Flatpak sandbox");
+  const app = procNumbers().find((pid) => {
+    const ppid = readStat(pid)?.ppid;
+    return (
+      ppid !== undefined &&
+      inits.includes(ppid) &&
+      path.basename(readCommand(pid)[0] ?? "") === "hoplodex"
+    );
+  });
+  if (app === undefined)
+    throw new Error(`no hoplodex process under any sandbox instance's init (${inits.join(", ")})`);
   process.kill(app, "SIGTERM");
   const deadline = Date.now() + timeout;
   for (;;) {
