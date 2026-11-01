@@ -255,7 +255,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Close-out (at pull request time)
 
-- [ ] T030 Check the issues' state (`gh issue view 43 --json state`, `gh issue view 19 --json state`). In pr-notes.md, draft "Fixes #43", with a summary of the five decisions as clarified and what is left: archived-repository and Node.js end-of-life checks are by hand, and the advisory exceptions' comment dates aren't expired. Also draft the comment for #19 (the new "Before a release" list) for firstmate to post. Don't comment on any issue from this lane.
+- [X] T030 Check the issues' state (`gh issue view 43 --json state`, `gh issue view 19 --json state`). In pr-notes.md, draft "Fixes #43", with a summary of the five decisions as clarified and what is left: archived-repository and Node.js end-of-life checks are by hand, and the advisory exceptions' comment dates aren't expired. Also draft the comment for #19 (the new "Before a release" list) for firstmate to post. Don't comment on any issue from this lane.
 
 ---
 
