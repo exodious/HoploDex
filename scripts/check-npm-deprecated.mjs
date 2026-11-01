@@ -77,13 +77,17 @@ export function satisfiesRange(version, range) {
   // shortcut: a prerelease is compared on major.minor.patch only; upgrade if a deprecated prerelease ever needs its own exception
   const v = parsePartial(version);
   if (v.n !== 3) throw new Error(`can't read "${version}" as a full version`);
-  return range.split("||").some((alternative) =>
-    alternative
-      .split(/\s+/)
-      .filter((c) => c !== "")
-      .flatMap(bounds)
-      .every(([op, tuple]) => HOLDS[op](compare(v.tuple, tuple))),
-  );
+  // map before some: every alternative is read, so one unreadable alternative throws (012 FR-011)
+  return range
+    .split("||")
+    .map((alternative) =>
+      alternative
+        .split(/\s+/)
+        .filter((c) => c !== "")
+        .flatMap(bounds)
+        .every(([op, tuple]) => HOLDS[op](compare(v.tuple, tuple))),
+    )
+    .some(Boolean);
 }
 
 const KEYS = ["package", "range", "scope", "reason", "via", "successor", "review"];
@@ -174,7 +178,7 @@ export function checkDeprecated(lock, exceptionsFile, today) {
       problems.push(`${id} ${what}. Replace it: a shipped direct dependency can't be excepted.`);
       continue;
     }
-    const match = valid.find((e) => {
+    const matches = valid.filter((e) => {
       if (e.package !== pkg.name || e.scope !== scope) return false;
       try {
         return satisfiesRange(pkg.version, e.range);
@@ -182,16 +186,18 @@ export function checkDeprecated(lock, exceptionsFile, today) {
         return false;
       }
     });
-    if (!match) {
+    if (matches.length === 0) {
       problems.push(
         `${id} ${what}. Replace it, or add an exception to ${EXCEPTIONS_FILE} (DEVELOPMENT.md, "Dependency audit").`,
       );
       continue;
     }
-    match.matched = true;
-    // An expired exception is reported once, below, not once per finding.
-    if (match.review >= today)
-      Object.assign(finding, { outcome: "excepted", review: match.review });
+    // Every match counts as matched; any unexpired one excepts the finding. An
+    // expired one is reported once, below, not once per finding.
+    for (const e of matches) e.matched = true;
+    const live = matches.filter((e) => e.review >= today).map((e) => e.review);
+    if (live.length > 0)
+      Object.assign(finding, { outcome: "excepted", review: live.sort().at(-1) });
   }
 
   for (const e of valid) {

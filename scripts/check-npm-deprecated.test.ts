@@ -45,6 +45,7 @@ describe("012 US1 - a deprecated package with no decision fails", () => {
     expect(problems[0]).toContain("glob@10.5.0");
     expect(problems[0]).toContain(GLOB);
     expect(problems[0]).toContain("ships");
+    expect(problems[0]).toContain("Glob 10 is old");
   });
 
   it("012 US1-2: a development-only package without an exception fails", () => {
@@ -65,7 +66,9 @@ describe("012 US1 - a deprecated package with no decision fails", () => {
       file(exception({ range: ">=11" })),
       TODAY,
     );
-    expect(problems.some((p) => p.includes("glob@10.5.0"))).toBe(true);
+    expect(problems.some((p) => p.includes("glob@10.5.0") && p.includes("development-only"))).toBe(
+      true,
+    );
     expect(problems.some((p) => p.includes("remove the exception"))).toBe(true);
   });
 
@@ -159,9 +162,12 @@ describe("012 research.md §4 - satisfiesRange", () => {
     expect(satisfiesRange(version, range)).toBe(expected);
   });
 
-  it.each(["latest", ">=a", "1.2.3 - 2"])("throws on the unreadable range %j", (range) => {
-    expect(() => satisfiesRange("1.0.0", range)).toThrow();
-  });
+  it.each(["latest", ">=a", "1.2.3 - 2", "<11 || garbage", "* || latest"])(
+    "throws on the unreadable range %j",
+    (range) => {
+      expect(() => satisfiesRange("1.0.0", range)).toThrow();
+    },
+  );
 });
 
 describe("012 US2 - exceptions come back when their review date passes", () => {
@@ -237,6 +243,30 @@ describe("012 US2 - exceptions come back when their review date passes", () => {
     expect(checkDeprecated(lock({}), { exceptions: {} }, TODAY).problems[0]).toContain(
       "exceptions: must be an array",
     );
+  });
+
+  it("012 US2-4: an exception or a file that isn't an object fails", () => {
+    for (const bad of ["glob", null, ["glob"]]) {
+      const { problems } = checkDeprecated(lock(devGlob()), file(bad), TODAY);
+      expect(problems.some((p) => p.includes("exceptions[0]: must be an object"))).toBe(true);
+    }
+    for (const bad of [null, [], "x"]) {
+      const { problems } = checkDeprecated(lock({}), bad, TODAY);
+      expect(problems).toEqual([expect.stringContaining("must hold a JSON object")]);
+    }
+  });
+
+  it("012 US2-1: of two matching exceptions, an unexpired one excepts the finding and the expired one is reported", () => {
+    const { findings, problems } = checkDeprecated(
+      lock(devGlob()),
+      file(exception({ review: "2026-10-31" }), exception({ range: "10", review: "2027-01-31" })),
+      TODAY,
+    );
+    expect(findings[0]).toMatchObject({ outcome: "excepted", review: "2027-01-31" });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("exceptions[0]");
+    expect(problems[0]).toContain("expired");
+    expect(problems[0]).not.toContain("matches no deprecated package");
   });
 
   it("012 US2-5: a dev exception doesn't cover the same package when it ships", () => {
