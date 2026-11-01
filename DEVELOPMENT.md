@@ -1802,8 +1802,9 @@ Clippy takes `--features test-kdf` because the upgrade's tests import
 research.md §14), and `test-kdf` turns that on; without it `--all-targets`
 doesn't compile.
 
-ESLint's `@typescript-eslint/no-deprecated` fails on a use of an API that its
-type declarations mark deprecated. It reads the TypeScript types, so
+ESLint's `@typescript-eslint/no-deprecated` fails on a use, in the project's
+TypeScript (`**/*.{ts,tsx}`), of an API that its type declarations mark
+deprecated. Plain-JavaScript scripts (`.mjs`) are not covered. It reads the TypeScript types, so
 `npm run lint` takes about 14 s, not about 4 s. A use that has to stay carries
 a disable comment with its reason at that line:
 

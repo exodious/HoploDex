@@ -82,7 +82,7 @@ All findings below were checked on 2026-11-01, on the dev container (`scripts/de
 ## §7 Deprecated APIs in the project's own code (012 FR-018)
 
 - **Decision**:
-  - Turn on `@typescript-eslint/no-deprecated` as an error for `**/*.{ts,tsx}`, with type-aware parsing (`parserOptions.projectService`, `tsconfigRootDir`).
+  - Turn on `@typescript-eslint/no-deprecated` as an error for `**/*.{ts,tsx}`, with type-aware parsing (`parserOptions.projectService`, `tsconfigRootDir`). Plain-JavaScript scripts (`scripts/**/*.mjs`, `e2e/run-e2e.mjs`, `eslint.config.js`) are not covered: they would need `allowJs`/`checkJs` in a project, for more lint time.
   - Files outside every `tsconfig` are linted through `allowDefaultProject`: `vite.config.ts`, `tools/*/vite.config.ts`, `scripts/*.ts` and `scripts/*/*.ts`. The first two are in `tsconfig.node.json`, which no root config references. The `scripts` tests are in no config. The default project's file limit is raised to cover them, which is 19 files today.
 - **Findings** (spike, 2026-11-01):
   - typescript-eslint 8.65.0 (already installed) has the rule.

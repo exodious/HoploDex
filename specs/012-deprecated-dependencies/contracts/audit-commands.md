@@ -39,7 +39,7 @@ The command is unchanged. `src-tauri/deny.toml` gains `yanked = "deny"`, so a ya
 
 ## `npm run lint`
 
-The command is unchanged. `eslint.config.js` turns on `@typescript-eslint/no-deprecated` (error) with type-aware parsing, for `**/*.{ts,tsx}`. A justified use carries this comment at its line:
+The command is unchanged. `eslint.config.js` turns on `@typescript-eslint/no-deprecated` (error) with type-aware parsing, for `**/*.{ts,tsx}` only: plain-JavaScript scripts (`.mjs`) are not covered. A justified use carries this comment at its line:
 
 ```ts
 // eslint-disable-next-line @typescript-eslint/no-deprecated -- <reason>

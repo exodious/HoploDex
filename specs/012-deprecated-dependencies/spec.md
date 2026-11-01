@@ -196,7 +196,7 @@ A contributor who meets a deprecation finding, an unmaintained crate or a yanked
 
 **Deprecated APIs in the project's own code**
 
-- **FR-018**: Lint MUST fail on a use of a TypeScript or JavaScript API that its type declarations mark deprecated. A use that has to stay MUST carry a disable comment for that rule at that line, with its reason. Every existing hit MUST be fixed or justified this way. Rust's deprecation warnings are already errors under the Rust lint gate, and the policy MUST record this.
+- **FR-018**: Lint MUST fail on a use, in the project's TypeScript (`**/*.{ts,tsx}`), of an API that its type declarations mark deprecated. Plain-JavaScript scripts (`.mjs`) are not covered by this rule. A use that has to stay MUST carry a disable comment for that rule at that line, with its reason. Every existing hit MUST be fixed or justified this way. Rust's deprecation warnings are already errors under the Rust lint gate, and the policy MUST record this.
 
 ### Key Entities
 

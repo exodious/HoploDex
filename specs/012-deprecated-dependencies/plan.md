@@ -14,7 +14,7 @@ Three separate dependency rules join the audit, and the policy is written down i
 
 There are also two related pieces of work:
 
-- Lint gains `@typescript-eslint/no-deprecated` with type-aware parsing, and the three current hits are justified where they are (research.md §7).
+- Lint gains `@typescript-eslint/no-deprecated` with type-aware parsing for the TypeScript (`**/*.{ts,tsx}`, not the `.mjs` scripts), and the three current hits are justified where they are (research.md §7).
 - The one current npm deprecation, `glob@10.5.0`, is cleared by updating WebdriverIO to 10.1 (research.md §2).
 
 ## Technical Context
