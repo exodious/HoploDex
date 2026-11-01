@@ -26,8 +26,8 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 **Purpose**: wiring that every story's command needs.
 
-- [ ] T001 Add `"audit:deprecated": "node scripts/check-npm-deprecated.mjs"` to package.json `scripts`, and insert `npm run audit:deprecated` into the `audit` chain between `audit:npm` and `audit:cargo` (contracts/audit-commands.md).
-- [ ] T002 [P] Create audit-deprecated.json at the repository root, as `{ "//": "Deprecated npm packages kept for now. See \"Dependency audit\" in DEVELOPMENT.md.", "exceptions": [] }`, formatted like the repository's other JSON (two-space indent, final newline).
+- [X] T001 Add `"audit:deprecated": "node scripts/check-npm-deprecated.mjs"` to package.json `scripts`, and insert `npm run audit:deprecated` into the `audit` chain between `audit:npm` and `audit:cargo` (contracts/audit-commands.md).
+- [X] T002 [P] Create audit-deprecated.json at the repository root, as `{ "//": "Deprecated npm packages kept for now. See \"Dependency audit\" in DEVELOPMENT.md.", "exceptions": [] }`, formatted like the repository's other JSON (two-space indent, final newline).
 
 ---
 
@@ -35,7 +35,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 **Purpose**: the module skeleton the US1 and US2 tests import.
 
-- [ ] T003 Create scripts/check-npm-deprecated.mjs, modelled on scripts/check-npm-licenses.mjs, with these parts:
+- [X] T003 Create scripts/check-npm-deprecated.mjs, modelled on scripts/check-npm-licenses.mjs, with these parts:
   - A header comment: what it checks, a pointer to "Dependency audit" in DEVELOPMENT.md, no dependencies of its own, and the scope definition from `scripts/licenses/shipped.mjs` (010 research.md §5, §6).
   - An exported `checkDeprecated(lock, exceptionsFile, today)` that returns `{ findings: [], problems: [] }` for now.
   - An exported `satisfiesRange(version, range)` stub.
@@ -53,7 +53,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Tests for User Story 1 (mandatory per constitution)
 
-- [ ] T004 [P] [US1] Write the US1 tests in scripts/check-npm-deprecated.test.ts. Inline fixture lockfiles follow scripts/licenses/shipped.test.ts: a root entry with `dependencies` and `devDependencies`, and `dev`/`devOptional` flags. `today = "2026-11-01"`. Cases:
+- [X] T004 [P] [US1] Write the US1 tests in scripts/check-npm-deprecated.test.ts. Inline fixture lockfiles follow scripts/licenses/shipped.test.ts: a root entry with `dependencies` and `devDependencies`, and `dev`/`devOptional` flags. `today = "2026-11-01"`. Cases:
   - `012 US1-1`: a shipped transitive deprecated package with no exception fails, and the problem names `name@version`, the location and "ships".
   - `012 US1-2`: a dev-only deprecated package with no exception fails, and the problem says development-only.
   - `012 US1-3`: a matching exception (same package, version in range, same scope, review ≥ today) makes the finding `excepted`, and there are no problems.
@@ -64,7 +64,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
   - An empty `deprecated` string is not a finding.
   - A `devOptional` package counts as dev (012 FR-004).
   - A dev direct dependency (in `devDependencies`) with a valid exception is excepted (012 FR-006).
-- [ ] T005 [P] [US1] Write the `satisfiesRange` tests in scripts/check-npm-deprecated.test.ts (012 research.md §4):
+- [X] T005 [P] [US1] Write the `satisfiesRange` tests in scripts/check-npm-deprecated.test.ts (012 research.md §4):
   - exact `10.5.0`;
   - `>=10 <11`, `>=10.0.0 <11.0.0`, `<=1.2.3`, `>1`;
   - `^10.2.2` (and `^0.2.3`, which stays below `0.3.0`), `~1.2.3`;
@@ -75,14 +75,14 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Implement `satisfiesRange` in scripts/check-npm-deprecated.mjs. It supports exact, `=`, `>`, `>=`, `<`, `<=`, `^`, `~`, `*`/empty, partial versions (`10`, `10.2`, `1.x`), space-joined AND and `||` OR. It throws on anything else. Add the comment `// shortcut: a prerelease is compared on major.minor.patch only; upgrade if a deprecated prerelease ever needs its own exception` (012 research.md §4).
-- [ ] T007 [US1] Implement finding detection and outcomes in `checkDeprecated`, per data-model.md "Rules, in order":
+- [X] T006 [US1] Implement `satisfiesRange` in scripts/check-npm-deprecated.mjs. It supports exact, `=`, `>`, `>=`, `<`, `<=`, `^`, `~`, `*`/empty, partial versions (`10`, `10.2`, `1.x`), space-joined AND and `||` OR. It throws on anything else. Add the comment `// shortcut: a prerelease is compared on major.minor.patch only; upgrade if a deprecated prerelease ever needs its own exception` (012 research.md §4).
+- [X] T007 [US1] Implement finding detection and outcomes in `checkDeprecated`, per data-model.md "Rules, in order":
   - Finding detection: use `npmPackages(lock)` from scripts/licenses/shipped.mjs for name, version, location and `development`. Report entries whose `deprecated` is a non-empty string. Compute `direct` from `lock.packages[""].dependencies` / `devDependencies` at location `node_modules/<name>`.
   - Rule 1: a shipped direct dependency fails.
   - Rule 2: otherwise, the first exception with the same `package`, version within `range` and the same `scope`.
   - Rule 3: otherwise, the finding fails.
   - Messages follow contracts/audit-commands.md.
-- [ ] T008 [US1] Implement the CLI's report in scripts/check-npm-deprecated.mjs: one line per finding (`<scope>  <name>@<version>  <location>  <outcome>`, the message indented below), the problems on stderr under a count line, and `npm deprecations ok: …` on success. Run `scripts/dev-container.sh npx vitest run scripts/check-npm-deprecated.test.ts`.
+- [X] T008 [US1] Implement the CLI's report in scripts/check-npm-deprecated.mjs: one line per finding (`<scope>  <name>@<version>  <location>  <outcome>`, the message indented below), the problems on stderr under a count line, and `npm deprecations ok: …` on success. Run `scripts/dev-container.sh npx vitest run scripts/check-npm-deprecated.test.ts`.
 
 **Checkpoint**: the US1 tests pass.
 
@@ -96,7 +96,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Tests for User Story 2 (mandatory per constitution)
 
-- [ ] T009 [US2] Add the US2 tests to scripts/check-npm-deprecated.test.ts:
+- [X] T009 [US2] Add the US2 tests to scripts/check-npm-deprecated.test.ts:
   - `012 US2-1`: `review: "2026-10-31"` with today `2026-11-01` fails, naming the exception's index, package and date. The finding isn't reported as stale.
   - `012 US2-2`: `review` equal to today applies.
   - `012 US2-3`: an exception matching no finding fails with "remove the exception".
@@ -115,7 +115,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Implementation for User Story 2
 
-- [ ] T010 [US2] Implement exception validation in `checkDeprecated` (scripts/check-npm-deprecated.mjs), per data-model.md's field table:
+- [X] T010 [US2] Implement exception validation in `checkDeprecated` (scripts/check-npm-deprecated.mjs), per data-model.md's field table:
   - `package` non-empty string;
   - `range` readable by `satisfiesRange`;
   - `scope` is `"shipped"` or `"dev"`;
@@ -126,7 +126,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
   - no other keys, and only `"//"` and `exceptions` at the top level.
 
   An invalid exception never matches.
-- [ ] T011 [US2] Implement expiry (`review < today`, compared as strings, which works because both are ISO dates) and staleness (a valid exception that matches no finding) in `checkDeprecated`, with the messages from contracts/audit-commands.md. Run `scripts/dev-container.sh npx vitest run scripts/check-npm-deprecated.test.ts`.
+- [X] T011 [US2] Implement expiry (`review < today`, compared as strings, which works because both are ISO dates) and staleness (a valid exception that matches no finding) in `checkDeprecated`, with the messages from contracts/audit-commands.md. Run `scripts/dev-container.sh npx vitest run scripts/check-npm-deprecated.test.ts`.
 
 **Checkpoint**: Stories 1 and 2 pass. `scripts/dev-container.sh npm run audit:deprecated` on the real lockfile shows `glob@10.5.0` (dev) failing. That is expected until T018.
 
@@ -140,7 +140,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Tests for User Story 3 (mandatory per constitution)
 
-- [ ] T012 [P] [US3] Write scripts/deny-config.test.ts (012 research.md §6). It reads src-tauri/deny.toml as text and takes the `[advisories]` table up to the next `[` header. Cases:
+- [X] T012 [P] [US3] Write scripts/deny-config.test.ts (012 research.md §6). It reads src-tauri/deny.toml as text and takes the `[advisories]` table up to the next `[` header. Cases:
   - `012 US3-1`: the table sets `yanked = "deny"`.
   - `012 US3-2`: every entry of its `ignore = [ … ]` array is either an inline table that has `id = "RUSTSEC-…"`, `"GHSA-…"` or `"CVE-…"` and no `crate` key, or a bare string matching `^(RUSTSEC|GHSA|CVE)-`. Strip `#` comments before parsing.
   - The guard itself: a fixture string with `{ crate = "foo@1.0.0", reason = "x" }`, and one with a bare `"foo@1.0.0"`, are both rejected. To make that testable, export the checking function from the test's own small helper, or keep it in the test file.
@@ -148,7 +148,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Implementation for User Story 3
 
-- [ ] T013 [US3] Confirm that src-tauri/deny.toml has `yanked = "deny"` with its comment (already on the branch at bbc2a04). Extend the file's header comment so it states the three Rust rules separately:
+- [X] T013 [US3] Confirm that src-tauri/deny.toml has `yanked = "deny"` with its comment (already on the branch at bbc2a04). Extend the file's header comment so it states the three Rust rules separately:
   - Advisories, as today.
   - Unmaintained crates: say whether the crate is direct or indirect. An indirect one names its parent. A direct one is only in a special circumstance, which is stated (012 FR-019).
   - Yanked crates: always fail, never excepted (012 FR-014).
@@ -216,11 +216,11 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ### Tests for User Story 4 (mandatory per constitution)
 
-- [ ] T023 [P] [US4] Write scripts/eslint-config.test.ts, with `// @vitest-environment node` and a header citing 012 FR-018. `012 US4-1`, `US4-2`: `new ESLint({ cwd: repoRoot }).calculateConfigForFile()` for `src/App.tsx` and for `src/components/lock.ts` gives `rules["@typescript-eslint/no-deprecated"]` with severity 2 (`"error"`), and `languageOptions.parserOptions.projectService` is set. Fails first, before T024.
+- [X] T023 [P] [US4] Write scripts/eslint-config.test.ts, with `// @vitest-environment node` and a header citing 012 FR-018. `012 US4-1`, `US4-2`: `new ESLint({ cwd: repoRoot }).calculateConfigForFile()` for `src/App.tsx` and for `src/components/lock.ts` gives `rules["@typescript-eslint/no-deprecated"]` with severity 2 (`"error"`), and `languageOptions.parserOptions.projectService` is set. Fails first, before T024.
 
 ### Implementation for User Story 4
 
-- [ ] T024 [US4] In eslint.config.js's `**/*.{ts,tsx}` block, add:
+- [X] T024 [US4] In eslint.config.js's `**/*.{ts,tsx}` block, add:
   ```js
   parserOptions: {
     projectService: {
@@ -231,7 +231,7 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
   }
   ```
   Add the rule `"@typescript-eslint/no-deprecated": "error"`, with a one-line comment on why the default project covers those files (012 research.md §7).
-- [ ] T025 [US4] Justify the three hits with `// eslint-disable-next-line @typescript-eslint/no-deprecated -- <reason>`:
+- [X] T025 [US4] Justify the three hits with `// eslint-disable-next-line @typescript-eslint/no-deprecated -- <reason>`:
   - src/components/Combobox.tsx and src/components/ConfirmDialog.tsx (`keyCode === 229`): "Safari ends an IME composition with isComposing false but keyCode 229; there is no standard replacement (#44)".
   - src/components/lock.ts (`navigator.platform`): "navigator.userAgentData, its replacement, isn't in WebKit".
 

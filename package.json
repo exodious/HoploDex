@@ -30,8 +30,9 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "audit": "npm run audit:npm && npm run audit:cargo && npm run audit:licenses && npm run audit:webdriver",
+    "audit": "npm run audit:npm && npm run audit:deprecated && npm run audit:cargo && npm run audit:licenses && npm run audit:webdriver",
     "audit:npm": "audit-ci --config audit-ci.jsonc",
+    "audit:deprecated": "node scripts/check-npm-deprecated.mjs",
     "audit:cargo": "cargo deny --manifest-path src-tauri/Cargo.toml check advisories",
     "audit:licenses": "node scripts/check-npm-licenses.mjs && cargo deny --manifest-path src-tauri/Cargo.toml check licenses && node scripts/licenses/notices.mjs --check --all-targets",
     "audit:webdriver": "node scripts/check-no-webdriver.mjs"
