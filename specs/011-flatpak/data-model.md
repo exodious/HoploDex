@@ -424,6 +424,7 @@ _Amended 2026-11-01 (#148): flatpak-builder 1.4.8 also records the app's
 license file at `share/licenses/io.github.exodious.HoploDex/hoplodex/LICENSE`
 (1.4.4 does not), which `scripts/flatpak/contents.mjs` allows by name, present
 or absent._
+
 `readelf -d bin/hoplodex`'s `NEEDED` libraries must each be found in the
 runtime (FR-018).
 
