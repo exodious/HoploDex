@@ -196,7 +196,7 @@ start_standins() {
   </policy>
 </busconfig>
 CONF
-  bus_out="$(dbus-daemon --config-file="$scratch/session.conf" --fork --print-address --print-pid)"
+  bus_out="$(dbus-daemon --config-file="$scratch/session.conf" --fork --print-address=1 --print-pid=1)"
   check_session_bus="$(printf '%s\n' "$bus_out" | sed -n 1p)"
   check_bus_pid="$(printf '%s\n' "$bus_out" | sed -n 2p)"
 
