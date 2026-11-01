@@ -1816,7 +1816,9 @@ Run it with the lint and test commands before every pull request. It fetches
 the advisory databases, so it needs network access. The `Dependency audit`
 workflow (`.github/workflows/audit.yml`) also runs it on every pull request to
 `main`, Dependabot's included, and daily on `main`. A pull request that changes
-only Markdown (`*.md`) passes without the audit running. `cargo-deny` comes with the
+only Markdown (`*.md`), or only Markdown and the other workflows' files
+([Continuous integration](#continuous-integration)), passes without the audit
+running. `cargo-deny` comes with the
 [development container](#development-container-linux-recommended). On a host,
 install it with `cargo install cargo-deny --locked`.
 
@@ -2144,12 +2146,32 @@ includes rechecking exceptions that are behind (010 research.md §8).
 
 ## Continuous integration
 
-Two focused workflows run on GitHub: CodeQL (`.github/workflows/codeql.yml`)
-on every pull request to `main`, on pushes to it and weekly, and the
-[dependency audit](#dependency-audit) (`.github/workflows/audit.yml`). In both,
-third-party actions are pinned to a commit (#72) and GitHub's own to a release
-tag. Dependabot (`.github/dependabot.yml`) opens a weekly pull request to
-update them.
+Focused workflows run on GitHub: CodeQL (`.github/workflows/codeql.yml`) on
+every pull request to `main`, on pushes to it and weekly, the
+[dependency audit](#dependency-audit) (`.github/workflows/audit.yml`), and the
+check of a pull request description's required sections
+(`.github/workflows/pr-body.yml`). In all of them, third-party actions are
+pinned to a commit (#72) and GitHub's own to a release tag. Dependabot
+(`.github/dependabot.yml`) opens a weekly pull request to update them.
+
+On a pull request, the audit skips its work when the change can't affect it:
+when the pull request changes only Markdown, or only `codeql.yml`,
+`.github/codeql/` and `pr-body.yml`, which nothing the audit runs reads. The job
+diffs the pull request's merge commit against `main` (`--no-renames`, so a
+renamed file counts under both names) and skips its remaining steps, not the
+job or the workflow, so the check still reports a result. A fault in deciding
+fails the job rather than skipping the audit. The scheduled and manual runs
+always audit.
+
+CodeQL and the PR description check always run. The description check checks
+the description, not the files. CodeQL can't skip because of the `Default`
+ruleset's code scanning rule: a pull request whose head has no CodeQL analysis
+is blocked from merging, whether the analysis was skipped by a `paths` filter,
+a job-level `if` or a skipped step. #142 showed it: with the analysis steps
+skipped, its head got no `CodeQL` code scanning check and stayed `BLOCKED`, and
+once the next head was analyzed it was `CLEAN`. Skipping CodeQL on a docs-only
+pull request would therefore need the ruleset changed, or a placeholder
+analysis uploaded.
 
 Full CI, the format, lint and test commands above and the app build on
 Windows, macOS and Linux, **isn't implemented yet** (#25). Run them locally

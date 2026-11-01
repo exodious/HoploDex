@@ -6,6 +6,11 @@
 # is behind `cfg(target_os = ...)` (platform/, the PDF surface, the render
 # helper's confinement), and CodeQL extracts only the code enabled for the OS
 # it runs on. JavaScript/TypeScript is the same everywhere, so it runs once.
+#
+# Every pull request is analyzed, even one that changes no code, unlike
+# audit.yml's docs-only skip. The `Default` ruleset's code scanning rule blocks
+# the merge of a pull request whose head has no CodeQL analysis, however it
+# was skipped (#142; DEVELOPMENT.md, "Continuous integration").
 name: CodeQL
 
 on:
