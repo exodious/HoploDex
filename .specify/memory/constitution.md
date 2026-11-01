@@ -1,62 +1,24 @@
 <!--
 Sync Impact Report
-Version change: 1.2.0 → 1.3.0
-Bump rationale: MINOR. Materially changed guidance in Development Workflow &
-Quality Gates: where security findings are recorded, a new CodeQL merge gate,
-an expanded release security gate, and handling of vulnerabilities found after
-a release. No principle is removed or redefined.
+Version change: 1.3.0 → 1.4.0
+Bump rationale: MINOR. Materially expanded guidance on dependencies (spec 012,
+#43). No principle is removed or redefined.
 Modified principles: none
 Modified sections:
-  - Development Workflow & Quality Gates:
-    - Security findings are recorded in GitHub's security features (code
-      scanning, Dependabot and secret scanning alerts, repository security
-      advisories), not in documents committed to the repository; the release
-      review's committed, dated report is dropped
-    - CodeQL scans every pull request to main, and a pull request MUST NOT
-      introduce an error-level or high-or-above code scanning alert (held by
-      the repository ruleset)
-    - The optional per-PR AI-assisted review, when run, uploads its findings
-      to code scanning against the pull request
-    - The release review runs at the release commit and uploads its findings
-      to code scanning; a release is blocked by any open critical or high
-      code scanning, Dependabot or secret scanning alert until it is fixed or
-      dismissed with its reason (a dismissed dependency alert matches a
-      recorded audit exception)
-    - After a release, a vulnerability affecting a released version is
-      handled through a private repository security advisory, not a public
-      issue; SECURITY.md directs reporters to private vulnerability reporting;
-      before the first release, findings MAY be tracked as ordinary issues
-    - Pull requests opened by Dependabot or other automation are held to the
-      same gates, including the dependency and license audit
-    - A pull request that changes only Markdown documentation is exempt from
-      the automated gates (linting, tests, the dependency audit, CodeQL) and
-      the UI, data-handling and performance notes, but not from peer review;
-      the ruleset still runs CodeQL on it, since it can't skip by path
+  - Security & Data Handling Constraints: unmaintained crates, deprecated npm
+    packages and yanked crates are separate rules; unsound notices keep the
+    existing rule (cleared the same way as a high advisory); the scoping
+    bullet now applies to advisory exceptions, since a deprecation exception
+    is keyed by package and version range
+  - Development Workflow & Quality Gates: the dependency audit gate names
+    unmaintained and yanked crates and deprecated packages
 Added sections: none
 Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md: ✅ no change needed (Constitution Check
-    is generic and reads from this file)
-  - .specify/templates/spec-template.md: ✅ no change needed
-  - .specify/templates/tasks-template.md: ✅ no change needed
-  - .specify/templates/checklist-template.md: ✅ no change needed
-  - CLAUDE.md "Spec Kit workflow" gate list: ✅ updated (the CodeQL gate, the
-    release alert gate and advisories in place of the committed report; also
-    the license audit and the manual license checks carried over from 1.2.0)
-  - SECURITY.md: ✅ added, directing reporters to private vulnerability
-    reporting
-Follow-up TODOs:
-  - The release security review still has no tooling (#21): the whole-codebase
-    scan, the upload of its findings to code scanning, and the release alert
-    check.
-  - Uploading the AI-assisted review's findings needs a script that gives them
-    stable fingerprints and severities GitHub reads, and keeps a finding a
-    later scan misses from being closed as fixed while its code is unchanged.
-  - Releases do not yet ship third-party license notices; a generated notices
-    file and an About / Licenses screen are planned before the first release.
-  - The license audit result is not yet recorded in research.md.
-  - No written release process exists yet for the release gates to live in
-    (#19).
+  - .specify/templates/*: ✅ no change needed
+  - CLAUDE.md "Spec Kit workflow" gate list: ✅ no change needed (still reads
+    correctly)
+Follow-up TODOs: none (the tooling is spec 012's)
 -->
 
 # HoploDex Constitution
@@ -171,10 +133,21 @@ vulnerabilities, as checked by the dependency audit:
   vulnerability affects HoploDex is recorded with the exception.
 - A dependency with a known high advisory MUST NOT be used without a recorded
   mitigation or justification.
-- A vulnerability advisory with no severity score counts as high. Notices that
-  a Rust crate is unmaintained or unsound also block, and are cleared the same
-  way as a high advisory.
-- Every exception MUST be scoped to the dependency path that was analysed, so
+- A vulnerability advisory with no severity score counts as high.
+- **Unsound** notices block, and are cleared the same way as a high advisory.
+- **Unmaintained crates.** HoploDex MUST NOT depend directly on a crate with an
+  unmaintained notice, except in a special circumstance recorded with the
+  exception. A crate with an unmaintained notice that comes in through another
+  dependency MAY be excepted, and the exception names the parent that brings it
+  in. Either way, the exception carries a review date.
+- **Deprecated npm packages.** A package version its maintainer marked
+  deprecated MUST be replaced, or carry a recorded exception stating why it
+  can't be replaced yet, whether it ships, its successor and a review date. A
+  deprecated package that ships in the app as a direct dependency MUST be
+  replaced. An exception past its review date fails the audit.
+- **Yanked crates.** A yanked crate version MUST NOT be used, whether it ships
+  or is build-only. It is never excepted.
+- Every advisory exception MUST be scoped to the dependency path that was analysed, so
   the same advisory arriving by another path fails again, and MUST carry a
   date for review. It MUST be removed once a fix can be taken.
 
@@ -195,7 +168,8 @@ dependencies' licenses require.
 ## Development Workflow & Quality Gates
 
 Every pull request MUST pass automated linting, the full test suite, the
-dependency audit (vulnerabilities and licenses), and at least one peer review
+dependency audit (vulnerabilities, unmaintained and yanked crates, deprecated
+packages, and licenses), and at least one peer review
 before merge. Pull requests that touch UI MUST include before/after evidence
 (screenshot or recording) demonstrating adherence to the shared design system.
 Pull requests that touch data-handling or persistence code MUST call out, in
@@ -260,4 +234,4 @@ request MUST be checked against this constitution during review; unjustified
 complexity or violations MUST be resolved or explicitly documented before
 merge.
 
-**Version**: 1.3.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-10-09
+**Version**: 1.4.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-01
