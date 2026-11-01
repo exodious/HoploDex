@@ -71,8 +71,9 @@ cat >"$_hd_bus_dir/system.conf" <<CONF
 </busconfig>
 CONF
 
-# --fork detaches; --print-address and --print-pid give its two lines.
-_hd_bus_out="$(dbus-daemon --config-file="$_hd_bus_dir/system.conf" --fork --print-address --print-pid)"
+# --fork detaches; --print-address=1 and --print-pid=1 give its two lines on stdout
+# (dbus 1.14 reads a bare --print-address as taking the next flag for its fd, #147).
+_hd_bus_out="$(dbus-daemon --config-file="$_hd_bus_dir/system.conf" --fork --print-address=1 --print-pid=1)"
 DBUS_SYSTEM_BUS_ADDRESS="$(printf '%s\n' "$_hd_bus_out" | sed -n 1p)"
 _hd_bus_pid="$(printf '%s\n' "$_hd_bus_out" | sed -n 2p)"
 export DBUS_SYSTEM_BUS_ADDRESS

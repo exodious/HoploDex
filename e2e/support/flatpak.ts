@@ -693,8 +693,8 @@ function startSessionBus(busDir: string): { address: string; pid: number } {
     [
       `--config-file=${path.join(busDir, "session.conf")}`,
       "--fork",
-      "--print-address",
-      "--print-pid",
+      "--print-address=1",
+      "--print-pid=1",
     ],
     { encoding: "utf-8" },
   );
