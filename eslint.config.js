@@ -14,6 +14,21 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
+      parserOptions: {
+        // Type-aware rules (no-deprecated) need type information. The default
+        // project covers the files no tsconfig includes: Vite configs, scripts
+        // (012 research.md §7).
+        projectService: {
+          allowDefaultProject: [
+            "vite.config.ts",
+            "tools/*/vite.config.ts",
+            "scripts/*.ts",
+            "scripts/*/*.ts",
+          ],
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 50,
+        },
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     plugins: {
       "react-hooks": reactHooks,
@@ -21,6 +36,7 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      "@typescript-eslint/no-deprecated": "error",
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     },
   },

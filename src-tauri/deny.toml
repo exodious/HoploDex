@@ -7,10 +7,18 @@
 #
 # The bans and sources checks aren't used.
 #
-# Advisories: any vulnerability advisory fails the
-# audit, whatever its severity: many RustSec advisories carry no CVSS score, so
-# an unscored one is treated as high. Unmaintained and unsound notices fail it
-# too, so each gets a decision here rather than going unnoticed.
+# Three separate rules, each with its own exception form:
+#
+# 1. Advisories (vulnerabilities): any advisory fails the audit, whatever its
+#    severity: many RustSec advisories carry no CVSS score, so an unscored one
+#    is treated as high. Unsound notices fail it too.
+# 2. Unmaintained crates fail it as well, so each gets a decision here. An
+#    exception's comment says whether the crate is direct (a dependency of
+#    HoploDex itself) or indirect. An indirect one names its parent. A direct
+#    one is excepted only in a special circumstance, which the comment states
+#    (012 FR-019).
+# 3. Yanked crates always fail, shipped or build-only, and are never excepted:
+#    update the crate. This is not a kind of deprecation (012 FR-014).
 #
 # Every ignore entry needs a `reason`. For a vulnerability, write the analysis
 # in a comment above the entry: why it can't be fixed yet, how it does or

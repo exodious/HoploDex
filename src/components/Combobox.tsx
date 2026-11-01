@@ -164,6 +164,7 @@ export function Combobox({
     // Keys that belong to an input method's composition (Enter confirms the
     // composed text) never pick a row or reach the form. Safari reports
     // `isComposing` false on the keydown that ends one, but keyCode 229.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- Safari ends an IME composition with isComposing false but keyCode 229; there is no standard replacement (#44)
     if (event.nativeEvent.isComposing || event.keyCode === 229) {
       if (event.key === "Enter") event.preventDefault();
       return;
