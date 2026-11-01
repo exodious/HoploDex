@@ -1802,11 +1802,25 @@ Clippy takes `--features test-kdf` because the upgrade's tests import
 research.md §14), and `test-kdf` turns that on; without it `--all-targets`
 doesn't compile.
 
+ESLint's `@typescript-eslint/no-deprecated` fails on a use of an API that its
+type declarations mark deprecated. It reads the TypeScript types, so
+`npm run lint` takes about 12 s, not about 4 s. A use that has to stay carries
+a disable comment with its reason at that line:
+
+```ts
+// eslint-disable-next-line @typescript-eslint/no-deprecated -- <reason>
+```
+
+Today's three are in `src/components/Combobox.tsx`, `ConfirmDialog.tsx` and
+`lock.ts`. Rust needs no extra rule: `deprecated` warnings already fail through
+clippy's `-D warnings` (012 research.md §7).
+
 ## Dependency audit
 
 ```bash
-npm run audit            # all four of the below
+npm run audit            # all five of the below
 npm run audit:npm        # audit-ci over `npm audit`: dependencies and devDependencies
+npm run audit:deprecated # deprecated npm packages, see below
 npm run audit:cargo      # cargo-deny against the RustSec advisory database
 npm run audit:licenses   # the license audit, see below
 npm run audit:webdriver  # no WebDriver code in the shipped app
@@ -1824,13 +1838,21 @@ install it with `cargo install cargo-deny --locked`.
 
 What fails the audit:
 
-- **npm**: any high or critical advisory, in devDependencies too. Moderate and
-  low ones show up in `npm audit` but don't fail it.
-- **Rust**: any vulnerability advisory, whatever its severity (many RustSec
-  advisories have no CVSS score), and any unmaintained or unsound notice.
+- **npm advisories**: any high or critical advisory, in devDependencies too.
+  Moderate and low ones show up in `npm audit` but don't fail it.
+- **npm deprecations**: a deprecated package version without a valid exception
+  (always, for a shipped direct dependency). See
+  [Deprecated npm packages](#deprecated-npm-packages).
+- **Rust advisories**: any vulnerability advisory, whatever its severity (many
+  RustSec advisories have no CVSS score), and any unsound notice.
+- **Unmaintained crates**: any RustSec unmaintained notice without an
+  exception. See [Unmaintained crates](#unmaintained-crates).
+- **Yanked crates**: any yanked crate version, always. See
+  [Yanked crates](#yanked-crates).
 
-Advisories are published all the time, so the audit can start failing on a
-branch that changed no dependencies. Fix that in its own commit.
+Advisories and deprecations appear all the time, so the audit can start
+failing on a branch that changed no dependencies. There is no grace period: fix
+the finding in its own commit.
 
 To fix a finding, update the dependency (`npm audit fix`, `npm update <pkg>`,
 `cargo update -p <crate>`). If a parent pins a vulnerable transitive
@@ -1849,8 +1871,106 @@ Record it next to the tool's config:
 Above the entry, write the advisory, why it can't be fixed yet, whether and how
 it reaches HoploDex (shipped app or dev tooling only, and whether the
 vulnerable code path is ever called), and a date to review it. Neither tool
-expires entries, so that date is what brings it back. Remove the entry once the
-fix is available.
+expires entries, so that date is what brings it back, and the release review
+(below) reads it by hand. Remove the entry once the fix is available.
+
+### Deprecated npm packages
+
+`npm run audit:deprecated` (`scripts/check-npm-deprecated.mjs`) reads
+`package-lock.json` and `audit-deprecated.json` and needs no network. It
+reports every lockfile location whose resolved version carries a deprecation
+message. Only the version the lockfile resolves to counts: a deprecated old
+major that nothing resolves to is not a finding. The record is
+[012's spec](specs/012-deprecated-dependencies/spec.md).
+
+- **Scope** is the license audit's definition ([License audit](#license-audit)):
+  a package marked `dev` or `devOptional` in the lockfile is development-only,
+  anything else ships in the app.
+- **Direct** means the package is in `package.json` and sits at its top-level
+  location. A copy nested under another package is transitive.
+- **A shipped direct dependency** that is deprecated fails whatever exceptions
+  exist. Replace it. This is also the rule for adding a dependency: don't add
+  one, or move one to a version, that is already deprecated.
+- **A development-only package**, direct or transitive, fails without a dated
+  exception.
+- **A shipped transitive package** fails without a dated exception. Prefer
+  updating the parent.
+
+Add an exception only when the package can't be replaced yet. Each entry in
+`audit-deprecated.json` has these fields, and the audit fails on a missing
+field, an unknown key, or a value it can't read:
+
+| Field       | Meaning                                                                          |
+| ----------- | -------------------------------------------------------------------------------- |
+| `package`   | The package name.                                                                |
+| `range`     | The versions it covers (`>=10 <11`, `^10.2`, `*`, alternatives joined with `\|\|`). Empty means any. |
+| `scope`     | `"shipped"` or `"dev"`. It must match the copy's scope.                          |
+| `reason`    | Why it can't be replaced yet.                                                    |
+| `via`       | The package that brings it in, or `"package.json"` for a direct dev dependency.  |
+| `successor` | What replaces it, or `null` when none is known.                                  |
+| `review`    | A date to look at it again, `YYYY-MM-DD`.                                        |
+
+An example (not a current entry):
+
+```json
+{
+  "package": "glob",
+  "range": ">=10 <11",
+  "scope": "dev",
+  "reason": "the parent pins it and has no release that doesn't",
+  "via": "@wdio/config",
+  "successor": "glob 13",
+  "review": "2027-01-31"
+}
+```
+
+An exception matches by package, version range and scope, not by path, so a
+dev exception never covers a copy that ships. It expires after its review
+date (the date itself still passes), and then the audit fails until you replace
+the package or record a new date with the reason. An exception that matches
+nothing is stale and fails: remove it. There is no limit on how far ahead a
+review date can be, so choose one you can defend.
+
+### Unmaintained crates
+
+A RustSec unmaintained notice fails `npm run audit:cargo` (`unmaintained =
+"all"` in `src-tauri/deny.toml`). Its exceptions are `ignore` entries there,
+with a `reason` and a comment above that gives the analysis and a review date,
+as for an advisory. The comment also says whether the crate is direct (a
+dependency of HoploDex itself) or indirect.
+
+- **Indirect**: the comment names the parent that brings it in. Excepting it
+  is allowed, once the parent can't be updated or replaced.
+- **Direct**: HoploDex must not depend directly on an unmaintained crate. An
+  exception is allowed only in a special circumstance, and the comment says
+  that the crate is direct and why there is no alternative yet.
+
+No tool tells direct from indirect, so reviewers check it, and the release
+review does too.
+
+### Yanked crates
+
+A yanked crate version always fails `npm run audit:cargo` (`yanked = "deny"`),
+whether it ships or is only used at build time. It is never excepted, and a
+test (`scripts/deny-config.test.ts`) fails if `deny.toml` gains an entry that
+would let one through. Update the crate (`cargo update -p <crate>`), or move off
+the parent that pins it.
+
+### Before a release
+
+The audit can't make these checks, so make them by hand with the license
+checks:
+
+- Review every npm deprecation exception in `audit-deprecated.json` and every
+  unmaintained-crate `ignore` entry in `src-tauri/deny.toml`, whatever its
+  review date. For each, ask whether it can go now, and for an unmaintained
+  crate whether it is direct or indirect. The advisory exceptions in
+  `audit-ci.jsonc` and `deny.toml` aren't expired by a tool either: read their
+  comment dates too.
+- Check each direct dependency, npm and Rust, for an archived repository or a
+  named successor.
+- Check `NODE_VERSION` in the `Dockerfile`, and the npm it brings, against
+  [Node's release schedule](https://nodejs.org/en/about/previous-releases).
 
 ## License audit
 
