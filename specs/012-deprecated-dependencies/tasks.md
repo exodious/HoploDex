@@ -243,15 +243,15 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T026 Run the full gates in the dev container:
+- [X] T026 Run the full gates in the dev container:
   - `scripts/dev-container.sh bash -c 'npm run format:check && npm run lint && npm test'`;
   - `scripts/dev-container.sh npm run audit`;
   - the clippy commands from DEVELOPMENT.md "Linting & formatting".
 
   `npm test` includes scripts/citations.mjs, so every `012 …` citation must exist in spec 012.
-- [ ] T027 Time `scripts/dev-container.sh bash -c 'time npm run audit:deprecated'` (SC-005, under 2 s) and lint (record it in the PR's performance note).
-- [ ] T028 Walk quickstart.md's automated steps, and its manual step 2 in a scratch copy (never on `main`).
-- [ ] T029 Check that CLAUDE.md, docs/architecture.md and .github/workflows/audit.yml need no change (plan.md "Structure Decision"). Edit CLAUDE.md only if this change made its text wrong.
+- [X] T027 Time `scripts/dev-container.sh bash -c 'time npm run audit:deprecated'` (SC-005, under 2 s) and lint (record it in the PR's performance note).
+- [X] T028 Walk quickstart.md's automated steps, and its manual step 2 in a scratch copy (never on `main`).
+- [X] T029 Check that CLAUDE.md, docs/architecture.md and .github/workflows/audit.yml need no change (plan.md "Structure Decision"). Edit CLAUDE.md only if this change made its text wrong.
 
 ### Close-out (at pull request time)
 
@@ -327,4 +327,4 @@ description: "Task list for feature 012: deprecated dependencies and yanked crat
   - Correct plan.md's Structure Decision with an `_Amended 2026-11-01:_` note.
 
   Source: converge S2-F4, F6, F10.
-- [ ] T038 Rerun T026's gates (the dev container), then finish T027–T029.
+- [X] T038 Rerun T026's gates (the dev container), then finish T027–T029.

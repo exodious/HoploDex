@@ -20,6 +20,7 @@ describe("012 US4 - Lint Stops New Uses of Deprecated APIs", () => {
   });
 
   // A sample under scripts/ is linted through allowDefaultProject's `scripts/*.ts`.
+  // Each builds a TypeScript program, several seconds under the full suite.
   const lintSample = async (code: string) => {
     const [result] = await new ESLint({ cwd: repoRoot }).lintText(code, {
       filePath: path.join(repoRoot, "scripts/__lint-sample__.ts"),
@@ -34,15 +35,19 @@ export function older(): number {
 export const n = older();
 `;
 
-  it("012 US4-1: a deprecated use is an error", async () => {
+  it("012 US4-1: a deprecated use is an error", { timeout: 60_000 }, async () => {
     const hits = await lintSample(sample.replace("%s", ""));
     expect(hits).toHaveLength(1);
     expect(hits[0].severity).toBe(2);
   });
 
-  it("012 US4-2: the same use with a justified disable comment passes", async () => {
-    const disable =
-      "// eslint-disable-next-line @typescript-eslint/no-deprecated -- no replacement in WebKit";
-    expect(await lintSample(sample.replace("%s", disable))).toEqual([]);
-  });
+  it(
+    "012 US4-2: the same use with a justified disable comment passes",
+    { timeout: 60_000 },
+    async () => {
+      const disable =
+        "// eslint-disable-next-line @typescript-eslint/no-deprecated -- no replacement in WebKit";
+      expect(await lintSample(sample.replace("%s", disable))).toEqual([]);
+    },
+  );
 });
