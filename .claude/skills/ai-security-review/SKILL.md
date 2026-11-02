@@ -173,7 +173,7 @@ surface or CWE is a new alert: treat it as a move (below).
    step 1's check, brief one `security-reviewer` to look across the codebase
    for surface no entry covers. If the list is stale, stop: a list PR comes
    first.
-3. **Carry**: `open --ref <ref> --seed-prs`, which adds alerts still open on
+3. **Carry**: `open --ref <ref> --seed-prs > <scratch>/open.json`, which adds alerts still open on
    pull requests merged since the ref's last analysis (a PR finding merged
    unfixed).
 4. **Scope.**

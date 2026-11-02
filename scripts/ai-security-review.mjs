@@ -532,6 +532,10 @@ function build(opts) {
       }
     }
   }
+  // A release always carries (an empty list when nothing is open), so a
+  // dropped alert can't slip past accountFor by leaving the option out.
+  if (mode === "release" && !opts.carry)
+    problems.push("--carry <open.json> (from open --seed-prs)");
   if (problems.length) throw new Error(problems.join("\n"));
   const read = (list) =>
     (list ? list.split(",") : []).flatMap((file) => JSON.parse(fs.readFileSync(file, "utf8")));
