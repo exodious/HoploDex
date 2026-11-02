@@ -29,6 +29,7 @@ fi
 _hd_user_dir="$(printf '%s\n' "$_hd_guard_out" | sed -n 1p)"
 _hd_write_marker="$(printf '%s\n' "$_hd_guard_out" | sed -n 2p)"
 _hd_state="$(printf '%s\n' "$_hd_guard_out" | sed -n 3p)"
+_hd_mark_state="$(printf '%s\n' "$_hd_guard_out" | sed -n 4p)"
 
 mkdir -p "$_hd_user_dir"
 export FLATPAK_USER_DIR="$_hd_user_dir"
@@ -37,6 +38,12 @@ if [ "$_hd_write_marker" = "marker" ]; then
   # (the name is guard.mjs's MARKER_NAME)
   printf '%s\n' 'Made by HoploDex scripts/flatpak/env.sh: a throwaway Flatpak installation, safe to delete.' \
     >"$_hd_user_dir/.hoplodex-throwaway-flatpak"
+fi
+if [ "$_hd_mark_state" = "state-marker" ]; then
+  # A runner's state folder: marked, so the next script in the job accepts it.
+  mkdir -p "$_hd_state"
+  printf '%s\n' 'Made by HoploDex scripts/flatpak/env.sh: a throwaway Flatpak state folder, safe to delete.' \
+    >"$_hd_state/.hoplodex-throwaway-flatpak"
 fi
 
 # The private system bus: a minimal config in a temporary folder, a socket in it.

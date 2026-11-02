@@ -997,7 +997,36 @@ paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,
 
 It never touches your Flatpak installation, your `~/.var/app`, your buses or
 your keyring: the container has its own (`011 SC-007`), and the script refuses
-anywhere else (the guard described under "Flatpak" above).
+anywhere else but a GitHub-hosted runner set up as below (the guard described under "Flatpak" above).
+
+**On a GitHub-hosted runner** (#25) the check runs outside the container, once
+the workflow has made the container's stand-ins itself. The guard
+(`scripts/flatpak/guard.mjs`) accepts such a runner only with all three markers:
+`GITHUB_ACTIONS=true` (also true on a self-hosted runner, which may be someone's
+own machine), `RUNNER_ENVIRONMENT=github-hosted` (set on GitHub's own VMs) and
+the explicit opt-in `HOPLODEX_CI_FLATPAK=1`, so a shell that happens to export
+the first two doesn't pass by accident. It is an accident guard, not a security
+boundary. As on a host, it then needs both `FLATPAK_USER_DIR` and
+`HOPLODEX_FLATPAK_STATE` named, each empty or holding the marker the scripts
+write, outside any real Flatpak installation. No script mounts or uses `sudo`;
+the workflow does, before the check:
+
+```bash
+sudo apt-get install -y --no-install-recommends flatpak flatpak-builder desktop-file-utils \
+  python3-dbusmock gnome-keyring libsecret-tools libwebkit2gtk-4.1-dev
+sudo mkdir -p /run/media/dev/hoplodex-check /mnt/hoplodex-check
+sudo mount -t tmpfs -o mode=1777 tmpfs /run/media/dev/hoplodex-check
+sudo mount -t tmpfs -o mode=1777 tmpfs /mnt/hoplodex-check
+sudo install -d -m 0755 -o "$USER" /srv/hoplodex-check
+sudo install -d -o "$USER" /mnt/hoplodex-flatpak /mnt/hoplodex-flatpak-state
+export HOPLODEX_CI_FLATPAK=1 FLATPAK_USER_DIR=/mnt/hoplodex-flatpak HOPLODEX_FLATPAK_STATE=/mnt/hoplodex-flatpak-state
+npm ci && npm run build && npm run bundle:flatpak && npm run test:flatpak
+```
+
+`npm run bundle:flatpak` must run first in the same job: it installs the
+runtime and SDK, without which the check fails at once
+(`org.gnome.Sdk/x86_64/51 not installed`). Never set these variables on your own
+machine.
 
 ### E2E files
 

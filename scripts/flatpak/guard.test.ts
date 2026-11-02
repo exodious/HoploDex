@@ -9,6 +9,7 @@ import {
   CONTAINER_HOSTNAME,
   CONTAINER_MARKER_FILE,
   CONTAINER_ONLY_FLAG,
+  CI_OPT_IN,
   decide,
   MARKER_NAME,
 } from "./guard.mjs";
@@ -345,6 +346,76 @@ describe("011 US5-3, 011 SC-007 - the host guard", () => {
         fs: containerFs(),
       });
       expect(r.ok).toBe(true);
+    });
+  });
+
+  describe("#25: a GitHub-hosted runner that opted in", () => {
+    const runnerEnv = {
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+      [CI_OPT_IN]: "1",
+      FLATPAK_USER_DIR: "/mnt/hoplodex-flatpak",
+      HOPLODEX_FLATPAK_STATE: "/mnt/hoplodex-flatpak-state",
+    };
+    const runnerFs = (state: string[] = [], user: string[] = []) =>
+      fakeFs({ dirs: { "/mnt/hoplodex-flatpak": user, "/mnt/hoplodex-flatpak-state": state } });
+    const onRunner = (env: Record<string, string | undefined>, fs = runnerFs()) =>
+      decide({ env, hostname: "runnervm", argv: [CONTAINER_ONLY_FLAG], home: "/home/runner", fs });
+
+    it("is accepted for check.sh's container-only request with both folders empty, and marks both", () => {
+      expect(onRunner(runnerEnv)).toEqual({
+        ok: true,
+        flatpakUserDir: "/mnt/hoplodex-flatpak",
+        stateFolder: "/mnt/hoplodex-flatpak-state",
+        writeMarker: true,
+        markState: true,
+      });
+    });
+
+    it("is accepted with both folders marked (bundle:flatpak ran first in the job)", () => {
+      expect(onRunner(runnerEnv, runnerFs([MARKER_NAME, "repo"], [MARKER_NAME, "repo"])).ok).toBe(
+        true,
+      );
+    });
+
+    it.each([
+      ["GITHUB_ACTIONS", undefined],
+      ["GITHUB_ACTIONS", "false"],
+      ["RUNNER_ENVIRONMENT", undefined],
+      ["RUNNER_ENVIRONMENT", "self-hosted"],
+      [CI_OPT_IN, undefined],
+      [CI_OPT_IN, "true"],
+    ])("is refused with %s=%s", (key, value) => {
+      expect(onRunner({ ...runnerEnv, [key]: value }).ok).toBe(false);
+    });
+
+    it.each(["FLATPAK_USER_DIR", "HOPLODEX_FLATPAK_STATE"])("is refused without %s", (key) => {
+      const r = onRunner({ ...runnerEnv, [key]: undefined });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.message).toContain("GitHub-hosted runner");
+    });
+
+    it("is refused when the installation is not empty and unmarked", () => {
+      expect(onRunner(runnerEnv, runnerFs([], ["repo"])).ok).toBe(false);
+    });
+
+    it("is refused when the state folder is not empty and unmarked", () => {
+      const r = onRunner(runnerEnv, runnerFs(["downloads"]));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.message).toContain("HOPLODEX_FLATPAK_STATE");
+    });
+
+    it("is refused when the state folder is a file", () => {
+      const fs = fakeFs({
+        dirs: { "/mnt/hoplodex-flatpak": [] },
+        files: ["/mnt/hoplodex-flatpak-state"],
+      });
+      expect(onRunner(runnerEnv, fs).ok).toBe(false);
+    });
+
+    it("is refused when FLATPAK_USER_DIR is the runner user's own installation", () => {
+      const r = onRunner({ ...runnerEnv, FLATPAK_USER_DIR: "/home/runner/.local/share/flatpak" });
+      expect(r.ok).toBe(false);
     });
   });
 });
