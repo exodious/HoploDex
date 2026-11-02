@@ -1,24 +1,53 @@
 <!--
 Sync Impact Report
-Version change: 1.3.0 → 1.4.0
-Bump rationale: MINOR. Materially expanded guidance on dependencies (spec 012,
-#43). No principle is removed or redefined.
+Version change: 1.4.0 → 1.5.0
+Bump rationale: MINOR. Materially changed guidance in Development Workflow &
+Quality Gates (#21): the release review's attack surface moves from an inline
+list to one maintained definition that a pull request changing the surface
+updates; the per-PR review's upload rule is narrowed to code the pull request
+adds or changes; and the re-review a release commit needs after fixes is
+stated. No principle is removed or redefined.
 Modified principles: none
 Modified sections:
-  - Security & Data Handling Constraints: unmaintained crates, deprecated npm
-    packages and yanked crates are separate rules; unsound notices keep the
-    existing rule (cleared the same way as a high advisory); the scoping
-    bullet now applies to advisory exceptions, since a deprecation exception
-    is keyed by package and version range
-  - Development Workflow & Quality Gates: the dependency audit gate names
-    unmaintained and yanked crates and deprecated packages
+  - Development Workflow & Quality Gates:
+    - The release review's attack surface is defined once, in
+      docs/attack-surface.md (code to review, questions, accepted residual
+      risks), which MUST describe the code at the release commit; the seven
+      areas listed inline since 1.1.0 are entries there (commands and
+      capabilities → ipc-commands; capabilities and CSP → webview-config;
+      paths → paths; import and export → import-export; key and passphrase →
+      key-passphrase; secure deletion → plaintext-lifetime; decrypted copies
+      → document-copies)
+    - A pull request that adds, changes or removes attack surface updates the
+      list in the same pull request; a per-PR AI review, when run, says
+      whether the surface changed and proposes the update
+    - A surface is removed only when its code is gone, with the reason in the
+      pull request
+    - The list records the design, never findings; findings stay in code
+      scanning (and private advisories after a release)
+    - A per-PR AI review uploads to code scanning only its findings about
+      code the pull request adds or changes; a vulnerability it notices in
+      code a release already contains is handled as a private advisory
+    - After fixes made in response to a release review, the final release
+      commit needs carry-forward re-verification of that review's findings
+      plus a review of the diff from the reviewed commit to the final one,
+      not a second whole-codebase review
 Added sections: none
 Removed sections: none
 Templates requiring updates:
-  - .specify/templates/*: ✅ no change needed
-  - CLAUDE.md "Spec Kit workflow" gate list: ✅ no change needed (still reads
-    correctly)
-Follow-up TODOs: none (the tooling is spec 012's)
+  - .specify/templates/plan-template.md: ✅ the Constitution Check names the
+    attack-surface entries the feature adds or changes, updated in the
+    feature's pull request
+  - .specify/templates/tasks-template.md: ✅ a final-phase task to update
+    docs/attack-surface.md
+  - CLAUDE.md "Spec Kit workflow" gate list: ✅ names the list update;
+    "Architecture" points to docs/attack-surface.md
+Follow-up TODOs:
+  - ✅ docs/attack-surface.md and scripts/attack-surface.mjs with its test
+    (in npm test), in the amending pull request
+  - Issue 21: the review skill, the per-PR verdict and upload, and the
+    issue's description (the committed report is gone since 1.3.0) are a
+    separate change
 -->
 
 # HoploDex Constitution
@@ -190,16 +219,29 @@ advisories), not in documents committed to the repository. Every pull request
 to the main branch MUST be scanned by CodeQL and MUST NOT introduce a code
 scanning alert at error level or of high severity or above; the repository
 ruleset enforces this. An AI-assisted security review of a pull request's diff
-is optional; when one is run, its findings MUST be uploaded to code scanning
-against that pull request.
+is optional. When one is run, its findings about code the pull request adds or
+changes MUST be uploaded to code scanning against that pull request, and a
+vulnerability it notices in code a release already contains is handled as a
+private advisory, as below.
 
 Before every release, an AI-assisted security review of the whole codebase at
 the release commit, not only a diff, MUST be run against the application's
-attack surface: the commands exposed to the frontend, the Tauri capabilities
-and content security policy, filesystem path handling, spreadsheet import
-parsing and export (including formula injection), handling of the database key
-and passphrase, secure deletion, and decrypted document copies. Its findings
-MUST be uploaded to code scanning. A release MUST NOT proceed while any
+attack surface as defined in `docs/attack-surface.md`, which is the one
+definition of it: for each surface, the code to review, the questions the
+review must answer, and the residual risks the project has accepted, which
+the review reassesses. The list MUST describe the code at the release commit.
+A pull request that adds, changes, or removes attack surface MUST update the
+list in the same pull request, and an AI-assisted review of a pull request's
+diff, when one is run, MUST say whether the attack surface changed and
+propose the update when it did. A surface MAY be removed from the list only
+when the code it describes is gone, with the reason stated in the pull
+request. The list records the design, never findings: a finding goes to code
+scanning, and a risk is listed as accepted only once the project has accepted
+it where its decision is recorded. The review's findings MUST be uploaded to
+code scanning. When fixes made in response to the review produce a new release
+commit, that commit MUST get a carry-forward re-verification of the review's
+findings and a review of the diff from the reviewed commit to it; a second
+whole-codebase review is not required. A release MUST NOT proceed while any
 critical or high code scanning, Dependabot, or secret scanning alert is open.
 Each such alert MUST be fixed, or dismissed with its reason stated; a dismissed
 dependency alert MUST match an exception recorded under the Security & Data
@@ -234,4 +276,4 @@ request MUST be checked against this constitution during review; unjustified
 complexity or violations MUST be resolved or explicitly documented before
 merge.
 
-**Version**: 1.4.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-01
+**Version**: 1.5.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-02

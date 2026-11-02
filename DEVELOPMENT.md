@@ -1094,6 +1094,26 @@ it names. It also checks the E2E `describe()` titles above. `npm test` runs it
 spec that has that ID, not that it is the right spec: FR-001 to FR-017 exist
 in every one, so check what the cited text says.
 
+### Attack surface list
+
+`docs/attack-surface.md` is the one definition of the attack surface the
+release security review, and any per-PR AI review, reads (constitution,
+"Development Workflow & Quality Gates"). A pull request that adds, changes or
+removes surface updates it in the same pull request: a new entry, or a new
+**Code** path, **Ask** question or **Accepted** risk in one, and fixes for
+paths it renamed or removed. Surface ids are permanent, since code scanning
+alert ids start with them: rename an entry's title, never its id.
+
+`scripts/attack-surface.mjs` checks the list, and `npm test` runs it
+(`scripts/attack-surface.test.ts`); run `node scripts/attack-surface.mjs`
+while editing. It fails when a **Code** path or glob matches no file, when a
+backend, build, configuration, workflow or Flatpak file (its `PRODUCTION`
+list) is claimed by no entry, or when a command in `UNSCOPED_COMMANDS` or a
+Cargo feature isn't named in the list. Place a new file in the entry it
+belongs to, or in `not-surface` if it is none. The check can't see new surface
+inside a file an entry already claims, such as a new command argument or
+parser, so look for that yourself.
+
 ### PDF surface check
 
 The PDF surface (specs/007-document-preview/research.md §4 and §23) is a web
