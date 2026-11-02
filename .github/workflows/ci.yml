@@ -446,6 +446,11 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup
 
+      # The shipped manifest (flatpak/io.github.exodious.HoploDex.yml) runs
+      # check-no-webdriver.mjs on the release binary, so this build checks the
+      # Flatpak for the E2E-only WebDriver server (#29), as the Linux, Windows
+      # and macOS package jobs do. The Flatpak check below builds a variant
+      # that carries the driver on purpose (scripts/flatpak/checkManifest.mjs).
       - name: Build the Flatpak
         if: steps.scope.outputs.run == 'true'
         run: npm run bundle:flatpak
