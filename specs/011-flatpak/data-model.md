@@ -419,6 +419,12 @@ _Amended 2026-10-19 (011 T024): flatpak-builder's appstream compose also adds
 `share/app-info/xmls/io.github.exodious.HoploDex.xml.gz` and
 `share/app-info/icons/flatpak/{48x48,64x64,128x128}/io.github.exodious.HoploDex.png`,
 which `scripts/flatpak/contents.mjs` allows by name._
+
+_Amended 2026-11-01 (#148): flatpak-builder 1.4.8 also records the app's
+license file at `share/licenses/io.github.exodious.HoploDex/hoplodex/LICENSE`
+(1.4.4 does not), which `scripts/flatpak/contents.mjs` allows by name, present
+or absent._
+
 `readelf -d bin/hoplodex`'s `NEEDED` libraries must each be found in the
 runtime (FR-018).
 

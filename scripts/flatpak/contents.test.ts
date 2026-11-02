@@ -16,10 +16,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const lines = (text: string) => text.split("\n").filter((line) => line.trim() !== "");
 
-function check(name: string): string[] {
+function check(name: string, extraFiles: string[] = []): string[] {
   const dir = path.join(HERE, "fixtures", `contents-${name}`);
   return checkContents({
-    files: lines(fs.readFileSync(path.join(dir, "files.txt"), "utf8")),
+    files: [...lines(fs.readFileSync(path.join(dir, "files.txt"), "utf8")), ...extraFiles],
     readelf: fs.readFileSync(path.join(dir, "readelf.txt"), "utf8"),
     runtimeLibraries: lines(fs.readFileSync(path.join(dir, "runtime-libraries.txt"), "utf8")),
   });
@@ -28,6 +28,12 @@ function check(name: string): string[] {
 describe("011 US3-3 - the bundle holds what the contract lists, and nothing else", () => {
   it("passes the exact list plus what flatpak build-finish adds", () => {
     expect(check("ok")).toEqual([]);
+  });
+
+  it("passes the LICENSE flatpak-builder 1.4.8 records, which older builders leave out", () => {
+    expect(check("ok", ["share/licenses/io.github.exodious.HoploDex/hoplodex/LICENSE"])).toEqual(
+      [],
+    );
   });
 
   it("011 FR-018: fails a shared library, naming it", () => {
