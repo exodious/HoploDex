@@ -312,11 +312,16 @@ export function openAlerts(gh, ref, { seedPrs = false } = {}) {
  * are read first: one the upload closed must be among `fixed` (the rule ids
  * of the verified fixes), or it's reported, to reopen by uploading it again.
  */
-export function upload(gh, { sarif, ref, commit, fixed = [], sleep = sleepSeconds, tries = 40 }) {
-  if (!/^refs\/heads\/[^\s]+$/.test(ref) && !/^refs\/pull\/\d+\/head$/.test(ref)) {
-    // An alert on a tag can never close: no later analysis reaches its commit.
-    throw new Error(`upload to a branch or refs/pull/<n>/head only, not ${ref}`);
-  }
+export function upload(
+  gh,
+  { mode, sarif, ref, commit, fixed = [], sleep = sleepSeconds, tries = 40 },
+) {
+  // A pull request's annotations are public, so only a pr-mode run (introduced
+  // findings) goes there; a release goes to a branch. Never a tag: an alert on
+  // a tag can never close, as no later analysis reaches its commit.
+  const allowed = { pr: /^refs\/pull\/\d+\/head$/, release: /^refs\/heads\/[^\s]+$/ }[mode];
+  if (!allowed) throw new Error("upload needs mode pr or release");
+  if (!allowed.test(ref)) throw new Error(`a ${mode} upload can't go to ${ref}`);
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`not a full commit sha: ${commit}`);
   const results = sarif.runs[0].results;
   const before = alertsOn(gh, ref, "open");
@@ -595,6 +600,7 @@ function uploadCommand(opts) {
   }
   const sarif = JSON.parse(fs.readFileSync(where.sarif, "utf8"));
   const out = upload(realGh, {
+    mode,
     sarif,
     ref,
     commit: record.commit,

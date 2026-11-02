@@ -250,7 +250,13 @@ describe("upload", () => {
 
   it("sends gzipped SARIF to the PR ref, waits, and maps rules to alerts", () => {
     const { gh, calls } = fakeGh(routes(["pending", "complete"], [alert(7, rule)]));
-    const out = upload(gh, { sarif, ref: "refs/pull/5/head", commit: sha, sleep: () => {} });
+    const out = upload(gh, {
+      mode: "pr",
+      sarif,
+      ref: "refs/pull/5/head",
+      commit: sha,
+      sleep: () => {},
+    });
     expect(out.problems).toEqual([]);
     expect(out.alerts).toEqual([{ rule_id: rule, number: 7, state: "open" }]);
     const body = JSON.parse(calls.find((c) => c.input)!.input!);
@@ -266,7 +272,13 @@ describe("upload", () => {
 
   it("reports an alert left open, a missing alert and a wrong count", () => {
     const { gh } = fakeGh(routes(["complete"], [], 2, [alert(3, "other/cwe-1/x#y")]));
-    const out = upload(gh, { sarif, ref: "refs/heads/main", commit: sha, sleep: () => {} });
+    const out = upload(gh, {
+      mode: "release",
+      sarif,
+      ref: "refs/heads/main",
+      commit: sha,
+      sleep: () => {},
+    });
     expect(out.problems).toEqual([
       "the analysis has 2 results, not 1",
       `no open or dismissed alert for ${rule}`,
@@ -280,6 +292,7 @@ describe("upload", () => {
     const after = [alert(7, rule)];
     const run = (fixed: string[]) =>
       upload(fakeGh(routes(["complete"], before, 1, after)).gh, {
+        mode: "release",
         sarif,
         ref: "refs/heads/main",
         commit: sha,
@@ -295,11 +308,18 @@ describe("upload", () => {
   it("fails on a failed upload, and never uploads to a tag", () => {
     const { gh } = fakeGh(routes(["failed"], []));
     expect(() =>
-      upload(gh, { sarif, ref: "refs/heads/main", commit: sha, sleep: () => {} }),
+      upload(gh, { mode: "release", sarif, ref: "refs/heads/main", commit: sha, sleep: () => {} }),
     ).toThrow(/failed.*bad/);
-    expect(() => upload(gh, { sarif, ref: "refs/tags/v0.1.0", commit: sha })).toThrow(
-      /not refs\/tags/,
+    // A release's whole finding set never goes to a pull request's public annotations.
+    expect(() =>
+      upload(gh, { mode: "release", sarif, ref: "refs/pull/5/head", commit: sha }),
+    ).toThrow(/release upload can't go to refs\/pull/);
+    expect(() => upload(gh, { mode: "pr", sarif, ref: "refs/heads/main", commit: sha })).toThrow(
+      /pr upload can't go to refs\/heads/,
     );
+    expect(() =>
+      upload(gh, { mode: "release", sarif, ref: "refs/tags/v0.1.0", commit: sha }),
+    ).toThrow(/can't go to refs\/tags/);
   });
 });
 
