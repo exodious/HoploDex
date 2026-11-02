@@ -344,11 +344,29 @@ pub fn process_is_gone(pid: u32) -> bool {
     }
     #[cfg(windows)]
     {
-        let listing = std::process::Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
-            .output()
-            .expect("tasklist");
-        !String::from_utf8_lossy(&listing.stdout).contains(&pid.to_string())
+        // Not `tasklist`: over SSH as a non-administrator it answers "Access
+        // denied" after 5 s, which read as gone.
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, ERROR_INVALID_PARAMETER, GetLastError, WAIT_OBJECT_0,
+        };
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject,
+        };
+
+        // SAFETY: plain system calls; the handle is closed below.
+        unsafe {
+            let handle = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+            if handle.is_null() {
+                let err = GetLastError();
+                // No process has that id.
+                assert_eq!(err, ERROR_INVALID_PARAMETER, "OpenProcess({pid}) failed: {err}");
+                return true;
+            }
+            // Exited but still held open by its parent: as a zombie, gone.
+            let exited = WaitForSingleObject(handle, 0) == WAIT_OBJECT_0;
+            CloseHandle(handle);
+            exited
+        }
     }
 }
 
