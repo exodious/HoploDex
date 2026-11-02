@@ -12,7 +12,8 @@
 //       the tool's open and dismissed alerts on <ref>, as JSON; --seed-prs adds
 //       those still open on pull requests merged since <ref>'s last analysis
 //   node scripts/ai-security-review.mjs build <findings.json> --mode pr|release
-//       --commit <sha> [--known <open.json>[,…]] [--base <sha> --surface unchanged|changed]
+//       --commit <sha> [--known <open.json>[,…]] [--fixed <alert>,…]
+//       [--base <sha> --surface unchanged|changed]
 //       validates the findings, gives each a rule id and fingerprint, writes the
 //       SARIF and a record beside it (pr mode prints the PR body's section)
 //   node scripts/ai-security-review.mjs upload --pr <n> | --release [--ref <ref>]
@@ -280,14 +281,20 @@ export function openAlerts(gh, ref, { seedPrs = false } = {}) {
   return alerts;
 }
 
-/** Upload, wait for processing, then check the analysis and every alert. */
-export function upload(gh, { sarif, ref, commit, sleep = sleepSeconds, tries = 40 }) {
+/**
+ * Upload, wait for processing, then check the analysis and every alert. An
+ * upload closes, as fixed, every open alert it leaves out, so the open alerts
+ * are read first: one the upload closed must be among `fixed` (the rule ids
+ * of the verified fixes), or it's reported, to reopen by uploading it again.
+ */
+export function upload(gh, { sarif, ref, commit, fixed = [], sleep = sleepSeconds, tries = 40 }) {
   if (!/^refs\/heads\/[^\s]+$/.test(ref) && !/^refs\/pull\/\d+\/head$/.test(ref)) {
     // An alert on a tag can never close: no later analysis reaches its commit.
     throw new Error(`upload to a branch or refs/pull/<n>/head only, not ${ref}`);
   }
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`not a full commit sha: ${commit}`);
   const results = sarif.runs[0].results;
+  const before = alertsOn(gh, ref, "open");
   const posted = gh(
     ["--method", "POST", `repos/${REPO}/code-scanning/sarifs`, "--input", "-"],
     JSON.stringify({
@@ -322,12 +329,21 @@ export function upload(gh, { sarif, ref, commit, sleep = sleepSeconds, tries = 4
     if (analysis.category !== CATEGORY)
       problems.push(`the analysis's category is ${analysis.category}`);
   }
-  // Every uploaded rule has a live alert, and nothing open was left behind.
+  // Every uploaded rule has a live alert, only verified fixes closed, and
+  // nothing open was left behind.
   const live = [...alertsOn(gh, ref, "open"), ...alertsOn(gh, ref, "dismissed")];
   const byRule = new Map(live.map((a) => [a.rule_id, a]));
   const uploaded = new Set(results.map((r) => r.ruleId));
+  const verified = new Set(fixed);
   for (const id of uploaded)
     if (!byRule.has(id)) problems.push(`no open or dismissed alert for ${id}`);
+  for (const a of before) {
+    if (!uploaded.has(a.rule_id) && !verified.has(a.rule_id)) {
+      problems.push(
+        `#${a.number} ${a.rule_id} was open and this upload closed it, but it isn't a verified fix`,
+      );
+    }
+  }
   for (const a of live) {
     if (a.state === "open" && !uploaded.has(a.rule_id))
       problems.push(`#${a.number} ${a.rule_id} is still open but wasn't uploaded`);
@@ -362,6 +378,9 @@ export function gate(gh, { ref = null } = {}) {
     `repos/${REPO}/dependabot/alerts?state=open&severity=critical,high&per_page=100`,
   ).length;
   // A secret scanning alert has no severity: every open one is a leaked secret.
+  // shortcut: without `secret_type` the API returns default (provider) patterns
+  // only, so generic-pattern alerts aren't counted; name them here if the
+  // repository turns generic detection on.
   const secrets = paged(gh, `repos/${REPO}/secret-scanning/alerts?state=open&per_page=100`).length;
   const advisories = ["draft", "triage"].reduce(
     (n, s) => n + paged(gh, `repos/${REPO}/security-advisories?state=${s}&per_page=100`).length,
@@ -376,9 +395,20 @@ export function gate(gh, { ref = null } = {}) {
   return { ...result, pass: scanning[0] + scanning[1] + dependabot + secrets + advisories === 0 };
 }
 
+/**
+ * Dismiss `next` as `old` was: only this tool's alerts, `next` open and `old`
+ * dismissed, on the same surface, so it can't silence another tool's alert.
+ */
 export function carryDismissal(gh, next, old) {
   const was = gh([`repos/${REPO}/code-scanning/alerts/${old}`]);
+  const now = gh([`repos/${REPO}/code-scanning/alerts/${next}`]);
+  if (was.tool?.name !== TOOL || now.tool?.name !== TOOL)
+    throw new Error(`#${old} and #${next} must both be ${TOOL}'s`);
   if (was.state !== "dismissed") throw new Error(`#${old} isn't dismissed`);
+  if (now.state !== "open") throw new Error(`#${next} isn't open`);
+  const surface = (a) => a.rule.id.split("/")[0];
+  if (surface(was) !== surface(now))
+    throw new Error(`#${old} and #${next} are on different surfaces`);
   return gh([
     "--method",
     "PATCH",
@@ -478,10 +508,21 @@ function build(opts) {
     }
   }
   if (problems.length) throw new Error(problems.join("\n"));
-  const known = (opts.known ? opts.known.split(",") : []).flatMap((file) =>
-    JSON.parse(fs.readFileSync(file, "utf8")).map((a) => a.rule_id),
+  const knownAlerts = (opts.known ? opts.known.split(",") : []).flatMap((file) =>
+    JSON.parse(fs.readFileSync(file, "utf8")),
   );
+  const known = knownAlerts.map((a) => a.rule_id);
+  // The carried alerts the verifier confirmed fixed: the only ones the upload may close.
+  const fixed = (opts.fixed ? opts.fixed.split(",") : []).map((n) => {
+    const a = knownAlerts.find((k) => k.number === Number(n) && k.state === "open");
+    if (!a) throw new Error(`--fixed ${n}: not an open alert in --known`);
+    return { number: a.number, rule_id: a.rule_id };
+  });
   const findings = assignRuleIds(raw, known);
+  for (const f of fixed) {
+    if (findings.some((x) => x.rule_id === f.rule_id))
+      throw new Error(`#${f.number} is both fixed and uploaded`);
+  }
   const sarif = buildSarif(findings, { runId: `${mode}-${commit.slice(0, 12)}` });
   const where = recordPaths(mode);
   fs.mkdirSync(where.dir, { recursive: true });
@@ -492,6 +533,7 @@ function build(opts) {
     branch: mode === "pr" ? git(["rev-parse", "--abbrev-ref", "HEAD"]) : null,
     counts: counts(findings),
     rule_ids: findings.map((f) => f.rule_id),
+    fixed,
     surface: opts.surface ?? null,
     body: mode === "pr" ? bodyLines(commit, findings, opts.surface) : null,
     uploaded: null,
@@ -508,6 +550,8 @@ function uploadCommand(opts) {
   if (!mode) throw new Error("upload --pr <n> | --release [--ref <ref>]");
   const where = recordPaths(mode);
   const record = JSON.parse(fs.readFileSync(where.record, "utf8"));
+  if (record.mode !== mode)
+    throw new Error(`${where.record} is a ${record.mode} record, not ${mode}`);
   let ref;
   if (mode === "pr") {
     const pr = realGh([`repos/${REPO}/pulls/${Number(opts.pr)}`]);
@@ -525,7 +569,12 @@ function uploadCommand(opts) {
       throw new Error(`${record.commit.slice(0, 7)} isn't on ${ref}`);
   }
   const sarif = JSON.parse(fs.readFileSync(where.sarif, "utf8"));
-  const out = upload(realGh, { sarif, ref, commit: record.commit });
+  const out = upload(realGh, {
+    sarif,
+    ref,
+    commit: record.commit,
+    fixed: (record.fixed ?? []).map((f) => f.rule_id),
+  });
   record.uploaded = {
     ref,
     at: new Date().toISOString(),

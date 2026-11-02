@@ -229,23 +229,30 @@ describe("upload", () => {
   const sha = "1".repeat(40);
   const sarif = buildSarif(assignRuleIds([finding()]), { runId: "pr-1" });
   const rule = sarif.runs[0].results[0].ruleId;
-  const routes = (status: string[], open: unknown[], count = 1): Route[] => [
-    [/code-scanning\/sarifs$/, () => ({ id: "S1" })],
-    [/code-scanning\/sarifs\/S1$/, () => ({ processing_status: status.shift(), errors: ["bad"] })],
-    [
-      /analyses\?sarif_id=S1$/,
-      () => [{ id: 9, results_count: count, tool: { name: TOOL }, category: CATEGORY }],
-    ],
-    [/alerts\?.*state=open/, () => open],
-    [/alerts\?.*state=dismissed/, () => []],
-  ];
+  // `open` answers the first open-alerts read (before the upload), then `after`.
+  const routes = (status: string[], open: unknown[], count = 1, after = open): Route[] => {
+    let reads = 0;
+    return [
+      [/code-scanning\/sarifs$/, () => ({ id: "S1" })],
+      [
+        /code-scanning\/sarifs\/S1$/,
+        () => ({ processing_status: status.shift(), errors: ["bad"] }),
+      ],
+      [
+        /analyses\?sarif_id=S1$/,
+        () => [{ id: 9, results_count: count, tool: { name: TOOL }, category: CATEGORY }],
+      ],
+      [/alerts\?.*state=open/, () => (reads++ === 0 ? open : after)],
+      [/alerts\?.*state=dismissed/, () => []],
+    ];
+  };
 
   it("sends gzipped SARIF to the PR ref, waits, and maps rules to alerts", () => {
     const { gh, calls } = fakeGh(routes(["pending", "complete"], [alert(7, rule)]));
     const out = upload(gh, { sarif, ref: "refs/pull/5/head", commit: sha, sleep: () => {} });
     expect(out.problems).toEqual([]);
     expect(out.alerts).toEqual([{ rule_id: rule, number: 7, state: "open" }]);
-    const body = JSON.parse(calls[0].input!);
+    const body = JSON.parse(calls.find((c) => c.input)!.input!);
     expect(body).toMatchObject({
       commit_sha: sha,
       ref: "refs/pull/5/head",
@@ -257,13 +264,31 @@ describe("upload", () => {
   });
 
   it("reports an alert left open, a missing alert and a wrong count", () => {
-    const { gh } = fakeGh(routes(["complete"], [alert(3, "other/cwe-1/x#y")], 2));
+    const { gh } = fakeGh(routes(["complete"], [], 2, [alert(3, "other/cwe-1/x#y")]));
     const out = upload(gh, { sarif, ref: "refs/heads/main", commit: sha, sleep: () => {} });
     expect(out.problems).toEqual([
       "the analysis has 2 results, not 1",
       `no open or dismissed alert for ${rule}`,
       "#3 other/cwe-1/x#y is still open but wasn't uploaded",
     ]);
+  });
+
+  it("reports an open alert the upload closed unless it is a verified fix", () => {
+    // As the live tests showed: a left-out alert is already fixed once processing completes.
+    const before = [alert(7, rule), alert(3, "other/cwe-1/x#y")];
+    const after = [alert(7, rule)];
+    const run = (fixed: string[]) =>
+      upload(fakeGh(routes(["complete"], before, 1, after)).gh, {
+        sarif,
+        ref: "refs/heads/main",
+        commit: sha,
+        fixed,
+        sleep: () => {},
+      }).problems;
+    expect(run([])).toEqual([
+      "#3 other/cwe-1/x#y was open and this upload closed it, but it isn't a verified fix",
+    ]);
+    expect(run(["other/cwe-1/x#y"])).toEqual([]);
   });
 
   it("fails on a failed upload, and never uploads to a tag", () => {
@@ -316,26 +341,53 @@ describe("carry-forward", () => {
     ]);
   });
 
-  it("re-applies a dismissal to a moved finding's new alert", () => {
-    const { gh, calls } = fakeGh([
+  const moved = (old: object = {}, next: object = {}) =>
+    fakeGh([
       [
         /alerts\/4$/,
         () => ({
+          tool: { name: TOOL },
+          rule: { id: "paths/cwe-22/a.rs#f" },
           state: "dismissed",
           dismissed_reason: "false positive",
           dismissed_comment: "why",
+          ...old,
         }),
       ],
-      [/alerts\/8$/, () => ({})],
+      [
+        /alerts\/8$/,
+        () => ({
+          tool: { name: TOOL },
+          rule: { id: "paths/cwe-22/b.rs#f" },
+          state: "open",
+          ...next,
+        }),
+      ],
     ]);
+
+  it("re-applies a dismissal to a moved finding's new alert", () => {
+    const { gh, calls } = moved();
     carryDismissal(gh, 8, 4);
-    expect(calls[1].args).toEqual(
+    expect(calls[2].args).toEqual(
       expect.arrayContaining([
         "PATCH",
         "dismissed_reason=false positive",
         "dismissed_comment=carried from #4: moved. why",
       ]),
     );
+  });
+
+  it("dismisses only this tool's open alert, from a dismissed one on the same surface", () => {
+    const refused = (old: object, next: object) => {
+      const { gh, calls } = moved(old, next);
+      expect(() => carryDismissal(gh, 8, 4)).toThrow();
+      expect(calls.some((c) => c.args.includes("PATCH"))).toBe(false);
+    };
+    refused({}, { tool: { name: "CodeQL" } });
+    refused({ tool: { name: "CodeQL" } }, {});
+    refused({ state: "open" }, {});
+    refused({}, { state: "dismissed" });
+    refused({}, { rule: { id: "logging/cwe-532/b.rs#f" } });
   });
 });
 

@@ -106,7 +106,10 @@ surface or CWE is a new alert: treat it as a move (below).
    are dropped; an unconfirmed fix stays carried as `unsure`.
 5. **Assemble** `<scratch>/findings.json`: confirmed new findings, plus every
    carried open alert that is present or unsure, with its `rule_id` (update
-   its region and message to the reviewer's). Leave out only verified fixes.
+   its region and message to the reviewer's). Leave out only verified fixes,
+   and pass their alert numbers to `build --fixed <n>,…`: an upload closes
+   every open alert it leaves out, and `upload` reports any it closed that
+   isn't one of them (upload it again to reopen it).
    A confirmed **move** is a new finding at the new place; once uploaded, if
    the old alert was dismissed, ask the operator, then `carry-dismissal <new>
    <old>`.
@@ -204,6 +207,6 @@ surface or CWE is a new alert: treat it as a move (below).
 ## When something fails
 
 `upload` exits non-zero and lists problems when the analysis's result count,
-tool or category is off, an uploaded rule has no alert, or an open alert was
-left out. Don't re-upload blindly: an upload without a finding closes it as
+tool or category is off, an uploaded rule has no alert, or it closed an open
+alert that wasn't a verified fix. Don't re-upload blindly: an upload without a finding closes it as
 fixed. Show the operator the problems and the alert list.
