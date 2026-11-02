@@ -152,6 +152,15 @@ artifacts.
     subdocuments, all loaded when the document opens. A chart's embedded
     workbook (`package`) stays inside and is accepted.
 
+  _Amended 2026-11-02: zip keeps only the last of two entries with one
+  name, so reading by index never read a duplicate. An OOXML or ODF package
+  is now refused first when a name is listed twice, a local header disagrees
+  with its central record on the name, method, encryption or data descriptor
+  flag, CRC or sizes (times and other extra fields aside), two entries
+  overlap, or a local header sits where the central directory lists none;
+  an OOXML package also when two part names are equal ignoring ASCII case
+  and `\` against `/` (ECMA-376 Part 2, M1.12)._
+
   **Results**:
   - The recorded `mime_type` is the type's canonical one, whatever the file
     chooser supplied, so `add_document` loses its `mimeType` argument.
