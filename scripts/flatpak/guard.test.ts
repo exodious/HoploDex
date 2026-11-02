@@ -50,7 +50,7 @@ const containerEnv = { HOPLODEX_DEV_CONTAINER: "1", HOPLODEX_FLATPAK_STATE: "/fl
 const containerFs = () => fakeFs({ files: [CONTAINER_MARKER_FILE] });
 
 function onHost(env: Record<string, string>, argv: string[], fs = fakeFs()) {
-  return decide({ env, hostname: "nous", argv, home: HOME, fs });
+  return decide({ env, hostname: "devhost", argv, home: HOME, fs });
 }
 
 describe("011 US5-3, 011 SC-007 - the host guard", () => {
@@ -132,7 +132,7 @@ describe("011 US5-3, 011 SC-007 - the host guard", () => {
     it("any two of the three are not enough, even with --flatpak's state set", () => {
       const pairs: [Record<string, string>, string, ReturnType<typeof fakeFs>][] = [
         [containerEnv, CONTAINER_HOSTNAME, fakeFs()],
-        [containerEnv, "nous", containerFs()],
+        [containerEnv, "devhost", containerFs()],
         [{ HOPLODEX_FLATPAK_STATE: "/s" }, CONTAINER_HOSTNAME, containerFs()],
       ];
       for (const [env, hostname, fs] of pairs) {
