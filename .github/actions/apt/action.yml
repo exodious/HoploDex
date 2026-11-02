@@ -1,0 +1,42 @@
+# The Ubuntu packages a Linux CI job (ci.yml) installs, every one named here
+# rather than left to what the runner image happens to have. Each set is
+# defined once; a job names the sets it needs. `build` is DEVELOPMENT.md's
+# Debian/Ubuntu list ("Prerequisites"); keep the two in step.
+name: CI apt packages
+description: Install the named sets of Ubuntu packages a Linux CI job needs
+inputs:
+  sets:
+    description: >-
+      Space-separated set names: build (Tauri and the bundled SQLCipher),
+      tests (nextest), e2e, flatpak (bundle:flatpak), flatpak-check
+      (test:flatpak)
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        SETS: ${{ inputs.sets }}
+      run: |
+        declare -A set=(
+          [build]="build-essential pkg-config perl libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils"
+          # portal_keyring_test starts its own dbus-daemon.
+          [tests]="dbus"
+          # Xvfb for each worker's display and xauth for xvfb-run
+          # (quit-cleanup.py); ss (iproute2) clears a stale app's WebDriver
+          # port; ImageMagick's `import` takes document-preview's pixel shots.
+          [e2e]="xvfb xauth iproute2 imagemagick python3"
+          # The build, its validators (desktop-file-validate, appstreamcli),
+          # readelf (binutils) and env.sh's dbus-daemon.
+          [flatpak]="flatpak flatpak-builder desktop-file-utils appstream binutils dbus"
+          # The check's stand-in services, its Secret Service and display.
+          [flatpak-check]="python3 python3-dbusmock gnome-keyring libsecret-tools xvfb libwebkit2gtk-4.1-dev"
+        )
+        packages=()
+        for name in $SETS; do
+          [ -n "${set[$name]+x}" ] || { echo "::error::no apt package set named '$name'"; exit 1; }
+          read -ra listed <<<"${set[$name]}"
+          packages+=("${listed[@]}")
+        done
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends "${packages[@]}"

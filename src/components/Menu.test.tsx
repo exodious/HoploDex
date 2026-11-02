@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Button } from "./Button";
 import { Menu, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuItem, MenuSeparator } from "./Menu";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Dialog } from "./Dialog";
 
@@ -229,6 +229,64 @@ describe("A dialog opened from a menu item returns focus to the menu's button (#
         expect(lastFocusOnTrigger()).toEqual([{ focusVisible: close === "Escape" }]);
       });
     }
+  }
+});
+
+// Regression: About HoploDex, chosen from the Database menu, focuses its
+// license button once its notices load. The menu's close then put focus back
+// on its own button whenever that came later, which a loaded machine made it
+// do (E2E databases.e2e.ts, 010 US1-2). A dialog that has taken focus keeps it.
+describe("A dialog that takes focus as it opens from a menu item keeps it", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function Loaded() {
+    const button = useRef<HTMLButtonElement>(null);
+    useEffect(() => {
+      void Promise.resolve().then(() => button.current?.focus());
+    }, []);
+    return <button ref={button}>License</button>;
+  }
+
+  function MenuOpening() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <Menu trigger={<Button>Database</Button>}>
+          <MenuItem onSelect={() => setOpen(true)}>About…</MenuItem>
+        </Menu>
+        <Dialog open={open} onOpenChange={setOpen} title="About">
+          {open && <Loaded />}
+        </Dialog>
+      </>
+    );
+  }
+
+  for (const by of ["mouse", "key"] as const) {
+    it(`chosen by ${by}`, async () => {
+      const user = userEvent.setup();
+      const focus = vi.spyOn(HTMLElement.prototype, "focus");
+      render(<MenuOpening />);
+      const trigger = screen.getByRole("button", { name: "Database" });
+      if (by === "mouse") {
+        await user.click(trigger);
+        await user.click(await screen.findByRole("menuitem", { name: "About…" }));
+      } else {
+        trigger.focus();
+        await user.keyboard("{Enter}");
+        await screen.findByRole("menu");
+        await user.keyboard("{Enter}");
+      }
+      await screen.findByRole("dialog");
+      await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+      // The menu's close runs on a timer; let it.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const license = screen.getByRole("button", { name: "License" });
+      expect(license).toHaveFocus();
+      // Not taken back and rescued by the dialog's trap, which needs focus
+      // events: a WebView whose window isn't in front doesn't fire them.
+      const contexts = focus.mock.contexts;
+      expect(contexts.lastIndexOf(trigger)).toBeLessThan(contexts.indexOf(license));
+    });
   }
 });
 

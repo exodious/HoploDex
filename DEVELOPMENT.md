@@ -1031,8 +1031,10 @@ write, outside any real Flatpak installation. No script mounts or uses `sudo`;
 the workflow does, before the check:
 
 ```bash
+# .github/actions/apt's flatpak and flatpak-check sets
 sudo apt-get install -y --no-install-recommends flatpak flatpak-builder desktop-file-utils \
-  python3-dbusmock gnome-keyring libsecret-tools libwebkit2gtk-4.1-dev
+  appstream binutils dbus python3 python3-dbusmock gnome-keyring libsecret-tools xvfb \
+  libwebkit2gtk-4.1-dev
 sudo mkdir -p /run/media/dev/hoplodex-check /mnt/hoplodex-check
 sudo mount -t tmpfs -o mode=1777 tmpfs /run/media/dev/hoplodex-check
 sudo mount -t tmpfs -o mode=1777 tmpfs /mnt/hoplodex-check
@@ -2460,7 +2462,7 @@ in it which ran where. The jobs run natively on pinned images (`ubuntu-26.04`,
 | Checks (Linux) | `npm run format:check`, `cargo fmt --check`, `npm run lint`, both clippys ([Linting & formatting](#linting--formatting)), `npm test`, `cargo nextest run --features test-kdf --no-fail-fast`, the doctests, `npm run build` |
 | Checks (Windows, macOS) | both clippys, `npm test`, nextest as above |
 | E2E (Linux, Windows, macOS) | `npm run build`, `npm run test:e2e`, then the quit-cleanup script for that OS |
-| Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`: no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
+| Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary; no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
 | Packages (Windows) | `npm run tauri build -- --bundles msi,nsis`, then `scripts/check-no-webdriver.mjs` on `hoplodex.exe` |
 | Packages (macOS) | `npm run tauri build -- --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary |
 | Flatpak | `npm run bundle:flatpak`; then, only when the pull request changes one of the paths [The Flatpak check](#the-flatpak-check) lists, the check's stand-ins and `npm run build && npm run test:flatpak` |
@@ -2486,9 +2488,11 @@ here; [Test](#test) says when to run them.
   (`.github/actions/setup`), about 3 GB of the repository's 10 GB. The release
   builds and the Flatpak installation (6.3 GB, fetched in about a minute) have
   none.
-- **What each runner needs** is set up by its job: on Linux,
-  `libwebkit2gtk-4.1-dev` (and ImageMagick for E2E, the Flatpak tools for the
-  Flatpak); on Windows, `TEMP` on the D: disk with a Defender call for the
+- **What each runner needs** is set up by its job: on Linux, every Ubuntu
+  package it uses, named rather than left to the image, from the sets in
+  `.github/actions/apt` (`build` is the Debian/Ubuntu list in
+  [Prerequisites](#prerequisites); `tests`, `e2e`, `flatpak` and
+  `flatpak-check` add what those steps run); on Windows, `TEMP` on the D: disk with a Defender call for the
   tests, which makes nextest three times faster there, and the desktop at
   1920×1080 with animations on for E2E; on macOS, Reduce Motion off and the
   screen at 1920×1080 (`displayplacer`) for E2E.

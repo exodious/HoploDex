@@ -55,13 +55,12 @@ jobs:
       - id: scope
         uses: ./.github/actions/scope
 
-      # WebKitGTK's dev package brings GTK, libsoup and JavaScriptCore; the
-      # image has the rest (libssl-dev, pkg-config, the C toolchain).
+      # Every package is named in .github/actions/apt, not left to the image.
       - name: Install Linux packages
         if: steps.scope.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev
+        uses: ./.github/actions/apt
+        with:
+          sets: build tests
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup
         with:
@@ -190,13 +189,11 @@ jobs:
       - id: scope
         uses: ./.github/actions/scope
 
-      # ImageMagick's `import` takes document-preview's pixel shots; the image
-      # has Xvfb and xauth.
       - name: Install Linux packages
         if: steps.scope.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev imagemagick
+        uses: ./.github/actions/apt
+        with:
+          sets: build e2e
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup
         with:
@@ -352,15 +349,17 @@ jobs:
         uses: ./.github/actions/scope
       - name: Install Linux packages
         if: steps.scope.outputs.run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev
+        uses: ./.github/actions/apt
+        with:
+          sets: build
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup
 
-      # Unsigned and published nowhere. Linux ships the .deb, .rpm and Flatpak
-      # (010 FR-017), so no AppImage; build-appimage.sh still checks the
-      # release binary for the WebDriver server.
+      # Unsigned and published nowhere. bundle:linux is
+      # scripts/build-appimage.sh, named for the AppImage it can also build:
+      # it runs `tauri build`, then checks the release binary for the E2E-only
+      # WebDriver server (#29), as the Windows and macOS jobs do. Linux ships
+      # the .deb, .rpm and Flatpak (010 FR-017), so no AppImage is built.
       - name: Build the .deb and .rpm
         if: steps.scope.outputs.run == 'true'
         run: npm run bundle:linux -- --bundles deb,rpm
@@ -438,14 +437,12 @@ jobs:
 
       - name: Install Linux packages
         if: steps.scope.outputs.run == 'true'
-        env:
-          CHECK: ${{ steps.scope.outputs.flatpak-check }}
-        run: |
-          packages=(flatpak flatpak-builder desktop-file-utils)
-          [ "$CHECK" != true ] || packages+=(python3-dbusmock gnome-keyring libsecret-tools libwebkit2gtk-4.1-dev)
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends "${packages[@]}"
-          sudo install -d -o "$USER" "$FLATPAK_USER_DIR" "$HOPLODEX_FLATPAK_STATE"
+        uses: ./.github/actions/apt
+        with:
+          sets: flatpak ${{ steps.scope.outputs.flatpak-check == 'true' && 'flatpak-check' || '' }}
+      - name: Make the Flatpak installation's folders
+        if: steps.scope.outputs.run == 'true'
+        run: sudo install -d -o "$USER" "$FLATPAK_USER_DIR" "$HOPLODEX_FLATPAK_STATE"
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup
 
