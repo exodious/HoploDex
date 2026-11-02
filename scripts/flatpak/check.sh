@@ -2,8 +2,9 @@
 # Runs the automated Flatpak check in its sandbox (npm run test:flatpak).
 # 011 research.md §15, §16, §18; 011 contracts/flatpak-bundle.md "Project commands".
 #
-# Runs in `scripts/dev-container.sh --flatpak` only: the guard is asked for the
-# container alone (--container-only) before anything else, so a host is refused even
+# Runs in `scripts/dev-container.sh --flatpak`, or on a GitHub-hosted runner that opted
+# in and whose workflow made the stand-ins: the guard is asked for the container alone
+# (--container-only) before anything else, so a host is refused even
 # with a throwaway FLATPAK_USER_DIR (011 T104; the check needs the container's
 # stand-ins), after `npm run build` (the check builds the
 # Flatpak from the checkout, and the e2e build for the cold-start comparison embeds dist/).
@@ -51,7 +52,7 @@ for arg in "$@"; do
 done
 
 # env.sh: the host guard again (it refuses here, before any `flatpak` command, anywhere
-# but the dev container), FLATPAK_USER_DIR, and the private system bus.
+# but the dev container or an opted-in runner), FLATPAK_USER_DIR, and the private system bus.
 # shellcheck source=scripts/flatpak/env.sh
 source "$here/env.sh"
 # What support/flatpak.ts requires: this script has run the guard.

@@ -4,7 +4,8 @@
 #      Flatpak installation is never used (011 US5-3, 011 SC-007);
 #   2. exports FLATPAK_USER_DIR, the accepted installation, and marks a throwaway one;
 #      and HOPLODEX_FLATPAK_STATE, the container's state volume or, on a host, the one
-#      the caller named or else a folder beside the throwaway installation (011 T104);
+#      the caller named or else a folder beside the throwaway installation (011 T104),
+#      marking it too on a GitHub-hosted runner (#25);
 #   3. starts a private system bus and exports DBUS_SYSTEM_BUS_ADDRESS (Debian's
 #      `flatpak` asks the system bus before it installs, and the container has none);
 #   4. adds the Flathub remote to that installation, if it isn't there;
@@ -21,7 +22,7 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 # The guard prints the accepted FLATPAK_USER_DIR, then `marker` or `no-marker`, then the
-# state folder.
+# state folder, then `state-marker` on a runner.
 if ! _hd_guard_out="$(node "$_hd_flatpak_dir/guard.mjs" "$@")"; then
   # The guard has already printed its message on stderr.
   return 1 2>/dev/null || exit 1

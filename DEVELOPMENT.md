@@ -605,8 +605,10 @@ defaults to a folder beside it, `<FLATPAK_USER_DIR>-state`
 (`/var/tmp/hoplodex-flatpak-state` above), so no other variable is needed;
 set `HOPLODEX_FLATPAK_STATE` to an absolute path to put it elsewhere. The
 first run then fetches the 2 GB into those two folders, and deleting both
-removes everything it made. **`npm run test:flatpak` does not run on a
-host, with or without that flag** (`011 FR-023`): it refuses before it
+removes everything it made. (A GitHub-hosted runner that opted in needs
+neither the flag nor the default: "The Flatpak check" below.) **`npm run test:flatpak` does not run on a
+host, with or without that flag** (`011 FR-023`; only a GitHub-hosted runner
+set up as in "The Flatpak check" is an exception): it refuses before it
 touches anything, saying so. The check needs what only the dev container
 has: a tmpfs at `/run/media/dev/hoplodex-check` standing in for a removable
 drive (`--flatpak` mounts it; the Flatpak reaches `/run/media`), two folders

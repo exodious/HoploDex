@@ -5,7 +5,9 @@
 # Runs in `scripts/dev-container.sh --flatpak`, or on a host without podman (env.sh's
 # host guard refuses unless FLATPAK_USER_DIR names a throwaway installation and
 # --i-know-this-is-a-host is passed; the state folder then defaults to a folder
-# beside it, 011 T104). Each step is printed as it starts, and the
+# beside it, 011 T104), or on a GitHub-hosted runner that opted in (HOPLODEX_CI_FLATPAK=1,
+# with both FLATPAK_USER_DIR and HOPLODEX_FLATPAK_STATE named; DEVELOPMENT.md,
+# "The Flatpak check"). Each step is printed as it starts, and the
 # script stops at the first step that fails, naming it.
 set -euo pipefail
 
