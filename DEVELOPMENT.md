@@ -2465,7 +2465,7 @@ in it which ran where. The jobs run natively on pinned images (`ubuntu-26.04`,
 | Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary; no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
 | Packages (Windows) | `npm run tauri build -- --bundles msi,nsis`, then `scripts/check-no-webdriver.mjs` on `hoplodex.exe` |
 | Packages (macOS) | `npm run tauri build -- --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary |
-| Flatpak | `npm run bundle:flatpak`; then, only when the pull request changes one of the paths [The Flatpak check](#the-flatpak-check) lists, the check's stand-ins and `npm run build && npm run test:flatpak` |
+| Flatpak | `npm run bundle:flatpak`, whose manifest runs `scripts/check-no-webdriver.mjs` on the release binary (the check's variant carries the driver on purpose); then, only when the pull request changes one of the paths [The Flatpak check](#the-flatpak-check) lists, the check's stand-ins and `npm run build && npm run test:flatpak` |
 
 The packages are unsigned, kept nowhere and published nowhere; the job only
 shows they build. `performance_test` and `import_largest_test` don't run
