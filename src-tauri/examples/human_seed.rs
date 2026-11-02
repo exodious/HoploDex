@@ -948,7 +948,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("registered_as", "Suppressor"),
                 ("registration_form", "Form 4"),
                 ("registration_approved", "2024-03-05"),
-                ("registered_to", "Sean Example"),
+                ("registered_to", "Alex Example"),
             ]),
             row(&[
                 ("make", "Ruger"),
@@ -1001,7 +1001,7 @@ pub fn write_import_samples(dir: &Path) -> PathBuf {
                 ("caliber", "9mm"),
                 ("firearm_type", "Handgun"),
                 ("registration_form", "Form 4"),
-                ("registered_to", "Sean Example"),
+                ("registered_to", "Alex Example"),
             ]),
             row(&[
                 ("make", "Wildcat Arms"),
