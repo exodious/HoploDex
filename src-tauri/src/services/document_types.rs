@@ -516,8 +516,9 @@ fn unambiguous(bytes: &[u8], archive: &zip::ZipArchive<Cursor<&[u8]>>) -> bool {
 const LOCAL_HEADER: &[u8] = b"PK\x03\x04";
 
 /// Where `entry` lies, from its local header to the end of its data, if that
-/// header agrees with the central record on the name (as zip reads it, so a
-/// Unicode Path extra field that renames the entry is refused), the method, the
+/// header agrees with the central record on the name (the same bytes in both,
+/// and as zip reads it, so a Unicode Path extra field that renames the entry
+/// is refused), the method, the
 /// encryption and data descriptor flags, the CRC and the sizes (zero where a
 /// data descriptor follows, Zip64's from the extra field). Times and other
 /// extra fields aren't compared: tools that edit a package in place leave
@@ -531,10 +532,12 @@ fn local_span(bytes: &[u8], entry: &zip::read::ZipFileEntry<'_>) -> Option<(usiz
     let flags = le(bytes, start + 6, 2)?;
     let name_end = start + 30 + usize::try_from(le(bytes, start + 26, 2)?).ok()?;
     let data_start = name_end + usize::try_from(le(bytes, start + 28, 2)?).ok()?;
+    let central_name = central + 46 + usize::try_from(le(bytes, central + 28, 2)?).ok()?;
     // Flag bits 0 and 3 (encryption, a data descriptor), then the method.
     let agrees = (flags ^ le(bytes, central + 8, 2)?) & 0b1001 == 0
         && le(bytes, start + 8, 2)? == le(bytes, central + 10, 2)?
-        && bytes.get(start + 30..name_end)? == entry.name_raw();
+        && bytes.get(start + 30..name_end)? == entry.name_raw()
+        && bytes.get(central + 46..central_name)? == entry.name_raw();
     if !agrees {
         return None;
     }

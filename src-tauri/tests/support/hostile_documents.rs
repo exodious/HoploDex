@@ -102,6 +102,7 @@ pub fn refused_documents() -> Vec<Hostile> {
         (xlsx_with_duplicate_relationships(), ContentMismatch),
         (docx_with_disagreeing_headers(), ContentMismatch),
         (docx_with_unicode_path_renaming(), ContentMismatch),
+        (docx_with_renamed_local_header(), ContentMismatch),
         (rtf_with_object(), ContentMismatch),
         (rtf_with_template(), ContentMismatch),
         (rtf_with_split_object(), ContentMismatch),
@@ -589,20 +590,35 @@ pub fn docx_with_unlisted_relationships() -> Generated {
 /// name: zip reads it under that name, a reader that ignores the field under
 /// the one in its headers.
 pub fn docx_with_unicode_path_renaming() -> Generated {
+    Generated::new("renamed.docx", unicode_path_renaming(false))
+}
+
+/// `docx_with_unicode_path_renaming` whose local header gives the new name
+/// too, so only the central record's own name is the hidden one.
+pub fn docx_with_renamed_local_header() -> Generated {
+    Generated::new("renamed-local.docx", unicode_path_renaming(true))
+}
+
+fn unicode_path_renaming(in_local_header: bool) -> Vec<u8> {
     const RELS: &str = "word/_rels/settings.xml.rels";
+    // As long as `RELS`, so a local header can take it in place.
+    const NEW: &str = "word/media/notes-archive.txt";
     let hostile = rels(&format!(
         "<Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
          Target=\"https://example.invalid/template.dotm\" TargetMode=\"External\"/>"
     ));
     let mut b = word_package(WORD_MAIN, &[(RELS, hostile.as_bytes())]);
+    if in_local_header {
+        let local = b.windows(RELS.len()).position(|w| w == RELS.as_bytes()).unwrap();
+        b[local..local + NEW.len()].copy_from_slice(NEW.as_bytes());
+    }
     // Its ID and size, version 1, the CRC-32 of the name it replaces, the new name.
-    let name = b"word/media/note.txt";
     let extra = [
         &le16(0x7075)[..],
-        &le16(5 + name.len() as u16),
+        &le16(5 + NEW.len() as u16),
         &[1],
         &le32(crc32(RELS.as_bytes())),
-        name,
+        NEW.as_bytes(),
     ]
     .concat();
     // The part's central record is the last, its name right before the end
@@ -613,7 +629,7 @@ pub fn docx_with_unicode_path_renaming() -> Generated {
     let directory_size = u32::from_le_bytes(b[end + 12..end + 16].try_into().unwrap());
     b[end + 12..end + 16].copy_from_slice(&le32(directory_size + extra.len() as u32));
     b.splice(end..end, extra);
-    Generated::new("renamed.docx", b)
+    b
 }
 
 /// A macro-enabled main part in `[CONTENT_TYPES].XML` beside an ordinary

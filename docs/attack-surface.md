@@ -148,7 +148,7 @@ and peer review catch that.
   - Are copies cleared at close, on signals and at startup?
   - Is consent asked by the OS, never by the web view?
   - Does `classify` run at attach, preview and open?
-  - Is a package with duplicate, equivalent or unlisted entries refused?
+  - Is an OOXML or ODF package refused when a name is listed twice or (OOXML) equivalent, a local header disagrees with its central record on what decides the content, two entries overlap, or a local header sits where the directory lists none? Does the local-header reading (`unambiguous`, `local_span`, `zip64_values`) stay within the file's bytes?
   - Flatpak's OpenURI route counts no answer within 5 s, or a closed chooser, as opened (011 research.md §8). Is that acceptable?
   - Regression: #65, #71.
 - **Accepted:**
