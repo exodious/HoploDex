@@ -280,7 +280,8 @@ windows-sys = { version = "0.61", features = [
     # The helper lookup of tests/support/preview_support.rs.
     "Win32_System_Diagnostics_ToolHelp",
     # Waiting for the helper to end when its parent is killed
-    # (tests/tiff_helper_test.rs).
+    # (tests/tiff_helper_test.rs), and whether a helper is gone
+    # (tests/support/preview_support.rs).
     "Win32_System_Threading",
     # This process's working set, sampled while the import reads a file
     # (tests/import_reader_test.rs).
