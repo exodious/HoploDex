@@ -1,3 +1,4 @@
+import { budgetsChecked } from "../support/budgets";
 import { $, $$, browser, expect } from "../support/ui";
 import {
   TASK_LIMIT_MS,
@@ -90,7 +91,7 @@ describe("006 US4 - Browse, Group and Search Accessories (was us12-accessories-b
     const headings = await groupHeadings();
     expect(headings[0]).toContain("LaRue PredatAR");
     expect(headings[1]).toContain("Not mounted");
-    expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+    if (budgetsChecked()) expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
 
     // Back to the AR's page for the next story, which starts on a record.
     await shiftTabToControl("Collection");

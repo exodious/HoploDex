@@ -232,7 +232,7 @@ fn run_case(name: &str) {
     } else {
         REFUSAL_BUDGET
     };
-    assert!(took < budget, "{name}: refused in {took:?}, over {budget:?}");
+    support::assert_budget!(took < budget, "{name}: refused in {took:?}, over {budget:?}");
     assert!(rise <= MEMORY_BUDGET, "{name}: memory rose {} MB", rise / (1024 * 1024));
     assert!(no_helper_runs(), "{name}: the helper is still running");
 }
@@ -520,7 +520,7 @@ fn cancelling_stops_the_reading_within_a_second_wherever_it_is() {
         assert_eq!(error.code, "OPERATION_STOPPED", "at {percent}%: {error:?}");
         assert_eq!(error.details.as_deref().unwrap()["importedCount"], json!(0));
         println!("stopped at {percent}%: {took:?}");
-        assert!(took < STOP_BUDGET, "stopped at {percent}% in {took:?}");
+        support::assert_budget!(took < STOP_BUDGET, "stopped at {percent}% in {took:?}");
         assert!(no_helper_runs(), "the helper is gone after a stop at {percent}%");
     }
 }
@@ -533,7 +533,7 @@ fn a_session_that_ends_goes_ahead_at_once_and_the_reading_ends_within_a_second()
         let error = outcome.expect_err("closed");
         assert_eq!(error.code, "DATABASE_CLOSED", "at {percent}%: {error:?}");
         println!("closed at {percent}%: {took:?}");
-        assert!(took < STOP_BUDGET, "closed at {percent}% in {took:?}");
+        support::assert_budget!(took < STOP_BUDGET, "closed at {percent}% in {took:?}");
         assert!(no_helper_runs(), "the helper is gone after a close at {percent}%");
     }
 }
@@ -546,7 +546,7 @@ fn a_stop_made_by_the_session_ending_is_never_the_users_stop() {
     let (outcome, took) = ended_after(10, true, false);
     let error = outcome.expect_err("closed");
     assert_eq!(error.code, "DATABASE_CLOSED", "{error:?}");
-    assert!(took < STOP_BUDGET, "{took:?}");
+    support::assert_budget!(took < STOP_BUDGET, "{took:?}");
 }
 
 #[test]

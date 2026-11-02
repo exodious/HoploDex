@@ -1,0 +1,115 @@
+# The toolchains every CI job (ci.yml) needs, then `npm ci`: Node 24 with
+# npm 12 (the lockfile format, and `allowScripts`), Rust, cargo-nextest when
+# asked, and on Windows the OpenSSL the build links (DEVELOPMENT.md,
+# "Continuous integration"). Caches are saved only from main and restored by
+# pull requests, so a pull request never fills the 10 GB with its own.
+name: CI setup
+description: Node, npm, Rust, caches and the Windows OpenSSL for a CI job
+inputs:
+  rust-cache:
+    description: The Rust cache's name (one per OS and profile), or empty for none
+    default: ""
+  components:
+    description: Rust components beyond the minimal profile (rustfmt, clippy)
+    default: ""
+  nextest:
+    description: '"true" to install cargo-nextest'
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - id: npm
+      shell: bash
+      run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+
+    - if: github.ref == 'refs/heads/main'
+      uses: actions/cache@v6
+      with:
+        path: ${{ steps.npm.outputs.dir }}
+        key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+        restore-keys: npm-${{ runner.os }}-
+
+    - if: github.ref != 'refs/heads/main'
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.npm.outputs.dir }}
+        key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+        restore-keys: npm-${{ runner.os }}-
+
+    # The Dockerfile's npm, so CI and the dev container agree.
+    - shell: bash
+      run: npm install --global npm@12
+
+    # Third-party actions are pinned to a commit (#72); Dependabot moves the
+    # pins. This is the head of the action's `stable` branch on 2026-10-09,
+    # and 1.99.0 the Rust that codeql.yml and audit.yml pin. The action has no
+    # release tags, so Dependabot may not move it; refresh it with the toolchain.
+    - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      with:
+        toolchain: 1.99.0
+        components: ${{ inputs.components }}
+
+    # v2.9.3. One cache per OS and profile; the release builds have none, so a
+    # package is built clean.
+    - if: inputs.rust-cache != ''
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        workspaces: src-tauri
+        shared-key: ${{ runner.os }}-${{ inputs.rust-cache }}
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    # v2.87.31, the prebuilt cargo-nextest at the Dockerfile's version.
+    - if: inputs.nextest == 'true'
+      uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+      with:
+        tool: cargo-nextest@0.9.146
+
+    # Every Windows job links OpenSSL statically, from the vcpkg pinned in
+    # scripts/windows/vcpkg/vcpkg.json: the app starts its helpers with an
+    # empty environment, so a DLL build's helpers can't find libcrypto. The
+    # install folder is fixed, since libsqlite3-sys doesn't rebuild SQLCipher
+    # when OPENSSL_DIR moves; the cache is keyed on the pin.
+    - if: runner.os == 'Windows' && github.ref == 'refs/heads/main'
+      id: openssl-main
+      uses: actions/cache@v6
+      with:
+        path: C:\hoplodex-openssl
+        key: openssl-x64-windows-static-md-${{ hashFiles('scripts/windows/vcpkg/vcpkg.json') }}
+
+    - if: runner.os == 'Windows' && github.ref != 'refs/heads/main'
+      id: openssl-pr
+      uses: actions/cache/restore@v6
+      with:
+        path: C:\hoplodex-openssl
+        key: openssl-x64-windows-static-md-${{ hashFiles('scripts/windows/vcpkg/vcpkg.json') }}
+
+    # vcpkg at the pinned commit only (the image's own vcpkg moves with the
+    # image), a 4 to 7 minute build when the cache misses.
+    - name: Build the pinned OpenSSL with vcpkg (Windows)
+      if: runner.os == 'Windows' && steps.openssl-main.outputs.cache-hit != 'true' && steps.openssl-pr.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $baseline = (Get-Content scripts\windows\vcpkg\vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+        $vcpkg = Join-Path $env:RUNNER_TEMP vcpkg
+        git init -q $vcpkg
+        git -C $vcpkg fetch -q --depth 1 https://github.com/microsoft/vcpkg $baseline
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        git -C $vcpkg checkout -q FETCH_HEAD
+        & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        & "$vcpkg\vcpkg.exe" install --x-manifest-root=scripts\windows\vcpkg `
+          --x-install-root=C:\hoplodex-openssl --triplet x64-windows-static-md --clean-after-build
+        exit $LASTEXITCODE
+
+    - if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        "OPENSSL_DIR=C:\hoplodex-openssl\x64-windows-static-md" >> $env:GITHUB_ENV
+        "OPENSSL_STATIC=1" >> $env:GITHUB_ENV
+
+    - shell: bash
+      run: npm ci

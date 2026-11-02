@@ -1,0 +1,461 @@
+# The per-pull-request CI (#25): format, lint, the unit and integration tests,
+# E2E and the packages on Linux, Windows and macOS, and the Flatpak. It is a
+# second net: tests pass in the owner's own Linux, macOS and Windows
+# environments before a pull request opens. What runs, what is optional and
+# how to reproduce a job locally are in DEVELOPMENT.md, "Continuous
+# integration". The release run is #19's.
+#
+# The jobs run natively on pinned runner images, not in the dev container,
+# whose image would have to be built every run. Under CI (`CI=true`, which
+# GitHub sets) the timing budgets are skipped and the tests still make every
+# other check (src-tauri/tests/support/mod.rs `budgets_checked`,
+# e2e/support/budgets.ts). macOS E2E runs on every pull request without
+# failing it: the runner's 7 GB leaves the suite little room, so its failures
+# are recorded in the run's summary instead.
+#
+# A pull request that changes only Markdown, or only the other workflows'
+# files, skips each job's steps (.github/actions/scope), as audit.yml does:
+# by step rather than by a `paths` filter or a job-level `if`, so each check
+# still reports a result, and a fault in deciding fails the job. Pushes to
+# main always run, and only they save caches (.github/actions/setup).
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux-checks:
+    name: Checks (Linux)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      # GitHub's own actions are pinned to a release tag; third-party ones to a
+      # commit (#72). Dependabot updates both (.github/dependabot.yml).
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+
+      # WebKitGTK's dev package brings GTK, libsoup and JavaScriptCore; the
+      # image has the rest (libssl-dev, pkg-config, the C toolchain).
+      - name: Install Linux packages
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+        with:
+          rust-cache: debug
+          components: rustfmt, clippy
+          nextest: "true"
+
+      - name: Prettier
+        if: steps.scope.outputs.run == 'true'
+        run: npm run format:check
+      - name: cargo fmt
+        if: steps.scope.outputs.run == 'true'
+        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+      - name: ESLint
+        if: steps.scope.outputs.run == 'true'
+        run: npm run lint
+      - name: Clippy (all targets)
+        if: steps.scope.outputs.run == 'true'
+        run: cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml --features test-kdf -- -D warnings
+      - name: Clippy (without the test hooks)
+        if: steps.scope.outputs.run == 'true'
+        run: cargo clippy --lib --bins --examples --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - name: Vitest
+        if: steps.scope.outputs.run == 'true'
+        run: npm test
+      # --no-fail-fast, so one failure doesn't hide the rest of the run.
+      - name: nextest
+        if: steps.scope.outputs.run == 'true'
+        run: cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf --no-fail-fast
+      - name: Doctests
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --doc
+      - name: Build the frontend
+        if: steps.scope.outputs.run == 'true'
+        run: npm run build
+
+  windows-checks:
+    name: Checks (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+
+      # nextest runs three times faster with TEMP on the D: disk and this
+      # Defender call, and only with both (#25's runner investigation, 6.5).
+      - name: Speed up the tests' file I/O
+        if: steps.scope.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          $temp = Join-Path $env:RUNNER_TEMP t
+          New-Item -ItemType Directory -Force $temp | Out-Null
+          "TEMP=$temp" >> $env:GITHUB_ENV
+          "TMP=$temp" >> $env:GITHUB_ENV
+          Set-MpPreference -DisableRealtimeMonitoring $true
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+        with:
+          rust-cache: debug
+          components: clippy
+          nextest: "true"
+
+      - name: Clippy (all targets)
+        if: steps.scope.outputs.run == 'true'
+        run: cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml --features test-kdf -- -D warnings
+      - name: Clippy (without the test hooks)
+        if: steps.scope.outputs.run == 'true'
+        run: cargo clippy --lib --bins --examples --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - name: Vitest
+        if: steps.scope.outputs.run == 'true'
+        run: npm test
+      - name: nextest
+        if: steps.scope.outputs.run == 'true'
+        run: cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf --no-fail-fast
+
+  macos-checks:
+    name: Checks (macOS)
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+        with:
+          rust-cache: debug
+          components: clippy
+          nextest: "true"
+
+      - name: Clippy (all targets)
+        if: steps.scope.outputs.run == 'true'
+        run: cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml --features test-kdf -- -D warnings
+      - name: Clippy (without the test hooks)
+        if: steps.scope.outputs.run == 'true'
+        run: cargo clippy --lib --bins --examples --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - name: Vitest
+        if: steps.scope.outputs.run == 'true'
+        run: npm test
+      - name: nextest
+        if: steps.scope.outputs.run == 'true'
+        run: cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf --no-fail-fast
+
+  linux-e2e:
+    name: E2E (Linux)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+
+      # ImageMagick's `import` takes document-preview's pixel shots; the image
+      # has Xvfb and xauth.
+      - name: Install Linux packages
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev imagemagick
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+        with:
+          rust-cache: e2e
+
+      - name: Build the frontend
+        if: steps.scope.outputs.run == 'true'
+        run: npm run build
+      - name: E2E
+        if: steps.scope.outputs.run == 'true'
+        run: npm run test:e2e
+      - name: Quit cleanup
+        if: steps.scope.outputs.run == 'true'
+        run: xvfb-run -a python3 e2e/scripts/quit-cleanup.py
+
+  windows-e2e:
+    name: E2E (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+
+      # The runner's desktop is 1024x768, too small for the 1200x800 window,
+      # and its "Show animations" is off, so WebView2 would report reduced
+      # motion (DEVELOPMENT.md, "E2E on Windows"). SPI_SETCLIENTAREAANIMATION
+      # (0x1043) is the setting setup-system.ps1 turns on for a test machine.
+      - name: Set the display and turn animations on
+        if: steps.scope.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -Namespace HoploDex -Name Spi -MemberDefinition @'
+          [DllImport("user32.dll", SetLastError = true)]
+          public static extern bool SystemParametersInfo(uint action, uint param, IntPtr value, uint flags);
+          [DllImport("user32.dll", SetLastError = true)]
+          public static extern bool SystemParametersInfo(uint action, uint param, ref bool value, uint flags);
+          '@
+          # SPIF_UPDATEINIFILE | SPIF_SENDCHANGE
+          if (-not [HoploDex.Spi]::SystemParametersInfo(0x1043, 0, [IntPtr]1, 3)) { throw "SPI_SETCLIENTAREAANIMATION failed" }
+          $on = $false
+          [void][HoploDex.Spi]::SystemParametersInfo(0x1042, 0, [ref]$on, 0)
+          if (-not $on) { throw "client-area animation is still off" }
+          Write-Output "Display set to 1920x1080, client-area animation on"
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+        with:
+          rust-cache: e2e
+
+      - name: Build the frontend
+        if: steps.scope.outputs.run == 'true'
+        run: npm run build
+      - name: E2E
+        if: steps.scope.outputs.run == 'true'
+        run: npm run test:e2e
+      - name: Quit cleanup
+        if: steps.scope.outputs.run == 'true'
+        run: powershell -ExecutionPolicy Bypass -File e2e/scripts/quit-cleanup.ps1
+
+  macos-e2e:
+    name: E2E (macOS, optional)
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+
+      # The runner's screen is 1024x768 and Reduce Motion is on; both fail
+      # `databases` (#25's runner investigation, 4.2).
+      - name: Set the display and turn Reduce Motion off
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          defaults write com.apple.universalaccess reduceMotion -bool false
+          brew install displayplacer
+          id=$(displayplacer list | sed -n 's/^Persistent screen id: //p' | head -n 1)
+          [ -n "$id" ] || { echo "::error::displayplacer found no screen"; exit 1; }
+          displayplacer "id:$id res:1920x1080 hz:60 color_depth:7 enabled:true scaling:off origin:(0,0) degree:0"
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+        with:
+          rust-cache: e2e
+
+      - name: Build the frontend
+        if: steps.scope.outputs.run == 'true'
+        run: npm run build
+      # One worker: the suite passed so on the 3-CPU, 7 GB runner, where two
+      # would run out of memory. Optional (#25): a failure doesn't fail the
+      # job, and the next step records it.
+      - name: E2E
+        id: e2e
+        if: steps.scope.outputs.run == 'true'
+        continue-on-error: true
+        env:
+          HOPLODEX_E2E_WORKERS: 1
+        run: npm run test:e2e 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+      - name: Quit cleanup
+        id: quit
+        if: steps.scope.outputs.run == 'true'
+        continue-on-error: true
+        run: python3 e2e/scripts/quit-cleanup.py
+      - name: Record the failures
+        if: steps.e2e.outcome == 'failure' || steps.quit.outcome == 'failure'
+        env:
+          E2E: ${{ steps.e2e.outcome }}
+          QUIT: ${{ steps.quit.outcome }}
+        run: |
+          specs=$(sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/e2e.log" 2>/dev/null \
+            | grep -oE 'FAILED in .*e2e/specs/[^ ]+\.e2e\.ts' | grep -oE 'e2e/specs/[^ ]+\.e2e\.ts' | sort -u || true)
+          {
+            echo "## macOS E2E failed (optional, #25)"
+            echo
+            echo "E2E: $E2E. Quit cleanup: $QUIT. Record each failure in an issue, so it is tracked."
+            if [ -n "$specs" ]; then
+              echo
+              echo "Failed spec files:"
+              sed 's/^/- `/; s/$/`/' <<<"$specs"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          for spec in $specs; do echo "::warning title=macOS E2E (optional)::$spec failed"; done
+          [ "$QUIT" != failure ] || echo "::warning title=macOS E2E (optional)::quit-cleanup.py failed"
+          [ -n "$specs" ] || [ "$E2E" != failure ] || echo "::warning title=macOS E2E (optional)::the E2E run failed; see its log"
+
+  linux-packages:
+    name: Packages (Linux)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+      - name: Install Linux packages
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+
+      # Unsigned and published nowhere. Linux ships the .deb, .rpm and Flatpak
+      # (010 FR-017), so no AppImage; build-appimage.sh still checks the
+      # release binary for the WebDriver server.
+      - name: Build the .deb and .rpm
+        if: steps.scope.outputs.run == 'true'
+        run: npm run bundle:linux -- --bundles deb,rpm
+
+  windows-packages:
+    name: Packages (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+
+      # bash, so `--` reaches npm as it is.
+      - name: Build the MSI and NSIS installers
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: npm run tauri build -- --bundles msi,nsis
+      # The E2E-only WebDriver server must never ship (#29).
+      - name: Check the shipped binary
+        if: steps.scope.outputs.run == 'true'
+        run: node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex.exe
+
+  macos-packages:
+    name: Packages (macOS)
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+
+      - name: Build the .app and .dmg
+        if: steps.scope.outputs.run == 'true'
+        run: npm run tauri build -- --bundles app,dmg
+      - name: Check the shipped binary
+        if: steps.scope.outputs.run == 'true'
+        run: node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
+
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    # The runner opts in to the Flatpak scripts' guard (scripts/flatpak/guard.mjs):
+    # its own installation and state folder, empty, outside any real one
+    # (DEVELOPMENT.md, "The Flatpak check"). The installation isn't cached:
+    # 6.3 GB is most of the 10 GB, and Flathub delivers it in about a minute.
+    env:
+      HOPLODEX_CI_FLATPAK: "1"
+      FLATPAK_USER_DIR: /mnt/hoplodex-flatpak
+      HOPLODEX_FLATPAK_STATE: /mnt/hoplodex-flatpak-state
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        uses: ./.github/actions/scope
+
+      - name: Install Linux packages
+        if: steps.scope.outputs.run == 'true'
+        env:
+          CHECK: ${{ steps.scope.outputs.flatpak-check }}
+        run: |
+          packages=(flatpak flatpak-builder desktop-file-utils)
+          [ "$CHECK" != true ] || packages+=(python3-dbusmock gnome-keyring libsecret-tools libwebkit2gtk-4.1-dev)
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends "${packages[@]}"
+          sudo install -d -o "$USER" "$FLATPAK_USER_DIR" "$HOPLODEX_FLATPAK_STATE"
+      - if: steps.scope.outputs.run == 'true'
+        uses: ./.github/actions/setup
+
+      - name: Build the Flatpak
+        if: steps.scope.outputs.run == 'true'
+        run: npm run bundle:flatpak
+
+      # Only for a pull request that changes the paths DEVELOPMENT.md lists
+      # (011 FR-021), after the build, which installed the runtime and SDK the
+      # check needs. The stand-ins the dev container has: a removable drive,
+      # and two folders outside what the Flatpak reaches.
+      - name: Make the Flatpak check's stand-ins
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.flatpak-check == 'true'
+        run: |
+          sudo mkdir -p /run/media/dev/hoplodex-check /mnt/hoplodex-check
+          sudo mount -t tmpfs -o mode=1777 tmpfs /run/media/dev/hoplodex-check
+          sudo mount -t tmpfs -o mode=1777 tmpfs /mnt/hoplodex-check
+          sudo install -d -m 0755 -o "$USER" /srv/hoplodex-check
+      - name: Flatpak check
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.flatpak-check == 'true'
+        run: npm run build && npm run test:flatpak

@@ -1,3 +1,4 @@
+import { budgetsChecked } from "../support/budgets";
 import {
   $,
   browser,
@@ -156,7 +157,7 @@ describe("005 US2 - Record an Item's Registration (was us11-regulated-items)", (
     // Enter in the last field saves.
     await realKey("Return");
     await $("#record-name").waitForExist({ timeout: 8000 });
-    expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+    if (budgetsChecked()) expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
 
     // Reopened: the registration is on the record, and the fields a suppressor
     // omits were never offered.

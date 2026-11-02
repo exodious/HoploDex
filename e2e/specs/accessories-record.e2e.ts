@@ -1,3 +1,4 @@
+import { budgetsChecked } from "../support/budgets";
 import {
   $,
   $$,
@@ -157,6 +158,6 @@ describe("006 US1 - Record an Accessory (was us12-accessories-record)", () => {
     // The photo and the schedule survive the edit.
     expect(await $$(".hd-photo").length).toBe(1);
     await expect($(".hd-facts--compact*=Scheduled, $300")).toExist();
-    expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+    if (budgetsChecked()) expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
   });
 });

@@ -1,0 +1,49 @@
+# What a CI job has to do for this event (ci.yml): `run` is "true" unless a
+# pull request changes only Markdown or only the other workflows' files, as in
+# audit.yml; `flatpak-check` is "true" when a pull request changes one of the
+# paths DEVELOPMENT.md ("The Flatpak check") says need `npm run test:flatpak`
+# (011 FR-021). Keep FLATPAK_PATHS in step with that list. Needs a checkout two
+# commits deep: on a pull request, HEAD is GitHub's merge commit and its first
+# parent is main. A fault in deciding fails the step, and so the job, rather
+# than skipping its work.
+name: CI scope
+description: Decide whether this CI job runs, and whether the Flatpak check does
+outputs:
+  run:
+    description: '"true" when the job has something to check'
+    value: ${{ steps.scope.outputs.run }}
+  flatpak-check:
+    description: '"true" when npm run test:flatpak should run'
+    value: ${{ steps.scope.outputs.flatpak-check }}
+runs:
+  using: composite
+  steps:
+    # --no-renames lists a renamed file under both names, so renaming code to
+    # `.md` doesn't count as a docs-only change. `match` is grep that treats no
+    # match (exit 1) as an empty result but still fails on an error (2).
+    - id: scope
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+        SKIPPABLE: '\.md$|^\.github/workflows/(audit|codeql|pr-body)\.yml$|^\.github/codeql/|^\.github/dependabot\.yml$'
+        FLATPAK_PATHS: '^flatpak/|^scripts/flatpak/|^e2e/specs/flatpak\.e2e\.ts$|^e2e/support/flatpak\.ts$|^src-tauri/src/(platform/linux|main|app_dirs|session/lifecycle)\.rs$|^src-tauri/src/services/(sandbox|keyring|file_swap|backups|scratch)\.rs$|^src-tauri/src/services/(helper|import_reader)/|^src-tauri/src/services/preview/(helper|sandbox_probe)\.rs$|^src-tauri/src/commands/(databases|backups|import_export|documents|photos)\.rs$|^src/features/media/useFileDrop\.ts$'
+      run: |
+        if [ "$EVENT" != pull_request ]; then
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "flatpak-check=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        changed=$(git diff --name-only --no-renames HEAD^1 HEAD)
+        printf 'Changed files:\n%s\n' "$changed"
+        match() { local s=0; grep "$@" || s=$?; [ "$s" -le 1 ] || exit "$s"; }
+        if [ -n "$(match -v -E "$SKIPPABLE" <<<"$changed")" ]; then
+          echo "run=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Only Markdown or the other workflows changed, so this job is skipped."
+        fi
+        if [ -n "$(match -E "$FLATPAK_PATHS" <<<"$changed")" ]; then
+          echo "flatpak-check=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "flatpak-check=false" >> "$GITHUB_OUTPUT"
+        fi

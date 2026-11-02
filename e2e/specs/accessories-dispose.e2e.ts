@@ -1,3 +1,4 @@
+import { budgetsChecked } from "../support/budgets";
 import { $, $$, browser, expect, toggle } from "../support/ui";
 import {
   TASK_LIMIT_MS,
@@ -114,7 +115,7 @@ describe("006 US3 - Dispose and Delete With Items Mounted (was us12-accessories-
       timeout: 8000,
       timeoutMsg: "the Rifle never showed as sold",
     });
-    expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+    if (budgetsChecked()) expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
 
     // The Rifle's page has no Mounted section any more.
     expect(await mountedSectionText()).toBe("");

@@ -41,6 +41,27 @@ pub fn other_machine() -> MachineIdentity {
     MachineIdentity { id: "2".repeat(32), display_name: "Workshop PC".into() }
 }
 
+/// Whether timing budgets are checked: everywhere but under CI (`CI=true`,
+/// which GitHub Actions sets), where shared runners' speed varies too much for
+/// a budget to mean anything (#25). The same rule as `budgetsChecked()` in
+/// `e2e/support/budgets.ts`; DEVELOPMENT.md, "Continuous integration".
+#[allow(dead_code)]
+pub fn budgets_checked() -> bool {
+    std::env::var_os("CI").is_none_or(|ci| ci != "true")
+}
+
+/// `assert!` for a timing budget, skipped under CI ([`budgets_checked`]). Only
+/// the time comparison goes through it; every other assertion of the test stays.
+macro_rules! assert_budget {
+    ($($arg:tt)+) => {
+        if $crate::support::budgets_checked() {
+            assert!($($arg)+);
+        }
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use assert_budget;
+
 /// Held for the whole of a test in a test program of its own that needs the
 /// pinned KDF (`portability_test`, `release_upgrade_test`: a file a shipped
 /// build keyed opens only with it), so those tests run one at a time. In a
