@@ -2000,6 +2000,15 @@ branch that changed nothing: update it in its own commit, like any other
 finding. Update the crate (`cargo update -p <crate>`), or move off
 the parent that pins it.
 
+cargo-deny reads yank state only from cargo's local index cache, and with a
+complete `Cargo.lock` neither it nor `cargo fetch` refreshes an entry already
+there. So `audit:cargo` first runs `cargo update --dry-run`, which refreshes
+every locked crate's entry and leaves `Cargo.lock` as it is. Without it, a
+cache that is weeks old would answer for the day it was written: a version
+yanked since then would pass, and one yanked then and unyanked since would
+fail (`zip` 7.2.0 and 8.6.0, yanked for a day in October 2026, failed the macOS
+VM's audit this way).
+
 ### Before a release
 
 The audit can't make these checks, so make them by hand with the license
