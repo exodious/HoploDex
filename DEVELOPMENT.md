@@ -903,8 +903,8 @@ a child web view, is the PDF surface check's.
 dev container's Flatpak installation and drives it through WebDriver in its
 sandbox (`011 US5-1`, `011 FR-021`, `011 FR-023`; the reasons are in
 [011's research.md §15, §16 and §18](specs/011-flatpak/research.md)). It runs
-only in the dev container started with `--flatpak`, after `npm run build`, and
-**ordinary test runs skip it**:
+only in the dev container started with `--flatpak` (or on a GitHub-hosted runner
+set up as below), after `npm run build`, and **ordinary test runs skip it**:
 
 ```bash
 scripts/dev-container.sh --flatpak bash -c 'npm run build && npm run test:flatpak'

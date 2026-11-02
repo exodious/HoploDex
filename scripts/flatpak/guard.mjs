@@ -25,8 +25,9 @@ export const HOST_FLAG = "--i-know-this-is-a-host";
 /** The opt-in a runner's workflow sets; the runner's own two markers are not enough alone. */
 export const CI_OPT_IN = "HOPLODEX_CI_FLATPAK";
 /**
- * A caller's request to accept the dev container only (011 T104: check.sh). It can
- * only make the guard stricter, so it is not a way past it.
+ * A caller's request to refuse every host (011 T104: check.sh), accepting only the dev
+ * container or an opted-in runner. It can only make the guard stricter, so it is not
+ * a way past it.
  */
 export const CONTAINER_ONLY_FLAG = "--container-only";
 

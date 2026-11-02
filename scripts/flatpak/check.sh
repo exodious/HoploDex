@@ -37,7 +37,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 cd "$repo"
 
-# The container alone, asked before anything else (a host's refusal says why).
+# The container (or an opted-in runner) alone, asked before anything else (a host's
+# refusal says why).
 node "$here/guard.mjs" --container-only >/dev/null
 
 fresh_install=0

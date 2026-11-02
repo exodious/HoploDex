@@ -1,7 +1,8 @@
 // @vitest-environment node
 // The host guard (011 US5-3, 011 SC-007; 011 research.md §15, §16): the Flatpak
-// scripts run only in the dev container's `--flatpak` mode, or against a
-// throwaway installation the caller names on a host. The decision is a pure
+// scripts run only in the dev container's `--flatpak` mode, against a
+// throwaway installation the caller names on a host, or on an opted-in
+// GitHub-hosted runner. The decision is a pure
 // function of the environment, hostname, arguments and a file-system reader, so
 // no test here touches a real Flatpak installation.
 import { describe, expect, it } from "vitest";
