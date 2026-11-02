@@ -518,9 +518,9 @@ const LOCAL_HEADER: &[u8] = b"PK\x03\x04";
 /// Where `entry` lies, from its local header to the end of its data, if that
 /// header agrees with the central record on the name (the same bytes in both,
 /// and as zip reads it, so a Unicode Path extra field that renames the entry
-/// is refused), the method, the
-/// encryption and data descriptor flags, the CRC and the sizes (zero where a
-/// data descriptor follows, Zip64's from the extra field). Times and other
+/// is refused), the method, the encryption and data descriptor flags, the CRC
+/// and the sizes (zero where a data descriptor follows, Zip64's from the
+/// extra field). Times and other
 /// extra fields aren't compared: tools that edit a package in place leave
 /// them differing, and no reader takes content from them.
 fn local_span(bytes: &[u8], entry: &zip::read::ZipFileEntry<'_>) -> Option<(usize, usize)> {
