@@ -2471,7 +2471,8 @@ here; [Test](#test) says when to run them.
 
 - **Optional: E2E on macOS.** The runner has 3 CPUs and 7 GB, which one worker
   (`HOPLODEX_E2E_WORKERS=1`) fills, so the job runs the suite on every pull
-  request but passes whatever it finds. A failure appears in the run's summary
+  request but passes whatever it finds. A failure, or a hang that the step's
+  timeout (40 minutes, 5 for quit-cleanup) ends, appears in the run's summary
   and as a warning naming each failed spec file; record it in an issue so it
   is tracked.
 - **Docs-only pull requests** skip each job's steps, as the audit does: a
