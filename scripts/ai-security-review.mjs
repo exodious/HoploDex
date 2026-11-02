@@ -12,10 +12,12 @@
 //       the tool's open and dismissed alerts on <ref>, as JSON; --seed-prs adds
 //       those still open on pull requests merged since <ref>'s last analysis
 //   node scripts/ai-security-review.mjs build <findings.json> --mode pr|release
-//       --commit <sha> [--known <open.json>[,…]] [--fixed <alert>,…]
+//       --commit <sha> [--carry <open.json>[,…]] [--fixed <alert>,…] [--known <json>[,…]]
 //       [--base <sha> --surface unchanged|changed]
 //       validates the findings, gives each a rule id and fingerprint, writes the
-//       SARIF and a record beside it (pr mode prints the PR body's section)
+//       SARIF and a record beside it (pr mode prints the PR body's section);
+//       every open alert in --carry must be a finding or in --fixed, and
+//       --known alerts are only context for minting ids
 //   node scripts/ai-security-review.mjs upload --pr <n> | --release [--ref <ref>]
 //       uploads the recorded SARIF, waits for it, and checks the alerts
 //   node scripts/ai-security-review.mjs gate [--ref <ref>]
@@ -138,6 +140,29 @@ export function assignRuleIds(findings, knownIds = []) {
     seen.add(id);
     return { ...f, rule_id: id };
   });
+}
+
+/**
+ * Every carried open alert (seeded ones from merged pull requests included) is
+ * uploaded again or named a verified fix: dropping one would close it, or
+ * leave a seeded one on its pull request's ref, out of the gate's sight.
+ */
+export function accountFor(carried, findings, fixedNumbers) {
+  const problems = [];
+  const open = carried.filter((a) => a.state === "open");
+  const uploaded = new Set(findings.map((f) => f.rule_id));
+  const fixed = fixedNumbers.map((n) => {
+    const a = open.find((k) => k.number === n);
+    if (!a) problems.push(`--fixed ${n}: not an open alert in --carry`);
+    else if (uploaded.has(a.rule_id)) problems.push(`#${n} is both fixed and uploaded`);
+    return { number: n, rule_id: a?.rule_id };
+  });
+  for (const a of open) {
+    if (!uploaded.has(a.rule_id) && !fixedNumbers.includes(a.number)) {
+      problems.push(`carried #${a.number} ${a.rule_id} is neither uploaded nor in --fixed`);
+    }
+  }
+  return { fixed, problems };
 }
 
 /** One run, one rule per finding (severity is per rule). */
@@ -508,21 +533,17 @@ function build(opts) {
     }
   }
   if (problems.length) throw new Error(problems.join("\n"));
-  const knownAlerts = (opts.known ? opts.known.split(",") : []).flatMap((file) =>
-    JSON.parse(fs.readFileSync(file, "utf8")),
-  );
-  const known = knownAlerts.map((a) => a.rule_id);
-  // The carried alerts the verifier confirmed fixed: the only ones the upload may close.
-  const fixed = (opts.fixed ? opts.fixed.split(",") : []).map((n) => {
-    const a = knownAlerts.find((k) => k.number === Number(n) && k.state === "open");
-    if (!a) throw new Error(`--fixed ${n}: not an open alert in --known`);
-    return { number: a.number, rule_id: a.rule_id };
-  });
+  const read = (list) =>
+    (list ? list.split(",") : []).flatMap((file) => JSON.parse(fs.readFileSync(file, "utf8")));
+  const carried = read(opts.carry);
+  const known = [...carried, ...read(opts.known)].map((a) => a.rule_id);
   const findings = assignRuleIds(raw, known);
-  for (const f of fixed) {
-    if (findings.some((x) => x.rule_id === f.rule_id))
-      throw new Error(`#${f.number} is both fixed and uploaded`);
-  }
+  const { fixed, problems: unaccounted } = accountFor(
+    carried,
+    findings,
+    opts.fixed ? opts.fixed.split(",").map(Number) : [],
+  );
+  if (unaccounted.length) throw new Error(unaccounted.join("\n"));
   const sarif = buildSarif(findings, { runId: `${mode}-${commit.slice(0, 12)}` });
   const where = recordPaths(mode);
   fs.mkdirSync(where.dir, { recursive: true });

@@ -7,6 +7,7 @@ import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { LIST, parseList, ROOT } from "./attack-surface.mjs";
 import {
+  accountFor,
   assignRuleIds,
   baseRuleId,
   BODY,
@@ -388,6 +389,34 @@ describe("carry-forward", () => {
     refused({ state: "open" }, {});
     refused({}, { state: "dismissed" });
     refused({}, { rule: { id: "logging/cwe-532/b.rs#f" } });
+  });
+});
+
+describe("accounting for carried alerts", () => {
+  const carried = [
+    alert(1, "a/cwe-1/x#a"),
+    { ...alert(2, "a/cwe-1/x#b"), seeded_from: 10 },
+    alert(3, "a/cwe-1/x#c", "dismissed"),
+  ].map((a) => ({ number: a.number, rule_id: a.rule.id, state: a.state }));
+  const upload = (...ids: string[]) => ids.map((rule_id) => ({ rule_id }));
+
+  it("needs every open one, seeded ones too, uploaded or named fixed", () => {
+    expect(accountFor(carried, upload("a/cwe-1/x#a"), []).problems).toEqual([
+      "carried #2 a/cwe-1/x#b is neither uploaded nor in --fixed",
+    ]);
+    expect(accountFor(carried, upload("a/cwe-1/x#a"), [2])).toEqual({
+      fixed: [{ number: 2, rule_id: "a/cwe-1/x#b" }],
+      problems: [],
+    });
+  });
+
+  it("refuses a fix that isn't a carried open alert, or is also uploaded", () => {
+    const all = upload("a/cwe-1/x#a", "a/cwe-1/x#b");
+    expect(accountFor(carried, all, [3, 9, 1]).problems).toEqual([
+      "--fixed 3: not an open alert in --carry",
+      "--fixed 9: not an open alert in --carry",
+      "#1 is both fixed and uploaded",
+    ]);
   });
 });
 

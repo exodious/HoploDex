@@ -107,9 +107,11 @@ surface or CWE is a new alert: treat it as a move (below).
 5. **Assemble** `<scratch>/findings.json`: confirmed new findings, plus every
    carried open alert that is present or unsure, with its `rule_id` (update
    its region and message to the reviewer's). Leave out only verified fixes,
-   and pass their alert numbers to `build --fixed <n>,…`: an upload closes
-   every open alert it leaves out, and `upload` reports any it closed that
-   isn't one of them (upload it again to reopen it).
+   and pass their alert numbers to `build --fixed <n>,…`. `build` refuses
+   to go on while any open alert in `--carry` is neither a finding nor named
+   fixed, and `upload` reports any open alert it closed that isn't a verified
+   fix (an upload closes every open alert it leaves out; upload it again to
+   reopen it).
    A confirmed **move** is a new finding at the new place; once uploaded, if
    the old alert was dismissed, ask the operator, then `carry-dismissal <new>
    <old>`.
@@ -143,8 +145,8 @@ surface or CWE is a new alert: treat it as a move (below).
    judges `introduced` against the merge base. Pre-existing ones go to the
    operator (Rules), not into `findings.json`.
 4. **Build.** `build <scratch>/findings.json --mode pr --commit HEAD --base
-   $base --surface unchanged|changed --known
-   <scratch>/open.json,<scratch>/main.json`. It prints the
+   $base --surface unchanged|changed --carry <scratch>/open.json --known
+   <scratch>/main.json` (leave out `--carry` when there's no PR yet). It prints the
    `## Security review` lines and writes the record the hook reads.
 5. **Upload.** It needs the PR's number, so:
    - **No PR yet:** push the branch, write the PR body with the section and
@@ -189,8 +191,8 @@ surface or CWE is a new alert: treat it as a move (below).
    <tag>:<path>` has it) *advisory required*: its fix goes through a draft
    private advisory's temporary fork, not a public PR, and you print what the
    advisory needs (affected and patched versions, the description).
-6. **Build and upload.** `build … --mode release --commit <commit> --known
-   <scratch>/open.json`, then `upload --release --ref <ref>`.
+6. **Build and upload.** `build … --mode release --commit <commit> --carry
+   <scratch>/open.json [--fixed <n>,…]`, then `upload --release --ref <ref>`.
 7. **Gate.** `gate` (with `--ref` for a release branch) counts open critical
    and high code scanning alerts from every tool, Dependabot critical and high
    alerts, open secret scanning alerts, and draft or triage advisories. The
