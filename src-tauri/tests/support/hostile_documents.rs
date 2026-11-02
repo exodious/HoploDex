@@ -85,6 +85,7 @@ pub fn refused_documents() -> Vec<Hostile> {
         (doc_with_macros_storage(), ContentMismatch),
         (xls_with_vba_project(), ContentMismatch),
         (odt_with_basic(), ContentMismatch),
+        (odt_with_unlisted_basic(), ContentMismatch),
         (docx_with_remote_template(), ContentMismatch),
         (docx_with_linked_image(), ContentMismatch),
         (docx_with_unc_target(), ContentMismatch),
@@ -95,6 +96,12 @@ pub fn refused_documents() -> Vec<Hostile> {
         (docx_with_ole_object(), ContentMismatch),
         (docx_with_activex(), ContentMismatch),
         (xlsx_with_external_link(), ContentMismatch),
+        (docx_with_duplicate_relationships(), ContentMismatch),
+        (docx_with_unlisted_relationships(), ContentMismatch),
+        (docx_with_equivalent_content_types(), ContentMismatch),
+        (xlsx_with_duplicate_relationships(), ContentMismatch),
+        (docx_with_disagreeing_headers(), ContentMismatch),
+        (docx_with_unicode_path_renaming(), ContentMismatch),
         (rtf_with_object(), ContentMismatch),
         (rtf_with_template(), ContentMismatch),
         (rtf_with_split_object(), ContentMismatch),
@@ -333,6 +340,17 @@ pub fn odt_with_basic() -> Generated {
     Generated::new("macros.odt", zip_stored(&entries))
 }
 
+/// An ODT whose `Basic/` script library is in a local header the central
+/// directory leaves out.
+pub fn odt_with_unlisted_basic() -> Generated {
+    let entries: Vec<(&str, &[u8])> = vec![
+        ("mimetype", b"application/vnd.oasis.opendocument.text"),
+        ("Basic/Standard/Module1.xml", b"<script:module/>"),
+        ("content.xml", b"<office:document-content/>"),
+    ];
+    Generated::new("unlisted.odt", zip_stored_unlisting(&entries, Some(1)))
+}
+
 // ------------------------------------------------ objects, outside content
 
 /// The Transitional relationship types' namespace.
@@ -521,6 +539,123 @@ pub fn xlsx_with_external_link() -> Generated {
     Generated::new("linked.xlsx", zip_stored(&entries))
 }
 
+/// A remote template in the first of two relationship parts with one name,
+/// the second empty: zip's index keeps only the second.
+pub fn docx_with_duplicate_relationships() -> Generated {
+    let hostile = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
+         Target=\"https://example.invalid/template.dotm\" TargetMode=\"External\"/>"
+    ));
+    let empty = rels("");
+    docx(
+        "duplicate.docx",
+        &[
+            ("word/_rels/settings.xml.rels", hostile.as_bytes()),
+            ("word/_rels/settings.xml.rels", empty.as_bytes()),
+        ],
+    )
+}
+
+/// A remote template in a relationship part the central directory leaves out,
+/// before a listed empty one of the same name.
+pub fn docx_with_unlisted_relationships() -> Generated {
+    let types = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
+         <Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\
+         <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\
+         <Default Extension=\"xml\" ContentType=\"application/xml\"/>\
+         <Override PartName=\"/word/document.xml\" ContentType=\"{WORD_MAIN}\"/></Types>"
+    );
+    let package = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/officeDocument\" Target=\"word/document.xml\"/>"
+    ));
+    let hostile = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
+         Target=\"https://example.invalid/template.dotm\" TargetMode=\"External\"/>"
+    ));
+    let empty = rels("");
+    let entries: Vec<(&str, &[u8])> = vec![
+        ("[Content_Types].xml", types.as_bytes()),
+        ("_rels/.rels", package.as_bytes()),
+        ("word/document.xml", b"<w:document/>"),
+        ("word/_rels/settings.xml.rels", hostile.as_bytes()),
+        ("word/_rels/settings.xml.rels", empty.as_bytes()),
+    ];
+    Generated::new("unlisted.docx", zip_stored_unlisting(&entries, Some(3)))
+}
+
+/// A remote template in a relationship part whose central record carries an
+/// Info-ZIP Unicode Path extra field (APPNOTE 4.6.9) giving it an ordinary
+/// name: zip reads it under that name, a reader that ignores the field under
+/// the one in its headers.
+pub fn docx_with_unicode_path_renaming() -> Generated {
+    const RELS: &str = "word/_rels/settings.xml.rels";
+    let hostile = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/attachedTemplate\" \
+         Target=\"https://example.invalid/template.dotm\" TargetMode=\"External\"/>"
+    ));
+    let mut b = word_package(WORD_MAIN, &[(RELS, hostile.as_bytes())]);
+    // Its ID and size, version 1, the CRC-32 of the name it replaces, the new name.
+    let name = b"word/media/note.txt";
+    let extra = [
+        &le16(0x7075)[..],
+        &le16(5 + name.len() as u16),
+        &[1],
+        &le32(crc32(RELS.as_bytes())),
+        name,
+    ]
+    .concat();
+    // The part's central record is the last, its name right before the end
+    // record (22 bytes, no comment); the extra field goes after the name.
+    let end = b.len() - 22;
+    let record = b[..end].windows(4).rposition(|w| w == le32(0x0201_4B50)).unwrap();
+    b[record + 30..record + 32].copy_from_slice(&le16(extra.len() as u16));
+    let directory_size = u32::from_le_bytes(b[end + 12..end + 16].try_into().unwrap());
+    b[end + 12..end + 16].copy_from_slice(&le32(directory_size + extra.len() as u32));
+    b.splice(end..end, extra);
+    Generated::new("renamed.docx", b)
+}
+
+/// A macro-enabled main part in `[CONTENT_TYPES].XML` beside an ordinary
+/// `[Content_Types].xml`: equivalent part names, ASCII case aside.
+pub fn docx_with_equivalent_content_types() -> Generated {
+    let macro_types = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
+         <Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\
+         <Override PartName=\"/word/document.xml\" ContentType=\"{WORD_MACRO_MAIN}\"/></Types>"
+    );
+    docx("equivalent.docx", &[("[CONTENT_TYPES].XML", macro_types.as_bytes())])
+}
+
+/// An XLSX whose external link is in the first of two workbook relationship
+/// parts with one name.
+pub fn xlsx_with_duplicate_relationships() -> Generated {
+    let types = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
+         <Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\
+         <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\
+         <Default Extension=\"xml\" ContentType=\"application/xml\"/>\
+         <Override PartName=\"/xl/workbook.xml\" ContentType=\"{SHEET_MAIN}\"/></Types>"
+    );
+    let package = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/officeDocument\" Target=\"xl/workbook.xml\"/>"
+    ));
+    let hostile = rels(&format!(
+        "<Relationship Id=\"rId1\" Type=\"{REL}/externalLink\" \
+         Target=\"externalLinks/externalLink1.xml\"/>"
+    ));
+    let plain = rels("");
+    let entries: Vec<(&str, &[u8])> = vec![
+        ("[Content_Types].xml", types.as_bytes()),
+        ("_rels/.rels", package.as_bytes()),
+        ("xl/workbook.xml", b"<workbook/>"),
+        ("xl/_rels/workbook.xml.rels", hostile.as_bytes()),
+        ("xl/_rels/workbook.xml.rels", plain.as_bytes()),
+        ("xl/externalLinks/externalLink1.xml", b"<externalLink><ddeLink/></externalLink>"),
+    ];
+    Generated::new("duplicate.xlsx", zip_stored(&entries))
+}
+
 /// An RTF with an embedded object (an object packager, as in the Equation
 /// Editor exploits).
 pub fn rtf_with_object() -> Generated {
@@ -567,23 +702,56 @@ pub fn html_named_pdf() -> Generated {
     )
 }
 
-/// A DOCX that is otherwise sound, with one more entry whose directory
-/// record declares 3 GB of content (the bytes behind it are one). Reading it
-/// whole would take far longer than reading its directory (007 research.md §2).
+/// A DOCX that is otherwise sound, with one more entry whose headers
+/// declare 3 GB of content (the bytes behind it are one). Reading it whole
+/// would take far longer than reading its directory (007 research.md §2).
 pub fn docx_declaring_gigabytes() -> Generated {
+    Generated::new("huge.docx", declaring_gigabytes(true))
+}
+
+/// `docx_declaring_gigabytes` with only the directory record declaring 3 GB:
+/// the local header still says one byte, so the two disagree on the size.
+pub fn docx_with_disagreeing_headers() -> Generated {
+    Generated::new("disagreeing.docx", declaring_gigabytes(false))
+}
+
+fn declaring_gigabytes(in_local_header: bool) -> Vec<u8> {
     const HUGE: &str = "word/media/huge.bin";
     let mut b = word_package(WORD_MAIN, &[(HUGE, b"x")]);
-    let signature = le32(0x0201_4B50);
+    patch_header(&mut b, false, HUGE, 24, &le32(3_000_000_000)); // uncompressed size
+    if in_local_header {
+        patch_header(&mut b, true, HUGE, 22, &le32(3_000_000_000));
+    }
+    b
+}
+
+/// A DOCX whose document part's local header gives a later time than its
+/// central record, as tools that edit a package in place can leave it.
+/// Nothing a reader takes content from differs, so it is accepted.
+pub fn docx_with_differing_times() -> Generated {
+    let mut b = word_package(WORD_MAIN, &[]);
+    // 12:00:00 on 2025-06-15, in the local header's time and date fields.
+    patch_header(&mut b, true, "word/document.xml", 10, &[le16(0x6000), le16(0x5ACF)].concat());
+    Generated::new("edited.docx", b)
+}
+
+/// Writes `value` at `field` bytes into the local header (`local`) or the
+/// central record of the entry `name`.
+fn patch_header(b: &mut [u8], local: bool, name: &str, field: usize, value: &[u8]) {
+    // The record's signature, then where its name length and name are.
+    let (signature, name_length, name_at) =
+        if local { (0x0403_4B50, 26, 30) } else { (0x0201_4B50, 28, 46) };
+    let signature = le32(signature);
     let mut at = 0;
     while let Some(found) = b[at..].windows(4).position(|w| w == signature) {
         let record = at + found;
-        let name_length = u16::from_le_bytes([b[record + 28], b[record + 29]]) as usize;
-        if &b[record + 46..record + 46 + name_length] == HUGE.as_bytes() {
-            b[record + 24..record + 28].copy_from_slice(&le32(3_000_000_000));
+        let length =
+            u16::from_le_bytes([b[record + name_length], b[record + name_length + 1]]) as usize;
+        if &b[record + name_at..record + name_at + length] == name.as_bytes() {
+            b[record + field..record + field + value.len()].copy_from_slice(value);
         }
         at = record + 4;
     }
-    Generated::new("huge.docx", b)
 }
 
 /// A ZIP of the wrong sort (no `[Content_Types].xml`) named `.docx`.
@@ -837,9 +1005,16 @@ fn crc32(data: &[u8]) -> u32 {
 /// A ZIP with every entry stored (no compression), in the order given, so
 /// an ODF package's `mimetype` can come first.
 fn zip_stored(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    zip_stored_unlisting(entries, None)
+}
+
+/// `zip_stored`, with the entry at `unlisted` left out of the central directory
+/// (its local header and data stay).
+fn zip_stored_unlisting(entries: &[(&str, &[u8])], unlisted: Option<usize>) -> Vec<u8> {
     let mut out = Vec::new();
     let mut central = Vec::new();
-    for (name, data) in entries {
+    let listed = entries.len() - usize::from(unlisted.is_some());
+    for (index, (name, data)) in entries.iter().enumerate() {
         let offset = out.len() as u32;
         let crc = crc32(data);
         let mut common = Vec::new();
@@ -858,6 +1033,9 @@ fn zip_stored(entries: &[(&str, &[u8])]) -> Vec<u8> {
         out.extend_from_slice(&common);
         out.extend_from_slice(name.as_bytes());
         out.extend_from_slice(data);
+        if Some(index) == unlisted {
+            continue;
+        }
 
         central.extend_from_slice(&le32(0x0201_4B50));
         central.extend_from_slice(&le16(20)); // version made by
@@ -874,8 +1052,8 @@ fn zip_stored(entries: &[(&str, &[u8])]) -> Vec<u8> {
     out.extend_from_slice(&le32(0x0605_4B50));
     out.extend_from_slice(&le16(0));
     out.extend_from_slice(&le16(0));
-    out.extend_from_slice(&le16(entries.len() as u16));
-    out.extend_from_slice(&le16(entries.len() as u16));
+    out.extend_from_slice(&le16(listed as u16));
+    out.extend_from_slice(&le16(listed as u16));
     out.extend_from_slice(&le32(central.len() as u32));
     out.extend_from_slice(&le32(central_at));
     out.extend_from_slice(&le16(0));

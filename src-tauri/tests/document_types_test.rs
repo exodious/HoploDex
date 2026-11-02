@@ -105,6 +105,23 @@ fn every_tiff_byte_order_and_bigtiff_is_a_tiff() {
     }
 }
 
+/// What an office suite writes passes the package checks, which crafted
+/// packages fail on duplicate, equivalent or unlisted entries (007
+/// research.md §2).
+#[test]
+fn accepts_what_libreoffice_writes() {
+    for (fixture, extension) in [
+        ("libreoffice.docx", "docx"),
+        ("libreoffice.xlsx", "xlsx"),
+        ("libreoffice.odt", "odt"),
+        ("libreoffice.ods", "ods"),
+    ] {
+        let found = classify(fixture, &document_fixture(fixture))
+            .unwrap_or_else(|e| panic!("{fixture} should be accepted: {e:?}"));
+        assert_eq!(found.canonical_extension, extension, "{fixture}");
+    }
+}
+
 #[test]
 fn refuses_every_hostile_document_with_its_code() {
     let all = hostile::refused_documents();
@@ -165,6 +182,42 @@ fn hyperlinks_pictures_charts_and_rtf_fields_are_accepted() {
     {
         assert!(classify(&plain.name, &plain.bytes).is_ok(), "{}", plain.name);
     }
+}
+
+#[test]
+fn a_package_whose_headers_differ_only_in_time_is_accepted() {
+    let edited = hostile::docx_with_differing_times();
+    assert!(classify(&edited.name, &edited.bytes).is_ok());
+}
+
+/// Some writers give Zip64 sizes in every local header, even for small parts.
+/// They are compared like the others: accepted while they agree with the
+/// central directory, refused once one doesn't.
+#[test]
+fn zip64_sizes_in_local_headers_are_compared() {
+    use std::io::{Cursor, Read, Write};
+    let mut sample = zip::ZipArchive::new(Cursor::new(document_fixture("sample.docx"))).unwrap();
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .large_file(true);
+    for index in 0..sample.len() {
+        let mut part = sample.by_index(index).unwrap();
+        let mut content = Vec::new();
+        part.read_to_end(&mut content).unwrap();
+        writer.start_file(part.name().unwrap().into_owned(), options).unwrap();
+        writer.write_all(&content).unwrap();
+    }
+    let mut bytes = writer.finish().unwrap().into_inner();
+    assert_eq!(&bytes[18..26], &[0xFF; 8], "the first local header defers its sizes to Zip64");
+    assert!(classify("zip64.docx", &bytes).is_ok());
+
+    // The first entry's Zip64 extra field follows its name; its first value
+    // is the uncompressed size.
+    let extra = 30 + usize::from(u16::from_le_bytes([bytes[26], bytes[27]]));
+    assert_eq!(&bytes[extra..extra + 2], &[1, 0], "a Zip64 extra field");
+    bytes[extra + 4] ^= 1;
+    assert_eq!(classify("zip64.docx", &bytes).unwrap_err().code(), "DOCUMENT_CONTENT_MISMATCH");
 }
 
 #[test]

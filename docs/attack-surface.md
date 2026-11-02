@@ -148,6 +148,7 @@ and peer review catch that.
   - Are copies cleared at close, on signals and at startup?
   - Is consent asked by the OS, never by the web view?
   - Does `classify` run at attach, preview and open?
+  - Is a package with duplicate, equivalent or unlisted entries refused?
   - Flatpak's OpenURI route counts no answer within 5 s, or a closed chooser, as opened (011 research.md §8). Is that acceptable?
   - Regression: #65, #71.
 - **Accepted:**
