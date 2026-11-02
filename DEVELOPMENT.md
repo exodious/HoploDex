@@ -605,8 +605,10 @@ defaults to a folder beside it, `<FLATPAK_USER_DIR>-state`
 (`/var/tmp/hoplodex-flatpak-state` above), so no other variable is needed;
 set `HOPLODEX_FLATPAK_STATE` to an absolute path to put it elsewhere. The
 first run then fetches the 2 GB into those two folders, and deleting both
-removes everything it made. **`npm run test:flatpak` does not run on a
-host, with or without that flag** (`011 FR-023`): it refuses before it
+removes everything it made. (A GitHub-hosted runner that opted in needs
+neither the flag nor the default: "The Flatpak check" below.) **`npm run test:flatpak` does not run on a
+host, with or without that flag** (`011 FR-023`; only a GitHub-hosted runner
+set up as in "The Flatpak check" is an exception): it refuses before it
 touches anything, saying so. The check needs what only the dev container
 has: a tmpfs at `/run/media/dev/hoplodex-check` standing in for a removable
 drive (`--flatpak` mounts it; the Flatpak reaches `/run/media`), two folders
@@ -901,8 +903,8 @@ a child web view, is the PDF surface check's.
 dev container's Flatpak installation and drives it through WebDriver in its
 sandbox (`011 US5-1`, `011 FR-021`, `011 FR-023`; the reasons are in
 [011's research.md §15, §16 and §18](specs/011-flatpak/research.md)). It runs
-only in the dev container started with `--flatpak`, after `npm run build`, and
-**ordinary test runs skip it**:
+only in the dev container started with `--flatpak` (or on a GitHub-hosted runner
+set up as below), after `npm run build`, and **ordinary test runs skip it**:
 
 ```bash
 scripts/dev-container.sh --flatpak bash -c 'npm run build && npm run test:flatpak'
@@ -997,7 +999,36 @@ paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,
 
 It never touches your Flatpak installation, your `~/.var/app`, your buses or
 your keyring: the container has its own (`011 SC-007`), and the script refuses
-anywhere else (the guard described under "Flatpak" above).
+anywhere else but a GitHub-hosted runner set up as below (the guard described under "Flatpak" above).
+
+**On a GitHub-hosted runner** (#25) the check runs outside the container, once
+the workflow has made the container's stand-ins itself. The guard
+(`scripts/flatpak/guard.mjs`) accepts such a runner only with all three markers:
+`GITHUB_ACTIONS=true` (also true on a self-hosted runner, which may be someone's
+own machine), `RUNNER_ENVIRONMENT=github-hosted` (set on GitHub's own VMs) and
+the explicit opt-in `HOPLODEX_CI_FLATPAK=1`, so a shell that happens to export
+the first two doesn't pass by accident. It is an accident guard, not a security
+boundary. As on a host, it then needs both `FLATPAK_USER_DIR` and
+`HOPLODEX_FLATPAK_STATE` named, each empty or holding the marker the scripts
+write, outside any real Flatpak installation. No script mounts or uses `sudo`;
+the workflow does, before the check:
+
+```bash
+sudo apt-get install -y --no-install-recommends flatpak flatpak-builder desktop-file-utils \
+  python3-dbusmock gnome-keyring libsecret-tools libwebkit2gtk-4.1-dev
+sudo mkdir -p /run/media/dev/hoplodex-check /mnt/hoplodex-check
+sudo mount -t tmpfs -o mode=1777 tmpfs /run/media/dev/hoplodex-check
+sudo mount -t tmpfs -o mode=1777 tmpfs /mnt/hoplodex-check
+sudo install -d -m 0755 -o "$USER" /srv/hoplodex-check
+sudo install -d -o "$USER" /mnt/hoplodex-flatpak /mnt/hoplodex-flatpak-state
+export HOPLODEX_CI_FLATPAK=1 FLATPAK_USER_DIR=/mnt/hoplodex-flatpak HOPLODEX_FLATPAK_STATE=/mnt/hoplodex-flatpak-state
+npm ci && npm run build && npm run bundle:flatpak && npm run test:flatpak
+```
+
+`npm run bundle:flatpak` must run first in the same job: it installs the
+runtime and SDK, without which the check fails at once
+(`org.gnome.Sdk/x86_64/51 not installed`). Never set these variables on your own
+machine.
 
 ### E2E files
 

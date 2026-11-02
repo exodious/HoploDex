@@ -3,7 +3,10 @@
 // the developer's own Flatpak installation, so the scripts run only
 //   - in the dev container started with `scripts/dev-container.sh --flatpak`, or
 //   - on a host, against a throwaway `FLATPAK_USER_DIR` (empty, or one this guard
-//     marked before) with `--i-know-this-is-a-host` passed.
+//     marked before) with `--i-know-this-is-a-host` passed, or
+//   - on a GitHub-hosted Actions runner that opted in (HOPLODEX_CI_FLATPAK=1), as on a
+//     host but with both FLATPAK_USER_DIR and HOPLODEX_FLATPAK_STATE named, each empty
+//     or marked. The workflow, never these scripts, makes the check's stand-ins there.
 // `decide()` is a pure function of its inputs; the CLI at the bottom supplies the
 // real ones.
 
@@ -19,9 +22,12 @@ export const CONTAINER_MARKER_FILE = "/etc/hoplodex-dev-container";
 /** The file in a throwaway installation that says the guard accepted it. */
 export const MARKER_NAME = ".hoplodex-throwaway-flatpak";
 export const HOST_FLAG = "--i-know-this-is-a-host";
+/** The opt-in a runner's workflow sets; the runner's own two markers are not enough alone. */
+export const CI_OPT_IN = "HOPLODEX_CI_FLATPAK";
 /**
- * A caller's request to accept the dev container only (011 T104: check.sh). It can
- * only make the guard stricter, so it is not a way past it.
+ * A caller's request to refuse every host (011 T104: check.sh), accepting only the dev
+ * container or an opted-in runner. It can only make the guard stricter, so it is not
+ * a way past it.
  */
 export const CONTAINER_ONLY_FLAG = "--container-only";
 
@@ -50,7 +56,7 @@ function within(a, b) {
 
 /**
  * @param {{ env: Record<string, string | undefined>, hostname: string, argv: string[], home: string, fs: Reader }} inputs
- * @returns {{ ok: true, flatpakUserDir: string, stateFolder: string, writeMarker: boolean } | { ok: false, message: string }}
+ * @returns {{ ok: true, flatpakUserDir: string, stateFolder: string, writeMarker: boolean, markState?: true } | { ok: false, message: string }}
  */
 export function decide({ env, hostname, argv, home, fs: reader }) {
   // All three of the container's markers; a host can share any one of them.
@@ -74,7 +80,22 @@ export function decide({ env, hostname, argv, home, fs: reader }) {
     };
   }
 
-  if (argv.includes(CONTAINER_ONLY_FLAG)) {
+  // All three, so that neither a self-hosted runner (someone's own machine, also
+  // GITHUB_ACTIONS=true) nor a shell that exports the runner's two passes by accident.
+  // An accident guard, not a security boundary.
+  const onCiRunner =
+    env.GITHUB_ACTIONS === "true" &&
+    env.RUNNER_ENVIRONMENT === "github-hosted" &&
+    env[CI_OPT_IN] === "1";
+
+  if (onCiRunner && (!env.FLATPAK_USER_DIR || !env.HOPLODEX_FLATPAK_STATE)) {
+    return refuse(
+      "On a GitHub-hosted runner, set both FLATPAK_USER_DIR and HOPLODEX_FLATPAK_STATE " +
+        'to empty folders outside any real Flatpak installation (DEVELOPMENT.md, "The Flatpak check").',
+    );
+  }
+
+  if (!onCiRunner && argv.includes(CONTAINER_ONLY_FLAG)) {
     return refuse(
       "This command runs only in the dev container, never on a host (011 FR-023): the check needs " +
         "the container's own stand-ins, which a host does not have, namely folders outside any home " +
@@ -91,7 +112,7 @@ export function decide({ env, hostname, argv, home, fs: reader }) {
     `FLATPAK_USER_DIR to an empty or throwaway folder and pass ${HOST_FLAG}.`;
 
   const given = env.FLATPAK_USER_DIR;
-  if (!given || !argv.includes(HOST_FLAG)) return refuse(hostHelp);
+  if (!given || !(onCiRunner || argv.includes(HOST_FLAG))) return refuse(hostHelp);
 
   if (!path.isAbsolute(given)) {
     return refuse(`FLATPAK_USER_DIR must be an absolute path, not "${given}".`);
@@ -158,6 +179,21 @@ export function decide({ env, hostname, argv, home, fs: reader }) {
       `The state folder (${stateFolder}) is the throwaway installation or inside it; name a folder beside it.`,
     );
   }
+  if (onCiRunner) {
+    const stateKind = reader.stat(stateFolder);
+    if (stateKind === "other")
+      return refuse(`HOPLODEX_FLATPAK_STATE (${stateFolder}) is not a folder.`);
+    if (stateKind === "directory") {
+      const entries = reader.readdir(stateFolder);
+      if (entries.length > 0 && !entries.includes(MARKER_NAME)) {
+        return refuse(
+          `HOPLODEX_FLATPAK_STATE (${stateFolder}) is not empty and was not made by these scripts (no ${MARKER_NAME} in it). ` +
+            "Name an empty folder.",
+        );
+      }
+    }
+    return { ok: true, flatpakUserDir: dir, stateFolder, writeMarker: true, markState: true };
+  }
   return { ok: true, flatpakUserDir: dir, stateFolder, writeMarker: true };
 }
 
@@ -190,7 +226,8 @@ const realReader = {
 
 // The CLI: prints the accepted FLATPAK_USER_DIR on the first line, `marker` or
 // `no-marker` on the second (does the caller write the marker file) and the state
-// folder on the third; on a refusal
+// folder on the third, and `state-marker` on a fourth when the caller marks the state
+// folder too (a runner); on a refusal
 // prints the message to stderr and exits 1.
 if (process.argv[1] && nodePath.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = decide({
@@ -205,6 +242,7 @@ if (process.argv[1] && nodePath.resolve(process.argv[1]) === fileURLToPath(impor
     process.exit(1);
   }
   process.stdout.write(
-    `${result.flatpakUserDir}\n${result.writeMarker ? "marker" : "no-marker"}\n${result.stateFolder}\n`,
+    `${result.flatpakUserDir}\n${result.writeMarker ? "marker" : "no-marker"}\n${result.stateFolder}\n` +
+      (result.markState ? "state-marker\n" : ""),
   );
 }

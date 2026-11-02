@@ -176,3 +176,48 @@ describeScripts("011 T104 - env.sh on a host without podman", () => {
     expect(r.stdout).toContain(`STATE=${state}\n`);
   });
 });
+
+describeScripts("#25 - env.sh on a GitHub-hosted runner that opted in", () => {
+  const runnerEnv = {
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    HOPLODEX_CI_FLATPAK: "1",
+  };
+  const source = (args: string, env: Record<string, string>) =>
+    run(["-c", `source "${script("env.sh")}" ${args} && echo "STATE=$HOPLODEX_FLATPAK_STATE"`], {
+      ...runnerEnv,
+      ...env,
+    });
+
+  it("marks both folders, so check.sh's container-only guard accepts them after bundle:flatpak filled them", () => {
+    const dir = folder("runner-flatpak");
+    const state = folder("runner-state");
+    const env = { FLATPAK_USER_DIR: dir, HOPLODEX_FLATPAK_STATE: state };
+
+    const bundle = source("", env);
+    expect(bundle.stderr).toBe("");
+    expect(bundle.status).toBe(0);
+    expect(bundle.stdout).toContain(`STATE=${state}\n`);
+    expect(fs.existsSync(path.join(dir, ".hoplodex-throwaway-flatpak"))).toBe(true);
+    expect(fs.existsSync(path.join(state, ".hoplodex-throwaway-flatpak"))).toBe(true);
+
+    // What build.sh leaves behind in each.
+    fs.mkdirSync(path.join(dir, "repo"));
+    fs.mkdirSync(path.join(state, "repo"));
+    const check = source("--container-only", env);
+    expect(check.stderr).toBe("");
+    expect(check.status).toBe(0);
+  });
+
+  it("refuses a filled state folder it did not mark, and calls no stub", () => {
+    const state = folder("runner-state");
+    fs.writeFileSync(path.join(state, "somebody-elses-file"), "x");
+    const r = source("--container-only", {
+      FLATPAK_USER_DIR: folder("runner-flatpak"),
+      HOPLODEX_FLATPAK_STATE: state,
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("HOPLODEX_FLATPAK_STATE");
+    expect(r.calls).toBe("");
+  });
+});
