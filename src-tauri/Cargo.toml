@@ -92,8 +92,8 @@ keyring = "4"
 keyring-core = "1"
 # The embedded W3C WebDriver server, E2E builds only (the `e2e` feature).
 tauri-plugin-wdio-webdriver = { version = "1.4.0", optional = true }
-rust_xlsxwriter = "0.96"
-calamine = "0.36"
+rust_xlsxwriter = "0.100"
+calamine = "0.37"
 csv = "1.4"
 # The import helper's CSV parser, bounded by the field (008 research.md §8):
 # `csv`'s own reader grows a record's buffer to the size of the field.
@@ -118,12 +118,13 @@ zeroize = "1.9"
 # nothing but small parts (007 research.md §2), text decoding (007 research.md §12) and page
 # PNGs (007 research.md §11).
 # Promoted from transitive, at the versions already in Cargo.lock: `zip` is
-# the 8.x `calamine` uses, `png` the 0.17 `image` uses.
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
+# the 9.x `calamine` uses, `png` the 0.17 `image` uses. 9.0.5 is the first
+# release with every zip advisory open against 8.x fixed (GHSA-m665-v7pm-7grj).
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 cfb = "0.7.3"
 # An OOXML package's relationship parts (007 research.md §2), at the version and
 # with the feature `calamine` already brings.
-quick-xml = { version = "0.41", features = ["encoding"] }
+quick-xml = { version = "0.42", features = ["encoding"] }
 encoding_rs = "0.8.35"
 png = "0.17.16"
 # TIFF pages, decoded in the render helper on every OS (007 research.md §11).
@@ -309,7 +310,7 @@ debug = false
 opt-level = 3
 [profile.dev.package.flate2]
 opt-level = 3
-[profile.dev.package."zip@8.6.0"]
+[profile.dev.package.zip]
 opt-level = 3
 [profile.dev.package.calamine]
 opt-level = 3

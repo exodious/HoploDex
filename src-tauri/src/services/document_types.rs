@@ -319,7 +319,11 @@ fn is_plain_ooxml(bytes: &[u8], main_part: &str) -> bool {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
         return false;
     };
-    if archive.file_names().any(|n| n.to_ascii_lowercase().ends_with("vbaproject.bin")) {
+    // A name zip can't decode is refused (an `Err` counts as a match).
+    if archive
+        .file_names()
+        .any(|n| n.map_or(true, |n| n.to_ascii_lowercase().ends_with("vbaproject.bin")))
+    {
         return false;
     }
     let mut types = Vec::new();
@@ -337,7 +341,7 @@ fn is_plain_ooxml(bytes: &[u8], main_part: &str) -> bool {
     // second entry of the same name is read too.
     let mut budget = RELATIONSHIPS_LIMIT;
     for index in 0..archive.len() {
-        let Some(name) = archive.name_for_index(index) else {
+        let Some(Ok(name)) = archive.name_for_index(index) else {
             return false;
         };
         let name = name.to_ascii_lowercase();
@@ -397,7 +401,6 @@ fn relationships_stay_inside(xml: &[u8]) -> bool {
         return false;
     };
     let mut reader = quick_xml::Reader::from_str(text);
-    let decoder = reader.decoder();
     let mut found_root = false;
     loop {
         let element = match reader.read_event() {
@@ -405,7 +408,7 @@ fn relationships_stay_inside(xml: &[u8]) -> bool {
             Ok(Event::Decl(decl)) => {
                 match decl.encoding() {
                     None => {}
-                    Some(Ok(encoding)) if encoding.eq_ignore_ascii_case(b"utf-8") => {}
+                    Some(Ok(encoding)) if encoding.eq_ignore_ascii_case("utf-8") => {}
                     Some(_) => return false,
                 }
                 continue;
@@ -417,22 +420,20 @@ fn relationships_stay_inside(xml: &[u8]) -> bool {
             Ok(_) => continue,
         };
         match element.local_name().as_ref() {
-            b"Relationships" => found_root = true,
-            b"Relationship" => {
+            "Relationships" => found_root = true,
+            "Relationship" => {
                 let (mut kind, mut target, mut mode) = (None, None, None);
                 for attribute in element.attributes() {
                     let Ok(attribute) = attribute else {
                         return false;
                     };
-                    let Ok(value) =
-                        attribute.decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder)
-                    else {
+                    let Ok(value) = attribute.normalized_value(XmlVersion::Implicit1_0) else {
                         return false;
                     };
                     match attribute.key.local_name().as_ref() {
-                        b"Type" => kind = Some(value.trim().to_ascii_lowercase()),
-                        b"Target" => target = Some(value.trim().to_owned()),
-                        b"TargetMode" => mode = Some(value.trim().to_ascii_lowercase()),
+                        "Type" => kind = Some(value.trim().to_ascii_lowercase()),
+                        "Target" => target = Some(value.trim().to_owned()),
+                        "TargetMode" => mode = Some(value.trim().to_ascii_lowercase()),
                         _ => {}
                     }
                 }
@@ -476,13 +477,16 @@ fn is_plain_odf(bytes: &[u8], mime: &str) -> bool {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
         return false;
     };
-    if archive.file_names().any(|n| n.starts_with("Basic/") || n.starts_with("Scripts/")) {
+    if archive
+        .file_names()
+        .any(|n| n.map_or(true, |n| n.starts_with("Basic/") || n.starts_with("Scripts/")))
+    {
         return false;
     }
     let Ok(first) = archive.by_index(0) else {
         return false;
     };
-    if first.name() != "mimetype" {
+    if first.name().ok().as_deref() != Some("mimetype") {
         return false;
     }
     let mut found = Vec::new();
