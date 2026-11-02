@@ -2,8 +2,10 @@
 # Regenerates flatpak/cargo-sources.json and flatpak/node-sources.json from the
 # lockfiles (npm run flatpak:sources). 011 research.md §3.
 #
-# Runs in the dev container only (`scripts/dev-container.sh --flatpak npm run
-# flatpak:sources`): it sources the host guard's container check (guard.mjs), not
+# Runs in the dev container (`scripts/dev-container.sh --flatpak npm run
+# flatpak:sources`), or wherever else the guard accepts (a host with a throwaway
+# installation, or an opted-in GitHub-hosted runner; DEVELOPMENT.md, "Flatpak"): it
+# sources the host guard's container check (guard.mjs), not
 # env.sh, because it needs no Flatpak installation, only the two generators the
 # image pins at /opt/flatpak-builder-tools. Each list is written to a temporary
 # file and moved into place only when its generator succeeds, so a failed run
@@ -14,7 +16,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 tools="${HOPLODEX_FLATPAK_BUILDER_TOOLS:-/opt/flatpak-builder-tools}"
 
-# The guard refuses outside the dev container (and its message says what to do).
+# The guard refuses where the scripts may not run (and its message says what to do).
 node "$here/guard.mjs" "$@" >/dev/null
 
 if [ ! -f "$tools/cargo/flatpak-cargo-generator.py" ] || [ ! -d "$tools/node/flatpak_node_generator" ]; then

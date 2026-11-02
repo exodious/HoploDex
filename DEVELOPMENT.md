@@ -575,9 +575,9 @@ The build is of the checkout as it is, uncommitted changes included, except
 reach the `.flatpak` file there.
 
 **Where it runs.** Only in the dev container started with `--flatpak`
-(`011 FR-023`). `flatpak-builder` and a running Flatpak use `bwrap`, which
-needs the real `/proc`, and a rootless container masks parts of it, so
-`--flatpak` unmasks `/proc` for that run only
+(`011 FR-023`), apart from the host and runner exceptions below.
+`flatpak-builder` and a running Flatpak use `bwrap`, which needs the real
+`/proc`, and a rootless container masks parts of it, so `--flatpak` unmasks `/proc` for that run only
 (`--security-opt unmask=/proc/*`). It also mounts a volume for
 `flatpak-builder`'s state (downloads, build folders; several gigabytes) per
 checkout, named in `HOPLODEX_FLATPAK_STATE`. The runtime, SDK and extensions
