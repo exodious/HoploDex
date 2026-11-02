@@ -13,11 +13,11 @@
 # failing it: the runner's 7 GB leaves the suite little room, so its failures
 # are recorded in the run's summary instead.
 #
-# A pull request that changes only Markdown, or only the other workflows'
-# files, skips each job's steps (.github/actions/scope), as audit.yml does:
-# by step rather than by a `paths` filter or a job-level `if`, so each check
-# still reports a result, and a fault in deciding fails the job. Pushes to
-# main always run, and only they save caches (.github/actions/setup).
+# A pull request that changes only Markdown skips each job's steps
+# (.github/actions/scope), as audit.yml does for Markdown: by step rather
+# than by a `paths` filter or a job-level `if`, so each check still reports a
+# result, and a fault in deciding fails the job. Pushes to main always run,
+# and only they save caches (.github/actions/setup).
 name: CI
 
 on:
@@ -28,7 +28,9 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces its run; every push to main runs
+  # to the end, so each commit there has a result and saves the caches.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -301,6 +303,8 @@ jobs:
         continue-on-error: true
         env:
           HOPLODEX_E2E_WORKERS: 1
+        # bash with pipefail, so a failing suite fails the step rather than tee.
+        shell: bash
         run: npm run test:e2e 2>&1 | tee "$RUNNER_TEMP/e2e.log"
       - name: Quit cleanup
         id: quit
@@ -312,8 +316,9 @@ jobs:
         env:
           E2E: ${{ steps.e2e.outcome }}
           QUIT: ${{ steps.quit.outcome }}
+        shell: bash
         run: |
-          specs=$(sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/e2e.log" 2>/dev/null \
+          specs=$(perl -pe 's/\e\[[0-9;]*m//g' "$RUNNER_TEMP/e2e.log" 2>/dev/null \
             | grep -oE 'FAILED in .*e2e/specs/[^ ]+\.e2e\.ts' | grep -oE 'e2e/specs/[^ ]+\.e2e\.ts' | sort -u || true)
           {
             echo "## macOS E2E failed (optional, #25)"

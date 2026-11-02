@@ -1928,7 +1928,9 @@ What fails the audit:
 - **Yanked crates**: any yanked crate version, always. See
   [Yanked crates](#yanked-crates).
 - **OpenSSL advisories**: any advisory of OpenSSL's, whatever its severity,
-  that lists the OpenSSL version the Windows build's vcpkg pin resolves to.
+  that lists the OpenSSL version the Windows build's vcpkg pin resolves to;
+  while that version's branch is out of support, any later advisory for the
+  supported branches next to it, until checked; and a newer OpenSSL in vcpkg.
   See [The pinned OpenSSL](#the-pinned-openssl).
 
 Advisories and deprecations appear all the time, so the audit can start
@@ -2067,14 +2069,40 @@ raises no security alerts for vcpkg, so `npm run audit:openssl`
   (`secjson/`), and fails on each one that lists that version as affected,
   naming it, its severity and its advisory. A record it can't read fails it
   too.
-- It warns, without failing, when that version's branch is past its end of
-  life in the same repository's `data.json`: OpenSSL lists only supported
-  versions in a new advisory, so a later one may not name it.
+- It fails when vcpkg's `master` (its `versions/baseline.json` there)
+  resolves OpenSSL to a newer version than the pin does. vcpkg's own
+  port-version doesn't count. Take Dependabot's baseline update, or move
+  `builtin-baseline` by hand.
+- It warns when that version's branch is past its end of life in the same
+  repository's `data.json`. OpenSSL lists only supported versions in a new
+  advisory, so a later one may not name it. While the branch is out of
+  support, the audit also fails on each advisory published on or after its
+  end-of-life date that affects the nearest supported branch below it or the
+  nearest above it (for 3.6, 3.5 and 4.0), which share its code. The message
+  says to check whether the pinned version is affected.
 
-It needs the network for both, like the rest of the audit; without it, it
+It needs the network for all three, like the rest of the audit; without it, it
 fails saying what it couldn't fetch. To fix a finding, move the pin to a vcpkg
 commit whose OpenSSL is fixed (Dependabot's pull request, or `builtin-baseline`
-by hand), which the Windows jobs then build and cache. The notices need no
+by hand), which the Windows jobs then build and cache.
+
+When the check of an advisory for a neighbouring branch shows the pinned
+version isn't affected, record it in `audit-openssl.json`, as
+`audit-deprecated.json` records a deprecation. Each entry in `exceptions` has
+these fields, and the audit fails on a missing field, an unknown key, or a
+value it can't read:
+
+| Field    | Meaning                                                        |
+| -------- | -------------------------------------------------------------- |
+| `id`     | The advisory's CVE id, `CVE-2026-1234`.                        |
+| `reason` | Why the pinned version isn't affected: what was checked.       |
+| `review` | A date to look at it again, `YYYY-MM-DD`.                      |
+
+An exception clears only that check, never an advisory that lists the pinned
+version itself. It expires after its review date (the date itself still
+passes), and then the audit fails until you check again and record a new date.
+An exception that matches nothing the audit would fail on is stale and fails:
+remove it. The notices need no
 change: `licenses/hand-recorded.json` reads OpenSSL's version from the build's
 headers.
 
@@ -2083,9 +2111,9 @@ headers.
 The audit can't make these checks, so make them by hand with the license
 checks:
 
-- Review every npm deprecation exception in `audit-deprecated.json` and every
-  unmaintained-crate `ignore` entry in `src-tauri/deny.toml`, whatever its
-  review date. For each, ask whether it can go now, and for an unmaintained
+- Review every npm deprecation exception in `audit-deprecated.json`, every
+  OpenSSL exception in `audit-openssl.json` and every unmaintained-crate
+  `ignore` entry in `src-tauri/deny.toml`, whatever its review date. For each, ask whether it can go now, and for an unmaintained
   crate whether it is direct or indirect. The advisory exceptions in
   `audit-ci.jsonc` and `deny.toml` aren't expired by a tool either: read their
   comment dates too.
@@ -2445,10 +2473,9 @@ here; [Test](#test) says when to run them.
   and as a warning naming each failed spec file; record it in an issue so it
   is tracked.
 - **Docs-only pull requests** skip each job's steps, as the audit does: a
-  pull request that changes only Markdown, or only the other workflows' files
-  (`audit.yml`, `codeql.yml`, `pr-body.yml`, `.github/codeql/`,
-  `.github/dependabot.yml`), passes without them
-  (`.github/actions/scope`). Vitest reads some Markdown (the spec citations,
+  pull request that changes only Markdown (`*.md`) passes without them
+  (`.github/actions/scope`). A change to any other file, the other workflows'
+  included, runs them. Vitest reads some Markdown (the spec citations,
   `README.md`), so a docs-only change that breaks it shows on the next pull
   request that runs it.
 - **Caches** (npm, one Rust cache per OS and profile, and the Windows
