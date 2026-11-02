@@ -313,12 +313,17 @@ const RELATIONSHIPS_LIMIT: u64 = 8 * 1024 * 1024;
 
 /// A ZIP whose `[Content_Types].xml` names `main_part` as the main part, with
 /// no `vbaProject.bin`, no macro-enabled type, and relationship parts that
-/// keep everything inside the package (007 research.md §2). The directory, the
-/// content types and the relationship parts are read.
+/// keep everything inside the package (007 research.md §2), and whose entries
+/// are [`unambiguous`] with no equivalent names. The directory, the local
+/// headers, the content types and the relationship parts are read.
 fn is_plain_ooxml(bytes: &[u8], main_part: &str) -> bool {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
         return false;
     };
+    // Readers differ on which entry of a name they take, so none may be ambiguous.
+    if !unambiguous(bytes, &archive) || has_equivalent_names(&archive) {
+        return false;
+    }
     // A name zip can't decode is refused (an `Err` counts as a match).
     if archive
         .file_names()
@@ -337,8 +342,7 @@ fn is_plain_ooxml(bytes: &[u8], main_part: &str) -> bool {
     if !types.contains(main_part) || types.contains("macroEnabled") {
         return false;
     }
-    // Every entry that is, or may be, a relationship part, by index, so a
-    // second entry of the same name is read too.
+    // Every entry that is, or may be, a relationship part.
     let mut budget = RELATIONSHIPS_LIMIT;
     for index in 0..archive.len() {
         let Some(Ok(name)) = archive.name_for_index(index) else {
@@ -471,12 +475,136 @@ fn rtf_loads_outside_content(bytes: &[u8]) -> bool {
         .any(|word| squeezed.windows(word.len()).any(|window| window == *word))
 }
 
+/// Whether every reader takes the same entries from the package: no name is
+/// listed twice, each local header agrees with its central record on what
+/// decides the content, no two entries share bytes, and no local header sits
+/// where the central directory lists none. zip keeps only the last of two
+/// entries with one name and reads only listed entries, while another reader
+/// may take the first or walk the local headers. Only headers are read.
+fn unambiguous(bytes: &[u8], archive: &zip::ZipArchive<Cursor<&[u8]>>) -> bool {
+    if archive.has_duplicate_names() {
+        return false;
+    }
+    let Ok(directory) = usize::try_from(archive.central_directory_start()) else {
+        return false;
+    };
+    let mut spans = Vec::with_capacity(archive.len() + 1);
+    for index in 0..archive.len() {
+        match archive.by_index_data(index).ok().and_then(|entry| local_span(bytes, &entry)) {
+            Some(span) => spans.push(span),
+            None => return false,
+        }
+    }
+    spans.sort_unstable();
+    spans.push((directory, directory));
+    let mut cursor = 0;
+    // Refused: an entry starting inside the one before or running into the
+    // directory, or a local header between two.
+    for (start, end) in spans {
+        let Some(gap) = bytes.get(cursor..start) else {
+            return false;
+        };
+        if end > directory || gap.windows(4).any(|w| w == LOCAL_HEADER) {
+            return false;
+        }
+        cursor = end;
+    }
+    true
+}
+
+/// A ZIP local header's signature.
+const LOCAL_HEADER: &[u8] = b"PK\x03\x04";
+
+/// Where `entry` lies, from its local header to the end of its data, if that
+/// header agrees with the central record on the name (the same bytes in both,
+/// and as zip reads it, so a Unicode Path extra field that renames the entry
+/// is refused), the method, the encryption and data descriptor flags, the CRC
+/// and the sizes (zero where a data descriptor follows, Zip64's from the
+/// extra field). Times and other
+/// extra fields aren't compared: tools that edit a package in place leave
+/// them differing, and no reader takes content from them.
+fn local_span(bytes: &[u8], entry: &zip::read::ZipFileEntry<'_>) -> Option<(usize, usize)> {
+    let start = usize::try_from(entry.header_start()).ok()?;
+    let central = usize::try_from(entry.central_header_start()).ok()?;
+    if bytes.get(start..start.checked_add(4)?)? != LOCAL_HEADER {
+        return None;
+    }
+    let flags = le(bytes, start + 6, 2)?;
+    let name_end = start + 30 + usize::try_from(le(bytes, start + 26, 2)?).ok()?;
+    let data_start = name_end + usize::try_from(le(bytes, start + 28, 2)?).ok()?;
+    let central_name = central + 46 + usize::try_from(le(bytes, central + 28, 2)?).ok()?;
+    // Flag bits 0 and 3 (encryption, a data descriptor), then the method.
+    let agrees = (flags ^ le(bytes, central + 8, 2)?) & 0b1001 == 0
+        && le(bytes, start + 8, 2)? == le(bytes, central + 10, 2)?
+        && bytes.get(start + 30..name_end)? == entry.name_raw()
+        && bytes.get(central + 46..central_name)? == entry.name_raw();
+    if !agrees {
+        return None;
+    }
+    let mut zip64 = zip64_values(bytes.get(name_end..data_start)?);
+    // Where the local header has the CRC, the uncompressed and the compressed size.
+    let central_values =
+        [(14, u64::from(entry.crc32())), (22, entry.size()), (18, entry.compressed_size())];
+    for (at, value) in central_values {
+        let mut local = le(bytes, start + at, 4)?;
+        if at != 14 && local == 0xFFFF_FFFF {
+            local = zip64.next()?;
+        }
+        if local != value && !(flags & 0b1000 != 0 && local == 0) {
+            return None;
+        }
+    }
+    Some((start, data_start.checked_add(usize::try_from(entry.compressed_size()).ok()?)?))
+}
+
+/// The values of a local header's Zip64 extra field (id 1) in order: the
+/// uncompressed size, then the compressed size, each only where the header
+/// gives `0xFFFFFFFF` (APPNOTE 4.5.3).
+fn zip64_values(extra: &[u8]) -> impl Iterator<Item = u64> + '_ {
+    let mut at = 0;
+    let mut values: &[u8] = &[];
+    while let (Some(id), Some(length)) = (le(extra, at, 2), le(extra, at + 2, 2)) {
+        let Some(field) = extra.get(at + 4..at + 4 + length as usize) else {
+            break;
+        };
+        if id == 1 {
+            values = field;
+            break;
+        }
+        at += 4 + length as usize;
+    }
+    values.as_chunks::<8>().0.iter().map(|&value| u64::from_le_bytes(value))
+}
+
+/// The little-endian number of `width` bytes at `at`, if `bytes` has them.
+fn le(bytes: &[u8], at: usize, width: usize) -> Option<u64> {
+    let field = bytes.get(at..at.checked_add(width)?)?;
+    Some(field.iter().rev().fold(0, |value, &byte| value << 8 | u64::from(byte)))
+}
+
+/// Two names that differ only in ASCII case or `\` for `/`: equivalent part
+/// names, which a package must not have (ECMA-376 Part 2, M1.12).
+fn has_equivalent_names(archive: &zip::ZipArchive<Cursor<&[u8]>>) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    !archive.file_names_raw().all(|raw| {
+        seen.insert(
+            raw.iter()
+                .map(|&b| if b == b'\\' { b'/' } else { b.to_ascii_lowercase() })
+                .collect::<Vec<u8>>(),
+        )
+    })
+}
+
 /// A ZIP whose first entry is `mimetype` holding `mime`, with no `Basic/` or
-/// `Scripts/` folder. The directory and the first entry's few bytes are read.
+/// `Scripts/` folder and [`unambiguous`] entries. The directory, the local
+/// headers and the first entry's few bytes are read.
 fn is_plain_odf(bytes: &[u8], mime: &str) -> bool {
     let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
         return false;
     };
+    if !unambiguous(bytes, &archive) {
+        return false;
+    }
     if archive
         .file_names()
         .any(|n| n.map_or(true, |n| n.starts_with("Basic/") || n.starts_with("Scripts/")))
