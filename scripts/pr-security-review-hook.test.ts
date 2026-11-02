@@ -67,7 +67,8 @@ beforeAll(() => {
 
 afterAll(() => fs.rmSync(repo, { recursive: true, force: true }));
 
-describe("pr-security-review hook", () => {
+// Every test spawns bash (and git, jq) several times: about a second each on Windows.
+describe("pr-security-review hook", { timeout: 30_000 }, () => {
   it("ignores other commands, and the words outside command position", () => {
     expect(run("git status").decision).toBe("allow");
     expect(run('git commit -m "then gh pr create"').decision).toBe("allow");

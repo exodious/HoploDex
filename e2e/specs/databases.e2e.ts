@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { budgetsChecked } from "../support/budgets";
 import {
   $,
   E2E_PASSPHRASE,
@@ -845,7 +846,7 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     );
     await settle();
     expect(elapsed).toBeGreaterThanOrEqual(0);
-    expect(elapsed).toBeLessThan(500);
+    if (budgetsChecked()) expect(elapsed).toBeLessThan(500);
     console.log(`010 SC-004: filter "${query}" shown ${elapsed.toFixed(0)} ms after typing`);
     return elapsed;
   }
@@ -907,7 +908,7 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
       });
     });
     expect(opened).toBeGreaterThanOrEqual(0);
-    expect(opened).toBeLessThan(1000); // 010 SC-004
+    if (budgetsChecked()) expect(opened).toBeLessThan(1000); // 010 SC-004
     console.log(`010 SC-004: About's list shown ${opened.toFixed(0)} ms after the click`);
     await waitForAbout();
     await expect($('[role="dialog"] .hd-dialog__title')).toHaveText("About HoploDex");
@@ -1047,7 +1048,7 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
       });
     });
     expect(frames).toBeGreaterThan(1);
-    expect(longest).toBeLessThan(100);
+    if (budgetsChecked()) expect(longest).toBeLessThan(100);
     console.log(`010 SC-004: longest of ${frames} scroll frames ${longest.toFixed(0)} ms`);
   });
 

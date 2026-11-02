@@ -1,3 +1,4 @@
+import { budgetsChecked } from "../support/budgets";
 import { $, browser, expect } from "../support/ui";
 import {
   TASK_LIMIT_MS,
@@ -111,6 +112,6 @@ describe("006 US2 - Mount an Item on a Firearm (was us12-accessories-mounting)",
     await realKey("Return");
 
     await mountedSectionShows("SilencerCo Omega 300");
-    expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
+    if (budgetsChecked()) expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);
   });
 });

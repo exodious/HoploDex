@@ -43,7 +43,13 @@ export function Menu({ trigger, children, align = "start" }: MenuProps) {
           // may ring after a mouse choice (WebKitGTK does).
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            if (!rightClicked.current) placeFocus(triggerRef.current);
+            // An item that opened a dialog may have moved focus into it by now
+            // (About, once its notices load). Taking it back relied on the
+            // dialog's trap to return it, which needs focus events, and a
+            // WebView whose window isn't in front doesn't fire them.
+            const active = document.activeElement;
+            const moved = active && active !== document.body && active !== triggerRef.current;
+            if (!rightClicked.current && !moved) placeFocus(triggerRef.current);
             rightClicked.current = false;
           }}
         >

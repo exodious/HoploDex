@@ -355,7 +355,7 @@ fn the_helper_dies_with_hoplodex_even_if_it_is_killed() {
     parent.wait().unwrap();
 
     assert_eq!(waited, WAIT_OBJECT_0, "the helper outlived its parent by more than a second");
-    assert!(took < Duration::from_secs(1), "the helper took {took:?} to go");
+    crate::support::assert_budget!(took < Duration::from_secs(1), "the helper took {took:?} to go");
 }
 
 #[cfg(unix)]

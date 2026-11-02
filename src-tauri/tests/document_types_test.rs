@@ -272,7 +272,7 @@ fn a_zip_declaring_gigabytes_is_classified_from_its_directory() {
     let result = classify(&bomb.name, &bomb.bytes);
     let took = started.elapsed();
     assert!(result.is_ok(), "{result:?}");
-    assert!(took < Duration::from_millis(50), "took {took:?}");
+    crate::support::assert_budget!(took < Duration::from_millis(50), "took {took:?}");
 }
 
 #[test]

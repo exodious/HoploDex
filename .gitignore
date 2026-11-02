@@ -12,6 +12,9 @@ dist-tuner/
 src-tauri/target/
 src-tauri/gen/
 
+# vcpkg's install folder, if the pinned manifest is installed without --x-install-root
+scripts/windows/vcpkg/vcpkg_installed/
+
 # E2E
 e2e/wdio-logs/
 e2e/.wdio-tauri-driver*

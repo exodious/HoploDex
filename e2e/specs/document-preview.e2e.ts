@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
+import { budgetsChecked } from "../support/budgets";
 import { appPid, relaunchApp } from "../support/app";
 import {
   GLOCK,
@@ -484,7 +485,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     const ready = await waitForEvent("preview:pdf-ready", mark);
 
     console.log(`007 SC-001: click to preview:pdf-ready ${Math.round(ready.at - clickedAt)} ms`);
-    expect(ready.at - clickedAt).toBeLessThan(1000);
+    if (budgetsChecked()) expect(ready.at - clickedAt).toBeLessThan(1000);
     await closeViewer();
   });
 

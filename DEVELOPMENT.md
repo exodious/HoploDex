@@ -362,6 +362,23 @@ What they install, to set it up by hand instead:
   `OPENSSL_LIB_DIR` or `OPENSSL_INCLUDE_DIR`, run
   `cargo clean -p libsqlite3-sys`: its build script doesn't watch them, so
   SQLCipher keeps the old link.
+
+  CI builds the OpenSSL the repository pins instead
+  (`scripts/windows/vcpkg/vcpkg.json`, see
+  [Continuous integration](#continuous-integration)). Nothing reads that
+  manifest unless you ask, so the commands above are unchanged. To build
+  against the same OpenSSL as CI, bring `C:\vcpkg` up to date
+  (`git -C C:\vcpkg pull`, so it holds the pinned commit), install the
+  manifest into a folder of its own, and point `OPENSSL_DIR` there (then
+  `cargo clean -p libsqlite3-sys`, as above):
+
+  ```powershell
+  C:\vcpkg\vcpkg install --x-manifest-root=scripts\windows\vcpkg --x-install-root=C:\hoplodex-openssl --triplet x64-windows-static-md
+  # OPENSSL_DIR=C:\hoplodex-openssl\x64-windows-static-md, OPENSSL_STATIC=1
+  ```
+
+  Run it from the checkout, not `C:\vcpkg\installed`: a manifest install
+  removes whatever its install folder holds that the manifest doesn't name.
 - **Long paths:** `LongPathsEnabled` = 1 under
   `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`, and
   `git config --system core.longpaths true`, for deep `node_modules` and
@@ -1014,8 +1031,10 @@ write, outside any real Flatpak installation. No script mounts or uses `sudo`;
 the workflow does, before the check:
 
 ```bash
+# .github/actions/apt's flatpak and flatpak-check sets
 sudo apt-get install -y --no-install-recommends flatpak flatpak-builder desktop-file-utils \
-  python3-dbusmock gnome-keyring libsecret-tools libwebkit2gtk-4.1-dev
+  appstream binutils dbus python3 python3-dbusmock gnome-keyring libsecret-tools xvfb \
+  libwebkit2gtk-4.1-dev
 sudo mkdir -p /run/media/dev/hoplodex-check /mnt/hoplodex-check
 sudo mount -t tmpfs -o mode=1777 tmpfs /run/media/dev/hoplodex-check
 sudo mount -t tmpfs -o mode=1777 tmpfs /mnt/hoplodex-check
@@ -1878,10 +1897,11 @@ clippy's `-D warnings` (012 research.md §7).
 ## Dependency audit
 
 ```bash
-npm run audit            # all five of the below
+npm run audit            # all six of the below
 npm run audit:npm        # audit-ci over `npm audit`: dependencies and devDependencies
 npm run audit:deprecated # deprecated npm packages, see below
 npm run audit:cargo      # cargo-deny against the RustSec advisory database
+npm run audit:openssl    # the Windows build's pinned OpenSSL against OpenSSL's advisories, see below
 npm run audit:licenses   # the license audit, see below
 npm run audit:webdriver  # no WebDriver code in the shipped app
 ```
@@ -1909,6 +1929,11 @@ What fails the audit:
   exception. See [Unmaintained crates](#unmaintained-crates).
 - **Yanked crates**: any yanked crate version, always. See
   [Yanked crates](#yanked-crates).
+- **OpenSSL advisories**: any advisory of OpenSSL's, whatever its severity,
+  that lists the OpenSSL version the Windows build's vcpkg pin resolves to;
+  while that version's branch is out of support, any later advisory for the
+  supported branches next to it, until checked; and a newer OpenSSL in vcpkg.
+  See [The pinned OpenSSL](#the-pinned-openssl).
 
 Advisories and deprecations appear all the time, so the audit can start
 failing on a branch that changed no dependencies. There is no grace period: fix
@@ -2029,14 +2054,70 @@ yanked since then would pass, and one yanked then and unyanked since would
 fail (`zip` 7.2.0 and 8.6.0, yanked for a day in October 2026, failed the macOS
 VM's audit this way).
 
+### The pinned OpenSSL
+
+The Windows build links OpenSSL statically from vcpkg, at the commit
+`builtin-baseline` names in `scripts/windows/vcpkg/vcpkg.json` (#25).
+Dependabot moves that pin by pull request (`.github/dependabot.yml`), but it
+raises no security alerts for vcpkg, so `npm run audit:openssl`
+(`scripts/check-openssl-advisories.mjs`) does that part:
+
+- It reads the OpenSSL version the pin resolves to from vcpkg's
+  `versions/baseline.json` at that commit. The manifest must leave the version
+  to the baseline (no `version>=` or `overrides` for `openssl`), or the audit
+  fails.
+- It reads OpenSSL's own advisories, the CVE records OpenSSL publishes in
+  [openssl/release-metadata](https://github.com/openssl/release-metadata)
+  (`secjson/`), and fails on each one that lists that version as affected,
+  naming it, its severity and its advisory. A record it can't read fails it
+  too.
+- It fails when vcpkg's `master` (its `versions/baseline.json` there)
+  resolves OpenSSL to a newer version than the pin does. vcpkg's own
+  port-version doesn't count. Take Dependabot's baseline update, or move
+  `builtin-baseline` by hand.
+- It warns when that version's branch is past its end of life in the same
+  repository's `data.json`. OpenSSL lists only supported versions in a new
+  advisory, so a later one may not name it. While the branch is out of
+  support, the audit also fails on each advisory published on or after its
+  end-of-life date that affects the nearest supported branch below it or the
+  nearest above it (for 3.6, 3.5 and 4.0), which share its code. The message
+  says to check whether the pinned version is affected. A `data.json` that is
+  missing, can't be read, or has no end of life for that branch fails the
+  audit, since it can't tell then.
+
+It needs the network for all three, like the rest of the audit; without it, it
+fails saying what it couldn't fetch. To fix a finding, move the pin to a vcpkg
+commit whose OpenSSL is fixed (Dependabot's pull request, or `builtin-baseline`
+by hand), which the Windows jobs then build and cache.
+
+When the check of an advisory for a neighbouring branch shows the pinned
+version isn't affected, record it in `audit-openssl.json`, as
+`audit-deprecated.json` records a deprecation. Each entry in `exceptions` has
+these fields, and the audit fails on a missing field, an unknown key, or a
+value it can't read:
+
+| Field    | Meaning                                                        |
+| -------- | -------------------------------------------------------------- |
+| `id`     | The advisory's CVE id, `CVE-2026-1234`.                        |
+| `reason` | Why the pinned version isn't affected: what was checked.       |
+| `review` | A date to look at it again, `YYYY-MM-DD`.                      |
+
+An exception clears only that check, never an advisory that lists the pinned
+version itself. It expires after its review date (the date itself still
+passes), and then the audit fails until you check again and record a new date.
+An exception that matches nothing the audit would fail on is stale and fails:
+remove it. The notices need no
+change: `licenses/hand-recorded.json` reads OpenSSL's version from the build's
+headers.
+
 ### Before a release
 
 The audit can't make these checks, so make them by hand with the license
 checks:
 
-- Review every npm deprecation exception in `audit-deprecated.json` and every
-  unmaintained-crate `ignore` entry in `src-tauri/deny.toml`, whatever its
-  review date. For each, ask whether it can go now, and for an unmaintained
+- Review every npm deprecation exception in `audit-deprecated.json`, every
+  OpenSSL exception in `audit-openssl.json` and every unmaintained-crate
+  `ignore` entry in `src-tauri/deny.toml`, whatever its review date. For each, ask whether it can go now, and for an unmaintained
   crate whether it is direct or indirect. The advisory exceptions in
   `audit-ci.jsonc` and `deny.toml` aren't expired by a tool either: read their
   comment dates too.
@@ -2339,13 +2420,15 @@ includes rechecking exceptions that are behind (010 research.md §8).
 
 ## Continuous integration
 
-Focused workflows run on GitHub: CodeQL (`.github/workflows/codeql.yml`) on
-every pull request to `main`, on pushes to it and weekly, the
+Four workflows run on GitHub: the [CI workflow](#the-ci-workflow)
+(`.github/workflows/ci.yml`) and CodeQL (`.github/workflows/codeql.yml`) on
+every pull request to `main` and on pushes to it (CodeQL weekly too), the
 [dependency audit](#dependency-audit) (`.github/workflows/audit.yml`), and the
 check of a pull request description's required sections
 (`.github/workflows/pr-body.yml`). In all of them, third-party actions are
 pinned to a commit (#72) and GitHub's own to a release tag. Dependabot
-(`.github/dependabot.yml`) opens a weekly pull request to update them.
+(`.github/dependabot.yml`) opens a weekly pull request to update them, and
+another for the [vcpkg pin](#the-pinned-openssl).
 
 On a pull request, the audit skips its work when the change can't affect it:
 when the pull request changes only Markdown, or only `codeql.yml`,
@@ -2366,7 +2449,80 @@ once the next head was analyzed it was `CLEAN`. Skipping CodeQL on a docs-only
 pull request would therefore need the ruleset changed, or a placeholder
 analysis uploaded.
 
-Full CI, the format, lint and test commands above and the app build on
-Windows, macOS and Linux, **isn't implemented yet** (#25). Run them locally
-before every pull request. The WebdriverIO E2E suite needs a display and a
-platform WebDriver, so it runs locally too (`npm run test:e2e`).
+### The CI workflow
+
+`.github/workflows/ci.yml` (#25) runs on every pull request to `main` and on
+every push to it. It is a second net, not the first: run the tests in your own
+Linux, macOS and Windows environments before you open a pull request, and say
+in it which ran where. The jobs run natively on pinned images (`ubuntu-26.04`,
+`windows-2025`, `macos-26`), not in the dev container:
+
+| Job | What it runs |
+|---|---|
+| Checks (Linux) | `npm run format:check`, `cargo fmt --check`, `npm run lint`, both clippys ([Linting & formatting](#linting--formatting)), `npm test`, `cargo nextest run --features test-kdf --no-fail-fast`, the doctests, `npm run build` |
+| Checks (Windows, macOS) | both clippys, `npm test`, nextest as above |
+| E2E (Linux, Windows, macOS) | `npm run build`, `npm run test:e2e`, then the quit-cleanup script for that OS |
+| Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary; no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
+| Packages (Windows) | `npm run tauri build -- --bundles msi,nsis`, then `scripts/check-no-webdriver.mjs` on `hoplodex.exe` |
+| Packages (macOS) | `npm run tauri build -- --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary |
+| Flatpak | `npm run bundle:flatpak`, whose manifest runs `scripts/check-no-webdriver.mjs` on the release binary (the check's variant carries the driver on purpose); then, only when the pull request changes one of the paths [The Flatpak check](#the-flatpak-check) lists, the check's stand-ins and `npm run build && npm run test:flatpak` |
+
+The packages are unsigned, kept nowhere and published nowhere; the job only
+shows they build. `performance_test` and `import_largest_test` don't run
+here; [Test](#test) says when to run them.
+
+- **Optional: E2E on macOS.** The runner has 3 CPUs and 7 GB, which one worker
+  (`HOPLODEX_E2E_WORKERS=1`) fills, so the job runs the suite on every pull
+  request but passes whatever it finds. A failure, or a hang that the step's
+  timeout (40 minutes, 5 for quit-cleanup) ends, appears in the run's summary
+  and as a warning naming each failed spec file; record it in an issue so it
+  is tracked.
+- **Docs-only pull requests** skip each job's steps, as the audit does: a
+  pull request that changes only Markdown (`*.md`) passes without them
+  (`.github/actions/scope`). A change to any other file, the other workflows'
+  included, runs them. Vitest reads some Markdown (the spec citations,
+  `README.md`), so a docs-only change that breaks it shows on the next pull
+  request that runs it.
+- **Caches** (npm, one Rust cache per OS and profile, and the Windows
+  OpenSSL) are saved only from `main` and restored by pull requests
+  (`.github/actions/setup`), about 3 GB of the repository's 10 GB. The release
+  builds and the Flatpak installation (6.3 GB, fetched in about a minute) have
+  none.
+- **What each runner needs** is set up by its job: on Linux, every Ubuntu
+  package it uses, named rather than left to the image, from the sets in
+  `.github/actions/apt` (`build` is the Debian/Ubuntu list in
+  [Prerequisites](#prerequisites); `tests`, `e2e`, `flatpak` and
+  `flatpak-check` add what those steps run); on Windows, `TEMP` on the D: disk with a Defender call for the
+  tests, which makes nextest three times faster there, and the desktop at
+  1920×1080 with animations on for E2E; on macOS, Reduce Motion off and the
+  screen at 1920×1080 (`displayplacer`) for E2E.
+
+**Timing budgets under CI.** Shared runners' speed varies too much for a
+timing budget to mean anything, so under CI, when the `CI` variable is `true`
+(GitHub sets it), the budget assertions are skipped and the tests still run
+and make every other check. Rust tests write one as
+`support::assert_budget!(took < budget, ...)` (`src-tauri/tests/support/mod.rs`),
+and E2E specs as `if (budgetsChecked()) expect(took).toBeLessThan(budget)`
+(`e2e/support/budgets.ts`). Both look at `CI` the same way; everywhere else
+(your machine, the dev container, the VMs) the budgets are enforced. A budget
+is an upper bound on how fast the code must be, such as an SC's (`007 SC-001`,
+`010 SC-004`, `006 SC-001`, `005 SC-001`, `011 SC-002`, `011 SC-006`) or a
+named one (`import_reader_test`'s refusal and stop budgets). A bound that
+tells waiting out a time-out from not waiting (`portal_opener_test`), and a
+lower bound, are behavior, and stay checked. Put a new budget through the
+helper, so CI stays quiet about it and your own runs don't.
+
+**Reproducing a job locally.** Each step is a command from this file, so run
+it in the dev container (Linux), the macOS VM or on Windows. To see a test
+as CI does, with its budgets skipped, set `CI=true` for that run
+(`CI=true cargo nextest run ...`). The Windows jobs' OpenSSL is the pinned
+one: [Windows](#windows) says how to build against it.
+
+**The vcpkg pin.** `scripts/windows/vcpkg/vcpkg.json` pins the vcpkg commit
+(`builtin-baseline`) whose OpenSSL every Windows job links statically
+(`openssl:x64-windows-static-md`). CI fetches vcpkg at that commit, builds
+OpenSSL into the fixed folder `C:\hoplodex-openssl` (fixed, because
+libsqlite3-sys doesn't rebuild SQLCipher when `OPENSSL_DIR` moves) and caches
+it under a key from the manifest, so it is built again only when the pin
+moves. Dependabot moves the pin weekly; `npm run audit:openssl` checks the
+OpenSSL it resolves to ([The pinned OpenSSL](#the-pinned-openssl)).
