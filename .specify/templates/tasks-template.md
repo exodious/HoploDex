@@ -158,6 +158,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
+- [ ] TXXX Update docs/attack-surface.md with the entries plan.md's Constitution Check names (new paths, questions and accepted risks), or confirm it is unchanged; `npm test` runs its check
 - [ ] TXXX Run quickstart.md validation
 
 ---

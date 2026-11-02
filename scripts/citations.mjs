@@ -295,19 +295,22 @@ function gitignored(root) {
   };
 }
 
-/** Every file under `CHECKED_DIRS`, found by walking them, less what git ignores. */
-export function walkedFiles(root = ROOT) {
+/**
+ * Every file under `dirs` (`""` is the whole tree), found by walking them,
+ * less what git ignores.
+ */
+export function walkedFiles(root = ROOT, dirs = CHECKED_DIRS) {
   const ignored = gitignored(root);
   const found = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
-      const file = `${dir}/${entry.name}`;
+      const file = dir ? `${dir}/${entry.name}` : entry.name;
       if (ignored(file, entry.isDirectory())) continue;
       if (entry.isDirectory()) walk(file);
       else if (entry.isFile()) found.push(file);
     }
   };
-  for (const dir of CHECKED_DIRS) if (fs.existsSync(path.join(root, dir))) walk(dir);
+  for (const dir of dirs) if (fs.existsSync(path.join(root, dir))) walk(dir);
   return found.sort();
 }
 

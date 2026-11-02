@@ -1,0 +1,289 @@
+# HoploDex attack surface
+
+This is the one definition of the application's attack surface (constitution,
+"Development Workflow & Quality Gates"). The release security review reads it
+at the release commit, and a per-pull-request AI review reads it with the
+diff. Each entry says what to review for one surface:
+
+- **Code:** the files to read, as backticked paths or globs from the
+  repository root (`*` matches within a folder, `**` across folders). A note in
+  parentheses says what in a path matters, and holds no path.
+- **Ask:** the questions the review must answer.
+- **Accepted:** residual risks the project has accepted, which the review
+  reassesses, each linked to where it was accepted.
+- **Rerun:** checks the review can't make by reading, run again before a
+  release.
+- **Since:** what added the surface.
+
+Rules for the list:
+
+1. **The list never carries an open finding.** What a review finds goes to
+   code scanning, or to a private security advisory when it is in code a
+   release already contains. An entry names what to review, never an unfixed
+   weakness: "X lacks Y" is a finding, not an **Ask**.
+2. **A risk enters Accepted only once it has been accepted**, with a link to
+   where that was recorded: a feature's `research.md` section, or a code
+   scanning alert dismissed with its reason.
+3. **Surface ids are permanent.** The id is the heading's first word
+   (`ipc-commands`). Code scanning alert rule ids start with it, so an id is
+   never renamed or reused: change the title instead. A surface is removed only
+   when the code it describes is gone, with the reason in the pull request.
+4. **A pull request that adds, changes or removes surface updates this file in
+   the same pull request:** a new entry, or a new **Code** path, **Ask**
+   question or **Accepted** risk in an existing one, and fixes for paths it
+   renamed or removed.
+
+`scripts/attack-surface.mjs` (run by `npm test`) fails when a **Code** path or
+glob matches nothing, when a production file (the backend, its build and
+configuration, the workflows, the Flatpak and the build scripts) is claimed by
+no entry, `not-surface` included, or when a command in `UNSCOPED_COMMANDS` or
+a Cargo feature is named nowhere here. It can't see new surface inside a file
+an entry already claims, such as a new argument or parser: the per-PR review
+and peer review catch that.
+
+## Threat model
+
+- A compromised main web view.
+- Hostile files the user brings in: spreadsheets, documents, photos and
+  databases from elsewhere.
+- Other local processes running as the same user, where the app claims to
+  resist them (the WebDriver, the helpers, the Flatpak).
+- Anything that can change what ships: CI, the build and dev servers.
+
+## ipc-commands: what the web view can call
+
+- **Code:** `src-tauri/src/main.rs` (`generate_handler!`); `src-tauri/src/lib.rs`; `src-tauri/src/commands_list.rs` (`COMMANDS`, `UNSCOPED_COMMANDS`); `src-tauri/build.rs` (the ACL manifest, generated into `permissions/`); `src-tauri/capabilities/**`; `src-tauri/src/commands/**`; `src-tauri/src/models/**`; `src-tauri/src/session/scoped.rs`; `src-tauri/src/session/operations.rs`; `src-tauri/src/services/mod.rs`; `src-tauri/src/services/cartridges/**`; `src-tauri/src/services/disk_space.rs`; `src-tauri/src/services/entry_text.rs`; `src-tauri/src/services/insurance_status.rs`; `src-tauri/src/services/mounts.rs`; `src-tauri/src/services/registration.rs`; `src-tauri/src/services/valuation.rs`; `src/services/tauriClient.ts`; `src-tauri/tests/acl_manifest_test.rs`; `src-tauri/tests/session_scope_test.rs`
+- **Ask:**
+  - Do the three command lists (`generate_handler!`, `COMMANDS`, the capabilities) agree, and does every `allow-<command>` belong only to the `main` web view, never the PDF surface? Is `core:default` or `dialog:default` broader than the app needs? Does the opener plugin have no permission at all?
+  - For every command: is each argument checked in Rust (length, range, enum, an id belonging to the open session) as if the web view were hostile?
+  - Is `UNSCOPED_COMMANDS` minimal? It holds `get_chooser_state`, `create_database`, `open_database`, `upgrade_database`, `cancel_upgrade`, `remove_recent_database`, `locate_database`, `get_database_status`, `quit_application`, `note_activity`, `set_idle_paused`, `skip_backup`, `cancel_import`, `get_document_opening`, `set_document_opening`, `restore_backup`, `check_backup`, `list_backups` and `forget_saved_passphrase`. Do the ones that can act on the open database (`restore_backup`, `list_backups`, `check_backup`, `forget_saved_passphrase`) check `session::scoped::Target` themselves?
+  - Can `set_document_opening` (unscoped) turn on opening without asking without `services::consent`'s native dialog?
+  - Can `confirmedWarnings` skip a check that protects data? (`LOCATION_OUT_OF_REACH` must never be overridable.)
+  - Do errors forward only `CommandError` codes and never a raw database error (`CommandError::from_db`)?
+  - Regression: #64 (import conflicts bound to the database that made them).
+- **Since:** 001; ACL manifest 007; scoping 008; three unscoped commands 009.
+
+## webview-config: CSP, navigation and browser controls
+
+- **Code:** `src-tauri/tauri.conf.json` (`app.security.csp`); `src-tauri/tests/csp_test.rs`; `src-tauri/src/main.rs` (the main window, built in `setup()`); `src-tauri/src/app_menu.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/window_controls/**`; `src/features/app/browserControls.ts`; `src/main.tsx`; `src-tauri/examples/window_controls_check.rs`; `scripts/window-controls-check.sh`; `scripts/macos/window-controls-check.sh`; `scripts/windows/window-controls-check.ps1`
+- **Ask:**
+  - Is there no `unsafe-inline` or `unsafe-eval` for scripts? The CSP allows `asset:` and `http://asset.localhost` in `img-src`, but the asset protocol is off (no `assetProtocol`, no `protocol-asset` feature, no `convertFileSrc`). Should those sources go?
+  - Can any top-level navigation or new window leave the app's origin (#73)? Does Windows' filter act only on document requests, so IPC works and nothing else loads?
+  - In release builds, are dev tools, reload, history, print, save, find and view-source off, and is only the context-menu allowlist left?
+  - Does `src/` have no HTML sink (`dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`) outside tests? Is everything the page shows from a database, a spreadsheet, a file name or `notices.json` rendered as text?
+- **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
+  - macOS's menu hook may miss items AppKit adds later (Writing Tools, Services).
+  - AutoFill is kept (owner's decision).
+  - Look-ups without a menu are verified only by manual check M1.
+  - On Linux and Windows, only the page's guard stops the mouse's side buttons.
+  - Linux's `Custom` spelling items are unverified.
+- **Rerun:** the window controls check on each OS.
+- **Since:** 001; CSP and navigation fixes #87; browser controls 008.
+
+## paths: filesystem locations from the web view
+
+- **Code:** `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`; `src-tauri/src/commands/import_export.rs`; `src-tauri/src/commands/photos.rs`; `src-tauri/src/commands/documents.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/file_swap.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/attachments.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/app_dirs.rs`; `src/features/media/useFileDrop.ts`
+- **Ask:**
+  - For each command that takes a location from the web view (`create_database`, `open_database`, `upgrade_database` for its backup folder, `locate_database`, `remove_recent_database`, `forget_saved_passphrase`, `update_backup_settings`, `list_backups`, `check_backup`, `restore_backup`, `export_collection`, `import_collection`, `add_photo_from_path`, `add_document_from_path`): does it accept only what its purpose needs (absolute; an existing directory or a regular file)? Where it writes, does it create exclusively and follow no symlink or reparse point?
+  - Is a target the web view names authorized before it is replaced or removed (#62)? Are only files the app created recovered or removed (#63)?
+  - Is a name from inside a database or a spreadsheet ever joined to a path (#68)? Does a colliding export leave no stale photos (#74)?
+  - A database from another computer carries `collection_settings.backup_location`. Is that path checked like one the user typed before backups are written there?
+  - Does every location go through `Reach::check` with the right `Need` before anything is written (011)?
+  - Regression: #62, #63, #68, #74.
+- **Since:** 001, 003; Flatpak reach 011.
+
+## import-export: spreadsheet import and export
+
+- **Code:** `src-tauri/src/services/import_reader/**`; `src-tauri/src/services/spreadsheet.rs`; `src-tauri/src/services/import_matching.rs`; `src-tauri/src/services/suggestions.rs`; `src-tauri/src/commands/import_export.rs`; `src-tauri/src/models/rules.rs`; `src-tauri/src/services/record_id.rs`
+- **Ask:**
+  - Is all parsing in `--import-helper` and none in the app?
+  - Does the parent check every frame the child sends (sizes, counts, UTF-8, limits) as if the child were compromised?
+  - Are the maximums in `import_reader/limits.rs` measured by inflating and enforced before any row is saved (#66)?
+  - Are imported amounts and dates bounded so the collection's totals can't overflow (#67, `saturating_total`)?
+  - Can a crafted sheet's `record_id`s (009) collide with existing records, overwrite them, or bind a mount to the wrong record?
+  - Export: are CSV cells guarded against formula injection (`FORMULA_TRIGGERS` in `spreadsheet.rs`)? Are XLSX cells written as text, never as formulas? Does a cell over 32,767 characters still export (#95)?
+  - Regression: #64, #66, #67, #68, #74.
+- **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
+  - The parent's memory bound rests on `MAX_CELLS` and the total-text limit together.
+  - A collection at every field's maximum in 3- or 4-byte characters passes the 256 MB total-text limit.
+- **Rerun:** `import_largest_test` in release (`DEVELOPMENT.md`, "Test"). Open: #126 (the zip-bomb memory check fails under plain `cargo test`).
+- **Since:** 001; helper and limits 008; identifiers 009.
+
+## key-passphrase: the database key, the passphrase and saved passphrases
+
+- **Code:** `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/mod.rs`; `src-tauri/src/services/passphrase.rs`; `src-tauri/src/services/keyring.rs`; `src-tauri/src/services/keyring/**`; `src-tauri/src/session/mod.rs`; `src-tauri/src/session/upgrade.rs`; `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`; `src/components/PassphraseField.tsx`; `src/components/strength/**`
+- **Ask:**
+  - Are the cipher settings pinned and unchanged (`CIPHER_SETTINGS`, `src-tauri/tests/portability_test.rs`)?
+  - Is the passphrase NFC-normalized, zeroized, never logged, and never sent back to the web view?
+  - Does the session hold only the derived key, never the passphrase (except one being saved, until its upgrade ends, 009 research.md §4)?
+  - Does the strength worker drop the passphrase after its estimate?
+  - Are keyring entries only `passphrase:<database id>`? In the Flatpak, is the Secret portal's store used, and never the Secret Service or `oo7::Keyring::new()`?
+  - Can `test-kdf` (1,000 iterations) never reach a shipped or E2E build (the `compile_error!` in `db/cipher.rs`)?
+- **Accepted** ([011 research.md §20](../specs/011-flatpak/research.md)):
+  - A compromised Flatpak process can read HoploDex's own saved passphrases.
+  - On a `.deb`, `.rpm` or AppImage, any unlocked Secret Service item is reachable.
+- **Since:** 001, 003; Flatpak store 011; `test-kdf` #105; strength worker #106.
+
+## plaintext-lifetime: secure deletion, locking and what outlives a session
+
+- **Code:** `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/db/mod.rs` (`secure_delete`, `reclaim_deleted_record`); `src-tauri/src/session/lifecycle.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/session/clock.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/session/fingerprint.rs`; `src-tauri/src/platform/**`; `src/features/session/**`; `src/components/Toast.tsx`
+- **Ask:**
+  - Is a deleted record's text gone from the file, both search indexes and the journal (`src-tauri/tests/deletion_wipe_test.rs`)?
+  - Is a partial file securely deleted?
+  - Does the database lock on idle, sleep, screen lock and shutdown on each OS, and inside the Flatpak (logind `session/auto`)?
+  - On a lock, are the key dropped, the session's web-view state ended (`SessionScope.end()`) and late responses dropped (#69)?
+  - Is a pending draft written only inside the encrypted file?
+  - Regression: #69.
+- **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
+  - The last-saved version is recorded after the commit.
+  - Notifications raised by the session layer (none today) would escape the keyed `ToastProvider`.
+- **Since:** 001, 003; scope 008.
+
+## document-copies: decrypted copies for another app (001 FR-035)
+
+- **Code:** `src-tauri/src/commands/documents.rs`; `src-tauri/src/services/consent.rs`; `src-tauri/src/services/document_types.rs`; `src-tauri/src/services/machine_settings.rs`; `src-tauri/src/services/sandbox.rs` (`OpenerRoute::Portal`); `src-tauri/src/app_dirs.rs`
+- **Ask:**
+  - Is each copy written under the session lock, into the session that asked (#65)?
+  - Is it `0700`/`0600` from creation, following no link and entering no other owner's folder, with a protected DACL on Windows (#71)? Does it get the canonical extension and a `Zone.Identifier` or `com.apple.quarantine` mark?
+  - Are copies cleared at close, on signals and at startup?
+  - Is consent asked by the OS, never by the web view?
+  - Does `classify` run at attach, preview and open?
+  - Flatpak's OpenURI route counts no answer within 5 s, or a closed chooser, as opened (011 research.md §8). Is that acceptable?
+  - Regression: #65, #71.
+- **Accepted:**
+  - [007 research.md §1](../specs/007-document-preview/research.md): once the user confirms the first, a compromised web view can open the session's other documents.
+  - [007 research.md §1](../specs/007-document-preview/research.md): content checks are signature-level (XLM sheets, embedded objects, field codes, chart workbooks).
+  - [011 research.md §20](../specs/011-flatpak/research.md): the Documents portal remembers a copy's path and name after it is deleted.
+- **Since:** 001; hardening 007; portal 011.
+
+## document-preview: the PDF surface, TIFF and text preview
+
+- **Code:** `src-tauri/src/services/preview/**`; `src-tauri/src/commands/preview.rs`; `src/features/media/DocumentPreview.tsx`; `src/features/media/PreviewSurface.tsx`; `src-tauri/examples/pdf_surface_check.rs`; `src-tauri/examples/pdf_surface_dns.c`; `scripts/pdf-surface-check.sh`; `scripts/macos/pdf-surface-check.sh`; `scripts/windows/pdf-surface-check.ps1`
+- **Ask** (007 research.md §4 to §8, §11):
+  - Does the surface have no network, no disk and no running code?
+  - Is the `hdpreview` token one-time, and refused to every web view but the preview's?
+  - On macOS, are the WebKit SPI switches (`webkit_switches`) and their startup check, the watch and the `pdfPreviewHold` in place?
+  - Is `tripwire.rs` intact?
+  - Does `sandbox_probe.rs` fail closed and resist steering by the environment? (It skips only containers, and runs in Flatpak since 011.)
+  - Does the main web view receive only PNGs HoploDex encoded?
+- **Accepted:**
+  - [007 research.md §1](../specs/007-document-preview/research.md), macOS: WebKit's PDF code runs where Tauri injects IPC, and the ACL manifest is the guard.
+  - [007 research.md §1](../specs/007-document-preview/research.md), Linux without WebKit's sandbox (a container, or where the system forbids it): a PDF exploit runs with the user's access.
+  - [007 research.md §1](../specs/007-document-preview/research.md), Windows: Chromium's own sandbox is what contains Edge's viewer.
+  - [011 research.md §9, §20](../specs/011-flatpak/research.md): inside Flatpak the sandbox is a layer, not a wall (the portal answers in the sub-sandbox).
+- **Rerun:** the PDF surface check on each OS, and again after any web view engine update.
+- **Since:** 007.
+
+## helpers: the confined child processes
+
+- **Code:** `src-tauri/src/services/helper/**`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/helper_handle.rs`; `src-tauri/src/services/preview/helper_protocol.rs`; `src-tauri/src/main.rs` (`--render-helper`, `--import-helper`, `--webkit-sandbox-probe`)
+- **Ask:**
+  - Does no database, key or IPC reach a child? Are core dumps off?
+  - Linux: Landlock (no files, and no network where the ABI has it) and `RLIMIT_DATA`. macOS: `sandbox_init`'s pure-computation profile. Windows: a job object (kill on close, one process, 2 GiB) and process mitigations.
+  - Does each child die with the app (`PR_SET_PDEATHSIG`, the job, `kqueue`)?
+  - Are frames bounded both ways?
+  - Can anything but the app start a helper mode (for example a desktop file or shell association passing `--import-helper`)? Is the mode harmless if one does?
+- **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)): the macOS helper has no enforced memory cap.
+- **Since:** 007; shared with import 008.
+
+## untrusted-images: photos
+
+- **Code:** `src-tauri/src/models/photo.rs`; `src-tauri/src/commands/photos.rs`; `src-tauri/src/services/attachments.rs`; `src/features/media/**`
+- **Ask:**
+  - JPEG and PNG are decoded in the app's own process, unconfined, with the `image` crate's default limits (`models/photo.rs`, and `image` in `src-tauri/Cargo.toml`). Is that bounded against decompression bombs and decoder bugs? Should it move into the render helper as TIFF did?
+  - Originals are shown in the main web view, which holds IPC. Is the type checked by content, not by name?
+  - Beyond the 50-per-record cap (#98), is there a byte cap?
+- **Since:** 001 (in the baseline review's scope, but on no list until this one).
+
+## database-files: opening, upgrading and restoring database files
+
+- **Code:** `src-tauri/src/db/mod.rs`; `src-tauri/src/db/upgrade.rs`; `src-tauri/src/db/migrations/**`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/session/upgrade.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/machine_settings.rs`
+- **Ask:**
+  - With an older or crafted database whose passphrase the user has, does the open or upgrade trust anything beyond data? That covers schema objects (triggers, views) that could fire during a step; `schema_migrations` names (an unknown one must mean `NewerVersion`); and the `app_state` and `collection_settings` values read before any step (009 research.md §13).
+  - Is a pending draft from another HoploDex version (#78) parsed safely?
+  - Is the awaiting-upgrade slot unreachable by collection commands, and dropped on any open, lock, sleep, shutdown or quit?
+  - Does the before-upgrade backup's folder go through the `paths` checks, with an exclusive create and secure deletion of a partial file?
+  - Are test-only steps impossible in a shipped build (`upgrade-test-steps`, the `compile_error!` in `db/upgrade.rs`)? Is `9000_e2e_upgrade_check` E2E-only?
+  - Is `machine.json` (recent paths, `pdfPreviewHold`, the opening setting) read as untrusted?
+- **Accepted** ([009 research.md §19](../specs/009-upgrade-readiness/research.md)): an `fsync`-ignoring filesystem; the lock held while the upgrade question is open; the restored-from backup rotating out; case folding only for A to Z; a backup opened directly becoming its own database. These are integrity limits; reassess whether any is a security issue.
+- **Since:** 003; upgrade 009.
+
+## flatpak: the Flatpak sandbox and its portals
+
+- **Code:** `flatpak/io.github.exodious.HoploDex.yml`; `scripts/flatpak/manifest.test.ts`; `scripts/flatpak/contents.mjs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/keyring/portal.rs`; `src-tauri/src/platform/linux.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/commands/error.rs`
+- **Ask:**
+  - Does the manifest grant no permission beyond 011 research.md §4's table, as `manifest.test.ts` enforces?
+  - Is every write location checked against `Reach` first? Can `HostPaths`' mapping of a Documents-portal path be steered outside the grants?
+  - Is the Secret portal used, and never the Secret Service?
+  - Does the web process match 011 research.md §9's arguments with the sandbox on?
+  - Does the bundle carry only what `contents.mjs` allows?
+- **Accepted** ([011 research.md §20](../specs/011-flatpak/research.md)):
+  - What a compromised process reaches: `<Documents>/HoploDex`, the drives, its own saved passphrases, logind and the screen savers.
+  - A user's `flatpak override` widens that.
+  - The Documents portal remembers copies.
+  - The runtime ends with GNOME 51 (#129).
+  - The `.flatpak` file is unsigned (#19).
+- **Rerun:** the Flatpak check (`DEVELOPMENT.md`, "The Flatpak check").
+- **Since:** 011.
+
+## logging: what the log carries
+
+- **Code:** `src-tauri/src/logging.rs` (and every `log::` call in the backend)
+- **Ask:**
+  - Is no record value, original photo or document file name (or the path it came from), draft text or passphrase logged?
+  - Do serde errors go through `logging::json_error`, and folders through `logging::folder_of`?
+  - Do the helpers log nothing?
+- **Accepted** ([011 research.md §20](../specs/011-flatpak/research.md)): the log reaches standard error or the journal on every OS. #128 (a log file users can send) will widen this when it is built.
+- **Since:** 011.
+
+## shipped-build: what only test and E2E builds may contain
+
+- **Code:** `src-tauri/Cargo.toml` (`[features]`, `[patch.crates-io]`); `src-tauri/build.rs`; `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/upgrade.rs`; `src-tauri/src/app_dirs.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/services/keyring.rs`; `src-tauri/vendor/**`; `scripts/check-no-webdriver.mjs`; `scripts/build-appimage.sh`
+- **Ask:**
+  - Is `e2e` still the only thing that brings `tauri-plugin-wdio-webdriver` (`cargo tree`)? `flatpak-check` implies it.
+  - Is every marker absent from every shipped binary and installer, on each OS? macOS and Windows release builds don't exist yet (#19); check them when they do.
+  - Should the markers in `check-no-webdriver.mjs` cover every E2E-only `HOPLODEX_E2E_*` name in the backend?
+  - Does anything stop a shipped build with `mock-keyring` alone, beside `custom-protocol`?
+  - Do `test-kdf` and `upgrade-test-steps` still refuse `custom-protocol` and `e2e` at compile time?
+- **Since:** #29, #76; seams 007, #76, 009; `test-kdf` #105.
+
+## unsafe-ffi: unsafe Rust and platform FFI
+
+- **Code:** (every backend file with `unsafe`) `src-tauri/src/commands/documents.rs`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/platform/macos.rs`; `src-tauri/src/platform/windows.rs`; `src-tauri/src/services/attachments.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/helper/confine.rs`; `src-tauri/src/services/helper/job.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/preview/availability.rs`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/services/preview/surface/linux.rs`; `src-tauri/src/services/preview/surface/macos.rs`; `src-tauri/src/services/preview/surface/windows.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/window_controls/macos.rs`; `src-tauri/src/window_controls/windows.rs`
+- **Ask:**
+  - Does each `unsafe` block's `SAFETY` comment hold?
+  - Check ObjC and WebKit SPI on macOS; COM and Win32 (DACLs, job objects, WebView2); GTK and WebKitGTK; and libc (Landlock, `prctl`, descriptors, the `NonNull` in `db/raw_file.rs` from CodeQL alert 68).
+  - Is `set_var` called only before any thread starts?
+- **Since:** grew from 4 files at the baseline review to 20 (007, 008, 011).
+
+## build-ci: what can change what ships, or the repository
+
+- **Code:** `.github/workflows/**`; `.github/dependabot.yml`; `.github/codeql/**`; `src-tauri/build.rs`; `vite.config.ts`; `scripts/licenses/vitePlugin.mjs`; `scripts/build-appimage.sh`; `flatpak/**`; `scripts/flatpak/build.sh`; `scripts/flatpak/sources.mjs`; `tools/plate-tuner/**`; `package.json` (scripts); `audit-ci.jsonc`; `audit-deprecated.json`; `src-tauri/deny.toml`
+- **Ask:**
+  - Do workflows take least privilege, avoid `pull_request_target`, receive untrusted input only through `env`, pin actions (#72), set `persist-credentials: false`, and expose no secrets on pull request events?
+  - Can no code change skip the audit (`audit.yml`'s skip rule, #142)?
+  - CodeQL doesn't scan workflows (no `actions` language), `vite.config.ts`, `vitePlugin.mjs` or `scripts/` (`.github/codeql/codeql-config.yml`). Does this review cover them?
+  - Does every dev server that can write to the tree need a per-run token and bind to `localhost` (#70)?
+  - Is the vendored crate built only under `e2e`?
+  - Is the Flatpak built offline from the committed source lists?
+  - Regression: #70, #72.
+- **Since:** the baseline review (#70, #72); CodeQL #82; audit #85; pr-body #134. #25's CI joins it when it lands.
+
+## not-surface: checked and left out
+
+- **Code:** `src-tauri/tests/**`; `src-tauri/examples/**`; `e2e/**`; `src/**/*.test.*`; `scripts/windows/setup-*.ps1`; `scripts/windows/gui.ps1`; `scripts/tart-vm.sh`; `scripts/human-testing.sh`; `scripts/dev-container.sh`; `.claude/**`; `tools/icons/**`; `docs/**`; `specs/**`
+- **Why:** test and test-machine code, agent tooling, and documentation. None of it ships, builds what ships, or runs in CI. The check programs under `src-tauri/examples/` that a surface depends on are named in that surface. Test isolation from real data is constitution principle II's, not this review's. The Windows test machine's remote session (`scripts/windows/gui.ps1`, #138) is reached only over that machine's own sshd, and is not in the app, its build or the repository's CI.
+
+## The constitution's seven areas
+
+Until 1.5.0 the constitution listed seven areas inline. Each is an entry here:
+
+- the commands exposed to the frontend: `ipc-commands`
+- the Tauri capabilities and content security policy: `ipc-commands` and `webview-config`
+- filesystem path handling: `paths`
+- spreadsheet import parsing and export (including formula injection): `import-export`
+- handling of the database key and passphrase: `key-passphrase`
+- secure deletion: `plaintext-lifetime`
+- decrypted document copies: `document-copies`
+
+The other nine entries are what the seven missed: `document-preview`, `helpers`, `untrusted-images`, `database-files`, `flatpak`, `logging`, `shipped-build`, `unsafe-ffi` and `build-ci`.
