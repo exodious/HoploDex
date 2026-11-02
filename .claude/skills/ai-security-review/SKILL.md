@@ -102,8 +102,10 @@ surface or CWE is a new alert: treat it as a move (below).
    unsure).
 4. **Verify.** A fresh `security-reviewer` per new finding (refute it, check
    the band, answer "same as carried or dismissed #N?", and in pr mode
-   "introduced?"), and per `fixed` or `moved` verdict. Unconfirmed findings
-   are dropped; an unconfirmed fix stays carried as `unsure`.
+   "introduced?"), and per `fixed` or `moved` verdict. Ask for its confidence
+   (1 to 10) in the verdict: below 8 is unconfirmed (the agent's evidence
+   bar). Unconfirmed findings are dropped; an unconfirmed fix stays carried
+   as `unsure`.
 5. **Assemble** `<scratch>/findings.json`: confirmed new findings, plus every
    carried open alert that is present or unsure, with its `rule_id` (update
    its region and message to the reviewer's). Leave out only verified fixes,
