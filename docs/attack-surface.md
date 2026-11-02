@@ -258,7 +258,7 @@ and peer review catch that.
 
 ## build-ci: what can change what ships, or the repository
 
-- **Code:** `.github/workflows/**`; `.github/dependabot.yml`; `.github/codeql/**`; `scripts/ai-security-review.mjs`; `src-tauri/build.rs`; `vite.config.ts`; `scripts/licenses/vitePlugin.mjs`; `scripts/build-appimage.sh`; `flatpak/**`; `scripts/flatpak/build.sh`; `scripts/flatpak/sources.mjs`; `tools/plate-tuner/**`; `package.json` (scripts); `audit-ci.jsonc`; `audit-deprecated.json`; `src-tauri/deny.toml`
+- **Code:** `.github/workflows/**`; `.github/actions/**`; `.github/dependabot.yml`; `.github/codeql/**`; `scripts/ai-security-review.mjs`; `src-tauri/build.rs`; `vite.config.ts`; `scripts/licenses/vitePlugin.mjs`; `scripts/build-appimage.sh`; `flatpak/**`; `scripts/flatpak/build.sh`; `scripts/flatpak/sources.mjs`; `tools/plate-tuner/**`; `package.json` (scripts); `audit-ci.jsonc`; `audit-deprecated.json`; `audit-openssl.json`; `scripts/check-openssl-advisories.mjs`; `scripts/windows/vcpkg/vcpkg.json`; `src-tauri/deny.toml`
 - **Ask:**
   - Do workflows take least privilege, avoid `pull_request_target`, receive untrusted input only through `env`, pin actions (#72), set `persist-credentials: false`, and expose no secrets on pull request events?
   - Can no code change skip the audit (`audit.yml`'s skip rule, #142)?
@@ -268,7 +268,7 @@ and peer review catch that.
   - Is the Flatpak built offline from the committed source lists?
   - Does `scripts/ai-security-review.mjs` change code scanning only as the skill says: uploads only to a branch or `refs/pull/<n>/head`, under the fixed `TOOL` and `CATEGORY`, with only introduced findings on a pull request (its annotations are public); dismissals only through `carry-dismissal`, from an alert already dismissed? Does `upload` report an open alert an upload left out (which closes it)? Does `gate` count every tool's open critical and high alerts, Dependabot, secret scanning and draft or triage advisories?
   - Regression: #70, #72.
-- **Since:** the baseline review (#70, #72); CodeQL #82; audit #85; pr-body #134; code scanning uploads and the release gate, #21's review skill. #25's CI joins it when it lands.
+- **Since:** the baseline review (#70, #72); CodeQL #82; audit #85; pr-body #134; code scanning uploads and the release gate, #21's review skill; the per-pull-request CI and its pinned OpenSSL #25.
 
 ## not-surface: checked and left out
 

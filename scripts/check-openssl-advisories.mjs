@@ -220,11 +220,13 @@ export function checkOpenSsl({ version, latest, records, releases, exceptions, t
 
   const branch = branchOf(version);
   const eol = releases?.[branchName(branch)]?.eol;
-  const since = eol === undefined ? undefined : day(eol, `data.json ${branchName(branch)}.eol`);
-  const warnings = [];
   if (eol === undefined)
-    warnings.push(`OpenSSL's release data has no ${branchName(branch)} branch`);
-  else if (since <= now) {
+    throw new Error(
+      `OpenSSL's release data (data.json) has no ${branchName(branch)} branch, so its support can't be checked; has OpenSSL's repository changed?`,
+    );
+  const since = day(eol, `data.json ${branchName(branch)}.eol`);
+  const warnings = [];
+  if (since <= now) {
     const near = neighbours(branch, releases, now);
     const names = near.map(branchName).join(" and ");
     warnings.push(

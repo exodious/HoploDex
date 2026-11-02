@@ -172,9 +172,6 @@ describe("checkOpenSsl", () => {
         "OpenSSL 3.6 is out of support since 01 Nov 2026: a later advisory may not list 3.6.5, so the audit fails on each one that affects 3.5 and 4.0",
       ),
     ]);
-    expect(audit({ version: "3.7.0", latest: "3.7.0" }).warnings).toEqual([
-      "OpenSSL's release data has no 3.7 branch",
-    ]);
   });
 
   it("past the branch's end of life, fails on a later advisory for the supported branch below or above", () => {
@@ -248,6 +245,15 @@ describe("checkOpenSsl", () => {
 
   it("fails when too few advisories were read to trust the source", () => {
     expect(() => audit({ records: filler.slice(1) })).toThrow("only 99 advisories read");
+  });
+
+  it("fails when the release data is missing or has no entry for the version's branch", () => {
+    const message = "OpenSSL's release data (data.json) has no 3.6 branch";
+    expect(() => audit({ releases: null })).toThrow(message);
+    expect(() => audit({ releases: { ...releases, "3.6": undefined } })).toThrow(message);
+    expect(() => audit({ releases: { ...releases, "3.6": { release: "01 Oct 2025" } } })).toThrow(
+      message,
+    );
   });
 
   it("fails on a date it can't read rather than skipping the check", () => {

@@ -295,12 +295,14 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: npm run build
       # One worker: the suite passed so on the 3-CPU, 7 GB runner, where two
-      # would run out of memory. Optional (#25): a failure doesn't fail the
-      # job, and the next step records it.
+      # would run out of memory. Optional (#25): a failure or a hang (the step
+      # timeouts, well inside the job's) doesn't fail the job, and the last
+      # step records it.
       - name: E2E
         id: e2e
         if: steps.scope.outputs.run == 'true'
         continue-on-error: true
+        timeout-minutes: 40
         env:
           HOPLODEX_E2E_WORKERS: 1
         # bash with pipefail, so a failing suite fails the step rather than tee.
@@ -310,9 +312,10 @@ jobs:
         id: quit
         if: steps.scope.outputs.run == 'true'
         continue-on-error: true
+        timeout-minutes: 5
         run: python3 e2e/scripts/quit-cleanup.py
       - name: Record the failures
-        if: steps.e2e.outcome == 'failure' || steps.quit.outcome == 'failure'
+        if: always() && (steps.e2e.outcome == 'failure' || steps.quit.outcome == 'failure')
         env:
           E2E: ${{ steps.e2e.outcome }}
           QUIT: ${{ steps.quit.outcome }}

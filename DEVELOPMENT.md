@@ -2079,7 +2079,9 @@ raises no security alerts for vcpkg, so `npm run audit:openssl`
   support, the audit also fails on each advisory published on or after its
   end-of-life date that affects the nearest supported branch below it or the
   nearest above it (for 3.6, 3.5 and 4.0), which share its code. The message
-  says to check whether the pinned version is affected.
+  says to check whether the pinned version is affected. A `data.json` that is
+  missing, can't be read, or has no end of life for that branch fails the
+  audit, since it can't tell then.
 
 It needs the network for all three, like the rest of the audit; without it, it
 fails saying what it couldn't fetch. To fix a finding, move the pin to a vcpkg
