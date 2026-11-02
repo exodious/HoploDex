@@ -1220,6 +1220,14 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
       { timeout: 15000, interval: 100, timeoutMsg: "the import's helper never started" },
     );
     const helper = sandboxProcesses().find((p) => p.command[1] === "--import-helper")!.pid;
+    // The helper confines itself as it starts, before it reads a byte
+    // (import_reader/reader.rs), so until then it has the app's limits: wait
+    // for that start rather than read them the moment the process appears.
+    await browser.waitUntil(() => resourceLimit(helper, "Max core file size").hard === 0, {
+      timeout: 10000,
+      interval: 100,
+      timeoutMsg: "the import's helper never confined itself",
+    });
     expect(resourceLimit(helper, "Max core file size")).toEqual({ soft: 0, hard: 0 });
     expect(Number.isFinite(resourceLimit(helper, "Max data size").soft)).toBe(true);
 

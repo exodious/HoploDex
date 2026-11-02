@@ -261,7 +261,8 @@ and peer review catch that.
 - **Code:** `.github/workflows/**`; `.github/actions/**`; `.github/dependabot.yml`; `.github/codeql/**`; `scripts/ai-security-review.mjs`; `src-tauri/build.rs`; `vite.config.ts`; `scripts/licenses/vitePlugin.mjs`; `scripts/build-appimage.sh`; `flatpak/**`; `scripts/flatpak/build.sh`; `scripts/flatpak/sources.mjs`; `tools/plate-tuner/**`; `package.json` (scripts); `audit-ci.jsonc`; `audit-deprecated.json`; `audit-openssl.json`; `scripts/check-openssl-advisories.mjs`; `scripts/windows/vcpkg/vcpkg.json`; `src-tauri/deny.toml`
 - **Ask:**
   - Do workflows take least privilege, avoid `pull_request_target`, receive untrusted input only through `env`, pin actions (#72), set `persist-credentials: false`, and expose no secrets on pull request events?
-  - Can no code change skip the audit (`audit.yml`'s skip rule, #142)?
+  - Can no code change skip the audit (`audit.yml`'s skip rule, #142), or `ci.yml`'s jobs (`.github/actions/scope`'s Markdown-only rule), including the packages jobs' `check-no-webdriver.mjs`? Does `FLATPAK_PATHS` still cover what the Flatpak check protects?
+  - Are caches saved only from `main` and only restored on a pull request (`.github/actions/setup`), so a pull request can't plant a dependency, toolchain or OpenSSL build that `main` uses? Is vcpkg fetched and built only at the commit `builtin-baseline` pins (`scripts/windows/vcpkg/vcpkg.json`)?
   - CodeQL doesn't scan workflows (no `actions` language), `vite.config.ts`, `vitePlugin.mjs` or `scripts/` (`.github/codeql/codeql-config.yml`). Does this review cover them?
   - Does every dev server that can write to the tree need a per-run token and bind to `localhost` (#70)?
   - Is the vendored crate built only under `e2e`?
