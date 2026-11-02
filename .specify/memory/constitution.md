@@ -36,8 +36,8 @@ Added sections: none
 Removed sections: none
 Templates requiring updates:
   - .specify/templates/plan-template.md: ✅ the Constitution Check names the
-    attack-surface entries the feature adds or changes; the close-out no
-    longer comments on #21
+    attack-surface entries the feature adds or changes, updated in the
+    feature's pull request
   - .specify/templates/tasks-template.md: ✅ a final-phase task to update
     docs/attack-surface.md
   - CLAUDE.md "Spec Kit workflow" gate list: ✅ names the list update;

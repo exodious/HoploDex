@@ -45,8 +45,7 @@
 **Attack surface** (`docs/attack-surface.md`): [the entries, by id, this feature
 adds or changes (a new entry, **Code** path, **Ask** question or **Accepted**
 risk), or "unchanged"]. The list is updated in this feature's pull request, and
-the reasoning stays in `research.md`, which the list links to; the close-out
-doesn't comment on #21.
+the reasoning stays in `research.md`, which the list links to.
 
 ## Test Levels
 
