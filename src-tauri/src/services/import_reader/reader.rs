@@ -496,17 +496,17 @@ fn scan_shared_strings(xml: impl Read) -> Result<(), Stop> {
         buf.clear();
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e) | Event::Empty(e)) => match e.local_name().as_ref() {
-                b"sst" => {
+                "sst" => {
                     for attribute in e.attributes().with_checks(false) {
                         let attribute = attribute.map_err(|_| Stop::Unreadable)?;
-                        if matches!(attribute.key.as_ref(), b"count" | b"uniqueCount")
-                            && declares_too_many(&attribute.value)
+                        if matches!(attribute.key.as_ref(), "count" | "uniqueCount")
+                            && declares_too_many(attribute.value.as_bytes())
                         {
                             return Err(refused(ImportLimit::SharedStrings));
                         }
                     }
                 }
-                b"si" => {
+                "si" => {
                     present += 1;
                     if present > MAX_SHARED_STRINGS {
                         return Err(refused(ImportLimit::SharedStrings));
@@ -578,7 +578,7 @@ fn check_archive<W: Write>(bytes: &[u8], sink: &mut Sink<'_, W>) -> Result<Vec<P
         if entry.is_dir() {
             continue;
         }
-        let shared = is_shared_strings(entry.name());
+        let shared = is_shared_strings(&entry.name().map_err(|_| Stop::Unreadable)?);
         let mut counted = Counted { inner: entry, total: &mut unpacked, declared, sink };
         let result = if shared {
             scan_shared_strings(&mut counted)
