@@ -52,6 +52,7 @@ pub fn budgets_checked() -> bool {
 
 /// `assert!` for a timing budget, skipped under CI ([`budgets_checked`]). Only
 /// the time comparison goes through it; every other assertion of the test stays.
+#[allow(unused_macros)]
 macro_rules! assert_budget {
     ($($arg:tt)+) => {
         if $crate::support::budgets_checked() {

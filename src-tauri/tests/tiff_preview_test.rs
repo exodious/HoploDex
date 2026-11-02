@@ -263,7 +263,11 @@ fn each_crafted_tiff_fails_cleanly_and_the_session_stays_usable() {
                 world.close(preview_id);
             }
         }
-        support::assert_budget!(started.elapsed() < Duration::from_secs(40), "{} took too long", crafted.name);
+        support::assert_budget!(
+            started.elapsed() < Duration::from_secs(40),
+            "{} took too long",
+            crafted.name
+        );
         assert_eq!(world.helper_pid(), None, "{}", crafted.name);
         assert!(
             world.session.read(world.session.current_id(), |_| Ok(())).is_ok(),
@@ -320,8 +324,14 @@ fn closing_during_the_load_of_a_large_tiff_is_prompt_and_kills_the_helper() {
             let usable_at = Instant::now();
             world.session.read(world.session.current_id(), |_| Ok(())).unwrap();
 
-            support::assert_budget!(closed_in < Duration::from_millis(100), "close_preview took {closed_in:?}");
-            support::assert_budget!(usable_at.elapsed() < Duration::from_millis(100), "the session was held up");
+            support::assert_budget!(
+                closed_in < Duration::from_millis(100),
+                "close_preview took {closed_in:?}"
+            );
+            support::assert_budget!(
+                usable_at.elapsed() < Duration::from_millis(100),
+                "the session was held up"
+            );
             if let Some(pid) = pid {
                 assert_gone(pid, "after close_preview");
             }

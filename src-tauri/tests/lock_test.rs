@@ -641,7 +641,10 @@ fn a_close_during_the_reading_of(way: &str, go: impl FnOnce(&World)) {
 
     let error = outcome.expect_err("the reading was ended");
     assert_eq!(error.code, "DATABASE_CLOSED", "{way}: {error:?}");
-    support::assert_budget!(ended_in < Duration::from_secs(1), "{way}: the reading took {ended_in:?} to end");
+    support::assert_budget!(
+        ended_in < Duration::from_secs(1),
+        "{way}: the reading took {ended_in:?} to end"
+    );
     println!("{way}: the close took {went_ahead_in:?}, the reading ended after {ended_in:?}");
     assert!(!world.session.is_open(), "{way}");
     assert!(
