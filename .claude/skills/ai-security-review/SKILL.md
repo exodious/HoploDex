@@ -40,7 +40,10 @@ after fixes made in response to a review of `<reviewed commit>`.
   whose text you print for the operator to file. The script refuses a pr-mode
   finding without `"introduced": true`.
 - Reviewers and verifiers are `security-reviewer` subagents: read-only, no
-  shell, no network. Reviewing sends source code to the AI vendor, never
+  shell, no network. If the agent type isn't offered (a session can miss an
+  agent file added after it started), use a read-only agent (`Explore`)
+  told to follow `.claude/agents/security-reviewer.md`'s body and to run no
+  shell command. Reviewing sends source code to the AI vendor, never
   collection data (constitution, Principle V). Never run the app or open a
   database.
 - **Never** dismiss an alert on your own, create an advisory, change a
