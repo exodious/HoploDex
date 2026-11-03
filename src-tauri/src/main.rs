@@ -108,20 +108,17 @@ fn exit_on_termination_signals(app: tauri::AppHandle) {
 /// Turns core dumps off for this process and every process it starts, which
 /// inherit the limit: WebKit's web and network processes, and the helpers. A
 /// core of the app or of a web process holds the open database's decrypted
-/// records (#166). Only the soft limit, which no process of the app raises, so
-/// someone chasing a crash can still raise it with `prlimit`. Not on macOS,
-/// whose default is already 0 and whose WebKit processes are launchd's.
+/// records (#166). The hard limit too, as the helpers' (`confine.rs`): with
+/// only the soft one lowered, a compromised helper could raise the app's again
+/// with `prlimit`. Inside the Flatpak, WebKit's sandboxed web process is
+/// started by the Flatpak portal, not by the app, so it doesn't inherit this.
+/// Not on macOS, whose default is already 0 and whose WebKit processes are
+/// launchd's.
 #[cfg(target_os = "linux")]
 fn turn_off_core_dumps() {
-    let mut core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
-    // SAFETY: plain system calls with a pointer to a local.
-    let set = unsafe {
-        libc::getrlimit(libc::RLIMIT_CORE, &mut core) == 0 && {
-            core.rlim_cur = 0;
-            libc::setrlimit(libc::RLIMIT_CORE, &core) == 0
-        }
-    };
-    if !set {
+    let core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: a plain system call with a pointer to a local.
+    if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &core) } != 0 {
         log::error!("core dumps could not be turned off: {}", std::io::Error::last_os_error());
     }
 }

@@ -11,9 +11,9 @@ where `open_document` writes its temporary copies, quits the app, and looks at
 what is left.
 
 On Linux it also checks #166's two fixes. No process of the app may leave a
-core dump: the app, WebKit's processes and the helpers all run with a soft
-core limit of 0, although the script starts the app with the highest limit
-it may. And on a quit by signal the app ends its web processes itself before
+core dump: the app, WebKit's processes and the helpers all run with a core
+limit of 0, soft and hard, although the script starts the app with the
+highest limit it may. And on a quit by signal the app ends its web processes itself before
 it exits, so none of them runs its exit handlers, which crash on WebKitGTK
 before 2.54.1: the script stops each web process first (SIGSTOP), so one the
 app leaves alone is still there after the app has gone. A window closed
@@ -264,12 +264,13 @@ def name_of(pid):
         return "?"
 
 
-def soft_core_limit(pid):
+def core_limits(pid):
+    """Linux: `pid`'s soft and hard core limits, as /proc writes them."""
     try:
         with open(f"/proc/{pid}/limits") as f:
             for line in f:
                 if line.startswith("Max core file size"):
-                    return line.split()[4]
+                    return "/".join(line.split()[4:6])
     except OSError:
         pass
     return None
@@ -315,8 +316,8 @@ def run(desktop, how):
             web = [pid for pid in tree if web_process(pid)]
             if not web:
                 return False, "the app has no web process to check"
-            dumping = [f"{name_of(pid)} {pid}: {limit}" for pid in tree
-                       if (limit := soft_core_limit(pid)) not in ("0", None)]
+            dumping = [f"{name_of(pid)} {pid}: {limits}" for pid in tree
+                       if (limits := core_limits(pid)) not in ("0/0", None)]
             if dumping:
                 problems.append("core dumps on for " + ", ".join(dumping))
             if how in ("term", "hup", "int"):
