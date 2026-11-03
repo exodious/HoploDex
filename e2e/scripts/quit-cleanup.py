@@ -10,6 +10,16 @@ documents and (on macOS) home directories, never the real ones, plants a file
 where `open_document` writes its temporary copies, quits the app, and looks at
 what is left.
 
+On Linux it also checks #166's two fixes. No process of the app may leave a
+core dump: the app, WebKit's processes and the helpers all run with a soft
+core limit of 0, although the script starts the app with the highest limit
+it may. And on a quit by signal the app ends its web processes itself before
+it exits, so none of them runs its exit handlers, which crash on WebKitGTK
+before 2.54.1: the script stops each web process first (SIGSTOP), so one the
+app leaves alone is still there after the app has gone. A window closed
+can't be checked that way, since the page answers the quit, but it ends
+through the same exit handler.
+
 Linux and macOS; quit-cleanup.ps1 is its Windows counterpart (#27). Build the
 E2E binary first:
 
@@ -31,6 +41,7 @@ VM, Terminal has it: `scripts/tart-vm.sh gui python3 e2e/scripts/quit-cleanup.py
 import ctypes
 import ctypes.util
 import os
+import resource
 import shutil
 import signal
 import subprocess
@@ -224,6 +235,57 @@ def scratch_env(scratch):
     return env
 
 
+def descendants(root):
+    """Linux: the ids of every process under `root`, from /proc."""
+    children = {}
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat") as f:
+                stat = f.read()
+        except OSError:
+            continue
+        # "pid (name) state ppid ...", and the name may hold ") ".
+        children.setdefault(int(stat[stat.rindex(")") + 2:].split()[1]), []).append(int(entry))
+    found, todo = [], [root]
+    while todo:
+        for kid in children.get(todo.pop(), []):
+            found.append(kid)
+            todo.append(kid)
+    return found
+
+
+def name_of(pid):
+    try:
+        with open(f"/proc/{pid}/comm") as f:
+            return f.read().strip()
+    except OSError:
+        return "?"
+
+
+def soft_core_limit(pid):
+    try:
+        with open(f"/proc/{pid}/limits") as f:
+            for line in f:
+                if line.startswith("Max core file size"):
+                    return line.split()[4]
+    except OSError:
+        pass
+    return None
+
+
+def web_process(pid):
+    """Linux: whether `pid` is a WebKit web process, and not a zombie (the
+    name is checked again, since an ended process's id can be reused)."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            stat = f.read()
+    except OSError:
+        return False
+    return stat[stat.rindex(")") + 2] not in "ZX" and name_of(pid).startswith("WebKitWebProces")
+
+
 def webdriver_answers():
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{WEBDRIVER_PORT}/status", timeout=1) as response:
@@ -236,6 +298,7 @@ def run(desktop, how):
     scratch = tempfile.mkdtemp(prefix="hoplodex-quit-")
     env = scratch_env(scratch)
     planted = os.path.join(scratch, "cache", IDENTIFIER, "opened-documents", "7", "receipt.pdf")
+    problems, stopped = [], []
     app = subprocess.Popen([BINARY], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         deadline = time.time() + 30
@@ -246,6 +309,20 @@ def run(desktop, how):
         if not desktop.has_window(app):
             return False, "the app's window never appeared"
         time.sleep(3)  # let startup (and its sweep of old copies) finish first
+
+        if LINUX:
+            tree = [app.pid] + descendants(app.pid)
+            web = [pid for pid in tree if web_process(pid)]
+            if not web:
+                return False, "the app has no web process to check"
+            dumping = [f"{name_of(pid)} {pid}: {limit}" for pid in tree
+                       if (limit := soft_core_limit(pid)) not in ("0", None)]
+            if dumping:
+                problems.append("core dumps on for " + ", ".join(dumping))
+            if how in ("term", "hup", "int"):
+                for pid in web:
+                    os.kill(pid, signal.SIGSTOP)
+                stopped = web
 
         os.makedirs(os.path.dirname(planted))
         with open(planted, "w") as f:
@@ -263,17 +340,31 @@ def run(desktop, how):
         except subprocess.TimeoutExpired:
             return False, "the app didn't exit within 20s"
         time.sleep(0.5)
+        if stopped:
+            deadline = time.time() + 5
+            while time.time() < deadline and any(web_process(pid) for pid in stopped):
+                time.sleep(0.1)
+            if left_alone := [pid for pid in stopped if web_process(pid)]:
+                problems.append(f"web process {', '.join(map(str, left_alone))} outlived the app")
         left = os.path.exists(planted)
         if how == "kill":
             # A killed process can't clean up; the next launch's sweep does.
-            return left, "left behind for the next launch to sweep" if left else "was somehow cleaned up"
-        return not left, "removed on exit" if not left else "still on disk after exit"
+            ok, detail = left, "left behind for the next launch to sweep" if left else "was somehow cleaned up"
+        else:
+            ok, detail = not left, "removed on exit" if not left else "still on disk after exit"
+        if stopped and not problems:
+            detail += "; web processes ended by the app"
+        return ok and not problems, "; ".join([detail, *problems])
     except RuntimeError as err:
         return False, str(err)
     finally:
         if app.poll() is None:
             app.kill()
             app.wait()
+        # A web process the app left stopped would stay there for good.
+        for pid in stopped:
+            if web_process(pid):
+                os.kill(pid, signal.SIGKILL)
         shutil.rmtree(scratch, ignore_errors=True)
 
 
@@ -284,6 +375,13 @@ if __name__ == "__main__":
         sys.exit(f"build the E2E binary first: {BINARY} not found")
     if webdriver_answers():
         sys.exit(f"something already answers on port {WEBDRIVER_PORT}; is another app still running?")
+    if LINUX:
+        # The app starts with the highest core limit it may have, so that its
+        # own is what keeps its processes from dumping core.
+        hard = resource.getrlimit(resource.RLIMIT_CORE)[1]
+        if hard == 0:
+            sys.exit("the hard core limit is 0 here, so the core dump check can't fail: raise it first")
+        resource.setrlimit(resource.RLIMIT_CORE, (hard, hard))
     desktop = X11() if LINUX else MacOS()
     cases = [("close", "window closed")]
     if MACOS:

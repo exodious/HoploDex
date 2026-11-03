@@ -877,7 +877,10 @@ that decrypted document copies are removed when the app quits, against the
 built E2E binary:
 
 - **Linux:** `xvfb-run -a python3 e2e/scripts/quit-cleanup.py` (needs Xvfb,
-  no other packages). Window closed, SIGTERM, SIGHUP and SIGINT.
+  no other packages). Window closed, SIGTERM, SIGHUP and SIGINT. It also
+  checks that no process of the app can leave a core dump, and that on a quit
+  by signal the app ends its web processes itself (#166), so it needs a hard
+  core limit above 0 (`ulimit -H -c`).
 - **macOS:** `python3 e2e/scripts/quit-cleanup.py`, in a logged-in desktop
   session (in a tart VM, `scripts/tart-vm.sh gui python3
   e2e/scripts/quit-cleanup.py`). Window closed, Cmd+Q, SIGTERM, SIGHUP and
