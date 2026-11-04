@@ -4,6 +4,7 @@
 /// research.md §16).
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub mod allocator;
 pub mod app_dirs;
 pub mod commands;
 pub mod commands_list;
