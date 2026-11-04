@@ -23,9 +23,8 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{
     NSAccessibility, NSAlert, NSButton, NSColor, NSControlStateValueOn,
     NSControlTextEditingDelegate, NSLayoutAttribute, NSLevelIndicator, NSLevelIndicatorStyle,
-    NSModalResponse, NSProgressIndicator, NSProgressIndicatorStyle, NSSecureTextField,
-    NSStackView, NSTextField, NSTextFieldDelegate, NSUserInterfaceLayoutOrientation, NSView,
-    NSWindow,
+    NSModalResponse, NSProgressIndicator, NSProgressIndicatorStyle, NSSecureTextField, NSStackView,
+    NSTextField, NSTextFieldDelegate, NSUserInterfaceLayoutOrientation, NSView, NSWindow,
 };
 use objc2_foundation::{
     NSArray, NSNotification, NSObject, NSObjectNSDelayedPerforming, NSObjectProtocol, NSRange,
@@ -63,10 +62,8 @@ pub(super) fn open<R: tauri::Runtime>(
     let id = IDS.fetch_add(1, Ordering::Relaxed);
     let (built, result) = mpsc::channel();
     app.run_on_main_thread(move || {
-        let made = window
-            .ns_window()
-            .map_err(|err| format!("no NSWindow: {err}"))
-            .and_then(|parent| {
+        let made =
+            window.ns_window().map_err(|err| format!("no NSWindow: {err}")).and_then(|parent| {
                 let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
                 // SAFETY: Tauri's pointer to the main window's NSWindow, which
                 // outlives this call; it is retained before use.

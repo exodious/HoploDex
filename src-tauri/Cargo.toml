@@ -269,6 +269,11 @@ windows-sys = { version = "0.61", features = [
     # `AssocQueryStringW`: whether a program is registered for a document type
     # (007 research.md §18, amended 2026-10-07).
     "Win32_UI_Shell",
+    # The passphrase dialog's edit controls, meter, DPI and module handle
+    # (amended 2026-11-04 to 003 FR-007).
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_System_LibraryLoader",
 ] }
 # The PDF surface's settings and events (007 research.md §6-§10). The versions
 # wry uses.

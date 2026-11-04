@@ -15,30 +15,30 @@ use std::sync::{Arc, Mutex, Once};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    COLOR_BTNFACE, CreateFontIndirectW, DT_CALCRECT, DT_WORDBREAK, DeleteObject, DrawTextW,
-    GetDC, GetSysColorBrush, HDC, HFONT, InvalidateRect, ReleaseDC, SelectObject, SetBkMode,
-    SetTextColor, TRANSPARENT,
+    COLOR_BTNFACE, CreateFontIndirectW, DT_CALCRECT, DT_WORDBREAK, DeleteObject, DrawTextW, GetDC,
+    GetSysColorBrush, HDC, HFONT, InvalidateRect, ReleaseDC, SelectObject, SetBkMode, SetTextColor,
+    TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
-    ICC_PROGRESS_CLASS, INITCOMMONCONTROLSEX, InitCommonControlsEx, PBM_SETPOS, PBM_SETRANGE32,
+    BST_CHECKED, EM_SETPASSWORDCHAR, ICC_PROGRESS_CLASS, INITCOMMONCONTROLSEX,
+    InitCommonControlsEx, PBM_SETPOS, PBM_SETRANGE32,
 };
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, BM_GETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_MULTILINE,
-    BS_PUSHBUTTON, BST_CHECKED, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-    CreateWindowExW, DC_HASDEFID, DM_GETDEFID, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    EM_SETPASSWORDCHAR, EN_CHANGE, ES_AUTOHSCROLL, ES_PASSWORD, GWLP_USERDATA, GetMessageW,
-    GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW,
-    IDCANCEL, IDOK, IsDialogMessageW, KillTimer, LoadCursorW, MSG, NONCLIENTMETRICSW,
-    PostMessageW, PostQuitMessage, RegisterClassW, SM_CXSCREEN, SM_CYSCREEN,
-    SPI_GETNONCLIENTMETRICS, SW_HIDE, SW_SHOW, SWP_NOZORDER, SendMessageW, SetForegroundWindow,
-    SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
-    SystemParametersInfoW, TranslateMessage, WM_APP, WM_CLOSE, WM_COMMAND, WM_CREATE,
-    WM_CTLCOLORSTATIC, WM_DESTROY, WM_SETFONT, WM_TIMER, WNDCLASSW, WS_BORDER, WS_CAPTION,
-    WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_POPUP, WS_SYSMENU, WS_TABSTOP,
-    WS_VISIBLE, GetSystemMetrics,
+    BS_PUSHBUTTON, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
+    DC_HASDEFID, DM_GETDEFID, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE,
+    ES_AUTOHSCROLL, ES_PASSWORD, GWLP_USERDATA, GetMessageW, GetSystemMetrics, GetWindowLongPtrW,
+    GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDCANCEL, IDOK,
+    IsDialogMessageW, KillTimer, LoadCursorW, MSG, NONCLIENTMETRICSW, PostMessageW,
+    PostQuitMessage, RegisterClassW, SM_CXSCREEN, SM_CYSCREEN, SPI_GETNONCLIENTMETRICS, SW_HIDE,
+    SW_SHOW, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW, TranslateMessage, WM_APP,
+    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY, WM_SETFONT, WM_TIMER,
+    WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_POPUP,
+    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
 };
 use zeroize::Zeroizing;
 
@@ -253,7 +253,12 @@ fn state_of(hwnd: HWND) -> Option<&'static State> {
     unsafe { ptr.as_ref() }
 }
 
-unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn window_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     if msg == WM_CREATE {
         // SAFETY: CreateWindowExW passed the state as lpCreateParams.
         let create = unsafe { &*(lparam as *const CREATESTRUCTW) };
@@ -278,7 +283,12 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
                 ID_SHOW => state.toggle_show(),
                 ID_ACKNOWLEDGEMENT => state.changed(None),
                 _ if code == EN_CHANGE => {
-                    let field = state.rows.borrow().iter().find(|r| r.edit == lparam as HWND).map(|r| r.field);
+                    let field = state
+                        .rows
+                        .borrow()
+                        .iter()
+                        .find(|r| r.edit == lparam as HWND)
+                        .map(|r| r.field);
                     state.changed(field);
                 }
                 _ => {}
@@ -360,14 +370,21 @@ impl State {
                 (&mut metrics as *mut NONCLIENTMETRICSW).cast(),
                 0,
             );
-            metrics.lfMessageFont.lfHeight =
-                metrics.lfMessageFont.lfHeight * dpi as i32 / 96;
+            metrics.lfMessageFont.lfHeight = metrics.lfMessageFont.lfHeight * dpi as i32 / 96;
             self.font.set(CreateFontIndirectW(&metrics.lfMessageFont));
 
             let margin = px(14);
             let width = px(340);
             let mut y = margin;
-            let make = |class: &str, text: &str, style: u32, ex: u32, id: i32, height: i32, y: i32, x: i32, w: i32| {
+            let make = |class: &str,
+                        text: &str,
+                        style: u32,
+                        ex: u32,
+                        id: i32,
+                        height: i32,
+                        y: i32,
+                        x: i32,
+                        w: i32| {
                 let control = CreateWindowExW(
                     ex,
                     wide(class).as_ptr(),
@@ -424,9 +441,20 @@ impl State {
                 ShowWindow(line, SW_HIDE);
                 y += line_height * 2;
                 if field == Field::Passphrase && shape.has_strength() {
-                    let meter = make("msctls_progress32", "", 0, 0, 0, px(10), y + px(4), margin, px(160));
+                    let meter =
+                        make("msctls_progress32", "", 0, 0, 0, px(10), y + px(4), margin, px(160));
                     SendMessageW(meter, PBM_SETRANGE32, 0, 5);
-                    let label = make("STATIC", "", 0, 0, 0, line_height, y, margin + px(172), width - px(172));
+                    let label = make(
+                        "STATIC",
+                        "",
+                        0,
+                        0,
+                        0,
+                        line_height,
+                        y,
+                        margin + px(172),
+                        width - px(172),
+                    );
                     ShowWindow(meter, SW_HIDE);
                     self.meter.set(meter);
                     self.meter_label.set(label);
@@ -442,7 +470,17 @@ impl State {
             }
             *self.rows.borrow_mut() = rows;
 
-            let show = make("BUTTON", shape.show_label(), WS_TABSTOP | BS_AUTOCHECKBOX as u32, 0, ID_SHOW, line_height + px(4), y, margin, width);
+            let show = make(
+                "BUTTON",
+                shape.show_label(),
+                WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+                0,
+                ID_SHOW,
+                line_height + px(4),
+                y,
+                margin,
+                width,
+            );
             self.show.set(show);
             y += line_height + px(8);
             if shape.has_acknowledgement() {
@@ -479,14 +517,29 @@ impl State {
                 margin + width - 2 * button_w - px(8),
                 button_w,
             );
-            let cancel = make("BUTTON", "Cancel", WS_TABSTOP | BS_PUSHBUTTON as u32, 0, IDCANCEL, button_h, y, margin + width - button_w, button_w);
+            let cancel = make(
+                "BUTTON",
+                "Cancel",
+                WS_TABSTOP | BS_PUSHBUTTON as u32,
+                0,
+                IDCANCEL,
+                button_h,
+                y,
+                margin + width - button_w,
+                button_w,
+            );
             self.primary.set(primary);
             self.cancel.set(cancel);
             y += button_h + margin;
 
             // The window around that client area, centred on the owner.
             let mut frame = RECT { left: 0, top: 0, right: width + 2 * margin, bottom: y };
-            AdjustWindowRectEx(&mut frame, WS_POPUP | WS_CAPTION | WS_SYSMENU, 0, WS_EX_DLGMODALFRAME);
+            AdjustWindowRectEx(
+                &mut frame,
+                WS_POPUP | WS_CAPTION | WS_SYSMENU,
+                0,
+                WS_EX_DLGMODALFRAME,
+            );
             let (w, h) = (frame.right - frame.left, frame.bottom - frame.top);
             let mut owner_rect: RECT = std::mem::zeroed();
             let (x, top) = if GetWindowRect(self.owner, &mut owner_rect) != 0 {
@@ -508,7 +561,8 @@ impl State {
 
     fn checked(control: HWND) -> bool {
         // SAFETY: a checkbox of this dialog.
-        !control.is_null() && unsafe { SendMessageW(control, BM_GETCHECK, 0, 0) } == BST_CHECKED as isize
+        !control.is_null()
+            && unsafe { SendMessageW(control, BM_GETCHECK, 0, 0) } == BST_CHECKED as isize
     }
 
     /// Runs `with` on the fields' text, copied into wiped buffers.
@@ -549,7 +603,12 @@ impl State {
             if !self.meter.get().is_null() {
                 match &view.estimate {
                     Some(estimate) => {
-                        SendMessageW(self.meter.get(), PBM_SETPOS, usize::from(estimate.score) + 1, 0);
+                        SendMessageW(
+                            self.meter.get(),
+                            PBM_SETPOS,
+                            usize::from(estimate.score) + 1,
+                            0,
+                        );
                         ShowWindow(self.meter.get(), SW_SHOW);
                         SetWindowTextW(self.meter_label.get(), wide(estimate.label()).as_ptr());
                         SetWindowTextW(self.suggestion.get(), wide(&estimate.suggestion).as_ptr());
