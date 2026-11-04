@@ -19,9 +19,6 @@
 //!   so on Windows this ends the process on a fallible one too instead of
 //!   returning an error: the import helper's up-front reserve, and std's own
 //!   (`std::fs::read`'s `try_reserve_exact`, `read_to_end`'s `try_reserve`).
-//!   Attachment reads are bounded by the attachment size limits (a photo
-//!   10 MiB, a document 30 MiB, 1 GiB per record), checked from the file's size
-//!   before it is read.
 
 use std::alloc::{GlobalAlloc, Layout};
 
