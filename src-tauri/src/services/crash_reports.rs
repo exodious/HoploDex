@@ -12,7 +12,14 @@
 //!   no heap or snapshot in a report ([`quiet_error_reporting`], as the
 //!   helpers have had since 007 FR-003), and a panic ends the process at once
 //!   rather than abort's fail-fast, which goes to Windows Error Reporting
-//!   whatever the error mode is ([`end_process_on_panic`]).
+//!   whatever the error mode is ([`end_process_on_panic`]). A failed
+//!   allocation is not covered: Rust's default alloc-error handler calls
+//!   `std::process::abort`, a fail-fast that still goes to Windows Error
+//!   Reporting (with no heap, but with stack memory), in the app and in both
+//!   helpers, whose job memory caps a hostile file can reach. That stays open
+//!   until a separate pull request adds a global allocator that ends the
+//!   process with `TerminateProcess` on a null allocation (with one that
+//!   wipes on free) (#166).
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -185,7 +192,9 @@ pub const PANIC_EXIT_CODE: u32 = 101;
 /// `TerminateProcess`, so that `panic = "abort"` never gets to its fail-fast,
 /// which Windows Error Reporting reports to Microsoft whatever the error mode
 /// is, and from which Microsoft can ask for a dump of the process (#166).
-/// Replaces the panic hook.
+/// Replaces the panic hook. A failed allocation doesn't panic and still
+/// reaches that fail-fast, through `std::process::abort`, until a global
+/// allocator ends the process instead (#166).
 #[cfg(windows)]
 pub fn end_process_on_panic(report: bool) {
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
