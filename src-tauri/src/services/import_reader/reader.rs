@@ -592,9 +592,10 @@ fn scan_styles(xml: impl Read) -> Result<(), Stop> {
     }
 }
 
-/// Is this archive entry the part named `file`, in whatever folder?
+/// Is this archive entry the part named `file`, in whatever folder? `calamine`
+/// finds a part with `\` read as `/` and in any case, so this does too.
 fn is_part(name: &str, file: &str) -> bool {
-    name.rsplit('/').next().is_some_and(|last| last.eq_ignore_ascii_case(file))
+    name.rsplit(['/', '\\']).next().is_some_and(|last| last.eq_ignore_ascii_case(file))
 }
 
 /// The archive's checks that need no `calamine`: the number of parts, the
@@ -968,6 +969,16 @@ mod tests {
         }
         for unreadable in [num_fmt(&over), font(&over), xfs(MAX_CELL_FORMATS + 1)] {
             assert!(matches!(scan(unreadable), Err(Stop::Unreadable)));
+        }
+    }
+
+    #[test]
+    fn a_part_is_found_whatever_its_folder_separator_and_case() {
+        for name in ["xl/styles.xml", "xl\\styles.xml", "XL/STYLES.XML", "styles.xml"] {
+            assert!(is_part(name, "styles.xml"), "{name}");
+        }
+        for name in ["xl/styles.xml.bak", "xl/mystyles.xml", "xl/styles.xml/"] {
+            assert!(!is_part(name, "styles.xml"), "{name}");
         }
     }
 

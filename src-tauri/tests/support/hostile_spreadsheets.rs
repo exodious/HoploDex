@@ -128,6 +128,7 @@ pub fn corpus() -> Vec<Case> {
         unreadable(|d| one(bit_flipped_directory(d)), "bit-flipped-directory"),
         unreadable(|d| one(archive_not_a_spreadsheet(d)), "not-a-spreadsheet"),
         unreadable(|d| one(styles_amplified(d)), "styles-amplified"),
+        unreadable(|d| one(styles_amplified_backslash(d)), "styles-amplified-backslash"),
         // Two files.
         refused_second(&[Rows], second_file_passes_a_limit, "two-files-second-rows"),
         refused_second(&[Cells], cells_pass_together, "two-files-cells-together"),
@@ -611,17 +612,29 @@ pub fn cfb_difat_loop(dir: &Path) -> PathBuf {
 /// memory limit, unless the reader finds the code past Excel's 255 characters
 /// first.
 pub fn styles_amplified(dir: &Path) -> PathBuf {
-    workbook_with_styles(dir, "styles-amplified.xlsx", 1 << 20, 1_000)
+    workbook_with_styles(dir, "styles-amplified.xlsx", "xl/styles.xml", 1 << 20, 1_000)
+}
+
+/// [`styles_amplified`] with its styles stored as `xl\styles.xml`, which
+/// `calamine` reads as `xl/styles.xml`.
+pub fn styles_amplified_backslash(dir: &Path) -> PathBuf {
+    workbook_with_styles(dir, "styles-amplified-backslash.xlsx", "xl\\styles.xml", 1 << 20, 1_000)
 }
 
 /// The valid export workbook whose styles are at Excel's limits: a number
 /// format's code and a font's name of 255 characters, used by `formats` cell
 /// formats.
 pub fn styles_at_excels_limits(dir: &Path, formats: usize) -> PathBuf {
-    workbook_with_styles(dir, &format!("styles-{formats}.xlsx"), 255, formats)
+    workbook_with_styles(dir, &format!("styles-{formats}.xlsx"), "xl/styles.xml", 255, formats)
 }
 
-fn workbook_with_styles(dir: &Path, name: &str, text_chars: usize, formats: usize) -> PathBuf {
+fn workbook_with_styles(
+    dir: &Path,
+    name: &str,
+    styles_part: &str,
+    text_chars: usize,
+    formats: usize,
+) -> PathBuf {
     let text = "0".repeat(text_chars);
     let styles = format!(
         "{XML_DECLARATION}<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\
@@ -639,9 +652,12 @@ fn workbook_with_styles(dir: &Path, name: &str, text_chars: usize, formats: usiz
         let part_name = part.name().unwrap().into_owned();
         let mut bytes = Vec::new();
         part.read_to_end(&mut bytes).unwrap();
-        if part_name == "xl/styles.xml" {
+        let part_name = if part_name == "xl/styles.xml" {
             bytes = styles.clone().into_bytes();
-        }
+            styles_part.to_owned()
+        } else {
+            part_name
+        };
         zip.start_file(part_name, options).unwrap();
         zip.write_all(&bytes).unwrap();
     }
