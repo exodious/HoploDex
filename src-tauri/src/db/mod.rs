@@ -103,7 +103,7 @@ pub fn now_utc() -> String {
 /// copy of HoploDex is told "in use" rather than "wrong passphrase"
 /// (003 research.md §2). A busy file is reported at once rather than waited on.
 fn configure(conn: &Connection, passphrase: &Passphrase) -> rusqlite::Result<()> {
-    conn.pragma_update(None, "key", passphrase.as_str())?;
+    cipher::key(conn, "main", passphrase)?;
     cipher::apply_cipher_settings(conn, "main")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.pragma_update(None, "secure_delete", "ON")?;
@@ -357,7 +357,7 @@ pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, Op
     )
     .map_err(OpenError::classify)?;
     (|| {
-        conn.pragma_update(None, "key", passphrase.as_str())?;
+        cipher::key(&conn, "main", passphrase)?;
         cipher::apply_cipher_settings(&conn, "main")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "secure_delete", "ON")
@@ -446,7 +446,7 @@ fn probe_first_page(
     OpenOptions::new().write(true).create_new(true).open(probe)?.write_all(&first_page)?;
 
     let conn = Connection::open(probe)?;
-    conn.pragma_update(None, "key", candidate.as_str())?;
+    cipher::key(&conn, "main", candidate)?;
     cipher::apply_cipher_settings(&conn, "main")?;
     match conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0)) {
         Ok(_) => Ok(true),
@@ -543,5 +543,45 @@ mod tests {
 
         let result = open_database(&db_path, &passphrase("another passphrase"), &machine(), false);
         assert!(matches!(result, Err(OpenError::PassphraseIncorrect)), "{result:?}");
+    }
+
+    /// The C API key (`cipher::key`) fails as `PRAGMA key` did: the same
+    /// `OpenError` for the right passphrase, a wrong one and a schema that
+    /// isn't there (003 FR-007).
+    #[test]
+    fn keying_through_the_c_api_classifies_errors_as_the_pragma_did() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_path = dir.path().join("test.hoplodex");
+        drop(create_database(&db_path, &passphrase(PASSPHRASE), &machine()).unwrap());
+
+        let read = |schema: &str, text: &str, through_c_api: bool| {
+            let conn = Connection::open(&db_path).unwrap();
+            let keyed = if through_c_api {
+                cipher::key(&conn, schema, &passphrase(text))
+            } else {
+                conn.pragma_update(Some(schema), "key", text)
+            };
+            keyed
+                .and_then(|()| cipher::apply_cipher_settings(&conn, "main"))
+                .and_then(|()| {
+                    conn.query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get::<_, i64>(0))
+                })
+                .map_err(OpenError::classify)
+        };
+        for (schema, text) in
+            [("main", PASSPHRASE), ("main", "another passphrase"), ("nosuch", PASSPHRASE)]
+        {
+            let (c_api, pragma) = (read(schema, text, true), read(schema, text, false));
+            assert_eq!(
+                c_api.as_ref().map_err(std::mem::discriminant),
+                pragma.as_ref().map_err(std::mem::discriminant),
+                "{schema} {text}: {c_api:?} against {pragma:?}"
+            );
+        }
+        assert!(matches!(read("main", PASSPHRASE, true), Ok(n) if n > 0));
+        assert!(matches!(
+            read("main", "another passphrase", true),
+            Err(OpenError::PassphraseIncorrect)
+        ));
     }
 }

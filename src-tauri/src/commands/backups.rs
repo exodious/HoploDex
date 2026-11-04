@@ -315,7 +315,7 @@ pub mod ops {
     ) -> Result<InspectedBackup, CommandError> {
         let checked = Connection::open_with_flags(backup, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .and_then(|conn| {
-                conn.pragma_update(None, "key", passphrase.as_str())?;
+                cipher::key(&conn, "main", passphrase)?;
                 cipher::apply_cipher_settings(&conn, "main")?;
                 conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| {
                     row.get::<_, i64>(0)
@@ -995,7 +995,10 @@ pub mod ops {
                 &io::Error::new(io::ErrorKind::InvalidInput, "the path is not UTF-8"),
             ));
         };
-        conn.execute("ATTACH DATABASE ?1 AS rekey KEY ?2", [copy_path, new.as_str()])
+        // An empty key, then the real one through the C API, so the new
+        // passphrase never becomes SQL text (003 FR-007).
+        conn.execute("ATTACH DATABASE ?1 AS rekey KEY ''", [copy_path])
+            .and_then(|_| cipher::key(conn, "rekey", new))
             .map_err(CommandError::from_db)?;
 
         let copied = cipher::apply_cipher_settings(conn, "rekey")
