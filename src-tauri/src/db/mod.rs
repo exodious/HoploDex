@@ -546,8 +546,8 @@ mod tests {
     }
 
     /// The C API key (`cipher::key`) fails as `PRAGMA key` did: the same
-    /// `OpenError` for the right passphrase, a wrong one and a schema that
-    /// isn't there (003 FR-007).
+    /// `OpenError` for the right passphrase, a wrong one, an empty one and a
+    /// schema that isn't there (003 FR-007).
     #[test]
     fn keying_through_the_c_api_classifies_errors_as_the_pragma_did() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -568,9 +568,12 @@ mod tests {
                 })
                 .map_err(OpenError::classify)
         };
-        for (schema, text) in
-            [("main", PASSPHRASE), ("main", "another passphrase"), ("nosuch", PASSPHRASE)]
-        {
+        for (schema, text) in [
+            ("main", PASSPHRASE),
+            ("main", "another passphrase"),
+            ("main", ""),
+            ("nosuch", PASSPHRASE),
+        ] {
             let (c_api, pragma) = (read(schema, text, true), read(schema, text, false));
             assert_eq!(
                 c_api.as_ref().map_err(std::mem::discriminant),
