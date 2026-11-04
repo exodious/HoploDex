@@ -641,8 +641,8 @@ fn is_part(name: &str, file: &str) -> bool {
 }
 
 /// The archive's checks that need no `calamine`: the number of parts, the
-/// true size of all of them, and the shared strings. Returns where the parts
-/// are, for the bar.
+/// true size of all of them, the shared strings, the styles and the theme.
+/// Returns where the parts are, for the bar.
 fn check_archive<W: Write>(bytes: &[u8], sink: &mut Sink<'_, W>) -> Result<Vec<Part>, Stop> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| Stop::Unreadable)?;
     if archive.len() > MAX_ZIP_ENTRIES {
