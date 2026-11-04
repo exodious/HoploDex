@@ -795,6 +795,8 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
   process.env.HOPLODEX_E2E_HOME = home;
   process.env.HOPLODEX_E2E_OPENED_LOG = path.join(files, "opened.log");
   process.env.HOPLODEX_E2E_CONSENT_LOG = path.join(files, "consent.log");
+  process.env.HOPLODEX_E2E_PASSPHRASES = path.join(files, "passphrases.queue");
+  process.env.HOPLODEX_E2E_PASSPHRASE_LOG = path.join(files, "passphrase.log");
   return run;
 }
 
@@ -1154,6 +1156,9 @@ const APP_PASSTHROUGH = [
 const APP_E2E_VARIABLES = [
   "HOPLODEX_E2E_CONSENT",
   "HOPLODEX_E2E_CONSENT_LOG",
+  "HOPLODEX_E2E_PASSPHRASES",
+  "HOPLODEX_E2E_PASSPHRASE_LOG",
+  "HOPLODEX_E2E_PASSPHRASE_DIALOG",
   "HOPLODEX_E2E_IDLE_MINUTE_SECONDS",
   "HOPLODEX_E2E_PDF_PREVIEW",
   "HOPLODEX_E2E_UPGRADE_PHASE_SECONDS",

@@ -170,8 +170,42 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "NSNotification",
     "NSString",
     "NSURL",
+    # The passphrase dialog's pause timer and text (amended 2026-11-04 to 003
+    # FR-007).
+    "NSDate",
+    "NSObjCRuntime",
+    "NSRange",
+    "NSRunLoop",
 ] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSEvent", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "NSEvent",
+    "NSWorkspace",
+    # The passphrase dialog: an alert as a sheet, with secure fields, a
+    # strength meter and checkboxes (amended 2026-11-04 to 003 FR-007).
+    "objc2-core-foundation",
+    "NSAccessibilityProtocols",
+    "NSAlert",
+    "NSApplication",
+    "NSButton",
+    "NSCell",
+    "NSColor",
+    "NSControl",
+    "NSLayoutAnchor",
+    "NSLayoutConstraint",
+    "NSLevelIndicator",
+    "NSLevelIndicatorCell",
+    "NSProgressIndicator",
+    "NSResponder",
+    "NSSecureTextField",
+    "NSStackView",
+    "NSText",
+    "NSTextField",
+    "NSUserInterfaceLayout",
+    "NSView",
+    "NSWindow",
+] }
 # The PDF surface's content rule list, SPI switches and input (007 research.md
 # §6, §7, §10). Promoted from dev-dependencies.
 block2 = "0.6.2"

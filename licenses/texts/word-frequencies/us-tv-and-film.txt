@@ -1,0 +1,10 @@
+Source: https://github.com/dropbox/zxcvbn/blob/master/data-scripts/count_wiktionary.py
+The strength hint's list of words from US television and film (zxcvbn's
+us_tv_and_film) is the most frequent words of Wiktionary's frequency lists for
+television and film subtitles, as Dropbox's zxcvbn script read them. It is a
+word-frequency list counted mechanically from text: in the United States such
+a list is facts, which copyright doesn't protect (Feist Publications v. Rural
+Telephone Service, 499 U.S. 340 (1991)), so the license of the counted text
+and of the pages it was published on (CC BY-SA 3.0 and the GFDL) doesn't
+reach it. It ships on that ground, by the exception to 010 FR-015 recorded on
+2026-11-04.

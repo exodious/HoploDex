@@ -74,10 +74,25 @@ describe("010 FR-008 research.md §7 - exceptions are scoped", () => {
     for (const entry of [
       "Moby Word Lists names",
       "1990 US Census surnames",
+      "1990 US Census first names",
       "Ten million passwords",
     ]) {
       expect(isAllowed("LicenseRef-public-domain", { entry }), entry).toBe(true);
     }
+  });
+
+  // 010 FR-015's exception, amended 2026-11-04: word-frequency lists counted
+  // mechanically from text (Feist), the two the zxcvbn crate builds in.
+  it("allows LicenseRef-word-frequencies only for the word-frequency lists named", () => {
+    for (const entry of [
+      "English Wikipedia word frequencies",
+      "US television and film word frequencies",
+    ]) {
+      expect(isAllowed("LicenseRef-word-frequencies", { entry }), entry).toBe(true);
+    }
+    expect(isAllowed("LicenseRef-word-frequencies", { entry: "SQLite" })).toBe(false);
+    expect(isAllowed("LicenseRef-word-frequencies", { package: "zxcvbn" })).toBe(false);
+    expect(ALLOWED.has("LicenseRef-word-frequencies")).toBe(false);
   });
 
   it("never allows them for a package or a crate, or for another entry", () => {
@@ -142,13 +157,10 @@ describe("010 FR-019 research.md §15 - the README's license notice", () => {
 });
 
 describe("010 research.md §2 - the withdrawn data files", () => {
-  it("lists the Wikipedia word list, with a marker that is a plain substring and a reason", () => {
-    expect(WITHDRAWN).toEqual([
-      {
-        file: "@zxcvbn-ts/language-en/dist/wikipedia.json",
-        marker: "AtheAofAandAinAwasAisAforAasAonAwithAbyAheAatAfromAhisAanAwere",
-        reason: "CC BY-SA 3.0 / GFDL, 010 research.md §2",
-      },
-    ]);
+  // Amended 2026-11-04: the Wikipedia word list ships by 010 FR-015's exception
+  // for word-frequency lists, in the zxcvbn crate, and the page no longer
+  // bundles a word list at all.
+  it("withdraws nothing", () => {
+    expect(WITHDRAWN).toEqual([]);
   });
 });

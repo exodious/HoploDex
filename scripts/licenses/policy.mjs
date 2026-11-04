@@ -83,8 +83,22 @@ export const EXCEPTIONS = [
   },
   {
     license: "LicenseRef-public-domain",
-    entries: ["Moby Word Lists names", "1990 US Census surnames", "Ten million passwords"],
+    entries: [
+      "Moby Word Lists names",
+      "1990 US Census surnames",
+      "1990 US Census first names",
+      "Ten million passwords",
+    ],
     reason: "public-domain data in the strength hint's dictionary, credited as its source asks",
+  },
+  {
+    // The exception to 010 FR-015, amended 2026-11-04: a word-frequency list
+    // counted mechanically from text is facts, which copyright in the US
+    // doesn't protect (Feist), whatever license the counted text carries.
+    license: "LicenseRef-word-frequencies",
+    entries: ["English Wikipedia word frequencies", "US television and film word frequencies"],
+    reason:
+      "word-frequency lists counted mechanically from text, uncopyrightable in the US (Feist), in the strength hint's dictionary",
   },
 ];
 
@@ -114,10 +128,4 @@ export function isAllowed(license, subject = {}) {
  * string literal, so the words run together). `file` is the path inside
  * node_modules, `reason` what is wrong with it.
  */
-export const WITHDRAWN = [
-  {
-    file: "@zxcvbn-ts/language-en/dist/wikipedia.json",
-    marker: "AtheAofAandAinAwasAisAforAasAonAwithAbyAheAatAfromAhisAanAwere",
-    reason: "CC BY-SA 3.0 / GFDL, 010 research.md §2",
-  },
-];
+export const WITHDRAWN = [];

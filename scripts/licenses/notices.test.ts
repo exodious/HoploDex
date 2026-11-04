@@ -1160,17 +1160,21 @@ describe.skipIf(!hasCargo)("010 SC-001 - the host's notices against the real tre
     ).toEqual(sorted(hand));
   });
 
+  // 010 FR-015's exception, amended 2026-11-04: the zxcvbn crate's two
+  // word-frequency lists ship with the ground they ship on.
   it(
-    "carries the OpenSubtitles NOTICE.md word for word (010 US1-5, 010 FR-016)",
+    "carries the strength hint's word-frequency lists with their ground (010 FR-015)",
     { timeout: 300_000 },
     () => {
       const doc = real().document;
-      const entry = find(doc, "OpenSubtitles 2024 word frequencies");
-      const notice = readFileSync(
-        path.join(repo, "node_modules", "@zxcvbn-ts", "language-en", "NOTICE.md"),
-        "utf8",
-      );
-      expect(textsOf(doc, entry)).toContain(notice);
+      for (const name of [
+        "English Wikipedia word frequencies",
+        "US television and film word frequencies",
+      ]) {
+        const entry = find(doc, name);
+        expect(entry?.license, name).toBe("LicenseRef-word-frequencies");
+        expect(textsOf(doc, entry).join("\n"), name).toContain("Feist Publications");
+      }
     },
   );
 
@@ -1190,10 +1194,10 @@ describe.skipIf(!hasCargo)("010 SC-001 - the host's notices against the real tre
     expect(text).toContain(
       `Source code: https://github.com/exodious/HoploDex\n\n${permission.replace(/\n+$/, "")}\n\n`,
     );
-    // 010 research.md §2's CC BY 4.0 attribution of the EFF list, word for word (line breaks aside)
-    const attribution =
-      'EFF Large Wordlist for Passphrases, by Joseph Bonneau for the Electronic Frontier Foundation (https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases), licensed under the Creative Commons Attribution 4.0 International License (https://creativecommons.org/licenses/by/4.0/). Changed: the dice numbers are removed, the hyphens are removed from "drop-down", "felt-tip" and "t-shirt", and "yo-yo" is replaced by "cheetah" (by github.com/dmuth/diceware, Apache-2.0).';
-    expect(text.replace(/\s+/g, " ")).toContain(attribution);
+    // The 1990 Census credit its source asks for, word for word (line breaks aside).
+    expect(text.replace(/\s+/g, " ")).toContain(
+      "The strength hint's lists of first names are the U.S. Census Bureau's 1990 Census first-name lists",
+    );
     const license = readFileSync(path.join(repo, "LICENSE"), "utf8");
     expect(text.endsWith(`${license.replace(/\n+$/, "")}\n`)).toBe(true);
   });

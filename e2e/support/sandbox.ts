@@ -140,6 +140,11 @@ export function isolateAppData(options: { fixedDir?: string } = {}): string {
   // (007 research.md §16): an E2E build appends each request's title here and
   // answers from HOPLODEX_E2E_CONSENT, set per session below.
   process.env.HOPLODEX_E2E_CONSENT_LOG = path.join(root, "consent.log");
+  // Nor can it type into the native passphrase dialog (amended 2026-11-04 to
+  // 003 FR-007): an E2E build answers it from this queue, which the specs
+  // fill (ui.ts, `answerPassphrase`), and logs each prompt here.
+  process.env.HOPLODEX_E2E_PASSPHRASES = path.join(root, "passphrases.queue");
+  process.env.HOPLODEX_E2E_PASSPHRASE_LOG = path.join(root, "passphrase.log");
 
   if (process.platform === "linux") {
     process.env.XDG_DATA_HOME = data;
@@ -190,6 +195,9 @@ export function applySessionSettings(settings: SessionSettings = {}) {
   // safely, 007 FR-003a) sets HOPLODEX_E2E_PDF_PREVIEW=off and relaunches.
   delete process.env.HOPLODEX_E2E_PDF_PREVIEW;
   process.env.HOPLODEX_E2E_CONSENT = "open";
+  // The queue answers the passphrase dialog unless a spec shows the real one
+  // (HOPLODEX_E2E_PASSPHRASE_DIALOG=native, the real-input spec).
+  delete process.env.HOPLODEX_E2E_PASSPHRASE_DIALOG;
   if (settings.idleMinuteSeconds !== undefined) {
     process.env.HOPLODEX_E2E_IDLE_MINUTE_SECONDS = String(settings.idleMinuteSeconds);
   } else {

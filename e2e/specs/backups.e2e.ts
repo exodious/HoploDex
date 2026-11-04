@@ -3,6 +3,7 @@ import {
   $,
   $$,
   E2E_PASSPHRASE,
+  answerPassphrase,
   addFirearm,
   browser,
   choose,
@@ -12,7 +13,6 @@ import {
   createDatabase,
   invokeCommand,
   expect,
-  fill,
   goTo,
   listedNames,
   scratchDocuments,
@@ -20,6 +20,7 @@ import {
   waitForChooser,
   waitForCollection,
   settle,
+  passphraseLog,
 } from "../support/ui";
 import { realClick, skipWithoutRealInput } from "../support/realInput";
 
@@ -92,25 +93,6 @@ async function backToTheDefault(choice: string) {
   await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
 }
 
-/** The error shown for the field labelled `label` in the open dialog: the
- * text of the element its `aria-describedby` names when it is `aria-invalid`,
- * or `null` when the field shows none. */
-async function passphraseFieldError(label: string): Promise<string | null> {
-  return browser.execute((label: string) => {
-    const labelEl = [...document.querySelectorAll('[role="dialog"] label')].find(
-      (l) => l.textContent?.trim() === label,
-    ) as HTMLLabelElement | undefined;
-    const field = labelEl && document.getElementById(labelEl.htmlFor);
-    if (!field || field.getAttribute("aria-invalid") !== "true") return null;
-    const ids = (field.getAttribute("aria-describedby") ?? "").split(" ");
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (el?.classList.contains("hd-field__error")) return el.textContent?.trim() ?? "";
-    }
-    return null;
-  }, label);
-}
-
 async function listed(make: string): Promise<boolean> {
   await goTo("Collection");
   return (await listedNames()).some((name) => name.includes(make));
@@ -144,24 +126,19 @@ describe("003 US3 - Automatic Backups and Restoring From One (was us8-backups)",
     await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
     await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
     await settle();
-    // A wrong passphrase: the check before the confirmation puts the backend's
-    // field error on the field, with no confirmation, and nothing is restored
-    // (003 US3-5, 003 contracts/ui-databases.md §9; 009 FR-019, 009
-    // contracts/ui.md §6; the dialog's UI side is in RestoreBackupDialog.test.tsx).
-    await fill("Passphrase for this backup", "not the backup's passphrase");
+    // A wrong passphrase: the check before the confirmation asks again in the
+    // native dialog, under its field, and nothing is restored; the right one
+    // then brings the confirmation (003 US3-5, 003 contracts/ui-databases.md
+    // §9; 009 FR-019, 009 contracts/ui.md §6; amended 2026-11-04 to 003 FR-007;
+    // the page's side is in RestoreBackupDialog.test.tsx).
+    answerPassphrase("not the backup's passphrase", E2E_PASSPHRASE);
     await clickEl('[role="dialog"] button[type="submit"]');
-    await browser.waitUntil(
-      async () => (await passphraseFieldError("Passphrase for this backup")) !== null,
-      { timeout: 10000, timeoutMsg: "the wrong passphrase showed no field error" },
+    await $('[role="alertdialog"]').waitForExist({ timeout: 20000 });
+    const retries = passphraseLog().filter((line) => "retry" in line);
+    expect((retries.at(-1)?.retry as { message: string }).message).toMatch(
+      /^That passphrase didn't open the backup from /,
     );
-    await expect($('[role="alertdialog"]')).not.toExist();
-    const message = await passphraseFieldError("Passphrase for this backup");
-    expect(message).toMatch(/^That passphrase didn't open the backup from /);
     expect(backupFiles()).toHaveLength(1);
-
-    await fill("Passphrase for this backup", E2E_PASSPHRASE);
-    await clickEl('[role="dialog"] button[type="submit"]');
-    await $('[role="alertdialog"]').waitForExist();
     await clickEl('[role="alertdialog"] .hd-button--danger');
     await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
     await waitForCollection();
