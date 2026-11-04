@@ -172,6 +172,9 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     if (!HAS_MEMORY_SCAN) this.skip();
     const web = webProcesses(appPid());
     expect(web.length).toBeGreaterThan(0);
+    // The control: the folder typed into the page's own field is found, so
+    // the scan reads the heap where a page's strings are.
+    expect(web.reduce((sum, pid) => sum + copiesIn(pid, folder), 0)).toBeGreaterThan(0);
     for (const pid of web) {
       expect({ pid, copies: copiesIn(pid, PASSPHRASE) }).toEqual({ pid, copies: 0 });
       expect({ pid, copies: copiesIn(pid, WRONG) }).toEqual({ pid, copies: 0 });

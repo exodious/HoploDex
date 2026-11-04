@@ -18,10 +18,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 
 use objc2::rc::{Retained, autoreleasepool};
-use objc2::runtime::{AnyObject, Sel};
+use objc2::runtime::AnyObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSAccessibilityElementProtocol, NSAlert, NSButton, NSColor, NSControlStateValueOn,
+    NSAccessibility, NSAlert, NSButton, NSColor, NSControlStateValueOn,
     NSControlTextEditingDelegate, NSLayoutAttribute, NSLevelIndicator, NSLevelIndicatorStyle,
     NSModalResponse, NSProgressIndicator, NSProgressIndicatorStyle, NSSecureTextField,
     NSStackView, NSTextField, NSTextFieldDelegate, NSUserInterfaceLayoutOrientation, NSView,
@@ -200,7 +200,6 @@ struct Row {
 }
 
 struct Parts {
-    id: u64,
     alert: Retained<NSAlert>,
     parent: Retained<NSWindow>,
     rows: Vec<Row>,
@@ -360,7 +359,6 @@ fn build(
     alert.layout();
 
     let parts = Rc::new(Parts {
-        id,
         alert: alert.clone(),
         parent: parent.clone(),
         rows,
@@ -570,10 +568,5 @@ impl Parts {
             row.plain.setStringValue(&ns(""));
         }
         self.parent.endSheet(&self.alert.window());
-        let _ = self.id;
     }
 }
-
-// The selector type is named so a wrong method signature fails to compile.
-#[allow(dead_code)]
-const _: Option<Sel> = None;
