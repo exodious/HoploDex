@@ -208,6 +208,7 @@ running under another account).
   without `SQLITE_OPEN_CREATE`, so it can only attach a file that exists),
   `apply_cipher_settings(conn, "rekey")`, `SELECT sqlcipher_export('rekey')`,
   stamp the copy's housekeeping, `DETACH`, then verify (§4) and replace (§4).
+  _Amended 2026-11-04: the attachment is `ATTACH DATABASE ?tmp AS rekey KEY ''`, then keyed with the new passphrase through `sqlite3_key_v2` (`db::cipher::key`), so it never becomes SQL text (§1's note)._
 - **Restore**: a chunked byte copy of the chosen backup to a temporary file
   next to the database, then opened with the **backup's** passphrase, verified
   and stamped (§8), then used to replace the database (§4).
