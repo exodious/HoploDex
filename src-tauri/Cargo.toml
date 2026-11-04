@@ -55,8 +55,8 @@ e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 # `E2eOpener`, and the real keyring (inside a Flatpak, the Secret portal's store,
 # `services::keyring::portal`) instead of keyring-core's in-memory store. The
 # check scripts an OpenURI and a Secret portal on its private bus for them. build.rs turns it into the
-# `app_opener` and `mock_keyring` cfgs. The consent dialog stays `E2eConsent`: no
-# WebDriver can click a native dialog. Never in a shipped build, since `e2e`
+# `app_opener` and `mock_keyring` cfgs. The consent dialog stays `E2eConsent`,
+# and the passphrase dialog `E2eDialog`: no WebDriver can click a native dialog. Never in a shipped build, since `e2e`
 # is refused there (scripts/check-no-webdriver.mjs).
 flatpak-check = ["e2e"]
 # The Rust tests only (#77 step 11; DEVELOPMENT.md "Test"): keys every database

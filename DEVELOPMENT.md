@@ -942,8 +942,9 @@ What it does, in order:
    with the real routes: its `AppOpener` hands a document to the OpenURI
    portal and its keyring is the real one (inside the Flatpak, the file keyring
    keyed by the Secret portal) instead of the `e2e` build's log and in-memory
-   store. The consent dialog is still the
-   `e2e` build's, which no WebDriver could click. Only the Flatpak check
+   store. The consent and passphrase dialogs are still the
+   `e2e` build's stand-ins, which no WebDriver could click (the passphrase one
+   answers from the queue the spec fills). Only the Flatpak check
    builds it; the main E2E suite and every shipped build are unchanged.
 3. Starts a private session bus with a scripted desktop portal
    (`scripts/flatpak/openuri_mock.py`, a dbusmock template with two interfaces:
@@ -1369,8 +1370,8 @@ stops the display and removes the sandbox. In another terminal:
 
 ```bash
 npx wdio session snapshot --interactive            # the page as text; what is clickable
-npx wdio session click e3                          # a ref from the snapshot, or a selector such as 'button=Open'
-npx wdio session fill 'aria/Passphrase for “Main collection”' '<passphrase>'
+npx wdio session click e3                          # a ref from the snapshot, or a selector such as 'button=Open…'
+echo '{"passphrase":"<passphrase>"}' >> <sandbox>/passphrases.queue   # the native passphrase dialog's answer, before Open…
 npx wdio session exec -e "await browser.getTitle()"
 npx wdio session screenshot
 npx wdio session export --out e2e/specs/<name>.e2e.ts
@@ -1400,14 +1401,16 @@ override that:
   `.wdio/session/default/`, git-ignored. The window is on the virtual display
   on Linux: use `screenshot`.
 - The sandbox starts with the harness's defaults: the in-memory keyring, the
-  native "open in another app" confirmation answered "Open", PDF preview on,
-  the real idle minute. A spec's own settings (PDF preview off, the
+  native "open in another app" confirmation answered "Open", the native
+  passphrase dialog answered from `<sandbox>/passphrases.queue` (one JSON
+  answer a line, as `answerPassphrase` in `e2e/support/ui.ts` writes them; with
+  nothing queued it cancels), PDF preview on, the real idle minute. A spec's own settings (PDF preview off, the
   locking spec's shortened minute) aren't offered; `exec` can't set the app's
   environment.
 - In the macOS VM, `scripts/tart-vm.sh ssh` splits its arguments again on
   the VM's side, so give a selector with spaces or quotes as one plain
   single-quoted argument: `scripts/tart-vm.sh ssh npx wdio session fill
-  'aria/Passphrase for “Main collection”' '<passphrase>'`.
+  'aria/Name' 'Club armory'`.
 
 An exported spec is a starting point, not a test, and needs review before it
 joins the suite. It records only your steps, in WebdriverIO's style, so
