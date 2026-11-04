@@ -65,12 +65,13 @@ and peer review catch that.
 
 ## webview-config: CSP, navigation and browser controls
 
-- **Code:** `src-tauri/tauri.conf.json` (`app.security.csp`); `src-tauri/tests/csp_test.rs`; `src-tauri/src/main.rs` (the main window, built in `setup()`); `src-tauri/src/app_menu.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/window_controls/**`; `src/features/app/browserControls.ts`; `src/main.tsx`; `src-tauri/examples/window_controls_check.rs`; `scripts/window-controls-check.sh`; `scripts/macos/window-controls-check.sh`; `scripts/windows/window-controls-check.ps1`
+- **Code:** `src-tauri/tauri.conf.json` (`app.security.csp`); `src-tauri/tests/csp_test.rs`; `src-tauri/src/main.rs` (the main window, built in `setup()`); `src-tauri/src/app_menu.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/crash_reports.rs` (`web_view_environment`, `main_browser_args`, `WRY_DEFAULT_ARGS`); `src-tauri/src/window_controls/**`; `src/features/app/browserControls.ts`; `src/main.tsx`; `src-tauri/examples/window_controls_check.rs`; `scripts/window-controls-check.sh`; `scripts/macos/window-controls-check.sh`; `scripts/windows/window-controls-check.ps1`
 - **Ask:**
   - Is there no `unsafe-inline` or `unsafe-eval` for scripts? The CSP allows `asset:` and `http://asset.localhost` in `img-src`, but the asset protocol is off (no `assetProtocol`, no `protocol-asset` feature, no `convertFileSrc`). Should those sources go?
   - Can any top-level navigation or new window leave the app's origin (#73)? Does Windows' filter act only on document requests, so IPC works and nothing else loads?
   - In release builds, are dev tools, reload, history, print, save, find and view-source off, and is only the context-menu allowlist left?
   - Does `src/` have no HTML sink (`dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`) outside tests? Is everything the page shows from a database, a spreadsheet, a file name or `notices.json` rendered as text?
+  - On Windows, the main window's WebView2 environment is HoploDex's own (`crash_reports::web_view_environment`): is it the one the main window actually uses, with its own data folder, and are its browser arguments (`main_browser_args`) only wry's defaults and the autoplay policy, with nothing that loosens the web view (a debugging port, a switch that turns off a protection)?
 - **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
   - macOS's menu hook may miss items AppKit adds later (Writing Tools, Services).
   - AutoFill is kept (owner's decision).
@@ -160,9 +161,9 @@ and peer review catch that.
 
 ## document-preview: the PDF surface, TIFF and text preview
 
-- **Code:** `src-tauri/src/services/preview/**`; `src-tauri/src/commands/preview.rs`; `src/features/media/DocumentPreview.tsx`; `src/features/media/PreviewSurface.tsx`; `src-tauri/examples/pdf_surface_check.rs`; `src-tauri/examples/pdf_surface_dns.c`; `scripts/pdf-surface-check.sh`; `scripts/macos/pdf-surface-check.sh`; `scripts/windows/pdf-surface-check.ps1`
+- **Code:** `src-tauri/src/services/preview/**`; `src-tauri/src/services/crash_reports.rs` (`web_view_environment`); `src-tauri/src/commands/preview.rs`; `src/features/media/DocumentPreview.tsx`; `src/features/media/PreviewSurface.tsx`; `src-tauri/examples/pdf_surface_check.rs`; `src-tauri/examples/pdf_surface_dns.c`; `scripts/pdf-surface-check.sh`; `scripts/macos/pdf-surface-check.sh`; `scripts/windows/pdf-surface-check.ps1`
 - **Ask** (007 research.md §4 to §8, §11):
-  - Does the surface have no network, no disk and no running code?
+  - Does the surface have no network, no disk and no running code? On Windows, does the environment HoploDex builds for it (`surface/windows.rs`'s `customize`) carry all of `browser_args` and the surface's own data folder?
   - Is the `hdpreview` token one-time, and refused to every web view but the preview's?
   - On macOS, are the WebKit SPI switches (`webkit_switches`) and their startup check, the watch and the `pdfPreviewHold` in place?
   - Is `tripwire.rs` intact?
@@ -178,9 +179,9 @@ and peer review catch that.
 
 ## helpers: the confined child processes
 
-- **Code:** `src-tauri/src/services/helper/**`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/helper_handle.rs`; `src-tauri/src/services/preview/helper_protocol.rs`; `src-tauri/src/main.rs` (`--render-helper`, `--import-helper`, `--webkit-sandbox-probe`)
+- **Code:** `src-tauri/src/services/helper/**`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/helper_handle.rs`; `src-tauri/src/services/preview/helper_protocol.rs`; `src-tauri/src/services/crash_reports.rs` (`quiet_error_reporting`, `end_process_on_panic`); `src-tauri/src/main.rs` (`--render-helper`, `--import-helper`, `--webkit-sandbox-probe`)
 - **Ask:**
-  - Does no database, key or IPC reach a child? Are core dumps off?
+  - Does no database, key or IPC reach a child? Are core dumps off, and on Windows are Windows Error Reporting's box, heap and snapshot off (`quiet_error_reporting`)?
   - Linux: Landlock (no files, and no network where the ABI has it) and `RLIMIT_DATA`. macOS: `sandbox_init`'s pure-computation profile. Windows: a job object (kill on close, one process, 2 GiB) and process mitigations.
   - Does each child die with the app (`PR_SET_PDEATHSIG`, the job, `kqueue`)?
   - Are frames bounded both ways?
