@@ -29,6 +29,9 @@ public static class DialogInput {
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetPropW(IntPtr h, string name);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
     [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {
         public int cbSize, flags;
@@ -50,9 +53,20 @@ public static class DialogInput {
         if (dialog == IntPtr.Zero) throw new Exception("no passphrase dialog for process " + pid);
         uint ignored;
         var info = new GUITHREADINFO { cbSize = Marshal.SizeOf(typeof(GUITHREADINFO)) };
-        if (!GetGUIThreadInfo(GetWindowThreadProcessId(dialog, out ignored), ref info) || info.focus == IntPtr.Zero)
-            throw new Exception("the passphrase dialog has no focused control");
-        return info.focus;
+        uint thread = GetWindowThreadProcessId(dialog, out ignored);
+        if (GetGUIThreadInfo(thread, ref info) && info.focus != IntPtr.Zero) return info.focus;
+        // Another worker's app took the activation: give it back to the
+        // dialog (an Alt press lets this process set the foreground window),
+        // which puts the focus back on the field that had it.
+        keybd_event(0x12, 0, 0, UIntPtr.Zero);
+        keybd_event(0x12, 0, 2, UIntPtr.Zero);
+        SetForegroundWindow(dialog);
+        Thread.Sleep(200);
+        if (GetGUIThreadInfo(thread, ref info) && info.focus != IntPtr.Zero) return info.focus;
+        // Still not: the control the dialog says has its focus.
+        IntPtr remembered = GetPropW(dialog, "HoploDexFocus");
+        if (remembered == IntPtr.Zero) throw new Exception("the passphrase dialog has no focused control");
+        return remembered;
     }
 
     public static void Type(uint pid, string text) {

@@ -28,7 +28,8 @@ use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, BM_GETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_MULTILINE,
-    BS_PUSHBUTTON, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
+    BN_CLICKED, BN_SETFOCUS, BS_NOTIFY, BS_PUSHBUTTON, CREATESTRUCTW, EN_SETFOCUS, RemovePropW,
+    SetPropW, WA_INACTIVE, WM_ACTIVATE, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
     DC_HASDEFID, DM_GETDEFID, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE,
     ES_AUTOHSCROLL, ES_PASSWORD, GWLP_USERDATA, GetMessageW, GetSystemMetrics, GetWindowLongPtrW,
     GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDCANCEL, IDOK,
@@ -55,6 +56,8 @@ const CLASS: &str = "HoploDexPassphraseDialog";
 const WM_RETRY: u32 = WM_APP + 1;
 const WM_END: u32 = WM_APP + 2;
 const PAUSE_TIMER: usize = 1;
+/// The window property that names the focused control (`State::focused`).
+static FOCUS_PROP: std::sync::LazyLock<Vec<u16>> = std::sync::LazyLock::new(|| wide("HoploDexFocus"));
 const ID_SHOW: i32 = 100;
 const ID_ACKNOWLEDGEMENT: i32 = 101;
 const ID_FIRST_FIELD: i32 = 200;
@@ -124,6 +127,9 @@ struct State {
     primary: Cell<HWND>,
     cancel: Cell<HWND>,
     font: Cell<HFONT>,
+    /// The control that last had the focus, put back when the window is
+    /// active again.
+    last_focus: Cell<HWND>,
     events: Sender<Event>,
     retry: Arc<Mutex<Option<Retry>>>,
     controller: RefCell<Controller>,
@@ -183,6 +189,7 @@ fn run(
         primary: Cell::new(std::ptr::null_mut()),
         cancel: Cell::new(std::ptr::null_mut()),
         font: Cell::new(std::ptr::null_mut()),
+        last_focus: Cell::new(std::ptr::null_mut()),
         events,
         retry,
         controller: RefCell::new(Controller::new(shape)),
@@ -277,12 +284,16 @@ unsafe extern "system" fn window_proc(
         WM_COMMAND => {
             let id = (wparam & 0xFFFF) as i32;
             let code = ((wparam >> 16) & 0xFFFF) as u32;
-            match id {
-                IDOK => state.submit(),
-                IDCANCEL => state.cancel(),
-                ID_SHOW => state.toggle_show(),
-                ID_ACKNOWLEDGEMENT => state.changed(None),
-                _ if code == EN_CHANGE => {
+            if code == EN_SETFOCUS || code == BN_SETFOCUS {
+                state.focused(lparam as HWND);
+                return 0;
+            }
+            match (id, code) {
+                (IDOK, BN_CLICKED) => state.submit(),
+                (IDCANCEL, BN_CLICKED) => state.cancel(),
+                (ID_SHOW, BN_CLICKED) => state.toggle_show(),
+                (ID_ACKNOWLEDGEMENT, BN_CLICKED) => state.changed(None),
+                (_, EN_CHANGE) => {
                     let field = state
                         .rows
                         .borrow()
@@ -314,6 +325,18 @@ unsafe extern "system" fn window_proc(
                 GetSysColorBrush(COLOR_BTNFACE) as LRESULT
             }
         }
+        // As a dialog does: back to the field that had the focus, not the
+        // frame, when the window is active again.
+        WM_ACTIVATE => {
+            if (wparam & 0xFFFF) as u32 != WA_INACTIVE {
+                let last = state.last_focus.get();
+                let first = state.rows.borrow().first().map(|row| row.edit);
+                if let Some(control) = (!last.is_null()).then_some(last).or(first) {
+                    unsafe { SetFocus(control) };
+                }
+            }
+            0
+        }
         WM_CLOSE => {
             state.cancel();
             0
@@ -329,6 +352,7 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_DESTROY => {
+            unsafe { RemovePropW(hwnd, FOCUS_PROP.as_ptr()) };
             state.send_end(Event::Cancelled);
             unsafe { PostQuitMessage(0) };
             0
@@ -473,7 +497,7 @@ impl State {
             let show = make(
                 "BUTTON",
                 shape.show_label(),
-                WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+                WS_TABSTOP | BS_AUTOCHECKBOX as u32 | BS_NOTIFY as u32,
                 0,
                 ID_SHOW,
                 line_height + px(4),
@@ -488,7 +512,7 @@ impl State {
                 let check = make(
                     "BUTTON",
                     ACKNOWLEDGEMENT,
-                    WS_TABSTOP | BS_AUTOCHECKBOX as u32 | BS_MULTILINE as u32,
+                    WS_TABSTOP | BS_AUTOCHECKBOX as u32 | BS_MULTILINE as u32 | BS_NOTIFY as u32,
                     0,
                     ID_ACKNOWLEDGEMENT,
                     h,
@@ -509,7 +533,7 @@ impl State {
             let primary = make(
                 "BUTTON",
                 &self.request.primary,
-                WS_TABSTOP | BS_DEFPUSHBUTTON as u32,
+                WS_TABSTOP | BS_DEFPUSHBUTTON as u32 | BS_NOTIFY as u32,
                 0,
                 IDOK,
                 button_h,
@@ -520,7 +544,7 @@ impl State {
             let cancel = make(
                 "BUTTON",
                 "Cancel",
-                WS_TABSTOP | BS_PUSHBUTTON as u32,
+                WS_TABSTOP | BS_PUSHBUTTON as u32 | BS_NOTIFY as u32,
                 0,
                 IDCANCEL,
                 button_h,
@@ -553,6 +577,15 @@ impl State {
             SetWindowPos(hwnd, std::ptr::null_mut(), x, top, w, h, SWP_NOZORDER);
         }
         self.changed(None);
+    }
+
+    /// `control` has the focus: remembered, and named in the window's
+    /// `HoploDexFocus` property, which the E2E suite's key helper posts to
+    /// while another app is active (`e2e/scripts/dialog-input.ps1`).
+    fn focused(&self, control: HWND) {
+        self.last_focus.set(control);
+        // SAFETY: a property of this dialog, removed at WM_DESTROY.
+        unsafe { SetPropW(self.hwnd.get(), FOCUS_PROP.as_ptr(), control) };
     }
 
     fn row_edit(&self, field: Field) -> Option<HWND> {
