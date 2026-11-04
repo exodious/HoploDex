@@ -1232,13 +1232,14 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     // The helper confines itself as it starts, before it reads a byte
     // (import_reader/reader.rs), so until then it has the app's limits: wait
     // for that start rather than read them the moment the process appears.
-    await browser.waitUntil(() => resourceLimit(helper, "Max core file size").hard === 0, {
+    // The data limit marks it, since the app has none; the app's core limit is
+    // already 0 (#166), and confine.rs sets the core limit before the data one.
+    await browser.waitUntil(() => Number.isFinite(resourceLimit(helper, "Max data size").soft), {
       timeout: 10000,
       interval: 100,
       timeoutMsg: "the import's helper never confined itself",
     });
     expect(resourceLimit(helper, "Max core file size")).toEqual({ soft: 0, hard: 0 });
-    expect(Number.isFinite(resourceLimit(helper, "Max data size").soft)).toBe(true);
 
     const log = appLog();
     expect(log).toContain("[INFO] WebKit's sandbox is on");
