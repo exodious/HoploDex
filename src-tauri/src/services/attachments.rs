@@ -4,19 +4,32 @@
 //! are read here instead, and the result is stored exactly as if it
 //! had come from the file picker.
 
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 
 use rusqlite::{Connection, named_params};
 
 use crate::commands::CommandError;
 use crate::models::record::RecordRef;
+use crate::models::rules::{MAX_ATTACHMENT_BYTES_PER_RECORD, size_label};
+use crate::services::document_types::HEADER_BYTES;
 
 pub struct AttachmentFile {
     pub bytes: Vec<u8>,
     pub filename: String,
 }
 
-pub fn read_attachment_file(path: &Path) -> Result<AttachmentFile, CommandError> {
+/// Reads a file to attach without ever holding more than it was admitted at
+/// (001 FR-007 and FR-010, amended 2026-11-04). `admit` judges the size the
+/// opened file's metadata gives before any byte is read, `check_head` its
+/// name and first [`HEADER_BYTES`] before the rest is, and a file that grows
+/// past its admitted size while it is read is refused rather than read on.
+pub fn read_attachment_file(
+    path: &Path,
+    admit: impl FnOnce(u64) -> Result<(), CommandError>,
+    check_head: impl FnOnce(&str, &[u8]) -> Result<(), CommandError>,
+) -> Result<AttachmentFile, CommandError> {
     let filename = path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -27,12 +40,80 @@ pub fn read_attachment_file(path: &Path) -> Result<AttachmentFile, CommandError>
             format!("{filename} is a folder. Drop the files inside it instead."),
         ));
     }
-    let bytes = std::fs::read(path).map_err(|err| {
+    let unreadable = |err: std::io::Error| {
         // Not the path: its file name becomes the attachment's (logging.rs).
         log::error!("couldn't read a file to attach: {err}");
         CommandError::not_found(format!("{filename} couldn't be read."))
-    })?;
+    };
+    // The size comes from the open handle, so it is the size of what is read.
+    let file = File::open(path).map_err(unreadable)?;
+    let size = file.metadata().map_err(unreadable)?.len();
+    admit(size)?;
+    // Admitted, so `size` is at most a document's limit and fits in memory.
+    let mut bytes = Vec::with_capacity(size as usize);
+    (&file).take(size.min(HEADER_BYTES as u64)).read_to_end(&mut bytes).map_err(unreadable)?;
+    check_head(&filename, &bytes)?;
+    // One byte past `size` tells a file that grew from one that didn't.
+    (&file).take(size + 1 - bytes.len() as u64).read_to_end(&mut bytes).map_err(unreadable)?;
+    if bytes.len() as u64 > size {
+        return Err(CommandError::new(
+            "VALIDATION_ERROR",
+            format!("{filename} changed while it was being read. Try again."),
+        ));
+    }
     Ok(AttachmentFile { bytes, filename })
+}
+
+/// Refuses a photo or document (`what`, singular) of `size` bytes over
+/// `limit` as `ATTACHMENT_TOO_LARGE` (001 FR-007 and FR-010, amended
+/// 2026-11-04).
+pub fn require_size(what: &str, size: u64, limit: u64) -> Result<(), CommandError> {
+    if size > limit {
+        Err(CommandError::attachment_too_large(
+            format!("A {what} can be at most {}.", size_label(limit)),
+            limit,
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Refuses `adding` more bytes for `owner` when its photos and documents
+/// together would then hold more than `MAX_ATTACHMENT_BYTES_PER_RECORD`, as
+/// `ATTACHMENT_TOO_LARGE` (001 FR-007 and FR-010, amended 2026-11-04). What is
+/// stored counts whatever its size, so a record already past the total takes
+/// no more, while what it holds stays.
+pub fn require_total_room(
+    conn: &Connection,
+    owner: RecordRef,
+    adding: u64,
+) -> Result<(), CommandError> {
+    let column = owner.owner_column();
+    // `length()` of a blob reads no content (SQLite's OPFLAG_LENGTHARG).
+    let stored: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT (SELECT COALESCE(SUM(length(original_bytes)), 0) FROM photos
+                         WHERE {column} = :id)
+                      + (SELECT COALESCE(SUM(length(file_bytes)), 0) FROM document_attachments
+                         WHERE {column} = :id)"
+            ),
+            named_params! { ":id": owner.id() },
+            |row| row.get(0),
+        )
+        .map_err(CommandError::from_db)?;
+    if (stored as u64).saturating_add(adding) > MAX_ATTACHMENT_BYTES_PER_RECORD {
+        Err(CommandError::attachment_too_large(
+            format!(
+                "This {}'s photos and documents can total at most {}.",
+                owner.noun(),
+                size_label(MAX_ATTACHMENT_BYTES_PER_RECORD)
+            ),
+            MAX_ATTACHMENT_BYTES_PER_RECORD,
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// Refuses one more row in `table` (`photos` or `document_attachments`) for
@@ -172,9 +253,66 @@ mod tests {
     }
 
     #[test]
+    fn the_head_is_judged_before_the_rest_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.pdf");
+        std::fs::write(&path, vec![b'x'; 3 * HEADER_BYTES]).unwrap();
+        let mut seen = (0, 0);
+        let err = read_attachment_file(
+            &path,
+            |size| {
+                seen.0 = size;
+                Ok(())
+            },
+            |_, head| {
+                seen.1 = head.len();
+                Err(CommandError::new("DOCUMENT_CONTENT_MISMATCH", "no"))
+            },
+        )
+        .err()
+        .expect("the head's refusal ends the read");
+        assert_eq!(err.code, "DOCUMENT_CONTENT_MISMATCH");
+        assert_eq!(seen, (3 * HEADER_BYTES as u64, HEADER_BYTES));
+    }
+
+    #[test]
+    fn a_file_that_grows_past_its_admitted_size_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("growing.txt");
+        std::fs::write(&path, b"receipt").unwrap();
+        let err = read_attachment_file(
+            &path,
+            |_| {
+                // Written to after its size is taken, before it is read.
+                use std::io::Write;
+                let mut file = File::options().append(true).open(&path).unwrap();
+                file.write_all(b" and more").unwrap();
+                Ok(())
+            },
+            |_, _| Ok(()),
+        )
+        .err()
+        .expect("a file that grew is refused");
+        assert_eq!(err.message, "growing.txt changed while it was being read. Try again.");
+    }
+
+    #[test]
+    fn a_file_read_as_admitted_is_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("whole.txt");
+        let bytes: Vec<u8> = (0..5000u32).map(|n| n as u8).collect();
+        std::fs::write(&path, &bytes).unwrap();
+        let file = read_attachment_file(&path, |_| Ok(()), |_, _| Ok(())).ok().unwrap();
+        assert_eq!(file.bytes, bytes);
+        assert_eq!(file.filename, "whole.txt");
+    }
+
+    #[test]
     fn a_folder_is_rejected_by_name() {
         let dir = std::env::temp_dir();
-        let err = read_attachment_file(&dir).err().expect("folders can't be attachments");
+        let err = read_attachment_file(&dir, |_| Ok(()), |_, _| Ok(()))
+            .err()
+            .expect("folders can't be attachments");
         assert_eq!(err.code, "VALIDATION_ERROR");
     }
 }

@@ -200,6 +200,7 @@ The collector exports the collection and gets the firearms and, in their own tab
 - **FR-007a**: An accessory MUST be able to have photographs and attached documents exactly as a firearm can (001 FR-007, FR-008, FR-010), added by choosing files or dropping them on its record, with a thumbnail chosen as a firearm's is. An accessory with no photographs MUST show a generic picture for its kind (as 001 FR-009 does for a firearm's type). Decrypted copies of its documents MUST be handled as a firearm's are (001 FR-035, 003 FR-022). Deleting an accessory MUST remove its photographs and documents completely (constitution V); deleting or disposing of its host does not touch them.
   _Amended by [spec 007](../007-document-preview/spec.md): an accessory's documents are previewed in the application by default and opened in another program only after a confirmation, as a firearm's are (FR-007, FR-008, FR-013)._
   _Amended 2026-10-11: an accessory has at most 50 photographs and 50 documents, as a firearm has ([001 FR-007, FR-010](../001-firearms-inventory/spec.md))._
+  _Amended 2026-11-04: an accessory's photographs (15 MiB each), documents (30 MiB each) and all of them together (1 GiB) are limited as a firearm's are ([001 FR-007, FR-010](../001-firearms-inventory/spec.md))._
 
 **Value and insurance**
 

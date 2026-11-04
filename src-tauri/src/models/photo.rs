@@ -26,6 +26,21 @@ pub fn validate_photo_mime_type(mime_type: &str) -> Result<(), CommandError> {
     }
 }
 
+/// Whether `head`, a photo's first bytes, begins as its `mime_type` (already
+/// validated) does, so a file named for one type but holding another is
+/// refused before it is read on or decoded (001 FR-007, amended 2026-11-04).
+pub fn check_photo_header(name: &str, mime_type: &str, head: &[u8]) -> Result<(), CommandError> {
+    let (magic, label): (&[u8], &str) = match mime_type {
+        "image/png" => (b"\x89PNG\r\n\x1a\n", "PNG"),
+        _ => (b"\xFF\xD8\xFF", "JPEG"),
+    };
+    if head.starts_with(magic) {
+        Ok(())
+    } else {
+        Err(CommandError::new("VALIDATION_ERROR", format!("{name} isn't a real {label} photo.")))
+    }
+}
+
 /// Decodes `original_bytes` and re-encodes a small JPEG thumbnail capped at
 /// `THUMBNAIL_MAX_DIMENSION` on its longest side, generated once at insert
 /// time (001 research.md §4) rather than on every browse render.

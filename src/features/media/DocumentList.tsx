@@ -17,9 +17,13 @@ import { documentAccept, fileName, isDocumentPath, isPhotoPath } from "./filePat
 import { useFileDrop } from "./useFileDrop";
 import {
   MAX_DOCUMENTS_PER_RECORD,
+  MAX_DOCUMENT_BYTES,
   fullNote,
   isLimitReached,
+  isTooLarge,
   limitRefusal,
+  sizeRefusals,
+  tooLarge,
 } from "./attachmentLimits";
 import "./media.css";
 
@@ -134,6 +138,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     let added = 0;
     let failure: string | null = null;
     let full: string | null = null;
+    const oversized = sizeRefusals();
     for (const [index, { name, add }] of pending.entries()) {
       if (scope.ended) break;
       try {
@@ -145,6 +150,10 @@ export function DocumentList({ owner }: DocumentListProps) {
           const left = pending.slice(index).map((p) => p.name);
           full = limitRefusal(left, "documents", "attached", e);
           break;
+        }
+        if (isTooLarge(e)) {
+          oversized.add(name, e);
+          continue;
         }
         // The backend's message says a photo isn't a document type; here it can say where it goes.
         failure ??=
@@ -158,6 +167,7 @@ export function DocumentList({ owner }: DocumentListProps) {
     await load();
     if (added > 0) notify(`Attached ${added} ${added === 1 ? "document" : "documents"}.`);
     if (full) notify(full, "error");
+    for (const message of oversized.messages("documents", "attached")) notify(message, "error");
     if (failure) notify(failure, "error");
   }
 
@@ -165,8 +175,11 @@ export function DocumentList({ owner }: DocumentListProps) {
     await addAll(
       files.map((file) => ({
         name: file.name,
-        add: async () =>
-          mediaService.addDocument(scope, owner, await fileToByteArray(file), file.name),
+        add: async () => {
+          // Refused from its size before any of it is read (001 FR-010, amended 2026-11-04).
+          if (file.size > MAX_DOCUMENT_BYTES) throw tooLarge("document", MAX_DOCUMENT_BYTES);
+          return mediaService.addDocument(scope, owner, await fileToByteArray(file), file.name);
+        },
       })),
     );
   }

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
 import path from "node:path";
 import {
   $,
@@ -16,6 +17,7 @@ import {
 import { openFirearm, rowThumbnail } from "../support/ui";
 import { createDatabase } from "../support/ui";
 import { relaunchApp } from "../support/app";
+import { shot } from "../support/screenshots";
 
 /**
  * End-to-end coverage of 001 US4's acceptance scenarios (001 spec.md),
@@ -129,6 +131,68 @@ describe("001 US4 - Attach Photos and Documents (was us4-photos-documents)", () 
       // (wdio.conf.ts), rather than start a real viewer.
       const log = process.env.HOPLODEX_E2E_OPENED_LOG;
       expect(log && fs.readFileSync(log, "utf-8").trim().split(/\r?\n/)).toEqual(copies);
+    }
+  });
+
+  // 001 FR-007 and FR-010, amended 2026-11-04: a file over its size is refused from its
+  // size, before any of it is read, and the rest of the drop is attached. The large files
+  // are sparse (a hole after a few bytes), so they cost no disk.
+  it("refuses a dropped photo over 15 MiB and a document over 30 MiB, and attaches the rest (001 FR-007, FR-010)", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-e2e-sizes-"));
+    const sparse = (name: string, head: Buffer, size: number) => {
+      const file = path.join(dir, name);
+      fs.writeFileSync(file, head);
+      fs.truncateSync(file, size);
+      return file;
+    };
+    const MIB = 1024 * 1024;
+    const bigPhoto = sparse(
+      "big-photo.png",
+      Buffer.from(SAMPLE_PNG_BASE64, "base64"),
+      15 * MIB + 1,
+    );
+    const bigScan = sparse("big-scan.pdf", Buffer.from("%PDF-1.4 scan"), 30 * MIB + 1);
+    const invoice = path.join(dir, "invoice.pdf");
+    fs.writeFileSync(invoice, "%PDF-1.4 invoice");
+
+    const toasts = () =>
+      browser.execute(() =>
+        [...document.querySelectorAll(".hd-toast")].map((el) => el.textContent?.trim() ?? ""),
+      );
+    // A native drop reaches the page as Tauri's `tauri://drag-drop` event with the paths
+    // (WebDriver can't drag from the desktop).
+    const drop = (paths: string[]) =>
+      browser.execute((dropped: string[]) => {
+        type Invoke = (cmd: string, args: unknown) => Promise<unknown>;
+        const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
+          .__TAURI_INTERNALS__;
+        void internals.invoke("plugin:event|emit", {
+          event: "tauri://drag-drop",
+          payload: { paths: dropped, position: { x: 10, y: 10 } },
+        });
+      }, paths);
+
+    try {
+      await drop([bigPhoto, bigScan, invoice]);
+      const expected = [
+        "big-photo.png wasn't added. A photo can be at most 15 MiB.",
+        "big-scan.pdf wasn't attached. A document can be at most 30 MiB.",
+        "Attached 1 document.",
+      ];
+      await browser.waitUntil(
+        async () => {
+          const shown = await toasts();
+          return expected.every((text) => shown.some((toast) => toast.includes(text)));
+        },
+        { timeout: 10000, timeoutMsg: "the drop's messages never all showed" },
+      );
+      await shot("attachment-size-refusal");
+      await expect($(".hd-doc__name=invoice.pdf")).toExist();
+      await expect($(".hd-doc__name=big-scan.pdf")).not.toExist();
+      // Only the photo the first journey added.
+      await expect($$(".hd-photo")).toBeElementsArrayOfSize(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 

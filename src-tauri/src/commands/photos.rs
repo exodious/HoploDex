@@ -6,11 +6,14 @@ use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
-use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, validate_photo_mime_type};
+use crate::models::photo::{
+    Photo, PhotoSummary, check_photo_header, generate_thumbnail, validate_photo_mime_type,
+};
 use crate::models::record::RecordRef;
-use crate::models::rules::MAX_PHOTOS_PER_RECORD;
+use crate::models::rules::{MAX_PHOTO_BYTES, MAX_PHOTOS_PER_RECORD};
 use crate::services::attachments::{
-    mime_type_for, read_attachment_file, require_room, safe_basename,
+    mime_type_for, read_attachment_file, require_room, require_size, require_total_room,
+    safe_basename,
 };
 use crate::services::sandbox::{Need, Reach};
 use crate::session::scoped::ScopedSession;
@@ -80,12 +83,12 @@ pub mod ops {
         mime_type: &str,
     ) -> Result<Photo, CommandError> {
         validate_photo_mime_type(mime_type)?;
-        require_owner(conn, owner)?;
-        require_room(conn, owner, "photos", "photos", MAX_PHOTOS_PER_RECORD)?;
-        let thumbnail_bytes = generate_thumbnail(file_bytes)?;
+        admit_photo(conn, owner, file_bytes.len() as u64)?;
         // The name comes over IPC. A name is only ever a name: no path in it
         // (issue #68; the export checks again, for rows made before this).
         let original_filename = safe_basename(original_filename, "photo");
+        check_photo_header(&original_filename, mime_type, file_bytes)?;
+        let thumbnail_bytes = generate_thumbnail(file_bytes)?;
 
         let next_sort_order: i64 = conn
             .query_row(
@@ -139,6 +142,16 @@ pub mod ops {
         get_photo(conn, photo_id)
     }
 
+    /// Whether `owner` takes one more photo of `size` bytes: it exists, it has
+    /// room for another, and the photo is small enough on its own and with the
+    /// rest. Checked before any of the photo is read or decoded.
+    fn admit_photo(conn: &Connection, owner: RecordRef, size: u64) -> Result<(), CommandError> {
+        require_owner(conn, owner)?;
+        require_room(conn, owner, "photos", "photos", MAX_PHOTOS_PER_RECORD)?;
+        require_size("photo", size, MAX_PHOTO_BYTES)?;
+        require_total_room(conn, owner, size)
+    }
+
     fn set_owner_thumbnail(
         conn: &Connection,
         owner: RecordRef,
@@ -165,7 +178,15 @@ pub mod ops {
         reach: &Reach,
     ) -> Result<Photo, CommandError> {
         let path = reach.check(path, Need::AttachPhoto)?;
-        let file = read_attachment_file(&path)?;
+        let file = read_attachment_file(
+            &path,
+            |size| admit_photo(conn, owner, size),
+            |name, head| {
+                let mime_type = mime_type_for(name);
+                validate_photo_mime_type(mime_type)?;
+                check_photo_header(&safe_basename(name, "photo"), mime_type, head)
+            },
+        )?;
         add_photo(conn, owner, &file.bytes, &file.filename, mime_type_for(&file.filename))
     }
 

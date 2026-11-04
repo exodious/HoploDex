@@ -39,6 +39,32 @@ pub const MAX_PHOTOS_PER_RECORD: u32 = 50;
 /// `src/features/media/attachmentLimits.ts`.
 pub const MAX_DOCUMENTS_PER_RECORD: u32 = 50;
 
+const MIB: u64 = 1024 * 1024;
+const GIB: u64 = 1024 * MIB;
+
+/// The largest photo that may be added, in bytes (001 FR-007, amended
+/// 2026-11-04). Mirrored as `MAX_PHOTO_BYTES` in
+/// `src/features/media/attachmentLimits.ts`.
+pub const MAX_PHOTO_BYTES: u64 = 15 * MIB;
+
+/// The largest document that may be attached, in bytes (001 FR-010, amended
+/// 2026-11-04). Mirrored as `MAX_DOCUMENT_BYTES`.
+pub const MAX_DOCUMENT_BYTES: u64 = 30 * MIB;
+
+/// The most bytes one firearm's or accessory's photos and documents may hold
+/// together (001 FR-007 and FR-010, amended 2026-11-04). Mirrored as
+/// `MAX_ATTACHMENT_BYTES_PER_RECORD`.
+pub const MAX_ATTACHMENT_BYTES_PER_RECORD: u64 = GIB;
+
+/// `15 MiB`, `1 GiB`: a size limit as the app's messages write it.
+pub(crate) fn size_label(bytes: u64) -> String {
+    if bytes.is_multiple_of(GIB) {
+        format!("{} GiB", bytes / GIB)
+    } else {
+        format!("{} MiB", bytes / MIB)
+    }
+}
+
 /// `1,234,567`: a number as the app's messages write it.
 pub(crate) fn thousands(n: u64) -> String {
     let digits = n.to_string();

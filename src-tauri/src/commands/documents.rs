@@ -12,10 +12,12 @@ use crate::models::database::IdlePauseReason;
 use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
 use crate::models::document_opening::DocumentOpening;
 use crate::models::record::RecordRef;
-use crate::models::rules::MAX_DOCUMENTS_PER_RECORD;
-use crate::services::attachments::{read_attachment_file, require_room, safe_basename};
+use crate::models::rules::{MAX_DOCUMENT_BYTES, MAX_DOCUMENTS_PER_RECORD};
+use crate::services::attachments::{
+    read_attachment_file, require_room, require_size, require_total_room, safe_basename,
+};
 use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest, needs_consent};
-use crate::services::document_types::{self, DocumentType, classify};
+use crate::services::document_types::{self, DocumentType, classify, classify_header};
 use crate::services::machine_settings::MachineSettings;
 use crate::services::preview::availability::PdfAvailabilityState;
 use crate::services::sandbox::{Need, Reach};
@@ -103,27 +105,18 @@ pub mod ops {
         file_bytes: &[u8],
         original_filename: &str,
     ) -> Result<DocumentAttachment, CommandError> {
+        // A document over its size is refused before its content is looked at
+        // (001 FR-010, amended 2026-11-04).
+        require_size("document", file_bytes.len() as u64, MAX_DOCUMENT_BYTES)?;
         // The type recorded is the one the content check finds, whatever the
         // file chooser said (007 FR-016). Nothing is stored on a refusal.
+        // Judged as a dropped file is, first by its first bytes.
+        classify_header(original_filename, file_bytes)?;
         let document_type = classify(original_filename, file_bytes)?;
         // The name comes over IPC. A name is only ever a name: no path in it
         // (issue #68; the copy for another app uses `safe_stem` as well).
         let original_filename = safe_basename(original_filename, "document");
-        let exists: bool = conn
-            .query_row(
-                &format!("SELECT EXISTS (SELECT 1 FROM {} WHERE id = :id)", owner.table()),
-                named_params! { ":id": owner.id() },
-                |row| row.get(0),
-            )
-            .map_err(CommandError::from_db)?;
-        if !exists {
-            return Err(CommandError::not_found(format!(
-                "No {} was found with that id.",
-                owner.noun()
-            )));
-        }
-        // At most `MAX_DOCUMENTS_PER_RECORD` (001 FR-010, amended 2026-10-11).
-        require_room(conn, owner, "document_attachments", "documents", MAX_DOCUMENTS_PER_RECORD)?;
+        admit_document(conn, owner, file_bytes.len() as u64)?;
         let (firearm_id, accessory_id) = owner.owner_columns();
         conn.execute(
             "INSERT INTO document_attachments (
@@ -147,8 +140,32 @@ pub mod ops {
         get_document(conn, conn.last_insert_rowid())
     }
 
+    /// Whether `owner` takes one more document of `size` bytes: it exists, it
+    /// has room for another (001 FR-010, amended 2026-10-11), and the document
+    /// is small enough on its own and with the rest (amended 2026-11-04).
+    fn admit_document(conn: &Connection, owner: RecordRef, size: u64) -> Result<(), CommandError> {
+        let exists: bool = conn
+            .query_row(
+                &format!("SELECT EXISTS (SELECT 1 FROM {} WHERE id = :id)", owner.table()),
+                named_params! { ":id": owner.id() },
+                |row| row.get(0),
+            )
+            .map_err(CommandError::from_db)?;
+        if !exists {
+            return Err(CommandError::not_found(format!(
+                "No {} was found with that id.",
+                owner.noun()
+            )));
+        }
+        require_room(conn, owner, "document_attachments", "documents", MAX_DOCUMENTS_PER_RECORD)?;
+        require_size("document", size, MAX_DOCUMENT_BYTES)?;
+        require_total_room(conn, owner, size)
+    }
+
     /// `add_document` for a file already on disk — a document dropped onto
-    /// the window arrives as a path, not as bytes. It is classified by its
+    /// the window arrives as a path, not as bytes. Its size is judged before
+    /// any of it is read and its type from its name and first bytes before the
+    /// rest is (001 FR-010, amended 2026-11-04); then it is classified by its
     /// content like any other.
     ///
     /// Inside a Flatpak a file that can't be seen and lies outside reach is
@@ -161,7 +178,11 @@ pub mod ops {
         reach: &Reach,
     ) -> Result<DocumentAttachment, CommandError> {
         let path = reach.check(path, Need::AttachDocument)?;
-        let file = read_attachment_file(&path)?;
+        let file = read_attachment_file(
+            &path,
+            |size| admit_document(conn, owner, size),
+            |name, head| classify_header(name, head).map(|_| ()).map_err(Into::into),
+        )?;
         add_document(conn, owner, &file.bytes, &file.filename)
     }
 

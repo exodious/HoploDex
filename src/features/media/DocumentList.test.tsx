@@ -1170,3 +1170,58 @@ describe("DocumentList: at most 50 documents (001 FR-010, amended 2026-10-11)", 
     expect(screen.getByRole("button", { name: "Attach" })).toBeDisabled();
   });
 });
+
+describe("DocumentList: size limits (001 FR-010, amended 2026-11-04)", () => {
+  const TOO_LARGE = "A document can be at most 30 MiB.";
+  const PAST_TOTAL = "This firearm's photos and documents can total at most 1 GiB.";
+
+  it("carries on past documents refused for their size and names them by reason", async () => {
+    docs = [receipt()];
+    backend.invoke.mockImplementation(async (command: string, args = {}) => {
+      if (command === "list_documents") return docs.map((d) => ({ ...d }));
+      if (command === "list_document_types") return types;
+      if (command === "add_document_from_path") {
+        const path = String(args.path);
+        if (path.includes("big")) {
+          throw new CommandFailure({ code: "ATTACHMENT_TOO_LARGE", message: TOO_LARGE });
+        }
+        if (path.includes("last")) {
+          throw new CommandFailure({ code: "ATTACHMENT_TOO_LARGE", message: PAST_TOTAL });
+        }
+        const added = doc(300 + docs.length, path, "application/pdf", "pdf");
+        docs = [...docs, added];
+        return added;
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    await renderListWithTypes();
+
+    act(() =>
+      backend.drop(["/a/big 1.pdf", "/a/1.pdf", "/a/big 2.pdf", "/a/last.pdf", "/a/2.pdf"]),
+    );
+
+    expect(await toastWith("Attached 2 documents.")).toBeInTheDocument();
+    expect(await toastWith(`2 documents weren't attached. ${TOO_LARGE}`)).toHaveClass(
+      "hd-toast--error",
+    );
+    expect(await toastWith(`last.pdf wasn't attached. ${PAST_TOTAL}`)).toHaveClass(
+      "hd-toast--error",
+    );
+    expect(calls("add_document_from_path")).toHaveLength(5);
+    expect(screen.getByRole("button", { name: "Attach" })).toBeEnabled();
+  });
+
+  it("refuses a chosen document over 30 MiB from its size, without sending it", async () => {
+    docs = [receipt()];
+    const user = await renderList();
+    const big = new File(["%PDF-1.4"], "Big scan.pdf", { type: "application/pdf" });
+    Object.defineProperty(big, "size", { value: 30 * 1024 * 1024 + 1 });
+
+    await user.upload(screen.getByLabelText("Attach documents"), big);
+
+    expect(await toastWith(`Big scan.pdf wasn't attached. ${TOO_LARGE}`)).toHaveClass(
+      "hd-toast--error",
+    );
+    expect(calls("add_document")).toEqual([]);
+  });
+});
