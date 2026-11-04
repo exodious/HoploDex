@@ -400,8 +400,8 @@ fn emit(session: &Session, phase: UpgradePhase, processed: u64, total: u64, show
 }
 
 /// An `e2e` build holds each upgrade phase on screen for
-/// `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS`, so the screenshot walk and the
-/// screen-reader check can see it (009 research.md §14): before the backup's
+/// `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS`, so the screenshot walk, or someone
+/// watching by hand, can see it (009 research.md §14): before the backup's
 /// first chunk, stoppable as a chunk is, and before the upgrade's commit. A
 /// missing, unparsable or non-positive value waits for nothing. No other build
 /// reads it.

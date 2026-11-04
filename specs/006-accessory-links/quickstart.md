@@ -93,6 +93,8 @@ New backend test files are marked *(new)*. Every backend test runs the real
 
 ### M1. Screen reader on the Mounted section and the dispose dialog
 
+_Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so this check is no longer run and #48 is closed._
+
 **Setup**: `scripts/human-testing.sh` (the seeded sandbox), Orca on Linux or
 VoiceOver on macOS, and the seeded receiver with its upper, scope, red dot
 and light.

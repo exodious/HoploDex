@@ -65,6 +65,7 @@ Everything else above is automated. This one needs a person with a screen
 reader.
 It is deferred to #48 with the earlier features' screen reader checks, and
 run with #37's list before a release.
+_Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so this check is no longer run and #48 is closed._
 
 ### Setup S1 (Linux or macOS)
 

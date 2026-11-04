@@ -1590,8 +1590,8 @@ column no value in a stored database, so the fixture cannot thin out.
 copy of the stored 0.1.0 database in the sandbox as "Older collection". In an
 `e2e` build, `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS` (the harness's
 `upgradePhaseSeconds` setting, `e2e/support/sandbox.ts`) holds each phase of the
-upgrade on screen that many seconds, for the screenshot walk and the
-screen-reader check; no other build reads it.
+upgrade on screen that many seconds, for the screenshot walk and for watching
+it by hand; no other build reads it.
 
 ## Screenshots
 
