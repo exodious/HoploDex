@@ -87,6 +87,15 @@ pub fn web_view_environment(
         },
     };
 
+    // As wry does before it builds one: setup() runs before any window has
+    // initialized COM on the main thread. Already initialized is fine.
+    // SAFETY: a plain system call with no pointer.
+    let _ = unsafe {
+        windows_sys::Win32::System::Com::CoInitializeEx(
+            std::ptr::null(),
+            windows_sys::Win32::System::Com::COINIT_APARTMENTTHREADED as u32,
+        )
+    };
     let options = CoreWebView2EnvironmentOptions::default();
     // SAFETY: setters of an options object only this function holds.
     unsafe {
@@ -255,6 +264,21 @@ mod tests {
             .status()
             .unwrap();
         assert_eq!(status.code(), Some(PANIC_EXIT_CODE as i32));
+    }
+
+    /// The main window's environment is built in `setup()`, on a thread
+    /// that nothing has initialized COM on yet (#166).
+    #[cfg(windows)]
+    #[test]
+    fn an_environment_is_built_on_a_thread_without_com() {
+        let folder = tempfile::TempDir::new().unwrap();
+        let path = folder.path().to_owned();
+        let built = std::thread::spawn(move || {
+            web_view_environment(&path, &main_browser_args()).map(|_| ())
+        })
+        .join()
+        .unwrap();
+        assert_eq!(built, Ok(()));
     }
 
     #[cfg(windows)]

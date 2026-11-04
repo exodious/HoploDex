@@ -195,6 +195,8 @@ windows-sys = { version = "0.61", features = [
     # The user's UI language, which a web view environment built for custom
     # crash reporting is given as wry gives it (#166).
     "Win32_Globalization",
+    # `CoInitializeEx` before that environment is built, as wry does (#166).
+    "Win32_System_Com",
     "Win32_System_IO",
     "Win32_System_Ioctl",
     "Win32_System_Power",
