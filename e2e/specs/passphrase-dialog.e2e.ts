@@ -124,13 +124,6 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
       (v) => v.confirmation === "The passphrases don't match." && !v.ready,
       "the mismatch after the pause",
     );
-    // The One Enter rule (#44): Enter does nothing while the button is
-    // disabled.
-    const beforeEnter = logMark();
-    await pressInDialog("Return");
-    await browser.pause(700);
-    expect(passphraseLog().slice(beforeEnter).some((l) => "closed" in l)).toBe(false);
-
     // Put right, the problem goes at once; the acknowledgement is still due.
     step = logMark();
     await typeInDialog(PASSPHRASE.slice(-1));
@@ -139,6 +132,14 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
       (v) => v.confirmation === null && v.passphrase === null && !v.ready,
       "the match, with the acknowledgement still unticked",
     );
+    // The One Enter rule (#44): Enter does nothing while the button is
+    // disabled. (Last, as on macOS it also selects the field's text, so a key
+    // after it would replace what was typed: the platform's own behaviour.)
+    step = logMark();
+    await pressInDialog("Return");
+    await browser.pause(700);
+    expect(passphraseLog().slice(step).some((l) => "closed" in l)).toBe(false);
+
     step = logMark();
     await tickAcknowledgement();
     await waitForView(step, (v) => v.ready, "the button enabled by the acknowledgement");

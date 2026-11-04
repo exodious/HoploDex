@@ -56,7 +56,7 @@ and peer review catch that.
 - **Ask:**
   - Do the three command lists (`generate_handler!`, `COMMANDS`, the capabilities) agree, and does every `allow-<command>` belong only to the `main` web view, never the PDF surface? Is `core:default` or `dialog:default` broader than the app needs? Does the opener plugin have no permission at all?
   - For every command: is each argument checked in Rust (length, range, enum, an id belonging to the open session) as if the web view were hostile?
-  - Is `UNSCOPED_COMMANDS` minimal? It holds `get_chooser_state`, `create_database`, `open_database`, `upgrade_database`, `cancel_upgrade`, `remove_recent_database`, `locate_database`, `get_database_status`, `quit_application`, `note_activity`, `set_idle_paused`, `skip_backup`, `cancel_import`, `get_document_opening`, `set_document_opening`, `restore_backup`, `check_backup`, `list_backups` and `forget_saved_passphrase`. Do the ones that can act on the open database (`restore_backup`, `list_backups`, `check_backup`, `forget_saved_passphrase`) check `session::scoped::Target` themselves?
+  - Is `UNSCOPED_COMMANDS` minimal? It holds `get_chooser_state`, `create_database`, `open_database`, `upgrade_database`, `cancel_upgrade`, `remove_recent_database`, `locate_database`, `get_database_status`, `quit_application`, `note_activity`, `set_idle_paused`, `skip_backup`, `cancel_import`, `get_document_opening`, `set_document_opening`, `restore_backup`, `check_backup`, `drop_backup_check`, `list_backups` and `forget_saved_passphrase`. Does `drop_backup_check` only ever drop a held check, by its id? Do the ones that can act on the open database (`restore_backup`, `list_backups`, `check_backup`, `forget_saved_passphrase`) check `session::scoped::Target` themselves?
   - Can `set_document_opening` (unscoped) turn on opening without asking without `services::consent`'s native dialog?
   - Can `confirmedWarnings` skip a check that protects data? (`LOCATION_OUT_OF_REACH` must never be overridable.)
   - Do errors forward only `CommandError` codes and never a raw database error (`CommandError::from_db`)?
@@ -112,19 +112,22 @@ and peer review catch that.
 
 ## key-passphrase: the database key, the passphrase and saved passphrases
 
-- **Code:** `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/mod.rs`; `src-tauri/src/allocator.rs`; `src-tauri/src/services/passphrase.rs`; `src-tauri/src/services/keyring.rs`; `src-tauri/src/services/keyring/**`; `src-tauri/src/session/mod.rs`; `src-tauri/src/session/upgrade.rs`; `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`; `src/components/PassphraseField.tsx`; `src/components/strength/**`
+- **Code:** `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/mod.rs`; `src-tauri/src/allocator.rs`; `src-tauri/src/services/passphrase.rs`; `src-tauri/src/services/passphrase_dialog/**`; `src-tauri/src/services/keyring.rs`; `src-tauri/src/services/keyring/**`; `src-tauri/src/session/mod.rs`; `src-tauri/src/session/upgrade.rs`; `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`
 - **Ask:**
   - Are the cipher settings pinned and unchanged (`CIPHER_SETTINGS`, `src-tauri/tests/portability_test.rs`)?
-  - Is the passphrase NFC-normalized, zeroized, never logged, and never sent back to the web view?
+  - Is a passphrase typed only into the native dialog (`services::passphrase_dialog`: GTK, AppKit's `NSSecureTextField`, Win32 `ES_PASSWORD`), never into the page, and is no passphrase an argument or result of any command? Is every word of the dialog built in Rust, from what the backend knows, so the page can't word it?
+  - Is the dialog's text copied once per press into a `Passphrase` (NFC, zeroized, never logged), and are the checks' reads borrowed (GTK) or wiped straight after (AppKit, Win32)? Is every field emptied when the dialog closes?
   - Is every Rust block it passes through (wry's and Tauri's IPC bodies, serde's values, rusqlite's SQL text) zeroed when freed, by the one global allocator `main.rs` installs (`allocator.rs`)?
-  - Does the session hold only the derived key, never the passphrase (except one being saved, until its upgrade ends, 009 research.md §4)?
-  - Does the strength worker drop the passphrase after its estimate?
+  - Does the session hold only the derived key, never the passphrase, except one being saved until its upgrade ends (009 research.md §4) and a checked backup's until its restore (`backup_check`, dropped at Cancel, a screen lock, a sleep, a shutdown or a close)?
+  - Does a screen lock, a sleep or the close of the database a dialog is for take the dialog down (`Prompts`)? Does the idle lock wait while one is up?
+  - Is the E2E stand-in (`passphrase_dialog/e2e.rs`, which reads a queue file and logs what it shows) built only with `e2e`?
   - Are keyring entries only `passphrase:<database id>`? In the Flatpak, is the Secret portal's store used, and never the Secret Service or `oo7::Keyring::new()`?
   - Can `test-kdf` (1,000 iterations) never reach a shipped or E2E build (the `compile_error!` in `db/cipher.rs`)?
 - **Accepted** ([011 research.md §20](../specs/011-flatpak/research.md)):
   - A compromised Flatpak process can read HoploDex's own saved passphrases.
   - On a `.deb`, `.rpm` or AppImage, any unlocked Secret Service item is reachable.
-- **Since:** 001, 003; Flatpak store 011; `test-kdf` #105; strength worker #106; wipe-on-free allocator.
+  - What each OS's toolkit keeps of a passphrase typed into its control (GTK wipes its entry buffer, but not a shown passphrase's text layout; AppKit's and Win32's own buffers aren't measured), and what `PRAGMA key` leaves of it in SQLite's own allocations (F1, not done).
+- **Since:** 001, 003; Flatpak store 011; `test-kdf` #105; strength worker #106, gone with the native dialog (2026-11-04); wipe-on-free allocator.
 
 ## plaintext-lifetime: secure deletion, locking and what outlives a session
 
@@ -136,6 +139,7 @@ and peer review catch that.
   - On a lock, are the key dropped, the session's web-view state ended (`SessionScope.end()`) and late responses dropped (#69)?
   - Is a pending draft written only inside the encrypted file?
   - Is every block Rust frees zeroed first, in the app and both helpers, by a wipe the optimizer can't drop, and an old block on `realloc` too (`allocator.rs`)?
+  - Does any copy of the passphrase or the derived key outlive the command that used it, in the app or a web view process, and after a lock? A typed passphrase never reaches the web view (`key-passphrase`; `e2e/specs/passphrase-dialog.e2e.ts` scans the web process on Linux); what the app process keeps is `key-passphrase`'s.
   - Are core dumps off, soft and hard limit, for the app and every process it starts, WebKit's included (#166)? What else can keep a crashed process's memory on each OS: the web process the Flatpak portal starts, apport where it is the kernel's core handler, macOS crash reports, Windows Error Reporting and WebView2's crash reports? On Windows, does every web view's environment have custom crash reporting on, are WebView2's Crashpad reports deleted at startup, close and exit, and does a panic end the app or a helper before abort's fail-fast reaches Windows Error Reporting? On Windows, does a failed allocation end the process with `TerminateProcess` rather than abort's fail-fast, which reaches Windows Error Reporting (`allocator.rs`)?
   - Regression: #69.
 - **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
@@ -254,12 +258,12 @@ and peer review catch that.
 
 ## unsafe-ffi: unsafe Rust and platform FFI
 
-- **Code:** (every backend file with `unsafe`) `src-tauri/src/allocator.rs`; `src-tauri/src/commands/documents.rs`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/main.rs`; `src-tauri/src/platform/macos.rs`; `src-tauri/src/platform/windows.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/crash_reports.rs`; `src-tauri/src/services/helper/confine.rs`; `src-tauri/src/services/helper/job.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/preview/availability.rs`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/services/preview/surface/linux.rs`; `src-tauri/src/services/preview/surface/macos.rs`; `src-tauri/src/services/preview/surface/windows.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/window_controls/macos.rs`; `src-tauri/src/window_controls/windows.rs`
+- **Code:** (every backend file with `unsafe`) `src-tauri/src/allocator.rs`; `src-tauri/src/commands/documents.rs`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/main.rs`; `src-tauri/src/platform/macos.rs`; `src-tauri/src/platform/windows.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/crash_reports.rs`; `src-tauri/src/services/helper/confine.rs`; `src-tauri/src/services/helper/job.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/preview/availability.rs`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/services/preview/surface/linux.rs`; `src-tauri/src/services/preview/surface/macos.rs`; `src-tauri/src/services/preview/surface/windows.rs`; `src-tauri/src/services/passphrase_dialog/native/gtk.rs`; `src-tauri/src/services/passphrase_dialog/native/appkit.rs`; `src-tauri/src/services/passphrase_dialog/native/win32.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/window_controls/macos.rs`; `src-tauri/src/window_controls/windows.rs`
 - **Ask:**
   - Does each `unsafe` block's `SAFETY` comment hold? Does the global allocator (`allocator.rs`) only pass `System` the caller's layout, and wipe no byte outside the block it is freeing?
   - Check ObjC and WebKit SPI on macOS; COM and Win32 (DACLs, job objects, WebView2); GTK and WebKitGTK; and libc (Landlock, `prctl`, descriptors, the `NonNull` in `db/raw_file.rs` from CodeQL alert 68).
   - Is `set_var` called only before any thread starts?
-- **Since:** grew from 4 files at the baseline review to 22 (007, 008, 011, #166, the allocator).
+- **Since:** grew from 4 files at the baseline review to 25 (007, 008, 011, #166, the allocator, the native passphrase dialog).
 
 ## build-ci: what can change what ships, or the repository
 

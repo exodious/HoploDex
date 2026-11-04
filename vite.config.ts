@@ -8,7 +8,7 @@ const host = process.env.TAURI_DEV_HOST;
 
 // Defines __HOPLODEX_PROGRAM__, checks the bundled packages, and writes
 // dist/notices.json and dist/NOTICES.txt (010 contracts/notices.md). One
-// collector serves the main build and the strength worker's.
+// collector serves the main build and a web worker's (none today).
 const notices = hoplodexNotices();
 
 // https://vite.dev/config/
