@@ -396,6 +396,8 @@ fn build(
     if let Some(first) = parts.rows.first() {
         alert.window().makeFirstResponder(Some(&first.secure));
     }
+    #[cfg(feature = "e2e")]
+    crate::services::passphrase_dialog::e2e::note_shown();
 }
 
 /// `text` (UTF-16) as UTF-8 in a buffer wiped when dropped, sized up front

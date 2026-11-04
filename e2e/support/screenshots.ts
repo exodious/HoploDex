@@ -235,13 +235,15 @@ export async function shotScreen(name: string) {
   await browser.pause(600);
   const file = path.join(outDir, `${name}.png`);
   if (process.platform === "win32") {
-    const tool = fileURLToPath(
-      new URL("../../src-tauri/examples/real_input.ps1", import.meta.url),
+    const tool = fileURLToPath(new URL("../../src-tauri/examples/real_input.ps1", import.meta.url));
+    execFileSync(
+      "powershell",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tool, "shot", file],
+      {
+        stdio: "pipe",
+        windowsHide: true,
+      },
     );
-    execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tool, "shot", file], {
-      stdio: "pipe",
-      windowsHide: true,
-    });
   } else if (process.platform === "darwin") {
     execFileSync("screencapture", ["-x", "-t", "png", file]);
   } else {

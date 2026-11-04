@@ -59,6 +59,12 @@ fn note_asked(request: &Request) {
     }}));
 }
 
+/// The real dialog is on the screen with the focus in its first field, so a
+/// spec's keys reach it.
+pub(crate) fn note_shown() {
+    note(json!({ "shown": true }));
+}
+
 fn note_retry(retry: &Retry) {
     note(json!({ "retry": { "field": field_name(retry.field), "message": retry.message } }));
 }

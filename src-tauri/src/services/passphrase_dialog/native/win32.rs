@@ -25,21 +25,21 @@ use windows_sys::Win32::UI::Controls::{
     InitCommonControlsEx, PBM_SETPOS, PBM_SETRANGE32,
 };
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRectEx, BM_GETCHECK, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_MULTILINE,
-    BN_CLICKED, BN_SETFOCUS, BS_NOTIFY, BS_PUSHBUTTON, CREATESTRUCTW, EN_SETFOCUS, RemovePropW,
-    SetPropW, WA_INACTIVE, WM_ACTIVATE, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
-    DC_HASDEFID, DM_GETDEFID, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE,
-    ES_AUTOHSCROLL, ES_PASSWORD, GWLP_USERDATA, GetMessageW, GetSystemMetrics, GetWindowLongPtrW,
-    GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDCANCEL, IDOK,
-    IsDialogMessageW, KillTimer, LoadCursorW, MSG, NONCLIENTMETRICSW, PostMessageW,
-    PostQuitMessage, RegisterClassW, SM_CXSCREEN, SM_CYSCREEN, SPI_GETNONCLIENTMETRICS, SW_HIDE,
-    SW_SHOW, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW, TranslateMessage, WM_APP,
-    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY, WM_SETFONT, WM_TIMER,
-    WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_POPUP,
-    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    AdjustWindowRectEx, BM_GETCHECK, BN_CLICKED, BN_SETFOCUS, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON,
+    BS_MULTILINE, BS_NOTIFY, BS_PUSHBUTTON, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+    CreateWindowExW, DC_HASDEFID, DM_GETDEFID, DefWindowProcW, DestroyWindow, DispatchMessageW,
+    EN_CHANGE, EN_SETFOCUS, ES_AUTOHSCROLL, ES_PASSWORD, GWLP_USERDATA, GetMessageW,
+    GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+    HMENU, IDC_ARROW, IDCANCEL, IDOK, IsChild, IsDialogMessageW, KillTimer, LoadCursorW, MSG,
+    NONCLIENTMETRICSW, PostMessageW, PostQuitMessage, RegisterClassW, RemovePropW, SM_CXSCREEN,
+    SM_CYSCREEN, SPI_GETNONCLIENTMETRICS, SW_HIDE, SW_SHOW, SWP_NOZORDER, SendMessageW,
+    SetForegroundWindow, SetPropW, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
+    ShowWindow, SystemParametersInfoW, TranslateMessage, WA_INACTIVE, WM_ACTIVATE, WM_APP,
+    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY, WM_KEYDOWN, WM_SETFONT,
+    WM_TIMER, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
+    WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
 };
 use zeroize::Zeroizing;
 
@@ -57,7 +57,8 @@ const WM_RETRY: u32 = WM_APP + 1;
 const WM_END: u32 = WM_APP + 2;
 const PAUSE_TIMER: usize = 1;
 /// The window property that names the focused control (`State::focused`).
-static FOCUS_PROP: std::sync::LazyLock<Vec<u16>> = std::sync::LazyLock::new(|| wide("HoploDexFocus"));
+static FOCUS_PROP: std::sync::LazyLock<Vec<u16>> =
+    std::sync::LazyLock::new(|| wide("HoploDexFocus"));
 const ID_SHOW: i32 = 100;
 const ID_ACKNOWLEDGEMENT: i32 = 101;
 const ID_FIRST_FIELD: i32 = 200;
@@ -236,12 +237,20 @@ fn run(
             SetFocus(first.edit);
         }
     }
+    #[cfg(feature = "e2e")]
+    crate::services::passphrase_dialog::e2e::note_shown();
     let _ = made.send(Ok(hwnd as isize));
 
     let mut msg: MSG = unsafe { std::mem::zeroed() };
     // SAFETY: this thread's own message loop.
     unsafe {
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+            // A key for one of the dialog's controls while it has no focus
+            // (another app is active; only a key posted to it gets here)
+            // starts from that control, so Tab moves on from it.
+            if msg.message == WM_KEYDOWN && GetFocus().is_null() && IsChild(hwnd, msg.hwnd) != 0 {
+                SetFocus(msg.hwnd);
+            }
             if IsDialogMessageW(hwnd, &msg) == 0 {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);

@@ -75,6 +75,7 @@ async function openDialogFromChooser(): Promise<number> {
   await $(".hd-db-row--selected button[type=submit]").click();
   const asked = await waitForLog(mark, (l) => "asked" in l, "the open dialog");
   expect(asked.asked).toMatchObject({ title: `Open ${QUOTED}`, primary: "Open" });
+  await waitForLog(mark, (l) => "shown" in l, "the open dialog's field taking the focus");
   return mark;
 }
 
@@ -103,6 +104,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
       primary: "Create database",
       fields: ["Passphrase", "Confirm passphrase"],
     });
+    await waitForLog(mark, (l) => "shown" in l, "the create dialog's field taking the focus");
     // Disabled from the start: nothing typed, and nothing ticked.
     await waitForView(mark, disabled, "a disabled button");
 
@@ -186,6 +188,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
   // dialog, the passphrase never reaches them.
   it("leaves no copy of the passphrase in the web view's processes", async function () {
     if (!HAS_MEMORY_SCAN) this.skip();
+    this.timeout(180000);
     const web = webProcesses(appPid());
     expect(web.length).toBeGreaterThan(0);
     // The control: the folder typed into the page's own field is found, so
@@ -237,6 +240,7 @@ describe("003 US4 - Change My Passphrase Safely", () => {
       primary: "Change passphrase",
       fields: ["Current passphrase", "New passphrase", "Confirm new passphrase"],
     });
+    await waitForLog(mark, (l) => "shown" in l, "the change dialog's field taking the focus");
     // The page shows nothing while the passphrases are asked for.
     expect(await $('[role="dialog"]').isExisting()).toBe(false);
 

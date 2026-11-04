@@ -832,9 +832,10 @@ export function answerPassphrase(...answers: PassphraseAnswer[]) {
 }
 
 /** What the passphrase dialog logged, a JSON object a line: `asked` (its
- * title, message, primary button and fields), `retry` (the refusal under a
- * field), `refused` (what kept its button disabled), `view` (what the real
- * dialog shows), `cancelled` and `closed`. Never a passphrase. */
+ * title, message, primary button and fields), `shown` (the real dialog has
+ * the focus in its first field), `retry` (the refusal under a field),
+ * `refused` (what kept its button disabled), `view` (what the real dialog
+ * shows), `cancelled` and `closed`. Never a passphrase. */
 export function passphraseLog(): Record<string, unknown>[] {
   const log = process.env.HOPLODEX_E2E_PASSPHRASE_LOG;
   if (!log) throw new Error("HOPLODEX_E2E_PASSPHRASE_LOG is not set (sandbox.ts)");

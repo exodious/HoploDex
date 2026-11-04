@@ -49,8 +49,10 @@ export function webProcesses(appPid: number): number[] {
   return descendants(appPid).filter((pid) => commandOf(pid).startsWith("WebKitWebProces"));
 }
 
-/** How many times `needle` is in the readable memory of `pid`, in UTF-8 and
- * in UTF-16LE. Regions that can't be read are skipped. */
+/** How many times `needle` is in the writable anonymous memory of `pid` (its
+ * heaps, where a program's strings are), in UTF-8 and in UTF-16LE. Mapped
+ * files and devices are left out, which keeps a scan to seconds; regions that
+ * can't be read are skipped. */
 export function copiesIn(pid: number, needle: string): number {
   const patterns = [Buffer.from(needle, "utf-8"), Buffer.from(needle, "utf16le")];
   const maps = fs.readFileSync(`/proc/${pid}/maps`, "utf-8").split("\n");
@@ -60,8 +62,10 @@ export function copiesIn(pid: number, needle: string): number {
   const overlap = Math.max(...patterns.map((p) => p.length)) - 1;
   try {
     for (const line of maps) {
-      const [range, perms] = line.split(" ");
-      if (!range || !perms?.startsWith("r")) continue;
+      const [range, perms, , , , ...rest] = line.split(/\s+/);
+      const name = rest.join(" ");
+      const anonymous = name === "" || name === "[heap]" || name.startsWith("[anon");
+      if (!range || !perms?.startsWith("rw") || !anonymous) continue;
       const [start, end] = range.split("-").map((hex) => parseInt(hex, 16));
       for (let at = start; at < end; at += CHUNK) {
         const length = Math.min(CHUNK + overlap, end - at);

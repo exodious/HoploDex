@@ -281,6 +281,14 @@ fn build(id: u64, parent: &gtk::ApplicationWindow, request: Request, events: Sen
     });
 
     parts.changed(None);
+    if let Some(first) = parts.rows.first() {
+        // The window has the keyboard once its first field does.
+        first.entry.connect_focus_in_event(|_, _| {
+            #[cfg(feature = "e2e")]
+            crate::services::passphrase_dialog::e2e::note_shown();
+            glib::Propagation::Proceed
+        });
+    }
     dialog.show_all();
     if let Some(first) = parts.rows.first() {
         first.entry.grab_focus();
