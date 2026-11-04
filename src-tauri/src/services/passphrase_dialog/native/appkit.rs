@@ -297,7 +297,9 @@ fn build(
         let plain = NSTextField::new(mtm);
         for entry in [&**secure as &NSTextField, &*plain] {
             entry.setAccessibilityLabel(Some(&ns(shape.label(field))));
-            entry.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*target)));
+            // SAFETY: the delegate is weak; the target lives as long as the
+            // dialog, which `Parts` holds both of.
+            unsafe { entry.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*target))) };
             width(entry, WIDTH);
         }
         plain.setHidden(true);
