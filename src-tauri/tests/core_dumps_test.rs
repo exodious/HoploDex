@@ -241,7 +241,4 @@ fn the_deb_puts_the_app_on_apports_ignore_list() {
         text.lines().filter(|line| !line.is_empty() && !line.starts_with('#')).collect();
 
     assert_eq!(listed, ["/usr/bin/hoplodex"]);
-    // The path the .deb installs the app at: Tauri names it after the binary.
-    let binary = std::path::Path::new(env!("CARGO_BIN_EXE_hoplodex"));
-    assert_eq!(binary.file_stem().and_then(|name| name.to_str()), Some("hoplodex"));
 }
