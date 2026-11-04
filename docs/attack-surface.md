@@ -126,14 +126,14 @@ and peer review catch that.
 
 ## plaintext-lifetime: secure deletion, locking and what outlives a session
 
-- **Code:** `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/db/mod.rs` (`secure_delete`, `reclaim_deleted_record`); `src-tauri/src/main.rs` (`turn_off_core_dumps`, `end_web_processes`); `src-tauri/src/session/lifecycle.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/session/clock.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/session/fingerprint.rs`; `src-tauri/src/platform/**`; `src/features/session/**`; `src/components/Toast.tsx`
+- **Code:** `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/db/mod.rs` (`secure_delete`, `reclaim_deleted_record`); `src-tauri/src/main.rs` (`turn_off_core_dumps`, `end_web_processes`); `src-tauri/src/services/crash_reports.rs`; `src-tauri/src/session/lifecycle.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/session/clock.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/session/fingerprint.rs`; `src-tauri/src/platform/**`; `src/features/session/**`; `src/components/Toast.tsx`
 - **Ask:**
   - Is a deleted record's text gone from the file, both search indexes and the journal (`src-tauri/tests/deletion_wipe_test.rs`)?
   - Is a partial file securely deleted?
   - Does the database lock on idle, sleep, screen lock and shutdown on each OS, and inside the Flatpak (logind `session/auto`)?
   - On a lock, are the key dropped, the session's web-view state ended (`SessionScope.end()`) and late responses dropped (#69)?
   - Is a pending draft written only inside the encrypted file?
-  - Are core dumps off, soft and hard limit, for the app and every process it starts, WebKit's included (#166)? What else can keep a crashed process's memory on each OS: the web process the Flatpak portal starts, apport where it is the kernel's core handler, macOS crash reports, Windows Error Reporting and WebView2's crash reports?
+  - Are core dumps off, soft and hard limit, for the app and every process it starts, WebKit's included (#166)? What else can keep a crashed process's memory on each OS: the web process the Flatpak portal starts, apport where it is the kernel's core handler, macOS crash reports, Windows Error Reporting and WebView2's crash reports? On Windows, does every web view's environment have custom crash reporting on, are WebView2's Crashpad reports deleted at startup, close and exit, and does a panic end the app or a helper before abort's fail-fast reaches Windows Error Reporting?
   - Regression: #69.
 - **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
   - The last-saved version is recorded after the commit.
@@ -251,12 +251,12 @@ and peer review catch that.
 
 ## unsafe-ffi: unsafe Rust and platform FFI
 
-- **Code:** (every backend file with `unsafe`) `src-tauri/src/commands/documents.rs`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/main.rs`; `src-tauri/src/platform/macos.rs`; `src-tauri/src/platform/windows.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/helper/confine.rs`; `src-tauri/src/services/helper/job.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/preview/availability.rs`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/services/preview/surface/linux.rs`; `src-tauri/src/services/preview/surface/macos.rs`; `src-tauri/src/services/preview/surface/windows.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/window_controls/macos.rs`; `src-tauri/src/window_controls/windows.rs`
+- **Code:** (every backend file with `unsafe`) `src-tauri/src/commands/documents.rs`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/main.rs`; `src-tauri/src/platform/macos.rs`; `src-tauri/src/platform/windows.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/crash_reports.rs`; `src-tauri/src/services/helper/confine.rs`; `src-tauri/src/services/helper/job.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/preview/availability.rs`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/services/preview/surface/linux.rs`; `src-tauri/src/services/preview/surface/macos.rs`; `src-tauri/src/services/preview/surface/windows.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/window_controls/macos.rs`; `src-tauri/src/window_controls/windows.rs`
 - **Ask:**
   - Does each `unsafe` block's `SAFETY` comment hold?
   - Check ObjC and WebKit SPI on macOS; COM and Win32 (DACLs, job objects, WebView2); GTK and WebKitGTK; and libc (Landlock, `prctl`, descriptors, the `NonNull` in `db/raw_file.rs` from CodeQL alert 68).
   - Is `set_var` called only before any thread starts?
-- **Since:** grew from 4 files at the baseline review to 20 (007, 008, 011, #166).
+- **Since:** grew from 4 files at the baseline review to 21 (007, 008, 011, #166).
 
 ## build-ci: what can change what ships, or the repository
 

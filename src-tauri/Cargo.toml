@@ -192,6 +192,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     # The hidden window that receives power and session messages.
     "Win32_Graphics_Gdi",
+    # The user's UI language, which a web view environment built for custom
+    # crash reporting is given as wry gives it (#166).
+    "Win32_Globalization",
     "Win32_System_IO",
     "Win32_System_Ioctl",
     "Win32_System_Power",

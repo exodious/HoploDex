@@ -269,6 +269,9 @@ impl<R: Runtime> Surface<R> {
         if let Some(hook) = config.on_page_load {
             builder = builder.on_page_load(move |_, payload| hook(payload.event(), payload.url()));
         }
+        #[cfg(windows)]
+        let builder = os::customize(window, builder, &config.proxy_url, &config.data_directory)?;
+        #[cfg(not(windows))]
         let builder = os::customize(builder, &config.proxy_url, &config.data_directory);
         let webview = window.add_child(
             builder,

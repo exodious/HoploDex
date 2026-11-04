@@ -26,7 +26,12 @@ pub const MEMORY_LIMIT: usize = 2 * 1024 * 1024 * 1024;
 /// process's arguments after the program name, the first being
 /// [`ARGUMENT`]. It never returns to the app's own start-up path.
 pub fn run(args: &[String]) -> ! {
-    // Nothing a panic says is wanted anywhere, and stderr is discarded.
+    // Nothing a panic says is wanted anywhere, and stderr is discarded. On
+    // Windows the panic also ends the process at once, before abort's
+    // fail-fast reaches Windows Error Reporting (#166).
+    #[cfg(windows)]
+    crate::services::crash_reports::end_process_on_panic(false);
+    #[cfg(not(windows))]
     std::panic::set_hook(Box::new(|_| {}));
     #[cfg(debug_assertions)]
     if args.get(1).map(String::as_str) == Some("--self-check") {
