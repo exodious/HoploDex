@@ -18,9 +18,9 @@
 //!    [`MAX_UNPACKED_BYTES`] in all (the true sizes, not the declared ones),
 //!    and the shared strings' declared and present counts are read with
 //!    `quick-xml`, before `calamine` is given the workbook, since `calamine`
-//!    reserves what the shared strings declare; so are the styles' cell
-//!    formats, number format codes and font names, since `calamine` copies a
-//!    code and a name into every cell format;
+//!    reserves what the shared strings declare; so are the styles' records,
+//!    number format codes and font names, since `calamine` keeps every record
+//!    and copies a code and a name into every cell format;
 //! 3. more than [`MAX_SHEETS`] sheets are refused;
 //! 4. each sheet is read cell by cell with `worksheet_cells_reader`, which
 //!    builds no dense grid, under the row, column, cell and text limits.
@@ -545,30 +545,31 @@ fn declares_too_many(value: &[u8]) -> bool {
 }
 
 /// Reads the styles part and finds it unreadable past Excel's own limits:
-/// more than [`MAX_CELL_FORMATS`] `<xf>` records, or a number format's code or
-/// a font's name over [`MAX_STYLE_TEXT_CHARS`]. `calamine` (since 0.38) copies
-/// the code and the font's name into every cell format, so without them a few
-/// kilobytes of styles could ask for gigabytes.
+/// more than [`MAX_CELL_FORMATS`] `<xf>`, `<numFmt>`, `<font>`, `<fill>` or
+/// `<border>` records of one kind, or a number format's code or a font's name
+/// over [`MAX_STYLE_TEXT_CHARS`]. `calamine` (since 0.38) keeps every such
+/// record and copies the code and the font's name into every cell format, so
+/// without them a few kilobytes of styles could ask for gigabytes.
 fn scan_styles(xml: impl Read) -> Result<(), Stop> {
     use quick_xml::events::Event;
 
     let mut reader = quick_xml::Reader::from_reader(io::BufReader::new(xml));
     let mut buf = Vec::new();
-    let mut formats = 0usize;
+    const RECORDS: [&str; 5] = ["xf", "numFmt", "font", "fill", "border"];
+    let mut records = [0usize; RECORDS.len()];
     loop {
         buf.clear();
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e) | Event::Empty(e)) => {
-                match e.local_name().as_ref() {
-                    "xf" => {
-                        formats += 1;
-                        if formats > MAX_CELL_FORMATS {
-                            return Err(Stop::Unreadable);
-                        }
-                        continue;
+                let name = e.local_name();
+                if let Some(kind) = RECORDS.iter().position(|&r| r == name.as_ref()) {
+                    records[kind] += 1;
+                    if records[kind] > MAX_CELL_FORMATS {
+                        return Err(Stop::Unreadable);
                     }
-                    "numFmt" | "name" => {}
-                    _ => continue,
+                }
+                if !matches!(name.as_ref(), "numFmt" | "name") {
+                    continue;
                 }
                 // Every attribute, not only `formatCode` and `val`: `calamine`
                 // splits attributes itself, and a key `quick-xml` reads as
@@ -959,6 +960,21 @@ mod tests {
         let font = |name: &str| format!("<fonts><font><name val=\"{name}\"/></font></fonts>");
         let xfs = |n: usize| format!("<cellXfs>{}</cellXfs>", "<xf numFmtId=\"164\"/>".repeat(n));
         let scan = |body: String| scan_styles(styles(body).as_bytes());
+        let records = |record: &str, n: usize| {
+            format!("<{record}s>{}</{record}s>", format!("<{record}/>").repeat(n))
+        };
+        for record in ["numFmt", "font", "fill", "border"] {
+            assert!(scan(records(record, MAX_CELL_FORMATS)).is_ok(), "{record}");
+            let both_kinds = records(record, MAX_CELL_FORMATS) + &xfs(MAX_CELL_FORMATS);
+            assert!(scan(both_kinds).is_ok(), "{record}");
+            let over = records(record, MAX_CELL_FORMATS + 1);
+            assert!(matches!(scan(over), Err(Stop::Unreadable)), "{record}");
+            let opened = format!(
+                "<{record}s>{}</{record}s>",
+                format!("<{record}></{record}>").repeat(MAX_CELL_FORMATS + 1)
+            );
+            assert!(matches!(scan(opened), Err(Stop::Unreadable)), "{record}");
+        }
         let at = "\u{1F600}".repeat(MAX_STYLE_TEXT_CHARS);
         let over = "0".repeat(MAX_STYLE_TEXT_CHARS + 1);
         // Counted in characters, after entities are replaced.

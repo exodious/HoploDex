@@ -277,6 +277,7 @@ corpus_cases! {
     an_archive_that_is_not_a_spreadsheet => "not-a-spreadsheet",
     styles_that_calamine_would_copy_into_a_gibibyte => "styles-amplified",
     the_same_styles_stored_with_a_backslash => "styles-amplified-backslash",
+    a_million_fonts_that_calamine_would_keep => "styles-fonts",
     a_second_file_past_the_row_limit => "two-files-second-rows",
     two_files_past_the_cell_limit_together => "two-files-cells-together",
 }

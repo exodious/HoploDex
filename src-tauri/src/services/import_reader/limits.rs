@@ -37,7 +37,8 @@ pub const MAX_SHARED_STRINGS: u64 = 2_000_000;
 /// is unreadable, not a limit the user is told of: Excel writes no such file.
 pub const MAX_STYLE_TEXT_CHARS: usize = 255;
 /// `<xf>` records in a workbook's styles (Excel's 65,490 cell formats and
-/// styles).
+/// styles), and each of `<numFmt>`, `<font>`, `<fill>` and `<border>`, which
+/// no file needs more of than it has cell formats.
 pub const MAX_CELL_FORMATS: usize = 65_490;
 /// The import helper's data limit (Linux, Windows).
 pub const HELPER_MEMORY_BYTES: usize = 536_870_912;
