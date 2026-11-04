@@ -166,6 +166,10 @@ fn build(id: u64, parent: &gtk::ApplicationWindow, request: Request, events: Sen
     let meter_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     meter_row.pack_start(&meter, true, true, 0);
     meter_row.pack_start(&meter_label, false, false, 0);
+    // `show_all` skips a `no_show_all` widget and what is in it, so its
+    // children are shown here and the row itself is switched on and off.
+    meter.show();
+    meter_label.show();
     meter_row.set_no_show_all(true);
     let suggestion = wrapped("");
     suggestion.style_context().add_class("dim-label");
@@ -208,8 +212,11 @@ fn build(id: u64, parent: &gtk::ApplicationWindow, request: Request, events: Sen
 
     let spinner = gtk::Spinner::new();
     let busy_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let busy_label = wrapped(&request.busy);
     busy_row.pack_start(&spinner, false, false, 0);
-    busy_row.pack_start(&wrapped(&request.busy), false, false, 0);
+    busy_row.pack_start(&busy_label, false, false, 0);
+    spinner.show();
+    busy_label.show();
     busy_row.set_margin_top(6);
     busy_row.set_no_show_all(true);
     content.pack_start(&busy_row, false, false, 0);
@@ -358,7 +365,7 @@ impl Parts {
             Some(estimate) => {
                 self.meter.set_value(f64::from(estimate.score) + 1.0);
                 self.meter_label.set_text(estimate.label());
-                self.meter_row.show_all();
+                self.meter_row.set_visible(true);
                 self.suggestion.set_text(&estimate.suggestion);
                 self.suggestion.set_visible(!estimate.suggestion.is_empty());
             }
@@ -398,7 +405,7 @@ impl Parts {
         if busy {
             self.dialog.set_response_sensitive(ResponseType::Accept, false);
             self.spinner.start();
-            self.busy_row.show_all();
+            self.busy_row.set_visible(true);
         } else {
             self.spinner.stop();
             self.busy_row.hide();
