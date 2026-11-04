@@ -8,7 +8,6 @@ import type { CreateDatabaseInput } from "./types";
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 const suggested = { folder: "/home/sam/Documents/HoploDex", name: "My collection" };
-const PASSPHRASE = "vivid otter ledger crane";
 
 function renderDialog(onCreate: (input: CreateDatabaseInput) => Promise<void>) {
   const onOpenChange = vi.fn();
@@ -23,17 +22,8 @@ function renderDialog(onCreate: (input: CreateDatabaseInput) => Promise<void>) {
   return { onOpenChange };
 }
 
-async function fillPassphrases(
-  user: ReturnType<typeof userEvent.setup>,
-  first: string,
-  second = first,
-) {
-  await user.type(screen.getByLabelText("Passphrase"), first);
-  await user.type(screen.getByLabelText("Confirm passphrase"), second);
-}
-
 function createButton() {
-  return screen.getByRole("button", { name: /Create database|Creating…/ });
+  return screen.getByRole("button", { name: /Create database…|Creating…/ });
 }
 
 describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
@@ -79,73 +69,53 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     expect(note).toHaveTextContent("/mnt/usb/HoploDex backups");
   });
 
-  // 003 US1-3
-  it("keeps Create database disabled until the no-recovery acknowledgement is ticked (003 FR-004)", async () => {
-    const user = userEvent.setup();
+  // Amended 2026-11-04 (003 FR-007): the passphrase, its confirmation, the
+  // strength hint and the 003 FR-004 acknowledgement are the native dialog's
+  // (Rust's `passphrase_dialog::checks`, and the real-input E2E spec); the page
+  // never has a field for them.
+  it("has no passphrase field and asks for the passphrase in a dialog of its own", () => {
     renderDialog(onCreate);
-    await fillPassphrases(user, PASSPHRASE);
 
-    expect(createButton()).toBeDisabled();
-    await user.click(
-      screen.getByRole("checkbox", { name: /I have stored this passphrase somewhere safe/ }),
-    );
+    expect(screen.queryByLabelText(/passphrase/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(createButton()).toHaveTextContent("Create database…");
     expect(createButton()).toBeEnabled();
-    expect(
-      screen.getByText(
-        /nobody, including HoploDex, can open this database or recover the collection/,
-      ),
-    ).toBeInTheDocument();
   });
 
-  // 003 US1-2
-  it("checks the passphrases as they are typed, and waits until they are long enough and match", async () => {
+  it("sends the name and folder, which the backend checks before it asks", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
-    expect(createButton()).toBeDisabled();
+    await user.click(createButton());
 
-    await fillPassphrases(user, "too short");
-    expect(await screen.findByText("Use at least 12 characters.")).toBeInTheDocument();
-    expect(createButton()).toBeDisabled();
+    expect(onCreate).toHaveBeenCalledExactlyOnceWith({
+      folder: "/home/sam/Documents/HoploDex",
+      name: "My collection",
+    });
+  });
 
-    await user.clear(screen.getByLabelText("Passphrase"));
-    await user.clear(screen.getByLabelText("Confirm passphrase"));
-    await fillPassphrases(user, PASSPHRASE, `${PASSPHRASE}!`);
-    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
-    expect(screen.queryByText("Use at least 12 characters.")).not.toBeInTheDocument();
-    expect(createButton()).toBeDisabled();
+  it("refuses an empty name or folder itself, without asking", async () => {
+    const user = userEvent.setup();
+    renderDialog(onCreate);
+    await user.clear(screen.getByLabelText("Name"));
+    await user.click(createButton());
 
-    await user.type(screen.getByLabelText("Confirm passphrase"), "{Backspace}");
-    expect(screen.queryByText("The passphrases don't match.")).not.toBeInTheDocument();
-    expect(createButton()).toBeEnabled();
+    expect(await screen.findByText("Enter a name.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveFocus());
     expect(onCreate).not.toHaveBeenCalled();
   });
 
-  it("says a confirmation left a character short doesn't match", async () => {
+  it("keeps the form as it was when the passphrase dialog is cancelled", async () => {
     const user = userEvent.setup();
-    renderDialog(onCreate);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
-
-    await fillPassphrases(user, PASSPHRASE, PASSPHRASE.slice(0, -1));
-    expect(await screen.findByText("The passphrases don't match.")).toBeInTheDocument();
-    expect(createButton()).toBeDisabled();
-  });
-
-  it("sends the details with the passphrase read from the field, then clears it", async () => {
-    const user = userEvent.setup();
-    renderDialog(onCreate);
-    await fillPassphrases(user, PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
+    onCreate.mockRejectedValue(
+      new CommandFailure({ code: "PASSPHRASE_CANCELLED", message: "No passphrase was entered." }),
+    );
+    const { onOpenChange } = renderDialog(onCreate);
     await user.click(createButton());
 
-    expect(onCreate).toHaveBeenCalledWith({
-      folder: "/home/sam/Documents/HoploDex",
-      name: "My collection",
-      passphrase: PASSPHRASE,
-      acknowledgedUnrecoverable: true,
-    });
-    expect(screen.getByLabelText("Passphrase")).toHaveValue("");
-    expect(screen.getByLabelText("Confirm passphrase")).toHaveValue("");
+    await waitFor(() => expect(createButton()).toBeEnabled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toHaveValue("My collection");
   });
 
   it("shows Creating… at once and disables the form until the command returns", async () => {
@@ -153,8 +123,6 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     let finish: () => void = () => {};
     onCreate.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)));
     renderDialog(onCreate);
-    await fillPassphrases(user, PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
 
     await user.click(createButton());
 
@@ -164,11 +132,9 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
     expect(screen.getByLabelText("Name")).toBeDisabled();
     expect(screen.getByLabelText("Folder")).toBeDisabled();
-    expect(screen.getByLabelText("Passphrase")).toBeDisabled();
-    expect(screen.getByLabelText("Confirm passphrase")).toBeDisabled();
 
     finish();
-    expect(await screen.findByRole("button", { name: "Create database" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Create database…" })).toBeInTheDocument();
   });
 
   it("puts the backend's field errors on their fields", async () => {
@@ -184,8 +150,6 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
       }),
     );
     renderDialog(onCreate);
-    await fillPassphrases(user, PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
     await user.click(createButton());
 
     expect(await screen.findByText("A name can't end with a space or a dot.")).toBeInTheDocument();
@@ -211,8 +175,6 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
       }),
     );
     renderDialog(onCreate);
-    await fillPassphrases(user, PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
     await user.click(createButton());
 
     await screen.findByText("A name can't end with a space or a dot.");
@@ -239,8 +201,6 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     renderDialog(onCreate);
     await user.clear(screen.getByLabelText("Folder"));
     await user.type(screen.getByLabelText("Folder"), "/srv/hoplodex-check");
-    await fillPassphrases(user, PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
     await user.click(createButton());
 
     expect(await screen.findByText(message)).toBeInTheDocument();
@@ -257,8 +217,6 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
       new CommandFailure({ code: "DATABASE_EXISTS", message: "A file with this name exists." }),
     );
     renderDialog(onCreate);
-    await fillPassphrases(user, PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
     await user.click(createButton());
 
     await screen.findByText("A file with this name exists.");
@@ -277,8 +235,6 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
       }),
     );
     renderDialog(onCreate);
-    await fillPassphrases(user, PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
     await user.click(createButton());
 
     expect(await screen.findByText(/already exists in that folder/)).toBeInTheDocument();
@@ -298,8 +254,6 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
       }),
     );
     const { onOpenChange } = renderDialog(onCreate);
-    await fillPassphrases(user, PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
     await user.click(createButton());
 
     expect(await screen.findByRole("alert")).toHaveTextContent(message);

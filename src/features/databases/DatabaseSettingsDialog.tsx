@@ -8,13 +8,11 @@ import {
   ConfirmDialog,
   Dialog,
   NumberField,
-  PassphraseField,
   ProgressBar,
   SegmentedControl,
   Select,
   useToast,
 } from "../../components";
-import type { PassphraseFieldHandle } from "../../components";
 import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { CommandFailure } from "../../services/tauriClient";
 import { useSessionScope } from "../session/sessionScope";
@@ -24,7 +22,6 @@ import * as databasesService from "./databasesService";
 import { folderOf, joinPath } from "./paths";
 import { DatabaseGuideLink } from "./DatabaseGuide";
 import { ExistingBackupsDialog } from "./ExistingBackupsDialog";
-import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
 import { minutesLabel, unavailableNote } from "./settings";
 import type {
   BackupLocationInput,
@@ -179,9 +176,6 @@ function SettingsForm({
   // state is kept here, so it reads right as soon as Save has changed it.
   const [passphraseSaved, setPassphraseSaved] = useState(status.passphraseSaved);
   const [passphraseChoice, setPassphraseChoice] = useState<PassphraseChoice>(null);
-  const [asking, setAsking] = useState(false);
-  const [askError, setAskError] = useState<string | undefined>();
-  const passphraseField = useRef<PassphraseFieldHandle>(null);
   const [note, setNote] = useState<string | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
@@ -320,30 +314,27 @@ function SettingsForm({
     await save();
   }
 
-  /** The passphrase prompt's confirmation (#34): the passphrase is read from the field and
-   * emptied at once, checked and saved by the backend, and goes out of reach here with this call.
-   * A refusal keeps the prompt open with the error; success closes it and saves the rest. */
+  /** Remembers the passphrase, then saves the rest (#34). The native dialog says what that gives
+   * away and asks for the passphrase, which the backend checks and saves and the page never sees
+   * (amended 2026-11-04). Cancelling it saves nothing; a refusal saves nothing either. */
   async function rememberThenSave() {
-    const passphrase = passphraseField.current?.read() ?? "";
-    passphraseField.current?.reset();
-    if (passphrase === "") {
-      setAskError("Enter the passphrase to remember it.");
-      // Keeps the prompt open.
-      throw new Error("no passphrase");
-    }
-    try {
-      await databasesService.savePassphrase(scope, passphrase);
-    } catch (e) {
-      if (e instanceof CommandFailure && e.code === "PASSPHRASE_INCORRECT")
-        setAskError(e.fieldErrors?.passphrase ?? "That isn't this database's passphrase.");
-      else if (e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE")
-        setAskError(KEYRING_UNAVAILABLE);
-      else setAskError("The passphrase couldn't be saved.");
-      throw e;
-    }
     setServerError(null);
+    setNote(null);
+    setSaving(true);
+    try {
+      await databasesService.savePassphrase(scope);
+    } catch (e) {
+      setSaving(false);
+      if (e instanceof CommandFailure && e.code === "PASSPHRASE_CANCELLED") return;
+      setServerError(
+        e instanceof CommandFailure && e.code === "KEYRING_UNAVAILABLE"
+          ? `${KEYRING_UNAVAILABLE} Nothing was saved.`
+          : "The passphrase couldn't be saved. Nothing was saved.",
+      );
+      return;
+    }
     passphraseDone(true);
-    void save();
+    await save();
   }
 
   function handleSubmit(event: FormEvent) {
@@ -358,10 +349,8 @@ function SettingsForm({
     setErrors({});
     // Remembering asks for the passphrase now, not while it was being ticked, so it is held no
     // longer than the save needs. Cancelling that prompt saves nothing.
-    if (passphraseChoice === "remember") {
-      setAskError(undefined);
-      setAsking(true);
-    } else if (passphraseChoice === "forget") void forgetThenSave();
+    if (passphraseChoice === "remember") void rememberThenSave();
+    else if (passphraseChoice === "forget") void forgetThenSave();
     else void save();
   }
 
@@ -500,25 +489,6 @@ function SettingsForm({
           </Button>
         </footer>
       </form>
-      {/* Outside the form: React sends a portal's events up through its
-        parents, and the question's own submit mustn't save this form. */}
-      <RememberPassphraseConfirm
-        open={asking}
-        onClose={() => {
-          setAsking(false);
-          setAskError(undefined);
-        }}
-        onConfirm={rememberThenSave}
-      >
-        <PassphraseField
-          ref={passphraseField}
-          label="Passphrase"
-          autoComplete="current-password"
-          autoFocus
-          error={askError}
-          onInput={() => setAskError(undefined)}
-        />
-      </RememberPassphraseConfirm>
       <ExistingBackupsDialog
         question={question}
         newFolder={location.path}

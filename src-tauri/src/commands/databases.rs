@@ -329,8 +329,8 @@ pub mod ops {
     }
 
     /// Opens the database at `path` with a passphrase typed in the native
-    /// dialog (amended 2026-11-04 to 003 FR-005, FR-007; contracts/
-    /// ui-databases.md §1). The dialog stays up, busy, while each passphrase
+    /// dialog (amended 2026-11-04 to 003 FR-005, FR-007 and 003
+    /// contracts/ui-databases.md §1). The dialog stays up, busy, while each passphrase
     /// is tried, and asks again under the field when it doesn't open the
     /// database; any other outcome closes it. Cancel after a wrong
     /// passphrase returns that refusal, so the chooser can offer a restore
@@ -406,8 +406,8 @@ pub mod ops {
     }
 
     /// Creates `<folder>/<name>.hoplodex` with a passphrase chosen in the
-    /// native dialog, and opens it (amended 2026-11-04 to 003 FR-003, FR-004;
-    /// contracts/ui-databases.md §2). The name and folder are checked first,
+    /// native dialog, and opens it (amended 2026-11-04 to 003 FR-003, FR-004
+    /// and 003 contracts/ui-databases.md §2). The name and folder are checked first,
     /// so a refusal there costs no typing; the dialog then asks for the
     /// passphrase twice, checks it as it is typed, and takes the
     /// acknowledgement.
@@ -468,7 +468,7 @@ pub mod ops {
 
     /// Saves the open database's passphrase in this computer's keyring, typed
     /// in the native dialog, which says what that gives away (003 FR-017;
-    /// amended 2026-11-04 to contracts/ui-databases.md §7). The passphrase is
+    /// amended 2026-11-04 to 003 contracts/ui-databases.md §7). The passphrase is
     /// checked while the dialog waits, and asked for again when it isn't this
     /// database's.
     pub fn save_passphrase_typed(

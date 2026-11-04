@@ -189,10 +189,6 @@
   padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
 }
 
-.hd-db-row__passphrase {
-  flex: 1;
-}
-
 /* What this computer knows about the selected database (003 FR-040), ruled
    like an index card and lined up with its name. */
 .hd-db-row__details {
@@ -232,22 +228,12 @@
   font-weight: 650;
 }
 
-/* Line the button up with the input, below the field's label. */
-.hd-db-row__unlock > .hd-button {
-  margin-top: calc(var(--text-sm) * 1.5 + var(--space-2));
-}
-
-/* The passphrase is saved on this computer: Open alone, no field above it. */
-.hd-db-row__unlock--saved > .hd-button {
-  margin-top: 0;
-}
-
 .hd-db-row__saved {
   font-size: var(--text-sm);
   color: var(--ink-2);
 }
 
-.hd-db-row__saved-error,
+.hd-db-row__error,
 .hd-db-row__remember {
   margin-top: calc(-1 * var(--space-2));
   padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
@@ -312,17 +298,13 @@
     padding-left: var(--space-4);
   }
 
-  .hd-db-row__saved-error,
+  .hd-db-row__error,
   .hd-db-row__remember {
     padding-left: var(--space-4);
   }
 
   .hd-db-row__details {
     margin-left: var(--space-4);
-  }
-
-  .hd-db-row__unlock > .hd-button {
-    margin-top: 0;
   }
 }
 

@@ -1099,8 +1099,8 @@ pub mod ops {
     const CURRENT_REFUSED: &str = "That isn't the current passphrase.";
 
     /// Changes the open database's passphrase, both typed in the native
-    /// dialog (amended 2026-11-04 to 003 FR-015; contracts/ui-databases.md
-    /// §8). The current passphrase is checked while the dialog waits, and
+    /// dialog (amended 2026-11-04 to 003 FR-015 and 003
+    /// contracts/ui-databases.md §8). The current passphrase is checked while the dialog waits, and
     /// asked for again when it is wrong; the change itself starts once the
     /// dialog has closed, so its progress shows in the page.
     pub fn change_passphrase_typed(

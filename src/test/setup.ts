@@ -33,10 +33,3 @@ if (typeof Element !== "undefined") {
     Element.prototype.scrollIntoView = () => {};
   }
 }
-
-// jsdom has no Web Workers: the passphrase strength hint's zxcvbn runs in
-// this thread instead (a test can mock this module itself to see a failure).
-vi.mock("../components/strength/spawn", async () => {
-  const { InProcessStrengthWorker } = await import("./inProcessStrengthWorker");
-  return { spawnStrengthWorker: () => new InProcessStrengthWorker() as unknown as Worker };
-});

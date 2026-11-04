@@ -49,7 +49,6 @@ const setTitle = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ setTitle }) }));
 
 const PATH = "/home/sam/Documents/HoploDex/Main collection.hoplodex";
-const PASSPHRASE = "correct horse battery staple";
 
 const chooser: ChooserState = {
   recent: [
@@ -124,7 +123,7 @@ describe("SessionProvider (003 US1)", () => {
   it("shows only the chooser while no database is open", async () => {
     renderSession();
 
-    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
   });
 
@@ -133,14 +132,11 @@ describe("SessionProvider (003 US1)", () => {
     vi.mocked(databasesService.openDatabase).mockResolvedValue(status(false));
     renderSession();
 
-    await user.type(
-      await screen.findByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(await screen.findByRole("button", { name: "Open…" }));
 
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
-    expect(databasesService.openDatabase).toHaveBeenCalledWith(PATH, PASSPHRASE);
-    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+    expect(databasesService.openDatabase).toHaveBeenCalledWith(PATH);
+    expect(screen.queryByRole("button", { name: "Open…" })).not.toBeInTheDocument();
   });
 
   it("names the open database in the window's title, and only then (003 contracts/ui-databases.md §4)", async () => {
@@ -149,9 +145,9 @@ describe("SessionProvider (003 US1)", () => {
     setTitle.mockClear();
     renderSession();
 
-    const field = await screen.findByLabelText("Passphrase for “Main collection”");
+    const open = await screen.findByRole("button", { name: "Open…" });
     expect(setTitle).toHaveBeenLastCalledWith("HoploDex");
-    await user.type(field, `${PASSPHRASE}{Enter}`);
+    await user.click(open);
 
     await screen.findByText("Collection shell");
     expect(setTitle).toHaveBeenLastCalledWith("Main collection — HoploDex");
@@ -166,17 +162,13 @@ describe("SessionProvider (003 US1)", () => {
     // Nothing is open to lock, so the dialog has only its close button.
     expect(screen.queryByRole("button", { name: "Lock now" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
-    await user.type(screen.getByLabelText("Passphrase"), PASSPHRASE);
-    await user.type(screen.getByLabelText("Confirm passphrase"), PASSPHRASE);
-    await user.click(screen.getByRole("checkbox", { name: /I have stored this passphrase/ }));
-    await user.click(screen.getByRole("button", { name: "Create database" }));
+    // The passphrase and the acknowledgement are the native dialog's.
+    await user.click(screen.getByRole("button", { name: "Create database…" }));
 
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
     expect(databasesService.createDatabase).toHaveBeenCalledWith({
       folder: "/home/sam/Documents/HoploDex",
       name: "My collection",
-      passphrase: PASSPHRASE,
-      acknowledgedUnrecoverable: true,
     });
   });
 
@@ -316,7 +308,7 @@ describe("SessionProvider (003 US2, FR-010: close, switch and quit)", () => {
     await user.click(screen.getByRole("button", { name: "Close it" }));
 
     expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, "closed");
-    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
@@ -366,7 +358,7 @@ describe("SessionProvider (003 US2, FR-010: close, switch and quit)", () => {
       expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, "switched"),
     );
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
   });
 
   it("saves through the form's own submit, then closes", async () => {
@@ -431,7 +423,7 @@ describe("SessionProvider (003 US2, FR-010: close, switch and quit)", () => {
 
     act(() => sessionClosed({ sessionId: 1, reason: "takenOver", databasePath: SHARED }));
 
-    expect(await screen.findByLabelText("Passphrase for “Shared collection”")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Policy name/)).not.toBeInTheDocument();
   });
@@ -528,7 +520,7 @@ describe("SessionProvider (007: the document viewer, 007 SC-006)", () => {
       const watch = new MutationObserver(() => {
         if (
           document.querySelector('[role="dialog"]') &&
-          screen.queryByLabelText("Passphrase for “Main collection”")
+          document.querySelector(".hd-db-row--selected")
         ) {
           together = true;
         }
@@ -537,7 +529,7 @@ describe("SessionProvider (007: the document viewer, 007 SC-006)", () => {
 
       act(() => sessionClosed({ sessionId: 1, reason, databasePath: PATH }));
 
-      expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
       await Promise.resolve();
       watch.disconnect();
       expect(together).toBe(false);
@@ -576,7 +568,7 @@ describe("SessionProvider (008: the session scope)", () => {
   function RestoreButton() {
     const session = useSession();
     return (
-      <button type="button" onClick={() => void session.restoreBackup("/backup", "pass")}>
+      <button type="button" onClick={() => void session.restoreBackup(5)}>
         Restore it
       </button>
     );
@@ -651,7 +643,7 @@ describe("SessionProvider (008: the session scope)", () => {
     act(() => sessionClosed({ sessionId: 1, reason: "takenOver", databasePath: PATH }));
 
     expect(current().ended).toBe(true);
-    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
   });
 
   it("ends the scope as soon as Lock now has sent lock_database", async () => {
@@ -704,7 +696,7 @@ describe("SessionProvider (008: the session scope)", () => {
 
     await user.click(screen.getByRole("button", { name: "Close it" }));
 
-    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
     expect(current().ended).toBe(true);
   });
 
@@ -721,7 +713,7 @@ describe("SessionProvider (008: the session scope)", () => {
     expect(current().id).toBe(2);
     expect(current().ended).toBe(false);
     expect(screen.getByText("Collection shell")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open…" })).not.toBeInTheDocument();
   });
 
   it("ignores an event that names no session", async () => {
@@ -841,7 +833,7 @@ describe("SessionProvider (008: notifications go with the session)", () => {
 
     // The chooser, with a dialog of its own open.
     toastConsumers.spy.mockClear();
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await screen.findByRole("button", { name: "Open…" });
     await user.click(screen.getByRole("button", { name: "Create a new database…" }));
     await screen.findByRole("dialog");
     expect(toastConsumers.spy).not.toHaveBeenCalled();
@@ -863,10 +855,7 @@ describe("SessionProvider (008: notifications go with the session)", () => {
         appVersion: "1.3.0",
       },
     });
-    await user.type(
-      screen.getByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(screen.getByRole("button", { name: "Open…" }));
     await screen.findByRole("dialog", { name: "Unsaved changes to Collector Floater (edit)" });
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
     expect(toastConsumers.spy).not.toHaveBeenCalled();
@@ -1150,10 +1139,7 @@ describe("SessionProvider (008: resuming pending changes)", () => {
       path: SHARED,
       name: "Shared collection",
     });
-    await user.type(
-      await screen.findByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(await screen.findByRole("button", { name: "Open…" }));
 
     expect(await screen.findByLabelText(/Notes/)).toHaveValue("");
     // Nothing said the form opened, and nothing was discarded or sent back:
@@ -1183,10 +1169,7 @@ describe("SessionProvider (009 US3: upgrading)", () => {
         <button type="button" onClick={() => void session.dismissNote("upgraded")}>
           Dismiss the upgraded note
         </button>
-        <button
-          type="button"
-          onClick={() => void session.restoreBackup("/backup", "pass", undefined, true)}
-        >
+        <button type="button" onClick={() => void session.restoreBackup(5, undefined, true)}>
           Restore and upgrade
         </button>
       </>
@@ -1221,10 +1204,7 @@ describe("SessionProvider (009 US3: upgrading)", () => {
         <Probe />
       </SessionProvider>,
     );
-    await user.type(
-      await screen.findByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(await screen.findByRole("button", { name: "Open…" }));
     return screen.findByRole("alertdialog", {
       name: "Upgrade “Main collection” for HoploDex 0.2.0?",
     });
@@ -1240,7 +1220,7 @@ describe("SessionProvider (009 US3: upgrading)", () => {
       await screen.findByText(/Collection shell, session 4, upgraded for 0\.2\.0/),
     ).toBeInTheDocument();
     expect(databasesService.upgradeDatabase).toHaveBeenCalledExactlyOnceWith(7);
-    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open…" })).not.toBeInTheDocument();
   });
 
   it("leaves the chooser showing when the upgrade is refused", async () => {
@@ -1284,8 +1264,7 @@ describe("SessionProvider (009 US3: upgrading)", () => {
     expect(await screen.findByText(/session 5/)).toBeInTheDocument();
     expect(databasesService.restoreBackup).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ id: 4 }),
-      "/backup",
-      "pass",
+      5,
       undefined,
       true,
     );
@@ -1396,7 +1375,7 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
 
   async function renderChooser() {
     const rendered = renderProvider();
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await screen.findByRole("button", { name: "Open…" });
     return rendered;
   }
 
@@ -1453,15 +1432,12 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
 
     await act(async () => finishStart(closed));
     // The chooser is behind the dialog, which hides it from the accessibility tree.
-    const field = await screen.findByLabelText("Passphrase for “Main collection”", {
-      selector: "input",
-    });
+    const open = await screen.findByRole("button", { name: "Open…", hidden: true });
     expect(aboutDialog()).toBeInTheDocument();
 
     // The next change of phase (an open) closes it. The dialog makes the chooser
     // inert to the pointer, so the form is driven by events.
-    fireEvent.change(field, { target: { value: PASSPHRASE } });
-    fireEvent.submit(field.closest("form")!);
+    fireEvent.submit(open.closest("form")!);
     await waitFor(() => expect(databasesService.openDatabase).toHaveBeenCalled());
     await act(async () => finishOpen(status(false)));
 
@@ -1491,13 +1467,10 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
     const { unmount } = await renderChooser();
     expect(sessionService.onAboutRequested).toHaveBeenCalledTimes(1);
 
-    await user.type(
-      screen.getByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(screen.getByRole("button", { name: "Open…" }));
     await screen.findByText("Collection shell");
     await user.click(screen.getByRole("button", { name: "Close it" }));
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await screen.findByRole("button", { name: "Open…" });
 
     expect(sessionService.onAboutRequested).toHaveBeenCalledTimes(1);
     expect(unsubscribeAbout).not.toHaveBeenCalled();
@@ -1514,10 +1487,7 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
       }),
     );
     await renderChooser();
-    await user.type(
-      screen.getByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(screen.getByRole("button", { name: "Open…" }));
     await waitFor(() => expect(databasesService.openDatabase).toHaveBeenCalled());
     await user.click(screen.getByRole("button", { name: "About HoploDex" }));
     await findAbout();
@@ -1543,7 +1513,7 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
 
     act(() => sessionClosed({ sessionId: 1, reason: "lockedByUser", databasePath: PATH }));
-    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
     expect(aboutDialog()).not.toBeInTheDocument();
   });
 
@@ -1565,7 +1535,7 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
 
     act(() => sessionClosed({ sessionId: 1, reason: "takenOver", databasePath: PATH }));
 
-    expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
     expect(aboutDialog()).not.toBeInTheDocument();
   });
 
@@ -1579,7 +1549,7 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
       await act(async () => void (await session.closeDatabase(reason)));
 
       expect(sessionService.closeDatabase).toHaveBeenCalledWith(SCOPE, reason);
-      expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
       expect(aboutDialog()).not.toBeInTheDocument();
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     },
@@ -1591,7 +1561,7 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
     act(() => session.showAbout());
     await findAbout();
     await act(async () => void (await session.closeDatabase("closed")));
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await screen.findByRole("button", { name: "Open…" });
 
     await user.click(screen.getByRole("button", { name: "About HoploDex" }));
 

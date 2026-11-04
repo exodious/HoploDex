@@ -334,7 +334,7 @@ describe("PendingChangesDialog (003 FR-039, contracts/ui-databases.md §13)", ()
       );
       expect(sessionService.resolvePendingChanges).not.toHaveBeenCalled();
       // The chooser, with this database selected, and the changes kept.
-      expect(await screen.findByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 

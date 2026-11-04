@@ -316,16 +316,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const restoreBackup = useCallback(
-    async (backupPath: string, passphrase: string, databasePath?: string, upgrade?: true) => {
+    async (checkId: number, databasePath?: string, upgrade?: true) => {
       // The restored database is new to the collection views: they remount.
       opened(
-        await databasesService.restoreBackup(
-          scopeRef.current,
-          backupPath,
-          passphrase,
-          databasePath,
-          upgrade,
-        ),
+        await databasesService.restoreBackup(scopeRef.current, checkId, databasePath, upgrade),
       );
     },
     [opened],

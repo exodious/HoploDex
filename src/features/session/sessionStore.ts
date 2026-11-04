@@ -10,16 +10,18 @@ import type { CreateDatabaseInput, DatabaseStatus, NoteKind } from "../databases
 export interface SessionState {
   /** The open database, or `null` while the chooser shows. */
   status: DatabaseStatus | null;
-  /** Opens the database at `path` with the typed passphrase, or with the
-   * one saved on this computer when `passphrase` is `null`; rejects with the
-   * command's `CommandFailure` and leaves the chooser showing. */
-  openDatabase: (path: string, passphrase: string | null, options?: OpenOptions) => Promise<void>;
+  /** Opens the database at `path` with the passphrase saved on this
+   * computer, or with one the backend asks for in the native passphrase
+   * dialog; rejects with the command's `CommandFailure` (`PASSPHRASE_CANCELLED`
+   * when the dialog was cancelled) and leaves the chooser showing. */
+  openDatabase: (path: string, options?: OpenOptions) => Promise<void>;
   /** Upgrades the database waiting under `awaitingId` (`UPGRADE_NEEDED`) and
    * opens it, saving its backup in `backupFolder` when given instead of the
    * backup location (009 FR-011, FR-012). Rejects with the command's
    * `CommandFailure` and leaves the chooser showing. */
   upgradeDatabase: (awaitingId: number, backupFolder?: string) => Promise<void>;
-  /** Creates a database and opens it. */
+  /** Creates a database, asking for its passphrase in the native dialog, and
+   * opens it. */
   createDatabase: (input: CreateDatabaseInput) => Promise<void>;
   /** Closes the open database, or switches away from it, asking first about
    * a form with unsaved input (003 FR-010). */
@@ -30,15 +32,11 @@ export interface SessionState {
   refreshStatus: () => Promise<void>;
   dismissNote: (note: NoteKind) => Promise<void>;
   /** Restores the open database, or the damaged one at `databasePath`, from
-   * a backup; the restored database is then open (003 FR-028). `upgrade`
-   * (only ever `true`) upgrades a backup in an older layout as it is restored
+   * the backup `checkBackup` checked under `checkId`, with the passphrase it
+   * kept; the restored database is then open (003 FR-028). `upgrade` (only
+   * ever `true`) upgrades a backup in an older layout as it is restored
    * (009 FR-019). Rejects with the command's `CommandFailure`. */
-  restoreBackup: (
-    backupPath: string,
-    passphrase: string,
-    databasePath?: string,
-    upgrade?: true,
-  ) => Promise<void>;
+  restoreBackup: (checkId: number, databasePath?: string, upgrade?: true) => Promise<void>;
   /** The backup settings should open once a database is open: asked for from
    * a failed-backup notice in the chooser (003 contracts/ui-databases.md §1). */
   settingsRequested: boolean;

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { flushSync } from "react-dom";
 import { Button } from "../../components";
-import { CLEAR_PASSPHRASE_FIELDS } from "../../components/PassphraseField";
 import { CommandFailure, listen } from "../../services/tauriClient";
 import { BrandMark } from "../app/BrandMark";
 import { ThemeToggle } from "../app/ThemeToggle";
@@ -17,7 +16,6 @@ import { RecentDatabaseRow } from "./RecentDatabaseRow";
 import { CataloguePlate } from "./plate/CataloguePlate";
 import { RestoreBackupDialog } from "./RestoreBackupDialog";
 import type { ChooserRow, OpenElsewhere } from "./RecentDatabaseRow";
-import { TakeOverConfirm } from "./TakeOverConfirm";
 import type {
   ChooserNotice,
   ChooserState,
@@ -29,6 +27,11 @@ import { UpgradeFolderDialog, UpgradeProgressDialog, UpgradeQuestion } from "./U
 import { BACKUP_OUT_OF_REACH_REASON } from "./outOfReach";
 import "../app/AppShell.css";
 import "./databases.css";
+
+/** Sent when the screen locks or the computer is going to sleep (003 FR-007).
+ * The backend has already taken any passphrase dialog down and dropped a
+ * database waiting for its upgrade; the chooser closes the question. */
+const CLEAR_PASSPHRASE_FIELDS = "system:clear-passphrase-fields";
 
 const WELCOME =
   "HoploDex keeps your collection in an encrypted database file that only your passphrase opens.";
@@ -49,7 +52,7 @@ function openFailureText(databaseName: string, error: unknown): string {
   switch (error.code) {
     case "PASSPHRASE_INCORRECT":
       if (savedPassphraseFailed(error))
-        return `The saved passphrase no longer opens ${name}. Enter its passphrase; the saved copy will be updated.`;
+        return `The saved passphrase no longer opens ${name}. Choose Open… to enter its passphrase; the saved copy will be updated.`;
       return `That passphrase didn't open ${name}. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.`;
     case "DATABASE_IN_USE":
       return `${name} is open in another copy of HoploDex, on this computer or another one. Close it there first.`;
@@ -243,7 +246,6 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   const [restoring, setRestoring] = useState<ChooserRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [announcement, setAnnouncement] = useState("");
-  const [takeOver, setTakeOver] = useState<{ row: ChooserRow; machineName: string } | null>(null);
   /** Rows whose saved passphrase no longer opens them, which ask for it. */
   const [savedFailed, setSavedFailed] = useState<ReadonlySet<string>>(new Set());
   /** The database waiting for its upgrade, if one is (009 FR-010). */
@@ -341,13 +343,13 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     }
   }
 
-  /** Opens `row` with the typed passphrase, or the saved one when it is
-   * `null`. */
+  /** Opens `row` with the saved passphrase, or with one the native dialog
+   * asks for. Cancelling that dialog leaves the row as it was. */
   async function openRow(
     row: ChooserRow,
-    passphrase: string | null,
-    options: { remember?: boolean; takingOver?: boolean } = {},
+    options: { useSaved?: boolean; remember?: boolean; takingOver?: boolean } = {},
   ) {
+    const before = failure;
     setOpening(row.path);
     setFailure(null);
     setAnnouncement(`Opening “${row.name}”…`);
@@ -355,12 +357,14 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     let waitingForUpgrade = false;
     try {
       // On success the session replaces this screen with the collection.
-      if (options.takingOver) await session.openDatabase(row.path, passphrase, { takeOver: true });
-      else if (options.remember)
-        await session.openDatabase(row.path, passphrase, { rememberPassphrase: true });
-      else await session.openDatabase(row.path, passphrase);
+      if (options.takingOver) await session.openDatabase(row.path, { takeOver: true });
+      else if (options.useSaved) await session.openDatabase(row.path, { useSavedPassphrase: true });
+      else if (options.remember) await session.openDatabase(row.path, { rememberPassphrase: true });
+      else await session.openDatabase(row.path);
     } catch (error) {
-      if (error instanceof CommandFailure && error.code === "UPGRADE_NEEDED") {
+      if (error instanceof CommandFailure && error.code === "PASSPHRASE_CANCELLED") {
+        setFailure(before);
+      } else if (error instanceof CommandFailure && error.code === "UPGRADE_NEEDED") {
         const { awaitingId, version, backupFolder } =
           error.details as unknown as UpgradeNeededDetails;
         waitingForUpgrade = true;
@@ -540,10 +544,6 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     select(chosen);
   }
 
-  function confirmTakeOver(passphrase: string) {
-    if (takeOver) void openRow(takeOver.row, passphrase, { takingOver: true });
-  }
-
   const firstRun = state !== null && rows.length === 0;
   const actionClass = firstRun ? "hd-chooser__action--large" : undefined;
 
@@ -640,16 +640,11 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                           savedFailed={savedFailed.has(row.path)}
                           keyringAvailable={state.keyringAvailable}
                           onSelect={() => select(row.path)}
-                          onOpen={(passphrase, remember) =>
-                            void openRow(row, passphrase, { remember })
-                          }
+                          onOpen={(useSaved, remember) => void openRow(row, { useSaved, remember })}
                           onRemove={() => void removeRow(row)}
                           onLocate={() => void locateRow(row)}
                           onGoBack={() => setFailure(null)}
-                          onTakeOver={() =>
-                            failed?.kind === "elsewhere" &&
-                            setTakeOver({ row, machineName: failed.elsewhere.machineName })
-                          }
+                          onTakeOver={() => void openRow(row, { takingOver: true })}
                           onRestore={
                             failed?.kind === "message" && failed.restore
                               ? () => setRestoring(row)
@@ -726,13 +721,6 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                     )}
                   </>
                 )}
-                <TakeOverConfirm
-                  target={
-                    takeOver && { name: takeOver.row.name, machineName: takeOver.machineName }
-                  }
-                  onCancel={() => setTakeOver(null)}
-                  onConfirm={confirmTakeOver}
-                />
               </>
             )}
           </main>

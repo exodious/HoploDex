@@ -1,15 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import {
-  Button,
-  Checkbox,
-  Icon,
-  Menu,
-  MenuItem,
-  PassphraseField,
-  placeFocus,
-} from "../../components";
-import type { PassphraseFieldHandle } from "../../components";
+import { Button, Checkbox, Icon, Menu, MenuItem, placeFocus } from "../../components";
 import { formatDateTime, formatRecentDay, formatRecentMoment } from "../../lib/dates";
 import type { BackupSummary } from "./types";
 import { folderOf, middleTruncate } from "./paths";
@@ -52,7 +43,7 @@ export interface RecentDatabaseRowProps {
   disabled: boolean;
   /** This row is opening. */
   opening: boolean;
-  /** Why the last open failed, shown in the field's error slot. */
+  /** Why the last open failed, shown below **Open…**. */
   error?: string;
   /** Why an unavailable row can't be opened. */
   unavailableNote?: string;
@@ -66,9 +57,10 @@ export interface RecentDatabaseRowProps {
    * damaged, or the passphrase didn't open it, and it has backups (003 US3-6). */
   onRestore?: () => void;
   onSelect: () => void;
-  /** Opens with the typed passphrase, remembered on this computer when
-   * `remember` is set, or with the saved one when `passphrase` is `null`. */
-  onOpen: (passphrase: string | null, remember: boolean) => void;
+  /** Opens with the saved passphrase when `useSaved` is set, or else with
+   * one the native dialog asks for, remembered on this computer when
+   * `remember` is set. */
+  onOpen: (useSaved: boolean, remember: boolean) => void;
   onRemove: () => void;
   onLocate: () => void;
   onGoBack: () => void;
@@ -76,9 +68,9 @@ export interface RecentDatabaseRowProps {
 }
 
 /** One database in the chooser: its name and folder and, when selected, what
- * this computer knows about it, its passphrase and **Open** (only **Open**
- * when the passphrase is saved), or what stopped it opening
- * (003 contracts/ui-databases.md §1). */
+ * this computer knows about it and **Open…**, which asks for the passphrase
+ * in the native dialog (**Open** when the passphrase is saved), or what
+ * stopped it opening (003 contracts/ui-databases.md §1, amended 2026-11-04). */
 export function RecentDatabaseRow({
   entry,
   selected,
@@ -98,21 +90,16 @@ export function RecentDatabaseRow({
   onRestore,
 }: RecentDatabaseRowProps) {
   const folder = folderOf(entry.path);
-  const field = useRef<PassphraseFieldHandle>(null);
   const openButton = useRef<HTMLButtonElement>(null);
   /** Opens with the saved passphrase, with no prompt. */
   const usesSaved = entry.passphraseSaved && !savedFailed;
   const [remember, setRemember] = useState(false);
   const [confirmingRemember, setConfirmingRemember] = useState(false);
 
-  // Back to the field, or to Open, for another try once a failed open
-  // returns.
+  // Back to Open for another try once a failed or cancelled open returns.
   const wasOpening = useRef(opening);
   useEffect(() => {
-    if (wasOpening.current && !opening) {
-      if (field.current) field.current.focus();
-      else placeFocus(openButton.current);
-    }
+    if (wasOpening.current && !opening) placeFocus(openButton.current);
     wasOpening.current = opening;
   }, [opening]);
 
@@ -188,13 +175,7 @@ export function RecentDatabaseRow({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (usesSaved) {
-      onOpen(null, false);
-      return;
-    }
-    const passphrase = field.current?.read() ?? "";
-    field.current?.reset();
-    onOpen(passphrase, remember);
+    onOpen(usesSaved, usesSaved ? false : remember);
   }
 
   return (
@@ -224,36 +205,13 @@ export function RecentDatabaseRow({
       ) : (
         <>
           {entry.details && <Details details={entry.details} />}
-          <form
-            className={
-              usesSaved ? "hd-db-row__unlock hd-db-row__unlock--saved" : "hd-db-row__unlock"
-            }
-            onSubmit={handleSubmit}
-            noValidate
-          >
-            {!usesSaved && (
-              <PassphraseField
-                ref={field}
-                label={`Passphrase for “${entry.name}”`}
-                autoComplete="current-password"
-                autoFocus
-                disabled={opening}
-                error={error}
-                fieldClassName="hd-db-row__passphrase"
-              />
-            )}
-            <Button
-              ref={openButton}
-              type="submit"
-              variant="primary"
-              pending={opening}
-              autoFocus={usesSaved}
-            >
-              {opening ? "Opening…" : "Open"}
+          <form className="hd-db-row__unlock" onSubmit={handleSubmit} noValidate>
+            <Button ref={openButton} type="submit" variant="primary" pending={opening} autoFocus>
+              {opening ? "Opening…" : usesSaved ? "Open" : "Open…"}
             </Button>
           </form>
-          {usesSaved && error && (
-            <p className="hd-field__error hd-db-row__saved-error" role="alert">
+          {error && (
+            <p className="hd-field__error hd-db-row__error" role="alert">
               {error}
             </p>
           )}

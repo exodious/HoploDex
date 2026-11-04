@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { CLEAR_PASSPHRASE_FIELDS } from "../../components/PassphraseField";
 import { formatBytes } from "../../lib/bytes";
 import { formatDateTime, formatRecentDay, formatRecentMoment } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
@@ -82,6 +81,30 @@ function renderChooser(session: Partial<SessionState> = {}, selectPath?: string)
   return value;
 }
 
+/** Sent when the screen locks or the computer is going to sleep. */
+const CLEAR_PASSPHRASE_FIELDS = "system:clear-passphrase-fields";
+
+/** The selected row of `name`, or `null`. */
+function selectedRow(name: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>(".hd-db-row--selected")].find(
+      (row) => row.querySelector(".hd-db-row__name")?.textContent === name,
+    ) ?? null
+  );
+}
+
+/** The selected row's Open… (Open with a saved passphrase, Opening… while it
+ * opens). The passphrase is asked for in the native dialog the open shows,
+ * never in the page (amended 2026-11-04 to 003 contracts/ui-databases.md §1). */
+function openOf(name: string): HTMLElement {
+  const row = selectedRow(name);
+  if (!row) throw new Error(`“${name}” isn't selected`);
+  // `hidden`: a modal question over the chooser hides the row from the tree.
+  return within(row).getByRole("button", { name: /^(Open…|Open|Opening…)$/, hidden: true });
+}
+
+const findOpen = (name: string) => waitFor(() => openOf(name));
+
 describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
   beforeEach(() => {
     vi.mocked(databasesService.getChooserState).mockReset();
@@ -106,13 +129,15 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
     expect(screen.queryByRole("list", { name: "Recent databases" })).not.toBeInTheDocument();
   });
 
-  it("selects the most recent database and focuses its passphrase field", async () => {
+  it("selects the most recent database and focuses its Open…", async () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
     renderChooser();
 
-    const field = await screen.findByLabelText("Passphrase for “Main collection”");
-    await waitFor(() => expect(field).toHaveFocus());
-    expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument();
+    const open = await findOpen("Main collection");
+    await waitFor(() => expect(open).toHaveFocus());
+    expect(open).toHaveTextContent("Open…");
+    // The passphrase is typed in the native dialog, never in the page.
+    expect(screen.queryByLabelText(/passphrase/i)).not.toBeInTheDocument();
 
     const list = screen.getByRole("list", { name: "Recent databases" });
     const rows = within(list).getAllByRole("listitem");
@@ -126,16 +151,46 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
     expect(within(other).getByTitle("/mnt/nas/family")).toBeInTheDocument();
   });
 
-  it("opens the selected database with the typed passphrase, then clears the field", async () => {
+  it("opens the selected database, whose passphrase the native dialog asks for", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
     const session = renderChooser();
 
-    const field = await screen.findByLabelText("Passphrase for “Main collection”");
-    await user.type(field, "correct horse battery staple{Enter}");
+    await user.click(await findOpen("Main collection"));
 
-    expect(session.openDatabase).toHaveBeenCalledWith(main.path, "correct horse battery staple");
-    expect(field).toHaveValue("");
+    expect(session.openDatabase).toHaveBeenCalledExactlyOnceWith(main.path);
+  });
+
+  it("opens with Enter on the focused Open… (One Enter rule)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
+    const session = renderChooser();
+
+    await waitFor(async () => expect(await findOpen("Main collection")).toHaveFocus());
+    await user.keyboard("{Enter}");
+
+    expect(session.openDatabase).toHaveBeenCalledExactlyOnceWith(main.path);
+  });
+
+  it("goes back to Open… with nothing said when the passphrase dialog is cancelled", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
+    renderChooser({
+      openDatabase: vi
+        .fn()
+        .mockRejectedValue(
+          new CommandFailure({
+            code: "PASSPHRASE_CANCELLED",
+            message: "No passphrase was entered.",
+          }),
+        ),
+    });
+
+    await user.click(await findOpen("Main collection"));
+
+    await waitFor(() => expect(openOf("Main collection")).toHaveTextContent("Open…"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await waitFor(() => expect(openOf("Main collection")).toHaveFocus());
   });
 
   it("selecting another row asks for that database's passphrase", async () => {
@@ -147,13 +202,13 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
       await screen.findByRole("button", { name: "Shared collection, /mnt/nas/family" }),
     );
 
-    const field = screen.getByLabelText("Passphrase for “Shared collection”");
-    await waitFor(() => expect(field).toHaveFocus());
-    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+    const open = openOf("Shared collection");
+    await waitFor(() => expect(open).toHaveFocus());
+    expect(selectedRow("Main collection")).toBeNull();
   });
 
   // 003 US1-6
-  it("says a wrong passphrase didn't open it and keeps the field for another try (003 FR-006)", async () => {
+  it("says a wrong passphrase didn't open it once the dialog is cancelled, and Open… stays for another try (003 FR-006)", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
     const session = renderChooser({
@@ -166,20 +221,13 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
       ),
     });
 
-    const field = await screen.findByLabelText("Passphrase for “Main collection”");
-    await user.type(field, "not the right one");
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(await findOpen("Main collection"));
 
-    expect(
-      await screen.findByText(
-        "That passphrase didn't open “Main collection”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That passphrase didn't open “Main collection”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
+    );
     expect(session.openDatabase).toHaveBeenCalledTimes(1);
-    const again = screen.getByLabelText("Passphrase for “Main collection”");
-    expect(again).toBeEnabled();
-    expect(again).toHaveValue("");
-    expect(again).toHaveAccessibleDescription(/That passphrase didn't open “Main collection”/);
+    expect(openOf("Main collection")).toBeEnabled();
   });
 
   it("shows the opening state at once, before the open returns (003 SC-003)", async () => {
@@ -190,13 +238,11 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
       openDatabase: vi.fn(() => new Promise<void>((resolve) => (finish = resolve))),
     });
 
-    const field = await screen.findByLabelText("Passphrase for “Main collection”");
-    await user.type(field, "correct horse battery staple");
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(await findOpen("Main collection"));
 
     const opening = screen.getByRole("button", { name: "Opening…" });
     expect(opening).toHaveAttribute("aria-busy", "true");
-    expect(field).toBeDisabled();
+    expect(opening).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Shared collection, /mnt/nas/family" }),
     ).toBeDisabled();
@@ -210,7 +256,7 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
     renderChooser();
 
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await findOpen("Main collection");
     expect(screen.queryByRole("navigation", { name: "Sections" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Open a database" })).toBeInTheDocument();
   });
@@ -228,7 +274,6 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
 });
 
 describe("DatabaseChooser (003 US2)", () => {
-  const PASSPHRASE = "correct horse battery staple";
 
   beforeEach(() => {
     vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
@@ -246,10 +291,7 @@ describe("DatabaseChooser (003 US2)", () => {
   }
 
   async function openMain(user: ReturnType<typeof userEvent.setup>) {
-    await user.type(
-      await screen.findByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(await findOpen("Main collection"));
   }
 
   // 003 US2-3
@@ -270,8 +312,8 @@ describe("DatabaseChooser (003 US2)", () => {
   it("selects the database just closed", async () => {
     renderChooser({}, shared.path);
 
-    expect(await screen.findByLabelText("Passphrase for “Shared collection”")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+    expect(await findOpen("Shared collection")).toBeInTheDocument();
+    expect(selectedRow("Main collection")).toBeNull();
   });
 
   it("dims a database whose file is missing and offers Locate… and Remove from list", async () => {
@@ -313,7 +355,7 @@ describe("DatabaseChooser (003 US2)", () => {
 
   // 011 US1-8, 011 FR-004, contracts/tauri-commands.md "Commands that check reach": the
   // open-failure line shows the backend's message (its `default` case).
-  it("shows an open refused as out of reach in the open-failure line, and the passphrase stays", async () => {
+  it("shows an open refused as out of reach in the open-failure line, and Open… stays", async () => {
     const user = userEvent.setup();
     const message =
       "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /home/sam/Documents/HoploDex/Main collection.hoplodex. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /home/sam/Documents/HoploDex by running: flatpak override --user --filesystem=/home/sam/Documents/HoploDex io.github.exodious.HoploDex and then restarting HoploDex.";
@@ -333,10 +375,8 @@ describe("DatabaseChooser (003 US2)", () => {
 
     await openMain(user);
 
-    expect(await screen.findByText(message)).toBeInTheDocument();
-    const field = screen.getByLabelText("Passphrase for “Main collection”");
-    expect(field).toBeEnabled();
-    expect(field).toHaveAccessibleDescription(message);
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(openOf("Main collection")).toBeEnabled();
   });
 
   it("locating a missing database points its entry at the file found and selects it", async () => {
@@ -352,7 +392,7 @@ describe("DatabaseChooser (003 US2)", () => {
     await user.click(await screen.findByRole("button", { name: "Locate…" }));
 
     expect(databasesService.locateDatabase).toHaveBeenCalledWith(shared.path, found);
-    const field = await screen.findByLabelText("Passphrase for “Shared collection”");
+    const field = await findOpen("Shared collection");
     await waitFor(() => expect(field).toHaveFocus());
     expect(screen.queryByText("Not found at this location")).not.toBeInTheDocument();
   });
@@ -384,7 +424,7 @@ describe("DatabaseChooser (003 US2)", () => {
     expect(await within(row).findByText(message)).toBeInTheDocument();
     expect(row).toHaveClass("hd-db-row--unavailable");
     expect(within(row).getByRole("button", { name: "Locate…" })).toBeEnabled();
-    expect(screen.queryByLabelText("Passphrase for “Shared collection”")).not.toBeInTheDocument();
+    expect(selectedRow("Shared collection")).toBeNull();
   });
 
   // 011 T098: the row is selected at the path the backend located, which may not be the one picked.
@@ -401,7 +441,7 @@ describe("DatabaseChooser (003 US2)", () => {
 
     await user.click(await screen.findByRole("button", { name: "Locate…" }));
 
-    const field = await screen.findByLabelText("Passphrase for “Shared collection”");
+    const field = await findOpen("Shared collection");
     await waitFor(() => expect(field).toHaveFocus());
     const row = field.closest("li")!;
     expect(row).toHaveAttribute("aria-current", "true");
@@ -436,7 +476,7 @@ describe("DatabaseChooser (003 US2)", () => {
 
     expect(databasesService.removeRecentDatabase).toHaveBeenCalledWith(shared.path);
     await waitFor(() => expect(screen.queryByText("Shared collection")).not.toBeInTheDocument());
-    expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(openOf("Main collection")).toBeInTheDocument();
   });
 
   it("opens another database file chosen with the native dialog (003 US2-2)", async () => {
@@ -457,12 +497,12 @@ describe("DatabaseChooser (003 US2)", () => {
         ],
       }),
     );
-    const field = await screen.findByLabelText("Passphrase for “Club armory”");
+    const field = await findOpen("Club armory");
     await waitFor(() => expect(field).toHaveFocus());
     // Nothing is known about a file this computer hasn't opened (003 FR-040).
     expect(screen.queryByText("Last opened here")).not.toBeInTheDocument();
-    await user.type(field, `${PASSPHRASE}{Enter}`);
-    expect(session.openDatabase).toHaveBeenCalledWith(other, PASSPHRASE);
+    await user.click(field);
+    expect(session.openDatabase).toHaveBeenCalledWith(other);
   });
 
   it("a cancelled file dialog changes nothing", async () => {
@@ -473,7 +513,7 @@ describe("DatabaseChooser (003 US2)", () => {
     await user.click(await screen.findByRole("button", { name: "Open another database file…" }));
 
     await waitFor(() => expect(openFileDialog).toHaveBeenCalled());
-    expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeInTheDocument();
+    expect(openOf("Main collection")).toBeInTheDocument();
     const list = screen.getByRole("list", { name: "Recent databases" });
     expect(within(list).getAllByRole("listitem")).toHaveLength(2);
   });
@@ -496,16 +536,14 @@ describe("DatabaseChooser (003 US2)", () => {
       "DISK_FULL",
       "The disk is full, so HoploDex couldn't open “Main collection”. Free some space on the drive that holds it, then try again. The file has not been changed.",
     ],
-  ])("explains %s below the passphrase, which stays for another try", async (code, text) => {
+  ])("explains %s below Open…, which stays for another try", async (code, text) => {
     const user = userEvent.setup();
     renderChooser({ openDatabase: failing(code) });
 
     await openMain(user);
 
-    expect(await screen.findByText(text)).toBeInTheDocument();
-    const field = screen.getByLabelText("Passphrase for “Main collection”");
-    expect(field).toBeEnabled();
-    expect(field).toHaveAccessibleDescription(text);
+    expect(await screen.findByRole("alert")).toHaveTextContent(text);
+    expect(openOf("Main collection")).toBeEnabled();
   });
 
   it("says a database no longer at its location can be located or removed", async () => {
@@ -552,12 +590,14 @@ describe("DatabaseChooser (003 US2)", () => {
 
     await user.click(await screen.findByRole("button", { name: "Go back" }));
 
-    const field = await screen.findByLabelText("Passphrase for “Main collection”");
+    const field = await findOpen("Main collection");
     await waitFor(() => expect(field).toHaveFocus());
     expect(screen.queryByRole("button", { name: "Take over…" })).not.toBeInTheDocument();
   });
 
-  it("takes over only once the passphrase is typed again in the destructive confirmation", async () => {
+  // 003 FR-032: typing the passphrase again in the native dialog the take-over
+  // shows is its confirmation, as the dialog says (amended 2026-11-04).
+  it("takes over through the native dialog, showing the opening state meanwhile", async () => {
     const user = userEvent.setup();
     let finish: () => void = () => {};
     const openDatabase = vi
@@ -574,23 +614,9 @@ describe("DatabaseChooser (003 US2)", () => {
     await openMain(user);
 
     await user.click(await screen.findByRole("button", { name: "Take over…" }));
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Take over “Main collection”?",
-    });
-    expect(confirm).toHaveTextContent(
-      "Only do this if Workshop PC no longer has “Main collection” open, or if it crashed. If it still has it open, or its latest changes haven't synced here yet, those changes can be lost.",
-    );
-    const takeOver = within(confirm).getByRole("button", { name: "Take over" });
-    expect(takeOver).toHaveClass("hd-button--danger");
-    // Nothing from the refused open was kept (003 FR-007): it is asked for again.
-    const field = within(confirm).getByLabelText("Passphrase for “Main collection”");
-    expect(field).toHaveValue("");
-    await waitFor(() => expect(field).toHaveFocus());
-    await user.type(field, PASSPHRASE);
-    await user.click(takeOver);
 
-    expect(openDatabase).toHaveBeenLastCalledWith(main.path, PASSPHRASE, { takeOver: true });
-    expect(field).toHaveValue("");
+    expect(openDatabase).toHaveBeenLastCalledWith(main.path, { takeOver: true });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     const opening = await screen.findByRole("button", { name: "Opening…" });
     expect(opening).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("status")).toHaveTextContent("Opening “Main collection”…");
@@ -598,55 +624,7 @@ describe("DatabaseChooser (003 US2)", () => {
     await waitFor(() => expect(screen.getByRole("status")).not.toHaveTextContent("Opening"));
   });
 
-  // Issue #44: Enter in the passphrase field confirms, like the button.
-  it("takes over when Enter is pressed in the passphrase field", async () => {
-    const user = userEvent.setup();
-    const openDatabase = vi
-      .fn()
-      .mockRejectedValueOnce(
-        new CommandFailure({
-          code: "DATABASE_OPEN_ELSEWHERE",
-          message: "open elsewhere",
-          details: { machineName: "Workshop PC", since },
-        }),
-      )
-      .mockResolvedValue(undefined);
-    renderChooser({ openDatabase });
-    await openMain(user);
-    await user.click(await screen.findByRole("button", { name: "Take over…" }));
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Take over “Main collection”?",
-    });
-    const field = within(confirm).getByLabelText("Passphrase for “Main collection”");
-    await waitFor(() => expect(field).toHaveFocus());
-
-    await user.type(field, `${PASSPHRASE}{Enter}`);
-
-    expect(openDatabase).toHaveBeenLastCalledWith(main.path, PASSPHRASE, { takeOver: true });
-  });
-
-  it("won't take over without the passphrase", async () => {
-    const user = userEvent.setup();
-    const openDatabase = failing("DATABASE_OPEN_ELSEWHERE", { machineName: "Workshop PC", since });
-    renderChooser({ openDatabase });
-    await openMain(user);
-    await user.click(await screen.findByRole("button", { name: "Take over…" }));
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Take over “Main collection”?",
-    });
-
-    await user.click(within(confirm).getByRole("button", { name: "Take over" }));
-
-    expect(
-      await within(confirm).findByText("Enter the passphrase to take it over."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("alertdialog", { name: "Take over “Main collection”?" }),
-    ).toBeInTheDocument();
-    expect(openDatabase).toHaveBeenCalledTimes(1);
-  });
-
-  it("a wrong passphrase in the take-over is refused like any other", async () => {
+  it("a take-over whose dialog ends in a wrong passphrase is refused like any other", async () => {
     const user = userEvent.setup();
     const openDatabase = vi
       .fn()
@@ -661,38 +639,35 @@ describe("DatabaseChooser (003 US2)", () => {
     renderChooser({ openDatabase });
     await openMain(user);
     await user.click(await screen.findByRole("button", { name: "Take over…" }));
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Take over “Main collection”?",
-    });
 
-    await user.type(
-      within(confirm).getByLabelText("Passphrase for “Main collection”"),
-      "typo typo typo",
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That passphrase didn't open “Main collection”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
     );
-    await user.click(within(confirm).getByRole("button", { name: "Take over" }));
-
-    expect(
-      await screen.findByText(
-        "That passphrase didn't open “Main collection”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeEnabled();
+    expect(openOf("Main collection")).toBeEnabled();
   });
 
-  it("cancelling the take-over leaves the choice open", async () => {
+  it("cancelling the take-over's dialog leaves the choice open", async () => {
     const user = userEvent.setup();
-    const openDatabase = failing("DATABASE_OPEN_ELSEWHERE", { machineName: "Workshop PC", since });
+    const openDatabase = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CommandFailure({
+          code: "DATABASE_OPEN_ELSEWHERE",
+          message: "open elsewhere",
+          details: { machineName: "Workshop PC", since },
+        }),
+      )
+      .mockRejectedValueOnce(
+        new CommandFailure({ code: "PASSPHRASE_CANCELLED", message: "No passphrase was entered." }),
+      );
     renderChooser({ openDatabase });
     await openMain(user);
 
     await user.click(await screen.findByRole("button", { name: "Take over…" }));
-    await user.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Cancel" }),
-    );
 
-    expect(openDatabase).toHaveBeenCalledTimes(1);
+    expect(openDatabase).toHaveBeenCalledTimes(2);
     expect(await screen.findByRole("button", { name: "Take over…" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("is marked as open on Workshop PC");
   });
 
   it.each([
@@ -730,7 +705,7 @@ describe("DatabaseChooser (003 US2)", () => {
     );
     renderChooser();
 
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await findOpen("Main collection");
     expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
   });
 });
@@ -751,8 +726,7 @@ describe("DatabaseChooser (003 US3)", () => {
   async function openFailing(failure: CommandFailure) {
     const user = userEvent.setup();
     renderChooser({ openDatabase: vi.fn().mockRejectedValue(failure) });
-    await user.type(await screen.findByLabelText("Passphrase for “Main collection”"), "a guess");
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    await user.click(await findOpen("Main collection"));
     return user;
   }
 
@@ -907,13 +881,8 @@ describe("DatabaseChooser (003 US5)", () => {
     await user.click(await screen.findByRole("button", { name: "Remember passphrase" }));
     expect(remember).toBeChecked();
 
-    await user.type(
-      screen.getByLabelText("Passphrase for “Main collection”"),
-      "correct horse battery staple{Enter}",
-    );
-    expect(session.openDatabase).toHaveBeenCalledWith(main.path, "correct horse battery staple", {
-      rememberPassphrase: true,
-    });
+    await user.click(openOf("Main collection"));
+    expect(session.openDatabase).toHaveBeenCalledWith(main.path, { rememberPassphrase: true });
   });
 
   it("opens a database whose passphrase is saved with Open alone", async () => {
@@ -930,13 +899,13 @@ describe("DatabaseChooser (003 US5)", () => {
     );
     expect(rows[0]).toHaveTextContent("Opens without a passphrase on this computer");
     expect(rows[1]).not.toHaveTextContent("Opens without a passphrase on this computer");
-    expect(screen.queryByLabelText("Passphrase for “Main collection”")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open…" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("checkbox", { name: "Remember on this computer" }),
     ).not.toBeInTheDocument();
 
     await user.click(open);
-    expect(session.openDatabase).toHaveBeenCalledWith(saved.path, null);
+    expect(session.openDatabase).toHaveBeenCalledWith(saved.path, { useSavedPassphrase: true });
   });
 
   it("asks for the passphrase when the saved one no longer opens it (003 US5-5)", async () => {
@@ -959,15 +928,13 @@ describe("DatabaseChooser (003 US5)", () => {
 
     await user.click(await screen.findByRole("button", { name: "Open" }));
 
-    const field = await screen.findByLabelText("Passphrase for “Main collection”");
-    expect(field).toHaveAccessibleDescription(
-      expect.stringContaining(
-        "The saved passphrase no longer opens “Main collection”. Enter its passphrase; the saved copy will be updated.",
-      ),
+    await waitFor(() => expect(openOf("Main collection")).toHaveTextContent("Open…"));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "The saved passphrase no longer opens “Main collection”. Choose Open… to enter its passphrase; the saved copy will be updated.",
     );
-    await waitFor(() => expect(field).toHaveFocus());
-    await user.type(field, "the new passphrase here{Enter}");
-    expect(session.openDatabase).toHaveBeenLastCalledWith(saved.path, "the new passphrase here");
+    await waitFor(() => expect(openOf("Main collection")).toHaveFocus());
+    await user.click(openOf("Main collection"));
+    expect(session.openDatabase).toHaveBeenLastCalledWith(saved.path);
   });
 
   // 003 US5-4
@@ -1100,7 +1067,7 @@ describe("DatabaseChooser after a lock (003 US6, contracts/ui-databases.md §1, 
     );
     renderChooser(undefined, shared.path);
 
-    const field = await screen.findByLabelText("Passphrase for “Shared collection”");
+    const field = await findOpen("Shared collection");
     await waitFor(() => expect(field).toHaveFocus());
   });
 
@@ -1112,7 +1079,7 @@ describe("DatabaseChooser after a lock (003 US6, contracts/ui-databases.md §1, 
 
     const open = await screen.findByRole("button", { name: "Open" });
     await waitFor(() => expect(open).toHaveFocus());
-    expect(screen.queryByLabelText("Passphrase for “Shared collection”")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open…" })).not.toBeInTheDocument();
   });
 });
 
@@ -1159,7 +1126,7 @@ describe("What the chooser knows about the selected database (003 FR-040)", () =
     );
     renderChooser();
 
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await findOpen("Main collection");
     expect(fact("Last opened here")).toHaveTextContent(formatRecentMoment(opened.toISOString()));
     expect(fact("Last opened here")).toHaveTextContent(/^Today at /);
     const backup = fact("Last backup");
@@ -1178,7 +1145,7 @@ describe("What the chooser knows about the selected database (003 FR-040)", () =
     );
     renderChooser();
 
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await findOpen("Main collection");
     expect(fact("Last opened here")).toHaveTextContent(
       `Changed on ${formatRecentDay(changed.toISOString())}, after it was last closed here.`,
     );
@@ -1211,12 +1178,12 @@ describe("What the chooser knows about the selected database (003 FR-040)", () =
     );
     renderChooser();
 
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await findOpen("Main collection");
     expect(fact("Last backup")).toHaveTextContent(/^None$/);
 
     await user.click(screen.getByRole("button", { name: "Shared collection, /mnt/nas/family" }));
 
-    await screen.findByLabelText("Passphrase for “Shared collection”");
+    await findOpen("Shared collection");
     expect(fact("Last backup")).toHaveTextContent(/1 kept$/);
     expect(fact("Last backup")).not.toHaveTextContent("oldest");
   });
@@ -1227,7 +1194,7 @@ describe("What the chooser knows about the selected database (003 FR-040)", () =
     );
     renderChooser();
 
-    await screen.findByLabelText("Passphrase for “Main collection”");
+    await findOpen("Main collection");
     expect(screen.getByText("Last opened here")).toBeInTheDocument();
     expect(screen.queryByText("Last backup")).not.toBeInTheDocument();
   });
@@ -1250,7 +1217,6 @@ describe("What the chooser knows about the selected database (003 FR-040)", () =
 // database. Cancelling is `databasesService.cancelUpgrade`, which needs no
 // session.
 describe("DatabaseChooser and an upgrade (009 US3)", () => {
-  const PASSPHRASE = "correct horse battery staple";
   const BACKUPS = "/home/sam/Documents/HoploDex/HoploDex backups";
   const WAITING = { awaitingId: 7, version: "0.2.0", backupFolder: BACKUPS };
   const QUESTION = "Upgrade “Main collection” for HoploDex 0.2.0?";
@@ -1288,10 +1254,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
       openDatabase: vi.fn().mockRejectedValue(upgradeNeeded()),
       ...session,
     });
-    await user.type(
-      await screen.findByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(await findOpen("Main collection"));
     return { user, session: value };
   }
 
@@ -1340,7 +1303,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
     // The question is modal, so the page behind it is hidden from the tree.
     const busy = screen.getByRole("button", { name: "Opening…", hidden: true });
     expect(busy).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeDisabled();
+    expect(openOf("Main collection")).toBeDisabled();
   });
 
   // Issue #44: Enter on the focused Upgrade presses it.
@@ -1370,18 +1333,10 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
       )
       .mockRejectedValueOnce(upgradeNeeded());
     const session = renderChooser({ openDatabase });
-    await user.type(
-      await screen.findByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(await findOpen("Main collection"));
     await user.click(await screen.findByRole("button", { name: "Take over…" }));
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Take over “Main collection”?",
-    });
-    await user.type(within(confirm).getByLabelText("Passphrase for “Main collection”"), PASSPHRASE);
-    await user.click(within(confirm).getByRole("button", { name: "Take over" }));
 
-    expect(openDatabase).toHaveBeenLastCalledWith(main.path, PASSPHRASE, { takeOver: true });
+    expect(openDatabase).toHaveBeenLastCalledWith(main.path, { takeOver: true });
     await pressUpgrade(user);
     expect(session.upgradeDatabase).toHaveBeenCalledExactlyOnceWith(7);
   });
@@ -1414,11 +1369,9 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
     expect(databasesService.cancelUpgrade).toHaveBeenCalledExactlyOnceWith(7);
     expect(session.upgradeDatabase).not.toHaveBeenCalled();
     // Back to the chooser with the row selected, ready for another try.
-    const field = screen.getByLabelText("Passphrase for “Main collection”");
-    expect(field).toBeEnabled();
-    expect(field).toHaveValue("");
+    expect(openOf("Main collection")).toBeEnabled();
+    expect(openOf("Main collection")).toHaveTextContent("Open…");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument();
   });
 
   // 009 FR-016
@@ -1457,7 +1410,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
         screen.queryByRole("dialog", { name: "Upgrading “Main collection”" }),
       ).not.toBeInTheDocument(),
     );
-    expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeEnabled();
+    expect(openOf("Main collection")).toBeEnabled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByText(/stopped/i)).not.toBeInTheDocument();
   });
@@ -1468,10 +1421,8 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
     await upgradeRefusedWith(refusal("UPGRADE_FAILED", { backupPath, atBackupLocation: true }));
 
     const text = `HoploDex couldn't upgrade “Main collection”. It is as it was before, and hasn't been opened. The backup saved before the upgrade is ${backupPath}.`;
-    expect(await screen.findByText(text)).toBeInTheDocument();
-    const field = screen.getByLabelText("Passphrase for “Main collection”");
-    expect(field).toBeEnabled();
-    expect(field).toHaveAccessibleDescription(text);
+    expect(await screen.findByRole("alert")).toHaveTextContent(text);
+    expect(openOf("Main collection")).toBeEnabled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
@@ -1484,10 +1435,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
     );
 
     const text = `The disk is full, so HoploDex couldn't open “Main collection”. Free some space on the drive that holds it, then try again. The file has not been changed. The upgrade didn't happen; the backup made before it is at ${backupPath}.`;
-    expect(await screen.findByText(text)).toBeInTheDocument();
-    expect(screen.getByLabelText("Passphrase for “Main collection”")).toHaveAccessibleDescription(
-      text,
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(text);
   });
 
   it("uses the plain disk-full text when the full disk is not the upgrade's", async () => {
@@ -1509,10 +1457,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
         .mockRejectedValue(refusal("DATABASE_NEWER_VERSION", { backupFolder: BACKUPS })),
     });
 
-    await user.type(
-      await screen.findByLabelText("Passphrase for “Main collection”"),
-      `${PASSPHRASE}{Enter}`,
-    );
+    await user.click(await findOpen("Main collection"));
 
     expect(
       await screen.findByText(
@@ -1657,7 +1602,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
       expect(databasesService.cancelUpgrade).toHaveBeenCalledExactlyOnceWith(7);
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
       expect(upgradeDatabase).toHaveBeenCalledTimes(1);
-      expect(screen.getByLabelText("Passphrase for “Main collection”")).toBeEnabled();
+      expect(openOf("Main collection")).toBeEnabled();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
   });
