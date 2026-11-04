@@ -986,7 +986,13 @@ impl SessionInner {
         only_for: Option<&str>,
     ) {
         if let Some(waiting) = self.awaiting().as_mut().filter(|waiting| {
-            waiting.id == id && only_for.is_none_or(|database| database == waiting.database_id)
+            // The id it will have once open: a backup opened directly gets one
+            // of its own.
+            let will_be = waiting
+                .backup_stamp
+                .as_ref()
+                .map_or(waiting.database_id.as_str(), |stamp| stamp.new_database_id.as_str());
+            waiting.id == id && only_for.is_none_or(|database| database == will_be)
         }) {
             waiting.save_passphrase = Some(passphrase);
         }

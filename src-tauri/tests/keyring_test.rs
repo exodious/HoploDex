@@ -266,6 +266,10 @@ fn a_relocated_entry_doesnt_save_another_databases_passphrase() {
     world.open_typed("Other", TEST_PASSPHRASE).unwrap();
 
     assert_eq!(stored(&other_id), None);
+    assert!(!world.saved_flag("Other"), "the mark doesn't pass to another database");
+    world.close();
+    world.open_typed("Other", TEST_PASSPHRASE).unwrap();
+    assert_eq!(stored(&other_id), None);
 }
 
 #[test]

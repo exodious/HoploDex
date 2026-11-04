@@ -308,14 +308,17 @@ impl MachineSettings {
 
     /// Adds `path` to the top of the recent list, or moves it there and
     /// refreshes what an open learns about it. Whether a passphrase is saved
-    /// for it is kept.
+    /// for it is kept when it is still the same database: an entry the page
+    /// re-located onto another database's file, or a backup opened directly,
+    /// doesn't pass the mark on (003 FR-017).
     pub fn touch_recent(&self, path: &Path, name: &str, database_id: &str, backup_folder: &Path) {
         self.update(|file| {
-            let passphrase_saved = file
-                .recent_databases
-                .iter()
-                .find(|entry| entry.path == path)
-                .is_some_and(|entry| entry.passphrase_saved);
+            let passphrase_saved =
+                file.recent_databases.iter().find(|entry| entry.path == path).is_some_and(
+                    |entry| {
+                        entry.passphrase_saved && entry.database_id.as_deref() == Some(database_id)
+                    },
+                );
             file.recent_databases.retain(|entry| entry.path != path);
             file.recent_databases.insert(
                 0,
