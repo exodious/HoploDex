@@ -275,6 +275,7 @@ corpus_cases! {
     a_workbook_with_flipped_bits_in_its_parts => "bit-flipped-data",
     a_workbook_with_a_flipped_directory_signature => "bit-flipped-directory",
     an_archive_that_is_not_a_spreadsheet => "not-a-spreadsheet",
+    styles_that_calamine_would_copy_into_a_gibibyte => "styles-amplified",
     a_second_file_past_the_row_limit => "two-files-second-rows",
     two_files_past_the_cell_limit_together => "two-files-cells-together",
 }
@@ -334,6 +335,22 @@ fn a_workbook_behind_a_crafted_compound_file_header_reads() {
         assert_eq!(makes(&tables[0]), ["Springfield"; 3], "{}", path.display());
         support::assert_budget!(took < REFUSAL_BUDGET, "{}: read in {took:?}", path.display());
         assert!(rise <= MEMORY_BUDGET, "{}: memory rose {} MB", path.display(), rise >> 20);
+        assert!(no_helper_runs(), "{}: the helper is still running", path.display());
+    }
+}
+
+/// What `styles_amplified` exceeds, Excel's 255 characters in a number
+/// format's code and a font's name and its 65,490 cell formats, still reads,
+/// within the helper's memory limit.
+#[test]
+fn a_workbook_whose_styles_are_at_excels_limits_reads() {
+    let _serial = serial();
+    let dir = TempDir::new().unwrap();
+    for formats in [10, 65_490] {
+        let path = hostile::styles_at_excels_limits(dir.path(), formats);
+        let tables =
+            read(&[import_file(&path)]).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+        assert_eq!(makes(&tables[0]), ["Springfield"; 3], "{}", path.display());
         assert!(no_helper_runs(), "{}: the helper is still running", path.display());
     }
 }

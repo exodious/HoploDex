@@ -22,7 +22,7 @@
 #![allow(dead_code)]
 
 use std::fs::File;
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 
 use hoplodex_lib::services::import_reader::limits::{
@@ -127,6 +127,7 @@ pub fn corpus() -> Vec<Case> {
         unreadable(|d| one(bit_flipped_data(d)), "bit-flipped-data"),
         unreadable(|d| one(bit_flipped_directory(d)), "bit-flipped-directory"),
         unreadable(|d| one(archive_not_a_spreadsheet(d)), "not-a-spreadsheet"),
+        unreadable(|d| one(styles_amplified(d)), "styles-amplified"),
         // Two files.
         refused_second(&[Rows], second_file_passes_a_limit, "two-files-second-rows"),
         refused_second(&[Cells], cells_pass_together, "two-files-cells-together"),
@@ -601,6 +602,50 @@ pub fn cfb_difat_loop(dir: &Path) -> PathBuf {
     bytes.extend(valid_workbook_bytes(dir));
     let path = dir.join("cfb-difat-loop.xlsx");
     std::fs::write(&path, &bytes).unwrap();
+    path
+}
+
+/// The valid export workbook whose styles hold one number format with a code
+/// of 1 MiB, used by 1,000 cell formats: 6.9 KB in all. `calamine` 0.38
+/// copies the code into every cell format, a gibibyte, past the helper's
+/// memory limit, unless the reader finds the code past Excel's 255 characters
+/// first.
+pub fn styles_amplified(dir: &Path) -> PathBuf {
+    workbook_with_styles(dir, "styles-amplified.xlsx", 1 << 20, 1_000)
+}
+
+/// The valid export workbook whose styles are at Excel's limits: a number
+/// format's code and a font's name of 255 characters, used by `formats` cell
+/// formats.
+pub fn styles_at_excels_limits(dir: &Path, formats: usize) -> PathBuf {
+    workbook_with_styles(dir, &format!("styles-{formats}.xlsx"), 255, formats)
+}
+
+fn workbook_with_styles(dir: &Path, name: &str, text_chars: usize, formats: usize) -> PathBuf {
+    let text = "0".repeat(text_chars);
+    let styles = format!(
+        "{XML_DECLARATION}<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\
+         <numFmts count=\"1\"><numFmt numFmtId=\"164\" formatCode=\"{text}\"/></numFmts>\
+         <fonts count=\"1\"><font><sz val=\"11\"/><name val=\"{text}\"/></font></fonts>\
+         <cellXfs count=\"{formats}\">{}</cellXfs></styleSheet>",
+        "<xf numFmtId=\"164\" fontId=\"0\"/>".repeat(formats)
+    );
+    let mut source = zip::ZipArchive::new(Cursor::new(valid_workbook_bytes(dir))).unwrap();
+    let path = dir.join(name);
+    let mut zip = ZipWriter::new(BufWriter::new(File::create(&path).unwrap()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    for index in 0..source.len() {
+        let mut part = source.by_index(index).unwrap();
+        let part_name = part.name().unwrap().into_owned();
+        let mut bytes = Vec::new();
+        part.read_to_end(&mut bytes).unwrap();
+        if part_name == "xl/styles.xml" {
+            bytes = styles.clone().into_bytes();
+        }
+        zip.start_file(part_name, options).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.finish().unwrap().flush().unwrap();
     path
 }
 
