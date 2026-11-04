@@ -52,8 +52,7 @@ pub const MAX_PHOTO_BYTES: u64 = 15 * MIB;
 pub const MAX_DOCUMENT_BYTES: u64 = 30 * MIB;
 
 /// The most bytes one firearm's or accessory's photos and documents may hold
-/// together (001 FR-007 and FR-010, amended 2026-11-04). Mirrored as
-/// `MAX_ATTACHMENT_BYTES_PER_RECORD`.
+/// together (001 FR-007 and FR-010, amended 2026-11-04).
 pub const MAX_ATTACHMENT_BYTES_PER_RECORD: u64 = GIB;
 
 /// `15 MiB`, `1 GiB`: a size limit as the app's messages write it.

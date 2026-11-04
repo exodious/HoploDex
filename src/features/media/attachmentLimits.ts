@@ -14,15 +14,13 @@ export const MAX_DOCUMENTS_PER_RECORD = 50;
 const MIB = 1024 * 1024;
 
 /**
- * The largest photo and the largest document that may be added, and the most one record's
- * photos and documents may hold together, in bytes, mirroring `MAX_PHOTO_BYTES`,
- * `MAX_DOCUMENT_BYTES` and `MAX_ATTACHMENT_BYTES_PER_RECORD` in
- * `src-tauri/src/models/rules.rs` (001 FR-007 and FR-010, amended 2026-11-04). The backend
- * refuses each with `ATTACHMENT_TOO_LARGE`.
+ * The largest photo and the largest document that may be added, in bytes, mirroring
+ * `MAX_PHOTO_BYTES` and `MAX_DOCUMENT_BYTES` in `src-tauri/src/models/rules.rs` (001 FR-007
+ * and FR-010, amended 2026-11-04). The backend refuses each with `ATTACHMENT_TOO_LARGE`, and
+ * alone enforces the most one record's photos and documents may hold together.
  */
 export const MAX_PHOTO_BYTES = 15 * MIB;
 export const MAX_DOCUMENT_BYTES = 30 * MIB;
-export const MAX_ATTACHMENT_BYTES_PER_RECORD = 1024 * MIB;
 
 /** Whether `e` is the backend refusing a file for its size, alone or with the record's others. */
 export function isTooLarge(e: unknown): e is CommandFailure {

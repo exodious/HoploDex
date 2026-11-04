@@ -232,8 +232,9 @@ pub const HEADER_BYTES: usize = 1024;
 /// Judges a file to attach by its name and its first [`HEADER_BYTES`] (or
 /// fewer, for a shorter file), before the rest is read (001 FR-010, amended
 /// 2026-11-04): the extension must be on the list and the file must begin as
-/// that type does. It refuses only what [`classify`] would, and [`classify`]
-/// still judges the whole file once it is read.
+/// that type does. Unlike [`classify`], it also requires an Office or
+/// OpenDocument package to begin with its first entry's local header, and
+/// [`classify`] still judges the whole file once it is read.
 pub fn classify_header(filename: &str, head: &[u8]) -> Result<&'static DocumentType, Refusal> {
     let (name, document_type) = by_extension(filename)?;
     if has_header(document_type.signature, head) {
