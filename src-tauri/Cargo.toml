@@ -107,6 +107,10 @@ log = "0.4"
 image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
 # Passphrase NFC normalization (003 research.md §1).
 unicode-normalization = "0.1.25"
+# The strength hint, worked out in the app process as the passphrase is typed
+# in the native dialog (003 FR-003; amended 2026-11-04 to 010 FR-015 for its
+# `english_wikipedia` list).
+zxcvbn = { version = "3.1.1", default-features = false }
 # The open marker's machine name (003 research.md §6).
 gethostname = "1.1.0"
 # Free space before a copy (003 research.md §4).
@@ -152,6 +156,9 @@ landlock = "0.4.7"
 # The PDF surface's filter, settings and signals (007 research.md §6-§10). The
 # version and features wry uses, `v2_40` on top of its `v2_38`.
 webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
+# The native passphrase dialog (amended 2026-11-04 to 003 FR-007). Promoted from
+# transitive, at the version already in Cargo.lock (tao and wry use it).
+gtk = "0.18.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"

@@ -118,6 +118,11 @@ impl IdleClock {
         }
     }
 
+    /// Whether the clock is paused for `reason`.
+    pub fn is_paused(&self, reason: IdlePauseReason) -> bool {
+        self.lock().paused_by.contains(reason.as_str())
+    }
+
     /// Whether the idle lock should lock now. `operation_running` pauses it
     /// like a native dialog does, from the operations registry.
     pub fn tick(&self, now: DateTime<FixedOffset>, operation_running: bool) -> bool {

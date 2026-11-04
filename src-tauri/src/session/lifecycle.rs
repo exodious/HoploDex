@@ -562,6 +562,10 @@ pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
 /// with the idle lock on, an open database locks at once.
 pub fn will_sleep(session: &Session, machine: &MachineSettings) {
     session.events().emit("system:clear-passphrase-fields", json!({}));
+    // A passphrase dialog is emptied and taken down, and a passphrase kept
+    // for a restore's confirmation is wiped (amended 2026-11-04).
+    session.prompts().dismiss_all();
+    session.drop_backup_check();
     // A database waiting for its upgrade is dropped, which also closes the
     // question in the chooser (009 research.md §4).
     session.drop_awaiting_upgrade();
@@ -581,6 +585,8 @@ pub fn will_sleep(session: &Session, machine: &MachineSettings) {
 /// the option on, the open database locks as a normal close.
 pub fn screen_locked(session: &Session, machine: &MachineSettings) {
     session.events().emit("system:clear-passphrase-fields", json!({}));
+    session.prompts().dismiss_all();
+    session.drop_backup_check();
     session.drop_awaiting_upgrade();
     // An upgrade at work has no open database to lock. It stops nothing and
     // decides at its end whether to open (009 research.md §5).
@@ -600,6 +606,8 @@ pub fn will_shut_down(session: &Session, machine: &MachineSettings) {
     // An upgrade's backup is stopped by the immediate close below, as any
     // operation is.
     session.drop_awaiting_upgrade();
+    session.prompts().dismiss_all();
+    session.drop_backup_check();
     close_immediate(session, machine, CloseReason::Shutdown);
 }
 

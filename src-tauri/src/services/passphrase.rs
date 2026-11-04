@@ -36,6 +36,14 @@ impl Passphrase {
         Self(normalized)
     }
 
+    /// Copies what a native field holds, borrowed from the field or from a
+    /// buffer the caller wipes, normalized to NFC (the passphrase dialog).
+    pub fn from_typed(typed: &str) -> Self {
+        let mut normalized = Zeroizing::new(String::with_capacity(typed.len() * 3));
+        normalized.extend(typed.nfc());
+        Self(normalized)
+    }
+
     /// The normalized passphrase, for `PRAGMA key` and `ATTACH … KEY` only.
     pub fn as_str(&self) -> &str {
         &self.0

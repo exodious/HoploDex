@@ -64,6 +64,7 @@ mod nickname_test;
 mod open_document_test;
 mod original_marks_warning_test;
 mod passphrase_change_test;
+mod passphrase_dialog_test;
 mod passphrase_protection_test;
 mod pdf_preview_test;
 mod pending_changes_test;

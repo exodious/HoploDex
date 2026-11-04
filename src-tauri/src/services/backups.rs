@@ -210,6 +210,18 @@ fn made_at_by_name(file_name: &str, id8: &str) -> Option<(NaiveDateTime, Option<
     Some((made_at, before_upgrade_to))
 }
 
+/// When the backup named `file_name` was made, by its name, whoever's it is:
+/// for the words of the dialog that asks for its passphrase.
+pub fn made_at_of(file_name: &str) -> Option<NaiveDateTime> {
+    let stem = file_name.strip_suffix(&format!(".{DATABASE_EXTENSION}"))?;
+    let stem = match stem.rsplit_once(" before ") {
+        Some((rest, version)) if is_backup_version(version) => rest,
+        _ => stem,
+    };
+    let id8 = stem.rsplit(' ').next()?;
+    made_at_by_name(file_name, id8).map(|(made_at, _)| made_at)
+}
+
 /// The backups of the database `database_id` in `folder`, newest first
 /// (003 FR-028). They are chosen by the id and the timestamp in their names,
 /// never by the name alone, so a folder shared by two databases, or a

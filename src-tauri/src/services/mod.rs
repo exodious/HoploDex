@@ -16,6 +16,7 @@ pub mod machine_settings;
 pub mod main_navigation;
 pub mod mounts;
 pub mod passphrase;
+pub mod passphrase_dialog;
 pub mod preview;
 pub mod record_id;
 pub mod registration;

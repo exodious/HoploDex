@@ -5,19 +5,21 @@
 //! directly. Each passphrase becomes a [`Passphrase`] at once and is wiped
 //! when the command returns (003 FR-007).
 
+use std::sync::Arc;
 use tauri::ipc::Request;
-use tauri::{AppHandle, State};
+
+use tauri::{AppHandle, Manager, State};
 
 use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::commands::databases::PROBE_DIR;
 use crate::models::database::{
-    BackupCheck, BackupList, BackupsDeleted, DatabaseStatus, PassphraseChanged,
+    BackupList, BackupsDeleted, CheckedBackup, DatabaseStatus, PassphraseChanged,
 };
 use crate::services::machine_settings::MachineSettings;
-use crate::services::passphrase::Passphrase;
-use crate::session::Session;
+use crate::services::passphrase_dialog::PassphraseDialog;
 use crate::session::scoped::{ScopedSession, Target};
+use crate::session::{Session, SessionId};
 
 pub mod ops {
     use std::collections::{BTreeMap, HashMap};
@@ -33,17 +35,22 @@ pub mod ops {
     use serde_json::json;
 
     use crate::commands::CommandError;
+    use crate::commands::databases::ops as databases_ops;
     use crate::commands::databases::ops::{refresh_saved, status};
     use crate::db::{self, OpenError, cipher, raw_file::RawFile};
     use crate::models::database::{
-        BackupCheck, BackupList, BackupsDeleted, CloseReason, DatabaseStatus, OperationKind,
-        PassphraseChanged, PendingState, RestorePhase, UnavailableReason, UpgradedNote,
+        BackupCheck, BackupList, BackupsDeleted, CheckedBackup, CloseReason, DatabaseStatus,
+        OperationKind, PassphraseChanged, PendingState, RestorePhase, UnavailableReason,
+        UpgradedNote,
     };
     use crate::services::backups::{self, BackupFailure, BackupJob, BackupKind, CopyError};
     use crate::services::disk_space;
     use crate::services::file_swap;
     use crate::services::machine_settings::MachineSettings;
     use crate::services::passphrase::{Passphrase, new_passphrase_problem};
+    use crate::services::passphrase_dialog::{
+        self, Asked, Field, PassphraseDialog, Request, Retry, Shape, Step,
+    };
     use crate::services::sandbox::{Need, Reach};
     use crate::services::scratch;
     use crate::services::secure_delete::{self, WipeControl, Wiped};
@@ -51,7 +58,9 @@ pub mod ops {
     use crate::session::lifecycle;
     use crate::session::operations::OperationGuard;
     use crate::session::scoped::Target;
-    use crate::session::{OpenDatabase, Session, SessionEvents, SessionId, database_name};
+    use crate::session::{
+        HeldTarget, OpenDatabase, Session, SessionEvents, SessionId, database_name,
+    };
 
     /// Where a database's backups are and what is there (003 FR-028): the open
     /// database's, or, for one that doesn't open, the folder and id this
@@ -794,6 +803,20 @@ pub mod ops {
         current: &Passphrase,
         new: &Passphrase,
     ) -> Result<PassphraseChanged, CommandError> {
+        change(session, id, machine, Some(scratch_dir), current, new)
+    }
+
+    /// [`change_passphrase`], with `current` checked against the file first
+    /// when `scratch_dir` is given, or already checked (the dialog's step)
+    /// when it isn't.
+    fn change(
+        session: &Session,
+        id: SessionId,
+        machine: &MachineSettings,
+        scratch_dir: Option<&Path>,
+        current: &Passphrase,
+        new: &Passphrase,
+    ) -> Result<PassphraseChanged, CommandError> {
         // 1. The new passphrase follows the rules for setting one (003 FR-003),
         // and is a change: copying the file to the key it already has would
         // only cost the time.
@@ -827,19 +850,8 @@ pub mod ops {
         change_progress(events, "copying", 0, total);
 
         // 3. The current passphrase, against the file's first page.
-        match db::verify_passphrase(&open.conn, current, scratch_dir) {
-            Ok(true) => {}
-            Ok(false) => {
-                return Err(CommandError::passphrase_incorrect(None, None)
-                    .on_field("currentPassphrase", "That isn't the current passphrase."));
-            }
-            Err(err) => {
-                log::error!("could not check the current passphrase: {err}");
-                return Err(CommandError::new(
-                    "INTERNAL_ERROR",
-                    "The current passphrase couldn't be checked.",
-                ));
-            }
+        if let Some(scratch_dir) = scratch_dir {
+            check_current(&open.conn, current, scratch_dir)?;
         }
 
         // 4. From here a sleep stops it, interrupting the export.
@@ -1064,6 +1076,221 @@ pub mod ops {
             .collect()
     }
 
+    /// `current` against the open file's first page (003 research.md §1a).
+    fn check_current(
+        conn: &Connection,
+        current: &Passphrase,
+        scratch_dir: &Path,
+    ) -> Result<(), CommandError> {
+        match db::verify_passphrase(conn, current, scratch_dir) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(CommandError::passphrase_incorrect(None, None)
+                .on_field("currentPassphrase", CURRENT_REFUSED)),
+            Err(err) => {
+                log::error!("could not check the current passphrase: {err}");
+                Err(CommandError::new(
+                    "INTERNAL_ERROR",
+                    "The current passphrase couldn't be checked.",
+                ))
+            }
+        }
+    }
+
+    const CURRENT_REFUSED: &str = "That isn't the current passphrase.";
+
+    /// Changes the open database's passphrase, both typed in the native
+    /// dialog (amended 2026-11-04 to 003 FR-015; contracts/ui-databases.md
+    /// §8). The current passphrase is checked while the dialog waits, and
+    /// asked for again when it is wrong; the change itself starts once the
+    /// dialog has closed, so its progress shows in the page.
+    pub fn change_passphrase_typed(
+        session: &Session,
+        id: SessionId,
+        machine: &MachineSettings,
+        scratch_dir: &Path,
+        dialog: &dyn PassphraseDialog,
+    ) -> Result<PassphraseChanged, CommandError> {
+        session.inspect(id, |_| Ok(()))?;
+        let request = Request {
+            shape: Shape::Choose { current: true, acknowledgement: false },
+            title: "Change passphrase".to_owned(),
+            message: "Backups and copies made before now will still open with the current \
+                      passphrase."
+                .to_owned(),
+            primary: "Change passphrase".to_owned(),
+            busy: "Checking the current passphrase\u{2026}".to_owned(),
+        };
+        let mut typed = None;
+        let mut failed = None;
+        let asked = passphrase_dialog::ask(session, dialog, Some(id), &request, |answer| {
+            let Some(current) = answer.current else {
+                return Step::Retry(Retry {
+                    field: Field::Current,
+                    message: "Enter the current passphrase.".to_owned(),
+                });
+            };
+            let problem = new_passphrase_problem(&answer.passphrase)
+                .or_else(|| answer.passphrase.same_as(&current).then_some(SAME_PASSPHRASE));
+            if let Some(problem) = problem {
+                return Step::Retry(Retry {
+                    field: Field::Passphrase,
+                    message: problem.to_owned(),
+                });
+            }
+            match session.inspect(id, |open| check_current(&open.conn, &current, scratch_dir)) {
+                Ok(()) => {
+                    typed = Some((current, answer.passphrase));
+                    Step::Done
+                }
+                Err(err) if err.code == "PASSPHRASE_INCORRECT" => Step::Retry(Retry {
+                    field: Field::Current,
+                    message: CURRENT_REFUSED.to_owned(),
+                }),
+                Err(err) => {
+                    failed = Some(err);
+                    Step::Done
+                }
+            }
+        });
+        if let Some(err) = failed {
+            return Err(err);
+        }
+        match (asked, typed) {
+            (Asked::Done, Some((current, new))) => {
+                change(session, id, machine, None, &current, &new)
+            }
+            _ => Err(CommandError::passphrase_cancelled()),
+        }
+    }
+
+    /// Opens the backup at `backup_path` with a passphrase typed in the native
+    /// dialog, and says what restoring it would do (amended 2026-11-04 to 009
+    /// FR-019; 003 contracts/ui-databases.md §9). Everything that needs no
+    /// passphrase is refused before the dialog shows. The dialog stays up while
+    /// each passphrase is tried; the one that opens the backup is kept, wiped
+    /// when dropped, under the returned `checkId` for the restore that follows
+    /// the confirmation, and goes at Cancel, a screen lock, a sleep or a close.
+    pub fn check_backup_typed(
+        session: &Session,
+        machine: &MachineSettings,
+        dialog: &dyn PassphraseDialog,
+        backup_path: &str,
+        target: Target<'_>,
+    ) -> Result<CheckedBackup, CommandError> {
+        let backup = session.reach().check(Path::new(backup_path), Need::ReadFile)?;
+        let backup = backup.as_path();
+        let (database_path, expected_id, held_target, bound) = match target {
+            Target::Open(id) => {
+                let path = session.inspect(id, |open| Ok(open.path.clone()))?;
+                (path, None, HeldTarget::Open(id), Some(id))
+            }
+            Target::At(path) => {
+                let at = Path::new(path);
+                let expected = authorize_damaged_restore(machine, backup, at)?;
+                replaceable_target(at)?;
+                (at.to_owned(), Some(expected), HeldTarget::At(path.to_owned()), None)
+            }
+        };
+        backup_len(backup)?;
+        let whose = match &held_target {
+            HeldTarget::At(_) => databases_ops::quoted_name(&database_path),
+            HeldTarget::Open(_) => "the database".to_owned(),
+        };
+        let made = backup
+            .file_name()
+            .and_then(|name| backups::made_at_of(&name.to_string_lossy()))
+            .map(|made| made.format("%B %-d, %Y at %-I:%M:%S %p").to_string());
+        let when = match &made {
+            Some(made) => format!("had on {made}"),
+            None => "had when this backup was made".to_owned(),
+        };
+        let request = Request {
+            shape: Shape::Enter,
+            title: "Restore from a backup".to_owned(),
+            message: format!(
+                "Enter the passphrase {whose} {when}. After restoring, it opens with that \
+                 passphrase."
+            ),
+            primary: "Continue".to_owned(),
+            busy: "Checking the backup\u{2026}".to_owned(),
+        };
+        let mut outcome = None;
+        let asked =
+            passphrase_dialog::ask(session, dialog, bound, &request, |answer| {
+                let inspected = inspect_backup(backup, &answer.passphrase, &database_path)
+                    .and_then(|inspected| match &expected_id {
+                        Some(expected) if inspected.database_id != *expected => {
+                            Err(not_its_backup())
+                        }
+                        _ => Ok(inspected),
+                    });
+                match inspected {
+                    Err(err) if err.code == "PASSPHRASE_INCORRECT" => Step::Retry(Retry {
+                        field: Field::Passphrase,
+                        message: match &made {
+                            Some(made) => {
+                                format!("That passphrase didn't open the backup from {made}.")
+                            }
+                            None => "That passphrase didn't open this backup.".to_owned(),
+                        },
+                    }),
+                    Err(err) => {
+                        outcome = Some(Err(err));
+                        Step::Done
+                    }
+                    Ok(inspected) => {
+                        let check_id = session.hold_backup_check(
+                            backup_path.to_owned(),
+                            held_target.clone(),
+                            answer.passphrase,
+                        );
+                        outcome =
+                            Some(Ok(CheckedBackup { check_id, upgrade_to: inspected.upgrade_to }));
+                        Step::Done
+                    }
+                }
+            });
+        match (asked, outcome) {
+            (Asked::Done, Some(result)) => result,
+            _ => Err(CommandError::passphrase_cancelled()),
+        }
+    }
+
+    /// Restores the backup `check_backup_typed` checked under `check_id`,
+    /// with the passphrase it kept, which goes with this call whatever
+    /// happens (003 FR-028). A check that is gone, or was for another target,
+    /// is `OPERATION_STOPPED`, with nothing changed.
+    pub fn restore_checked_backup(
+        session: &Session,
+        machine: &MachineSettings,
+        check_id: SessionId,
+        target: Target<'_>,
+        upgrade: bool,
+        reach: &Reach,
+    ) -> Result<DatabaseStatus, CommandError> {
+        let held =
+            session.take_backup_check(check_id).filter(|held| match (&held.target, target) {
+                (HeldTarget::Open(held), Target::Open(id)) => *held == id,
+                (HeldTarget::At(held), Target::At(path)) => held == path,
+                _ => false,
+            });
+        let Some(held) = held else {
+            return Err(CommandError::new(
+                "OPERATION_STOPPED",
+                "The restore was stopped. Nothing has been changed.",
+            ));
+        };
+        restore_backup(
+            session,
+            machine,
+            &held.backup_path,
+            &held.passphrase,
+            target,
+            upgrade,
+            reach,
+        )
+    }
+
     /// Deletes every backup of the open database (003 FR-029, US3-4): only the
     /// files its listing names, never another database's in a shared
     /// folder, each by secure deletion. One that can't be deleted is left
@@ -1149,46 +1376,71 @@ pub async fn list_backups(
     ops::list_backups(&session, &machine, target)
 }
 
-/// What restoring a backup would do, before anything is copied (009 FR-019).
+/// What restoring a backup would do, before anything is copied (009 FR-019),
+/// asking for its passphrase in the native dialog (amended 2026-11-04).
 /// Unscoped like `restore_backup`: with a `database_path` it works on a
 /// damaged database with nothing open, and otherwise needs the request's
-/// session.
+/// session. The dialog blocks until answered, so not on an async thread.
 #[tauri::command]
 pub async fn check_backup(
     backup_path: String,
-    passphrase: String,
     database_path: Option<String>,
     request: Request<'_>,
-    session: State<'_, Session>,
-    machine: State<'_, MachineSettings>,
-) -> Result<BackupCheck, CommandError> {
-    let passphrase = Passphrase::from_input(passphrase);
-    let target = Target::from_request(database_path.as_deref(), request.headers())?;
-    ops::check_backup(&session, &machine, &backup_path, &passphrase, target)
+    app: AppHandle,
+) -> Result<CheckedBackup, CommandError> {
+    let open = match Target::from_request(database_path.as_deref(), request.headers())? {
+        Target::Open(id) => Some(id),
+        Target::At(_) => None,
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = app.state::<Session>();
+        let machine = app.state::<MachineSettings>();
+        let dialog = app.state::<Arc<dyn PassphraseDialog>>();
+        let target = match (open, database_path.as_deref()) {
+            (Some(id), _) => Target::Open(id),
+            (None, path) => Target::At(path.unwrap_or_default()),
+        };
+        ops::check_backup_typed(&session, &machine, &**dialog, &backup_path, target)
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not check the backup: {e}")))?
 }
 
+/// Restores the backup `check_backup` checked, with the passphrase it kept
+/// under `check_id`.
 #[tauri::command]
 pub async fn restore_backup(
-    backup_path: String,
-    backup_passphrase: String,
+    check_id: u64,
     database_path: Option<String>,
     upgrade: Option<bool>,
     request: Request<'_>,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<DatabaseStatus, CommandError> {
-    let backup_passphrase = Passphrase::from_input(backup_passphrase);
     // The open database is restored only in the session the request names.
     let target = Target::from_request(database_path.as_deref(), request.headers())?;
-    ops::restore_backup(
+    let check_id = SessionId::from_request(check_id).unwrap_or(SessionId::NONE);
+    ops::restore_checked_backup(
         &session,
         &machine,
-        &backup_path,
-        &backup_passphrase,
+        check_id,
         target,
         upgrade.unwrap_or(false),
         session.reach(),
     )
+}
+
+/// Lets go of the backup `check_backup` checked, and the passphrase it kept:
+/// the restore's confirmation was cancelled.
+#[tauri::command]
+pub async fn drop_backup_check(
+    check_id: u64,
+    session: State<'_, Session>,
+) -> Result<(), CommandError> {
+    if let Some(id) = SessionId::from_request(check_id) {
+        drop(session.take_backup_check(id));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1199,26 +1451,25 @@ pub async fn delete_all_backups(
     ops::delete_all_backups(&session.session, session.id, confirmed)
 }
 
+/// The dialog blocks until answered, so not on an async thread.
 #[tauri::command]
 pub async fn change_passphrase(
-    current_passphrase: String,
-    new_passphrase: String,
     app: AppHandle,
     session: ScopedSession,
-    machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseChanged, CommandError> {
-    let current_passphrase = Passphrase::from_input(current_passphrase);
-    let new_passphrase = Passphrase::from_input(new_passphrase);
     let scratch = app_dirs::cache_dir(&app).map_err(|err| {
         log::error!("no cache directory for the passphrase check: {err}");
         CommandError::new("INTERNAL_ERROR", "The current passphrase couldn't be checked.")
     })?;
-    ops::change_passphrase(
-        &session.session,
-        session.id,
-        &machine,
-        &scratch.join(PROBE_DIR),
-        &current_passphrase,
-        &new_passphrase,
-    )
+    let id = session.id;
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = app.state::<Session>();
+        let machine = app.state::<MachineSettings>();
+        let dialog = app.state::<Arc<dyn PassphraseDialog>>();
+        ops::change_passphrase_typed(&session, id, &machine, &scratch.join(PROBE_DIR), &**dialog)
+    })
+    .await
+    .map_err(|e| {
+        CommandError::new("INTERNAL_ERROR", format!("Could not change the passphrase: {e}"))
+    })?
 }

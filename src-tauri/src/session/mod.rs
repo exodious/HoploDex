@@ -29,6 +29,7 @@ use crate::models::database::{
 };
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
+use crate::services::passphrase_dialog::Prompts;
 use crate::services::preview::{Preview, PreviewLoading};
 use crate::services::sandbox::Reach;
 use clock::{Clock, SystemClock};
@@ -296,6 +297,36 @@ pub struct SessionInner {
     /// upgrade to decide whether the database opens (009 research.md §5
     /// "Sleep and shutdown").
     screen_locked_in_upgrade: AtomicBool,
+    /// The passphrase dialogs on the screen, which a screen lock, a sleep or
+    /// the close of the database they are for takes down (003 FR-007).
+    prompts: Prompts,
+    /// The backup `check_backup` opened with the passphrase typed for it,
+    /// kept while the restore's confirmation is asked (amended 2026-11-04 to
+    /// 003 FR-007, as 009 research.md §4 keeps one for the upgrade question).
+    backup_check: Mutex<Option<BackupCheckHeld>>,
+    /// The database an open last found marked open on another computer, and
+    /// that computer's name, for the take-over dialog's words.
+    open_elsewhere: Mutex<Option<(PathBuf, String)>>,
+}
+
+/// A checked backup and its passphrase, waiting for the restore's
+/// confirmation. Dropped, and its passphrase wiped, when the restore takes
+/// it, at Cancel, and at a screen lock, a sleep, a shutdown or a close.
+pub struct BackupCheckHeld {
+    /// The `checkId` the restore answers with.
+    pub id: SessionId,
+    /// The backup, as `check_backup` was given it.
+    pub backup_path: String,
+    /// The damaged database it replaces, or the open session's id.
+    pub target: HeldTarget,
+    pub passphrase: Passphrase,
+}
+
+/// What a held check restores into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeldTarget {
+    At(String),
+    Open(SessionId),
 }
 
 /// A backup opened directly that needs an upgrade: its stamp is taken inside
@@ -388,6 +419,9 @@ impl Session {
             awaiting_drops: AtomicU64::new(0),
             upgrading: AtomicU64::new(0),
             screen_locked_in_upgrade: AtomicBool::new(false),
+            prompts: Prompts::default(),
+            backup_check: Mutex::new(None),
+            open_elsewhere: Mutex::new(None),
         }))
     }
 
@@ -443,6 +477,50 @@ impl SessionInner {
 
     pub fn idle(&self) -> &IdleClock {
         &self.idle
+    }
+
+    /// The passphrase dialogs on the screen.
+    pub fn prompts(&self) -> &Prompts {
+        &self.prompts
+    }
+
+    /// Keeps a checked backup's passphrase for its restore, under a new
+    /// `checkId`, in place of any held before.
+    pub fn hold_backup_check(
+        &self,
+        backup_path: String,
+        target: HeldTarget,
+        passphrase: Passphrase,
+    ) -> SessionId {
+        let id = SessionId::next();
+        let held = BackupCheckHeld { id, backup_path, target, passphrase };
+        let replaced = self.backup_check.lock().expect("session mutex poisoned").replace(held);
+        drop(replaced);
+        id
+    }
+
+    /// The check held under `id`, taken out of the session.
+    pub fn take_backup_check(&self, id: SessionId) -> Option<BackupCheckHeld> {
+        let mut slot = self.backup_check.lock().expect("session mutex poisoned");
+        if slot.as_ref().is_some_and(|held| held.id == id) { slot.take() } else { None }
+    }
+
+    /// Drops the held check, if any, wiping its passphrase.
+    pub fn drop_backup_check(&self) {
+        let dropped = self.backup_check.lock().expect("session mutex poisoned").take();
+        drop(dropped);
+    }
+
+    /// Notes that an open found `path` marked open on `machine_name`.
+    pub fn note_open_elsewhere(&self, path: &Path, machine_name: &str) {
+        *self.open_elsewhere.lock().expect("session mutex poisoned") =
+            Some((path.to_owned(), machine_name.to_owned()));
+    }
+
+    /// The computer an open last found `path` marked open on.
+    pub fn open_elsewhere(&self, path: &Path) -> Option<String> {
+        let found = self.open_elsewhere.lock().expect("session mutex poisoned");
+        found.as_ref().filter(|(seen, _)| seen == path).map(|(_, machine)| machine.clone())
     }
 
     fn lock(&self) -> MutexGuard<'_, Option<OpenDatabase>> {
@@ -735,6 +813,14 @@ impl SessionInner {
             slot.take()
         };
         self.forget_open();
+        // The dialogs asked for it go with it, and so does a backup checked
+        // to restore over it.
+        self.prompts.dismiss_for(id);
+        let mut held = self.backup_check.lock().expect("session mutex poisoned");
+        if held.as_ref().is_some_and(|check| check.target == HeldTarget::Open(id)) {
+            held.take();
+        }
+        drop(held);
         taken
     }
 

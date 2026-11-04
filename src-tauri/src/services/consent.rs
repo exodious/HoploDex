@@ -93,7 +93,7 @@ impl ConsentRequest {
 /// A stored name as the title shows it: control characters (and the
 /// characters that reorder text, which can make one name read as another)
 /// replaced, and cut to [`NAME_LIMIT`] characters with an ellipsis.
-fn display_name(name: &str) -> String {
+pub(crate) fn display_name(name: &str) -> String {
     let cleaned: String =
         name.chars().map(|c| if c.is_control() || is_bidi_control(c) { '_' } else { c }).collect();
     if cleaned.chars().count() <= NAME_LIMIT {

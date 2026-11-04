@@ -33,6 +33,7 @@
     "allow-list-backups",
     "allow-restore-backup",
     "allow-check-backup",
+    "allow-drop-backup-check",
     "allow-delete-all-backups",
     "allow-change-passphrase",
     "allow-create-firearm",
