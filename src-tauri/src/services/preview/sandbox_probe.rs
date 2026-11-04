@@ -96,7 +96,10 @@ pub const SKIP_MARKERS: [&str; 2] = ["/run/.containerenv", "/.dockerenv"];
 pub enum ProbeOutcome {
     /// It exited with this status.
     Exited(i32),
-    /// A signal ended it (WebKit's `g_error` when bubblewrap can't run).
+    /// A signal ended it. On Linux a crash mostly shows as an `Exited` of 128
+    /// plus the signal instead (WebKit's `g_error` when bubblewrap can't run
+    /// is 133, SIGTRAP), since the probe ends itself on a fatal signal to
+    /// write no core (`platform::core_dumps`).
     Crashed,
     /// It was still running after [`PROBE_TIMEOUT`] and was killed.
     TimedOut,

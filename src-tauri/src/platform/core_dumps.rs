@@ -46,9 +46,13 @@ pub const FATAL_SIGNALS: [libc::c_int; 6] =
 /// process's memory, whatever the core limit. Called first in `main()`, so the
 /// helpers and the sandbox probe, which are this executable started again,
 /// are covered too. It replaces Rust's own handler for a stack overflow, so
-/// an overflow ends the app with the SIGSEGV line rather than Rust's message;
-/// a thread without an alternate signal stack (one a C library started) that
-/// overflows its stack can't run any handler, and gets the default action.
+/// an overflow ends the app with the SIGSEGV line rather than Rust's message.
+/// Two crashes still get the default action, as the kernel gives a fault no
+/// handler can run: one in a thread that blocks the signal (GLib starts its
+/// worker threads with every signal blocked), and a stack overflow in a thread
+/// without an alternate signal stack (one a C library started). The core
+/// limit of 0, and on Ubuntu the `.deb`'s apport ignore entry, still cover
+/// those.
 #[cfg(target_os = "linux")]
 pub fn exit_on_fatal_signals() {
     for signal in FATAL_SIGNALS {

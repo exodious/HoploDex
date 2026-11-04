@@ -317,6 +317,24 @@ function clearRemovable() {
   }
 }
 
+/** The web processes the Flatpak portal started for WebKit, each with core
+ * dumps off, soft and hard: the portal's child doesn't inherit the app's
+ * limit, so the app lowers it at each page load of either web view (#166,
+ * src-tauri/src/platform/core_dumps.rs). Waits for it. */
+async function webProcessesHaveCoreDumpsOff(): Promise<void> {
+  const webProcesses = () =>
+    containerProcesses().filter((p) => path.basename(p.command[0] ?? "") === "WebKitWebProcess");
+  expect(webProcesses().length).toBeGreaterThan(0);
+  await browser.waitUntil(
+    () =>
+      webProcesses().every((p) => {
+        const limit = resourceLimit(p.pid, "Max core file size");
+        return limit.soft === 0 && limit.hard === 0;
+      }),
+    { timeout: 10000, timeoutMsg: "a web process the Flatpak portal started can still dump core" },
+  );
+}
+
 describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their Collection in It", () => {
   /** Where the suggested location is (011 US1-2): `HoploDex` in the Documents
    * folder the sandbox reads from `xdg-user-dir`, the one folder of the home the
@@ -579,6 +597,8 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     const mark = await eventMark();
     await openDocument("three-pages.pdf");
     await waitForEvent("preview:pdf-ready", mark);
+    // The preview's own web view: its web process can't dump core either (#166).
+    await webProcessesHaveCoreDumpsOff();
     await closeViewer();
 
     // A TIFF: decoded in the confined helper, shown as an image.
@@ -1305,20 +1325,7 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     this.timeout(120000);
     await relaunchApp();
     await waitForChooser();
-    // The portal's child, so it doesn't inherit the app's limit of 0: the app
-    // lowers it at each page load (src-tauri/src/platform/core_dumps.rs).
-    const webProcesses = containerProcesses().filter(
-      (p) => path.basename(p.command[0] ?? "") === "WebKitWebProcess",
-    );
-    expect(webProcesses.length).toBeGreaterThan(0);
-    await browser.waitUntil(
-      () =>
-        webProcesses.every((p) => {
-          const limit = resourceLimit(p.pid, "Max core file size");
-          return limit.soft === 0 && limit.hard === 0;
-        }),
-      { timeout: 10000, timeoutMsg: "a web process the Flatpak portal started can still dump core" },
-    );
+    await webProcessesHaveCoreDumpsOff();
   });
 
   it("011 US2-7, 011 FR-011: a process in a sub-sandbox started with WebKit's own flags reaches no file, no network and no bus name", async function () {
