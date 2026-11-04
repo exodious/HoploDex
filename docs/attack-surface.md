@@ -56,7 +56,7 @@ and peer review catch that.
 - **Ask:**
   - Do the three command lists (`generate_handler!`, `COMMANDS`, the capabilities) agree, and does every `allow-<command>` belong only to the `main` web view, never the PDF surface? Is `core:default` or `dialog:default` broader than the app needs? Does the opener plugin have no permission at all?
   - For every command: is each argument checked in Rust (length, range, enum, an id belonging to the open session) as if the web view were hostile?
-  - Is `UNSCOPED_COMMANDS` minimal? It holds `get_chooser_state`, `create_database`, `open_database`, `upgrade_database`, `cancel_upgrade`, `remove_recent_database`, `locate_database`, `get_database_status`, `quit_application`, `note_activity`, `set_idle_paused`, `skip_backup`, `cancel_import`, `get_document_opening`, `set_document_opening`, `restore_backup`, `check_backup`, `drop_backup_check`, `list_backups` and `forget_saved_passphrase`. Does `drop_backup_check` only ever drop a held check, by its id? Do the ones that can act on the open database (`restore_backup`, `list_backups`, `check_backup`, `forget_saved_passphrase`) check `session::scoped::Target` themselves?
+  - Is `UNSCOPED_COMMANDS` minimal? It holds `get_chooser_state`, `create_database`, `open_database`, `upgrade_database`, `cancel_upgrade`, `remove_recent_database`, `locate_database`, `get_database_status`, `quit_application`, `note_activity`, `set_idle_paused`, `skip_backup`, `cancel_import`, `get_document_opening`, `set_document_opening`, `restore_backup`, `check_backup`, `drop_backup_check`, `list_backups` and `forget_saved_passphrase`. Does `drop_backup_check` only ever drop a held check, by its id, and does `restore_backup` restore only the backup its `checkId` held, into the target that check was for? Do the ones that can act on the open database (`restore_backup`, `list_backups`, `check_backup`, `forget_saved_passphrase`) check `session::scoped::Target` themselves?
   - Can `set_document_opening` (unscoped) turn on opening without asking without `services::consent`'s native dialog?
   - Can `confirmedWarnings` skip a check that protects data? (`LOCATION_OUT_OF_REACH` must never be overridable.)
   - Do errors forward only `CommandError` codes and never a raw database error (`CommandError::from_db`)?
@@ -115,18 +115,17 @@ and peer review catch that.
 - **Code:** `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/mod.rs`; `src-tauri/src/allocator.rs`; `src-tauri/src/services/passphrase.rs`; `src-tauri/src/services/passphrase_dialog/**`; `src-tauri/src/services/keyring.rs`; `src-tauri/src/services/keyring/**`; `src-tauri/src/session/mod.rs`; `src-tauri/src/session/upgrade.rs`; `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`
 - **Ask:**
   - Are the cipher settings pinned and unchanged (`CIPHER_SETTINGS`, `src-tauri/tests/portability_test.rs`)?
-  - Is a passphrase typed only into the native dialog (`services::passphrase_dialog`: GTK, AppKit's `NSSecureTextField`, Win32 `ES_PASSWORD`), never into the page, and is no passphrase an argument or result of any command? Is every word of the dialog built in Rust, from what the backend knows, so the page can't word it?
-  - Is the dialog's text copied once per press into a `Passphrase` (NFC, zeroized, never logged), and are the checks' reads borrowed (GTK) or wiped straight after (AppKit, Win32)? Is every field emptied when the dialog closes?
+  - Is a passphrase typed only into the native dialog (`services::passphrase_dialog`: GTK, AppKit's `NSSecureTextField`, Win32 `ES_PASSWORD`), never into the page, and is no passphrase an argument or result of any command? Is every word of the dialog built in Rust, so the page chooses at most which database or backup it names? Is each name that reaches it from the page or a file (a database's or backup's file name, the machine name an open marker carries) cleaned and cut as `consent::display_name` does, and set as plain text, never markup?
+  - Is the dialog's text copied once per press into a `Passphrase` (NFC, zeroized, never logged), and are the checks' reads borrowed (GTK) or wiped straight after (AppKit, Win32)? Is every field emptied when the dialog closes? What does each OS's toolkit still keep of what was typed (GTK's text layout of a shown passphrase; AppKit's and Win32's own buffers), and what do `PRAGMA key` and SQLCipher leave of it in the app's heap?
   - Is every Rust block it passes through (wry's and Tauri's IPC bodies, serde's values, rusqlite's SQL text) zeroed when freed, by the one global allocator `main.rs` installs (`allocator.rs`)?
   - Does the session hold only the derived key, never the passphrase, except one being saved until its upgrade ends (009 research.md §4) and a checked backup's until its restore (`backup_check`, dropped at Cancel, a screen lock, a sleep, a shutdown or a close)?
   - Does a screen lock, a sleep or the close of the database a dialog is for take the dialog down (`Prompts`)? Does the idle lock wait while one is up?
   - Is the E2E stand-in (`passphrase_dialog/e2e.rs`, which reads a queue file and logs what it shows) built only with `e2e`?
   - Are keyring entries only `passphrase:<database id>`? In the Flatpak, is the Secret portal's store used, and never the Secret Service or `oo7::Keyring::new()`?
   - Can `test-kdf` (1,000 iterations) never reach a shipped or E2E build (the `compile_error!` in `db/cipher.rs`)?
-- **Accepted** ([011 research.md §20](../specs/011-flatpak/research.md)):
-  - A compromised Flatpak process can read HoploDex's own saved passphrases.
-  - On a `.deb`, `.rpm` or AppImage, any unlocked Secret Service item is reachable.
-  - What each OS's toolkit keeps of a passphrase typed into its control (GTK wipes its entry buffer, but not a shown passphrase's text layout; AppKit's and Win32's own buffers aren't measured), and what `PRAGMA key` leaves of it in SQLite's own allocations (F1, not done).
+- **Accepted:**
+  - [011 research.md §20](../specs/011-flatpak/research.md): a compromised Flatpak process can read HoploDex's own saved passphrases.
+  - [011 research.md §20](../specs/011-flatpak/research.md): on a `.deb`, `.rpm` or AppImage, any unlocked Secret Service item is reachable.
 - **Since:** 001, 003; Flatpak store 011; `test-kdf` #105; strength worker #106, gone with the native dialog (2026-11-04); wipe-on-free allocator.
 
 ## plaintext-lifetime: secure deletion, locking and what outlives a session
