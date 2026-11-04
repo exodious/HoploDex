@@ -763,7 +763,6 @@ export async function dialogFieldError(label: string): Promise<string | null> {
 /** The passphrase of every database a spec creates. */
 export const E2E_PASSPHRASE = "end to end test passphrase";
 
-
 /** The sandbox's documents folder, where the harness points the app's
  * suggested location (wdio.conf.ts). Specs type locations under it rather
  * than use the native pickers, which WebDriver can't drive. */

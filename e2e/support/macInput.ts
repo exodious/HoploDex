@@ -62,7 +62,11 @@ export function keyTo(pid: number, code: number, mods?: string) {
 /** Presses the element of `pid`'s accessibility tree named `title` (a button
  * or a checkbox), as VoiceOver's press does. Returns whether it was found. */
 export function pressElement(pid: number, title: string): boolean {
-  return execFileSync(realInput(), ["press", String(pid), title]).toString().trim() === "pressed";
+  return (
+    execFileSync(realInput(), ["press", String(pid), title])
+      .toString()
+      .trim() === "pressed"
+  );
 }
 
 /** Presses ⌘Q in the app with process id `pid`. The key is posted to that

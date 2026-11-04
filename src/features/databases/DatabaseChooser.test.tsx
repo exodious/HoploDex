@@ -176,14 +176,12 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(chooserState());
     renderChooser({
-      openDatabase: vi
-        .fn()
-        .mockRejectedValue(
-          new CommandFailure({
-            code: "PASSPHRASE_CANCELLED",
-            message: "No passphrase was entered.",
-          }),
-        ),
+      openDatabase: vi.fn().mockRejectedValue(
+        new CommandFailure({
+          code: "PASSPHRASE_CANCELLED",
+          message: "No passphrase was entered.",
+        }),
+      ),
     });
 
     await user.click(await findOpen("Main collection"));
@@ -274,7 +272,6 @@ describe("DatabaseChooser (003 contracts/ui-databases.md §1)", () => {
 });
 
 describe("DatabaseChooser (003 US2)", () => {
-
   beforeEach(() => {
     vi.mocked(databasesService.getChooserState).mockReset().mockResolvedValue(chooserState());
     vi.mocked(databasesService.removeRecentDatabase)

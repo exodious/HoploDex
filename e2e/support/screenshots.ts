@@ -222,6 +222,34 @@ export async function shotDisplay(name: string) {
 }
 
 /**
+ * Saves the screen as `<name>.png`, for what no page or window shot holds:
+ * the native passphrase dialog (amended 2026-11-04 to 003 FR-007), a window
+ * of its own over the app's (a sheet on macOS). The X display's top-left on
+ * Linux, the whole screen on macOS (`screencapture`) and Windows
+ * (`real_input.ps1 shot`). A no-op when screenshots are off.
+ */
+export async function shotScreen(name: string) {
+  if (!outDir) return;
+  fs.mkdirSync(outDir, { recursive: true });
+  // The dialog draws itself after its log says it changed.
+  await browser.pause(600);
+  const file = path.join(outDir, `${name}.png`);
+  if (process.platform === "win32") {
+    const tool = fileURLToPath(
+      new URL("../../src-tauri/examples/real_input.ps1", import.meta.url),
+    );
+    execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tool, "shot", file], {
+      stdio: "pipe",
+      windowsHide: true,
+    });
+  } else if (process.platform === "darwin") {
+    execFileSync("screencapture", ["-x", "-t", "png", file]);
+  } else {
+    execFileSync("import", ["-window", "root", "-crop", "1400x1000+0+0", "+repage", file]);
+  }
+}
+
+/**
  * macOS: saves the page area of this worker's app window as the PNG `file`,
  * one pixel to a point (#88). `screencapture -l` captures one window's own
  * contents by its CGWindowID, the PDF surface (a child web view) included, so

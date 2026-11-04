@@ -9,6 +9,7 @@ import {
   waitForView,
 } from "../support/dialogInput";
 import { HAS_MEMORY_SCAN, copiesIn, webProcesses } from "../support/memoryScan";
+import { shotScreen } from "../support/screenshots";
 import {
   $,
   browser,
@@ -124,6 +125,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
       (v) => v.confirmation === "The passphrases don't match." && !v.ready,
       "the mismatch after the pause",
     );
+    await shotScreen("dialog-create-mismatch");
     // Put right, the problem goes at once; the acknowledgement is still due.
     step = logMark();
     await typeInDialog(PASSPHRASE.slice(-1));
@@ -138,7 +140,11 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     step = logMark();
     await pressInDialog("Return");
     await browser.pause(700);
-    expect(passphraseLog().slice(step).some((l) => "closed" in l)).toBe(false);
+    expect(
+      passphraseLog()
+        .slice(step)
+        .some((l) => "closed" in l),
+    ).toBe(false);
 
     step = logMark();
     await tickAcknowledgement();
@@ -162,7 +168,12 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
       new RegExp(`^That passphrase didn't open ${QUOTED}\\.`),
     );
     // Asked again in place: one dialog, its field emptied.
-    expect(passphraseLog().slice(mark).filter((l) => "asked" in l)).toHaveLength(1);
+    expect(
+      passphraseLog()
+        .slice(mark)
+        .filter((l) => "asked" in l),
+    ).toHaveLength(1);
+    await shotScreen("dialog-open-retry");
 
     await typeInDialog(PASSPHRASE);
     await pressInDialog("Return");
@@ -235,6 +246,7 @@ describe("003 US4 - Change My Passphrase Safely", () => {
     await pressInDialog("Tab");
     await typeInDialog(NEW);
     await waitForView(mark, (v) => v.ready, "the button enabled");
+    await shotScreen("dialog-change");
     await pressInDialog("Return");
     const retry = await waitForLog(mark, (l) => "retry" in l, "the dialog asking again", 30000);
     expect(retry.retry).toMatchObject({
