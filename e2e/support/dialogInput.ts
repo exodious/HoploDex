@@ -10,9 +10,9 @@ import { passphraseLog } from "./ui";
  * Real keys into the native passphrase dialog (amended 2026-11-04 to 003
  * FR-007), which no WebDriver can reach, on every OS: X11's XTest on Linux
  * (`e2e/scripts/x11-input.py`, through `realInput.ts`), `real_input.swift`'s
- * `key-to` on macOS (to the app's process alone, `macInput.ts`), and
- * `real_input.ps1`'s SendKeys on Windows (to the foreground window, which the
- * dialog is). The app must have been launched with
+ * `key-to` on macOS (to the app's process alone, `macInput.ts`), and on
+ * Windows `e2e/scripts/dialog-input.ps1`, which posts them to the app's dialog
+ * itself (the foreground window may be another worker's app). The app must have been launched with
  * `HOPLODEX_E2E_PASSPHRASE_DIALOG=native`; what the dialog shows comes back
  * through its log (`ui.ts`, `passphraseLog`). Texts are lowercase letters,
  * digits and spaces, which every OS's helper can type.
@@ -66,28 +66,25 @@ const MAC_CODES: Record<string, number> = {
   space: 49,
 };
 
-const WINDOWS_KEYS: Record<DialogKey, string> = {
-  Return: "{ENTER}",
-  Escape: "{ESC}",
-  Tab: "{TAB}",
-  space: " ",
-  BackSpace: "{BACKSPACE}",
-};
+const WINDOWS_INPUT = fileURLToPath(new URL("../scripts/dialog-input.ps1", import.meta.url));
 
-const WINDOWS_INPUT = fileURLToPath(
-  new URL("../../src-tauri/examples/real_input.ps1", import.meta.url),
-);
-
-function windowsKeys(keys: string) {
-  execFileSync("powershell", [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    WINDOWS_INPUT,
-    "key",
-    keys,
-  ]);
+/** Windows: posts `text` or `key` to the app's passphrase dialog, not to the
+ * foreground window, which another worker's app can take (dialog-input.ps1). */
+function windowsInput(args: string[]) {
+  execFileSync(
+    "powershell",
+    [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      WINDOWS_INPUT,
+      "-ProcessId",
+      String(appPid()),
+      ...args,
+    ],
+    { stdio: "pipe", windowsHide: true },
+  );
 }
 
 function checkText(text: string) {
@@ -105,7 +102,7 @@ export async function typeInDialog(text: string) {
     const pid = appPid();
     for (const char of text) keyTo(pid, MAC_CODES[char]);
   } else if (process.platform === "win32") {
-    windowsKeys(text);
+    windowsInput(["-Text", text]);
   } else {
     throw new Error(`no real input for the passphrase dialog on ${process.platform}`);
   }
@@ -115,7 +112,7 @@ export async function typeInDialog(text: string) {
 export async function pressInDialog(key: DialogKey) {
   if (process.platform === "linux") await realKeyOutsidePage(key);
   else if (process.platform === "darwin") keyTo(appPid(), MAC_CODES[key]);
-  else if (process.platform === "win32") windowsKeys(WINDOWS_KEYS[key]);
+  else if (process.platform === "win32") windowsInput(["-Key", key]);
   else throw new Error(`no real input for the passphrase dialog on ${process.platform}`);
 }
 

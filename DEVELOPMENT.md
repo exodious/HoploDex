@@ -1292,7 +1292,9 @@ A second exception runs on every OS: `passphrase-dialog`'s tests type into the
 native passphrase dialog, which no WebDriver can reach, with real keys:
 XTest on Linux (`realInput.ts`'s `realKeyOutsidePage`), `real_input.swift`'s
 `key-to` to the app's process on macOS (`macInput.ts`), and
-`real_input.ps1`'s SendKeys on Windows, all through `e2e/support/dialogInput.ts`.
+`e2e/scripts/dialog-input.ps1` on Windows, which posts the keys to the app's
+dialog itself, since another worker's app can have the foreground (as macOS
+addresses its keys to the process, #122), all through `e2e/support/dialogInput.ts`.
 The app runs with `HOPLODEX_E2E_PASSPHRASE_DIALOG=native` there, and the spec
 reads what the dialog shows from its log (`HOPLODEX_E2E_PASSPHRASE_LOG`: each
 prompt, refusal, view and close, never a passphrase). Every other spec answers
