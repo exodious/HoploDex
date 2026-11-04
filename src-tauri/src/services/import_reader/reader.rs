@@ -555,6 +555,10 @@ fn scan_styles(xml: impl Read) -> Result<(), Stop> {
     use quick_xml::events::Event;
 
     let mut reader = quick_xml::Reader::from_reader(io::BufReader::new(xml));
+    // As `calamine` reads it, so a part it reads is not refused here.
+    let config = reader.config_mut();
+    config.check_end_names = false;
+    config.check_comments = false;
     let mut buf = Vec::new();
     const RECORDS: [&str; 5] = ["xf", "numFmt", "font", "fill", "border"];
     let mut records = [0usize; RECORDS.len()];
@@ -1029,6 +1033,11 @@ mod tests {
         for unreadable in [num_fmt(&over), font(&over), fed, xfs(MAX_CELL_FORMATS + 1)] {
             assert!(matches!(scan(unreadable), Err(Stop::Unreadable)));
         }
+        // A mismatched end tag, which `calamine` reads past, neither stops
+        // the count nor makes the part unreadable.
+        assert!(scan(format!("<a></b>{}", xfs(MAX_CELL_FORMATS))).is_ok());
+        let mismatched = format!("<a></b>{}", xfs(MAX_CELL_FORMATS + 1));
+        assert!(matches!(scan(mismatched), Err(Stop::Unreadable)));
     }
 
     #[test]
