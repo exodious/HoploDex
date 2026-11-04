@@ -559,7 +559,7 @@ fn scan_styles(xml: impl Read) -> Result<(), Stop> {
         buf.clear();
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e) | Event::Empty(e)) => {
-                let text = match e.local_name().as_ref() {
+                match e.local_name().as_ref() {
                     "xf" => {
                         formats += 1;
                         if formats > MAX_CELL_FORMATS {
@@ -567,19 +567,19 @@ fn scan_styles(xml: impl Read) -> Result<(), Stop> {
                         }
                         continue;
                     }
-                    "numFmt" => "formatCode",
-                    "name" => "val",
+                    "numFmt" | "name" => {}
                     _ => continue,
-                };
+                }
+                // Every attribute, not only `formatCode` and `val`: `calamine`
+                // splits attributes itself, and a key `quick-xml` reads as
+                // "\x0CformatCode" is `formatCode` to it.
                 for attribute in e.attributes().with_checks(false) {
-                    let attribute = attribute.map_err(|_| Stop::Unreadable)?;
-                    if attribute.key.local_name().as_ref() == text {
-                        let value = attribute
-                            .normalized_value(quick_xml::XmlVersion::Implicit1_0)
-                            .map_err(|_| Stop::Unreadable)?;
-                        if value.chars().count() > MAX_STYLE_TEXT_CHARS {
-                            return Err(Stop::Unreadable);
-                        }
+                    let value = attribute
+                        .map_err(|_| Stop::Unreadable)?
+                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                        .map_err(|_| Stop::Unreadable)?;
+                    if value.chars().count() > MAX_STYLE_TEXT_CHARS {
+                        return Err(Stop::Unreadable);
                     }
                 }
             }
@@ -967,7 +967,11 @@ mod tests {
         for fine in [num_fmt(&at), num_fmt(&escaped), font(&at), xfs(MAX_CELL_FORMATS)] {
             assert!(scan(fine).is_ok());
         }
-        for unreadable in [num_fmt(&over), font(&over), xfs(MAX_CELL_FORMATS + 1)] {
+        // A form feed before the key: `quick-xml` reads another key, and
+        // `calamine` this one.
+        let fed =
+            format!("<numFmts><numFmt numFmtId=\"164\" \x0CformatCode=\"{over}\"/></numFmts>");
+        for unreadable in [num_fmt(&over), font(&over), fed, xfs(MAX_CELL_FORMATS + 1)] {
             assert!(matches!(scan(unreadable), Err(Stop::Unreadable)));
         }
     }
