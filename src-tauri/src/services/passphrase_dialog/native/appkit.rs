@@ -198,6 +198,9 @@ struct Row {
 
 struct Parts {
     alert: Retained<NSAlert>,
+    /// The fields and lines under the alert's text: re-fitted when a line or
+    /// the meter shows or goes, which changes its height.
+    body: Retained<NSStackView>,
     parent: Retained<NSWindow>,
     rows: Vec<Row>,
     meter: Retained<NSLevelIndicator>,
@@ -359,6 +362,7 @@ fn build(
 
     let parts = Rc::new(Parts {
         alert: alert.clone(),
+        body: body.clone(),
         parent: parent.clone(),
         rows,
         meter,
@@ -481,6 +485,17 @@ impl Parts {
             }
         }
         self.primary.setEnabled(view.ready && !self.busy.get());
+        self.refit();
+    }
+
+    /// Gives the body the height its shown parts need, and lays the alert out
+    /// again, so a line that shows doesn't draw over the text above it.
+    fn refit(&self) {
+        let size = self.body.fittingSize();
+        if size != self.body.frame().size {
+            self.body.setFrameSize(size);
+            self.alert.layout();
+        }
     }
 
     /// The primary button (or Return): what was typed goes to the caller,

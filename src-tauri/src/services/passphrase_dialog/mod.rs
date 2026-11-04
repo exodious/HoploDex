@@ -12,9 +12,9 @@
 //!
 //! [`PassphraseDialog`] is the seam: the app's [`NativeDialog`], an E2E
 //! build's `E2eDialog` (which answers from a queue file), and the tests'
-//! `ScriptedDialog` (`tests/support`). [`ask`] drives any of them: the dialog stays up, busy,
-//! while the backend tries what was typed, and comes back with the reason
-//! under the field when it is wrong.
+//! scripted dialog (`tests/passphrase_dialog_test.rs`). [`ask`] drives any of
+//! them: the dialog stays up, busy, while the backend tries what was typed,
+//! and comes back with the reason under the field when it is wrong.
 
 pub mod checks;
 #[cfg(feature = "e2e")]
