@@ -364,11 +364,12 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: npm run bundle:linux -- --bundles deb,rpm
       # apport's ignore entry must match the path the .deb installs the app at (#166).
+      # Tauri's bundler writes its tar entries without the leading `./`.
       - name: Check the .deb installs the app where apport's ignore entry names it
         if: steps.scope.outputs.run == 'true'
         run: |
-          listing=$(dpkg-deb -c src-tauri/target/release/bundle/deb/*.deb | awk '{print $NF}')
-          for path in ./usr/bin/hoplodex ./etc/apport/blacklist.d/hoplodex; do
+          listing=$(dpkg-deb -c src-tauri/target/release/bundle/deb/*.deb | awk '{sub(/^\.\//, "", $NF); print $NF}')
+          for path in usr/bin/hoplodex etc/apport/blacklist.d/hoplodex; do
             grep -qxF "$path" <<<"$listing" || { echo "::error::the .deb has no $path"; exit 1; }
           done
 
