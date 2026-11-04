@@ -136,6 +136,8 @@ of these checks needs them.
 
 ### M3: A screen reader hears the phases (Linux with Orca, or macOS with VoiceOver)
 
+_Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so this check is no longer run (tasks.md T087, T088)._
+
 1. Do Setup S1 with the screen reader on, launching with
    `HOPLODEX_E2E_UPGRADE_PHASE_SECONDS=5 scripts/human-testing.sh --reset --release --older`
    so each phase stays up for 5 seconds.

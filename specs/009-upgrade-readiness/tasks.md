@@ -268,6 +268,7 @@ These come first because the E2E journey and US4 open the fixture, and the fixtu
   - **Deferred** (2026-10-17) to #48, with 004's to 007's checks: not run before the PR. The one polite live region announcing each phase, and the dialogs' names and buttons, are covered by `UpgradeDialogs.test.tsx`
 - [X] T088 [P] On macOS, do quickstart.md's manual check **M3** with VoiceOver, and record the result for the PR
   - **Deferred** (2026-10-17) to #48, with 004's to 007's checks: not run before the PR. The one polite live region announcing each phase, and the dialogs' names and buttons, are covered by `UpgradeDialogs.test.tsx`
+  _Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so these screen reader checks (T087, T088) are no longer run and #48 is closed; the tests named above stay._
 
 ### Close-out (at pull request time)
 

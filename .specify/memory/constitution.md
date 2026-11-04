@@ -1,53 +1,39 @@
 <!--
 Sync Impact Report
-Version change: 1.4.0 → 1.5.0
-Bump rationale: MINOR. Materially changed guidance in Development Workflow &
-Quality Gates (#21): the release review's attack surface moves from an inline
-list to one maintained definition that a pull request changing the surface
-updates; the per-PR review's upload rule is narrowed to code the pull request
-adds or changes; and the re-review a release commit needs after fixes is
-stated. No principle is removed or redefined.
-Modified principles: none
-Modified sections:
-  - Development Workflow & Quality Gates:
-    - The release review's attack surface is defined once, in
-      docs/attack-surface.md (code to review, questions, accepted residual
-      risks), which MUST describe the code at the release commit; the seven
-      areas listed inline since 1.1.0 are entries there (commands and
-      capabilities → ipc-commands; capabilities and CSP → webview-config;
-      paths → paths; import and export → import-export; key and passphrase →
-      key-passphrase; secure deletion → plaintext-lifetime; decrypted copies
-      → document-copies)
-    - A pull request that adds, changes or removes attack surface updates the
-      list in the same pull request; a per-PR AI review, when run, says
-      whether the surface changed and proposes the update
-    - A surface is removed only when its code is gone, with the reason in the
-      pull request
-    - The list records the design, never findings; findings stay in code
-      scanning (and private advisories after a release)
-    - A per-PR AI review uploads to code scanning only its findings about
-      code the pull request adds or changes; a vulnerability it notices in
-      code a release already contains is handled as a private advisory
-    - After fixes made in response to a release review, the final release
-      commit needs carry-forward re-verification of that review's findings
-      plus a review of the diff from the reviewed commit to the final one,
-      not a second whole-codebase review
+Version change: 1.5.0 → 1.6.0
+Bump rationale: MINOR. Materially changed guidance in Principle III: its WCAG
+2.1 AA baseline is removed. The principle is neither removed nor redefined
+(one design system, one confirmation pattern), and nothing that met 1.5.0
+falls short of 1.6.0, so the change is not backward-incompatible.
+Modified principles:
+  - III. User Experience Consistency: "The interface MUST meet WCAG 2.1 AA
+    accessibility as a baseline" is removed. In its place, a SHOULD with no
+    testing obligation: no conformance target and no screen reader checks,
+    but changes keep the labels, roles and keyboard operation the shared
+    components provide, so a screen reader is not shut out. The app has no
+    audio or text-to-speech of its own, so a screen reader is the case the
+    baseline was really about.
+Modified sections: none
 Added sections: none
 Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md: ✅ the Constitution Check names the
-    attack-surface entries the feature adds or changes, updated in the
-    feature's pull request
-  - .specify/templates/tasks-template.md: ✅ a final-phase task to update
-    docs/attack-surface.md
-  - CLAUDE.md "Spec Kit workflow" gate list: ✅ names the list update;
-    "Architecture" points to docs/attack-surface.md
+  - .specify/templates/plan-template.md: ✅ no change (its Constitution Check
+    is filled from this file; it never named WCAG)
+  - .specify/templates/spec-template.md, tasks-template.md,
+    checklist-template.md: ✅ no change (none names WCAG or a screen reader
+    check)
+  - CLAUDE.md: ✅ no change (it never named WCAG)
+  - DEVELOPMENT.md: ✅ the upgrade-phase hold no longer cites a screen-reader
+    check
+  - .claude/skills/speckit-orchestrate/SKILL.md: ✅ a screen reader is no
+    longer the example of a manual task
+  - specs/004–010: ✅ a dated amendment note beside each screen reader check
+    deferred to issue 48; their Constitution Check rows are left as the
+    record of what 1.5.0 and earlier required
 Follow-up TODOs:
-  - ✅ docs/attack-surface.md and scripts/attack-surface.mjs with its test
-    (in npm test), in the amending pull request
-  - Issue 21: the review skill, the per-PR verdict and upload, and the
-    issue's description (the committed report is gone since 1.3.0) are a
-    separate change
+  - Issue 48 (the deferred screen reader checks) is closed by the amending
+    pull request; issue 37 loses its "Screen reader checks" section and
+    issue 36's M4 no longer points at them
 -->
 
 # HoploDex Constitution
@@ -99,9 +85,12 @@ The application MUST use a single, documented set of UI components, terminology,
 and interaction patterns across every screen — no screen may invent its own
 navigation, confirmation, or error-handling pattern. Destructive actions
 (deleting a firearm record, bulk edits, data wipes) MUST use a consistent
-confirmation pattern throughout the app. The interface MUST meet WCAG 2.1 AA
-accessibility as a baseline. Any deviation from established patterns MUST be
-reflected back into the shared design system, not left as a one-off.
+confirmation pattern throughout the app. Any deviation from established
+patterns MUST be reflected back into the shared design system, not left as a
+one-off. The project sets no accessibility conformance target and runs no
+screen reader checks, but changes SHOULD keep the labels, roles and keyboard
+operation the shared components provide, so that a screen reader is not shut
+out.
 
 **Rationale**: Collection management is a long-lived, trust-sensitive
 workflow; inconsistent UX increases the risk of user error on irreversible
@@ -276,4 +265,4 @@ request MUST be checked against this constitution during review; unjustified
 complexity or violations MUST be resolved or explicitly documented before
 merge.
 
-**Version**: 1.5.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-02
+**Version**: 1.6.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-04

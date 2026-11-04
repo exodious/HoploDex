@@ -185,6 +185,8 @@ _Deferred 2026-10-08: the macOS steps to #36 (tasks.md T128), and Word's Protect
 
 _Deferred 2026-10-08 to #48, which runs the screen reader checks of 004, 005, 006 and 007 together (tasks.md T129–T131)._
 
+_Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so this check is no longer run and #48 is closed._
+
 1. With Orca (Linux), NVDA (Windows) or VoiceOver (macOS) running, do
    the Setup steps 1–4 and preview "Purchase receipt.pdf".
 2. Move to the page area.
