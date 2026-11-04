@@ -998,10 +998,10 @@ pub mod ops {
         // An empty key, then the real one through the C API, so the new
         // passphrase never becomes SQL text (003 FR-007).
         conn.execute("ATTACH DATABASE ?1 AS rekey KEY ''", [copy_path])
-            .and_then(|_| cipher::key(conn, "rekey", new))
             .map_err(CommandError::from_db)?;
 
-        let copied = cipher::apply_cipher_settings(conn, "rekey")
+        let copied = cipher::key(conn, "rekey", new)
+            .and_then(|()| cipher::apply_cipher_settings(conn, "rekey"))
             .and_then(|()| export_reporting_size(conn, events, new_copy, total))
             .and_then(|()| {
                 conn.execute_batch(
