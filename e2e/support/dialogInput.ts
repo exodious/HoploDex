@@ -118,7 +118,14 @@ export async function waitForLog(
       found = passphraseLog().slice(mark).find(matches);
       return found !== undefined;
     },
-    { timeout, interval: 100, timeoutMsg: `the passphrase dialog's log never showed ${what}` },
+    {
+      timeout,
+      interval: 100,
+      timeoutMsg: `the passphrase dialog's log never showed ${what}; its last lines were:\n${passphraseLog()
+        .slice(-6)
+        .map((line) => JSON.stringify(line))
+        .join("\n")}`,
+    },
   );
   return found!;
 }

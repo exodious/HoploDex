@@ -43,6 +43,7 @@ facts each text states are required.
     mismatch, one a character short included: the pause is what lets the
     typing finish. The length message waits for the confirmation to be
     started. The same checks run again on submit.
+  _Amended 2026-11-04: superseded by the native passphrase dialog (`services::passphrase_dialog`), the one component a passphrase is typed into. A page's processes keep copies of what is typed into it that nothing in the page can wipe, so no passphrase field is in the page and no command takes or returns a passphrase: the backend shows a dialog of the OS's own (GTK, AppKit, Win32), modal to the main window, copies what was typed once into a wiped buffer and empties the field. It has two shapes, "enter" (one field) and "choose" (the new passphrase twice, the current one first for a change, the 003 FR-004 acknowledgement for a create). The checks above run as it is typed (`passphrase_dialog::checks`, with the same words, the 400 ms pause and the length message waiting for the confirmation), and the strength hint is the `zxcvbn` crate's, worked out in the backend (010 FR-015's note). The Enter rule holds in it: Enter in a field presses the primary button when it is enabled and does nothing when it isn't; Escape, the close button and **Cancel** cancel; an input method's composition is the toolkit's own. It stays up, busy, while what was typed is tried, and asks again under the field with the reason when it is wrong; any other outcome closes it and the page shows it as before. Cancel before any try is `PASSPHRASE_CANCELLED`, and after a wrong passphrase it returns that refusal. A **Show passphrase** checkbox replaces Show/Hide. A screen lock or a sleep empties and closes it, as `system:clear-passphrase-fields` cleared the fields, and the idle lock waits while it is up._
 - **`Dialog`**, while a database is open, has a lock button ("Lock now",
   lock icon, `title` "Lock now (Ctrl+L)") in its header beside the close
   button, since a dialog covers the top bar's (§4). It does what Ctrl/⌘+L
@@ -150,6 +151,7 @@ collection data, top-bar tabs or counts are shown.
   service." when the keyring is unavailable (FR-019). Ticking it opens the
   FR-017 confirmation (§8) first, and the box stays unticked unless the user
   confirms.
+  _Amended 2026-11-04: no field in the row: **Open…** (primary, focused) shows the native passphrase dialog (§0's note), titled "Open <name>", which asks again under its field for a wrong passphrase. The row shows **Opening…** while it is up, and what stopped the open below **Open…** afterwards. **Remember on this computer** and its confirmation stay in the row._
 - **Selected row, passphrase saved**: **Open** (primary), no prompt. After a
   lock the selected row shows the same (US6-8).
 - **Opening** (SC-003, constitution IV): within 100 ms of **Open** being
@@ -198,6 +200,7 @@ the dialog, and resends the open with `takeOver: true`, the row showing its
 busy state; a wrong passphrase is then refused in the row like any other.
 
 _Amended 2026-10-15 (#44): Enter in the passphrase field confirms, as **Take over** does; an empty field is refused as above._
+_Amended 2026-11-04: **Take over…** shows the native passphrase dialog itself, titled "Take over <name>?", with the description above as its message, the passphrase field, and **Take over** as its primary: typing it again in that dialog is the confirmation (FR-032). There is no `ConfirmDialog` step. Cancel leaves the open-elsewhere message as it was._
 
 ### Storage that can't be reached while open (FR-032, research §6)
 
@@ -239,12 +242,16 @@ returns (constitution IV). On success the new
 database opens (the app shell appears), and the **disk-encryption note**
 (§10) is shown once.
 
+_Amended 2026-11-04: the passphrase fields (3, 4) and the acknowledgement (6) are in the native passphrase dialog (§0's note), titled "Choose a passphrase", with the strength hint, the checks as typed and **Create database** as its primary, enabled once they pass and the acknowledgement is ticked. The page's primary is **Create database…**; the backend checks the name and folder first, and a refusal there comes back to their fields before any passphrase is asked for._
+
 ## 3. Unlocking after a lock (FR-033, US6-1, US6-2, US6-8)
 
 Nothing special: the chooser (§1) with the locked database selected, its
 passphrase field focused (or **Open** focused when the passphrase is saved),
 and the "locked" notice. The whole collection tree was unmounted, so nothing
 from it is in the DOM.
+
+_Amended 2026-11-04: **Open…** is focused, as there is no field (§1's note)._
 
 ## 4. The database menu (top bar)
 
@@ -430,6 +437,8 @@ other computers."
 
 _Amended 2026-10-15 (#44): Enter in its "Passphrase" field confirms, as **Remember passphrase** does (§0); the settings form behind it is not submitted._
 
+_Amended 2026-11-04: from the settings, the confirmation is the native passphrase dialog (§0's note), titled "Remember this database's passphrase?", with these facts as its message, the passphrase field and **Remember passphrase**; a wrong passphrase is asked for again in it. From the chooser it stays this `ConfirmDialog`, asked when **Remember on this computer** is ticked._
+
 **Change passphrase** (FR-015, FR-016, US4): a `Dialog` titled "Change
 passphrase", with **Current
 passphrase**, **New passphrase** (with strength) and **Confirm new
@@ -444,6 +453,8 @@ made before now still open with the old passphrase." When the old file
 remains: "The previous file could not be deleted. It is at <path>, and it
 opens with the old passphrase." `INSUFFICIENT_SPACE`: "Changing the
 passphrase needs <size> free on the database's drive; <available> is free."
+
+_Amended 2026-11-04: **Change passphrase…** shows the native passphrase dialog (§0's note) with the three fields and **Change passphrase**; the current passphrase is checked while it waits, and a wrong one is asked for again under its field with the others kept. This `Dialog` shows only once the copy begins: its progress, the result and any refusal (with **Try again…**)._
 
 ## 9. Restore from a backup (FR-028, US3-5, US3-6)
 
@@ -487,6 +498,8 @@ While it runs: progress as in §8 ("Copying the backup…", "Checking the
 backup…", "Backing up the current database…", "Replacing the database…"),
 and the dialog has no close button and ignores Escape. Afterwards the
 database is open, and a notice says it now opens with the passphrase from <date> (US3-5).
+
+_Amended 2026-11-04: no field (2): **Restore…** shows the native passphrase dialog (§0's note), titled "Restore from a backup", with the note above as its message and **Continue**; `check_backup` opens the backup with it while it waits, and a wrong passphrase is asked for again there. The backend keeps the passphrase that opened it, wiped when dropped, under a `checkId` for the confirmation's restore; Cancel, a screen lock, a sleep or a close drops it. The statement (3) adds which passphrase will be asked for._
 
 _Amended by [spec 009](../../009-upgrade-readiness/contracts/ui.md#6-restoring-a-backup-in-an-older-layout-fr-019-amends-003-ui-databasesmd-9): **Restore** first runs `check_backup`, the confirmation adds a sentence when the backup will be upgraded, progress gains "Upgrading the restored copy…", and a backup made before an upgrade reads "before upgrading to HoploDex <version>" in the list (009 FR-013, FR-019)._
 

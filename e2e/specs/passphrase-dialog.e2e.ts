@@ -116,10 +116,11 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     );
 
     // A confirmation a character short doesn't match, once the typing pauses.
+    let step = logMark();
     await pressInDialog("Tab");
     await typeInDialog(PASSPHRASE.slice(0, -1));
     await waitForView(
-      mark,
+      step,
       (v) => v.confirmation === "The passphrases don't match." && !v.ready,
       "the mismatch after the pause",
     );
@@ -131,17 +132,20 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     expect(passphraseLog().slice(beforeEnter).some((l) => "closed" in l)).toBe(false);
 
     // Put right, the problem goes at once; the acknowledgement is still due.
+    step = logMark();
     await typeInDialog(PASSPHRASE.slice(-1));
     await waitForView(
-      mark,
+      step,
       (v) => v.confirmation === null && v.passphrase === null && !v.ready,
       "the match, with the acknowledgement still unticked",
     );
+    step = logMark();
     await tickAcknowledgement();
-    await waitForView(mark, (v) => v.ready, "the button enabled by the acknowledgement");
+    await waitForView(step, (v) => v.ready, "the button enabled by the acknowledgement");
 
+    step = logMark();
     await pressInDialog("Return");
-    await waitForLog(mark, (l) => "closed" in l, "the dialog closing");
+    await waitForLog(step, (l) => "closed" in l, "the dialog closing", 30000);
     await waitForCollection();
   });
 
@@ -238,8 +242,9 @@ describe("003 US4 - Change My Passphrase Safely", () => {
     });
 
     // Only the current passphrase was emptied, and it has the focus.
+    const step = logMark();
     await typeInDialog(PASSPHRASE);
-    await waitForView(mark, (v) => v.ready && v.current === null, "the refusal cleared");
+    await waitForView(step, (v) => v.ready && v.current === null, "the refusal cleared");
     await pressInDialog("Return");
 
     await $('[role="dialog"] [role="status"]').waitForExist({

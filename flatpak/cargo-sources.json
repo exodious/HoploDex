@@ -1367,6 +1367,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/either/either-1.19.0.crate",
+        "sha256": "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be",
+        "dest": "cargo/vendor/either-1.19.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be\", \"files\": {}}",
+        "dest": "cargo/vendor/either-1.19.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/embed-resource/embed-resource-3.0.11.crate",
         "sha256": "fbfdaacccebec3b28e4866b8973543c7647797db5ada1bdab552e48fe665fbbd",
         "dest": "cargo/vendor/embed-resource-3.0.11"
@@ -1531,6 +1544,19 @@
         "type": "inline",
         "contents": "{\"package\": \"7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a\", \"files\": {}}",
         "dest": "cargo/vendor/fallible-streaming-iterator-0.1.9",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/fancy-regex/fancy-regex-0.18.0.crate",
+        "sha256": "e1e1dacd0d2082dfcf1351c4bdd566bbe89a2b263235a2b50058f1e130a47277",
+        "dest": "cargo/vendor/fancy-regex-0.18.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"e1e1dacd0d2082dfcf1351c4bdd566bbe89a2b263235a2b50058f1e130a47277\", \"files\": {}}",
+        "dest": "cargo/vendor/fancy-regex-0.18.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -2706,6 +2732,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/itertools/itertools-0.14.0.crate",
+        "sha256": "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285",
+        "dest": "cargo/vendor/itertools-0.14.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285\", \"files\": {}}",
+        "dest": "cargo/vendor/itertools-0.14.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/itoa/itoa-1.0.18.crate",
         "sha256": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
         "dest": "cargo/vendor/itoa-1.0.18"
@@ -2883,6 +2922,19 @@
         "type": "inline",
         "contents": "{\"package\": \"4cca98e95f35b29d469dade6724c6f96cec9236640f745a0e99b0334ec320ab1\", \"files\": {}}",
         "dest": "cargo/vendor/landlock-0.4.7",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/lazy_static/lazy_static-1.5.1.crate",
+        "sha256": "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb",
+        "dest": "cargo/vendor/lazy_static-1.5.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb\", \"files\": {}}",
+        "dest": "cargo/vendor/lazy_static-1.5.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -7407,6 +7459,19 @@
         "type": "inline",
         "contents": "{\"package\": \"90cb9383f9b45290407a1258b202d3f8f01db719eb60b4e4055c6375af4fc7c7\", \"files\": {}}",
         "dest": "cargo/vendor/zvariant_utils-3.5.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/zxcvbn/zxcvbn-3.1.1.crate",
+        "sha256": "f9eaee90f4a795d1eb4ba6c51e1c1721d4784d550e8efa7b2600f29c867365e0",
+        "dest": "cargo/vendor/zxcvbn-3.1.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"f9eaee90f4a795d1eb4ba6c51e1c1721d4784d550e8efa7b2600f29c867365e0\", \"files\": {}}",
+        "dest": "cargo/vendor/zxcvbn-3.1.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
