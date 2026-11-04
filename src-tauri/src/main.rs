@@ -105,6 +105,43 @@ fn exit_on_termination_signals(app: tauri::AppHandle) {
     });
 }
 
+/// Turns core dumps off for this process and every process it starts, which
+/// inherit the limit: WebKit's web and network processes, and the helpers. A
+/// core of the app or of a web process holds the open database's decrypted
+/// records (#166). The hard limit too, as the helpers' (`confine.rs`): with
+/// only the soft one lowered, a compromised helper could raise the app's again
+/// with `prlimit`. Inside the Flatpak, WebKit's sandboxed web process is
+/// started by the Flatpak portal, not by the app, so it doesn't inherit this.
+/// Not on macOS, whose default is already 0 and whose WebKit processes are
+/// launchd's.
+#[cfg(target_os = "linux")]
+fn turn_off_core_dumps() {
+    let core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: a plain system call with a pointer to a local.
+    if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &core) } != 0 {
+        log::error!("core dumps could not be turned off: {}", std::io::Error::last_os_error());
+    }
+}
+
+/// Ends each web view's web process with SIGKILL as the app exits, before the
+/// app itself does (#166). Left alone, a web process notices the app is gone
+/// and runs its exit handlers, and on WebKitGTK before 2.54.1 (WebKit bug
+/// 305909) one of its threads then writes into the EGL display Mesa's exit
+/// handler has freed: it corrupts its heap and aborts, or crashes. Runs on
+/// the main thread, so `with_webview` runs at once, while the web views are
+/// still there.
+#[cfg(target_os = "linux")]
+fn end_web_processes(app: &AppHandle) {
+    use webkit2gtk::WebViewExt;
+
+    for (label, webview) in app.webviews() {
+        if let Err(err) = webview.with_webview(|platform| platform.inner().terminate_web_process())
+        {
+            log::warn!("could not end the web process of web view {label}: {err}");
+        }
+    }
+}
+
 /// Hands the OS's notices to the session (003 research.md §14).
 fn handle_system_events(app: AppHandle, events: mpsc::Receiver<SystemEvent>) {
     let spawned = thread::Builder::new().name("system-events".into()).spawn(move || {
@@ -225,6 +262,9 @@ fn main() {
     }
     // The log goes to standard error from here on (the helpers above have none).
     hoplodex_lib::logging::init();
+    // Before this process starts any other.
+    #[cfg(target_os = "linux")]
+    turn_off_core_dumps();
     // WebKit's sandbox, on only where a probe shows it works, and decided
     // here because the variable that turns it on must be set before the
     // first web context exists (007 research.md §9).
@@ -519,9 +559,11 @@ fn main() {
             api.prevent_exit();
             request_quit(app);
         }
-        // Decrypted copies of opened documents live only as long as the
-        // session (001 FR-035); the startup sweep covers abnormal exits.
         RunEvent::Exit => {
+            #[cfg(target_os = "linux")]
+            end_web_processes(app);
+            // Decrypted copies of opened documents live only as long as the
+            // session (001 FR-035); the startup sweep covers abnormal exits.
             clear_opened_documents_cache(app);
             // Not there when the exit is a setup that failed.
             if let Some(machine) = app.try_state::<MachineSettings>() {

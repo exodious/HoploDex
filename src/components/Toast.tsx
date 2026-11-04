@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "./Icon";
 import { ToastContext } from "./toastContext";
@@ -14,6 +14,13 @@ interface ToastItem {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(0);
+  const timers = useRef(new Set<number>());
+
+  // A toast's timer ends with the provider, which a session's end unmounts.
+  useEffect(() => {
+    const pending = timers.current;
+    return () => pending.forEach((timer) => window.clearTimeout(timer));
+  }, []);
 
   const dismiss = useCallback((id: number) => {
     setToasts((current) => current.filter((t) => t.id !== id));
@@ -23,7 +30,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message, tone = "success") => {
       const id = nextId.current++;
       setToasts((current) => [...current.slice(-2), { id, message, tone }]);
-      window.setTimeout(() => dismiss(id), tone === "success" ? 4000 : 8000);
+      const timer = window.setTimeout(
+        () => {
+          timers.current.delete(timer);
+          dismiss(id);
+        },
+        tone === "success" ? 4000 : 8000,
+      );
+      timers.current.add(timer);
     },
     [dismiss],
   );
