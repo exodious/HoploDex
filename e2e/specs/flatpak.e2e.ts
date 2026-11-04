@@ -678,9 +678,6 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     expect(keyringEntries()).toEqual([]);
     await ensureSelected("Journey");
     await toggle("Remember on this computer");
-    await $('[role="alertdialog"]').waitForExist();
-    await clickButton("Remember passphrase");
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await unlock(E2E_PASSPHRASE);
     await switchDatabase();
 
@@ -1582,9 +1579,6 @@ describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Run
 
     await ensureSelected("Upgrade");
     await toggle("Remember on this computer");
-    await $('[role="alertdialog"]').waitForExist();
-    await clickButton("Remember passphrase");
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await unlock(E2E_PASSPHRASE);
     await switchDatabase();
     // The entry is in the app's keyring file, read with the portal's key.

@@ -854,7 +854,7 @@ describe("DatabaseChooser (003 US5)", () => {
     expect(remember).toBeEnabled();
   });
 
-  it("remembers only once the 003 FR-017 confirmation is accepted", async () => {
+  it("asks Open to remember the passphrase, which the native dialog explains (003 FR-017)", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ keyringAvailable: true }),
@@ -863,20 +863,9 @@ describe("DatabaseChooser (003 US5)", () => {
 
     const remember = await screen.findByRole("checkbox", { name: "Remember on this computer" });
     await user.click(remember);
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Remember the passphrase of “Main collection”?",
-    });
-    expect(confirm).toHaveTextContent(
-      "Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open “Main collection” without knowing the passphrase. On a shared account this defeats the passphrase.",
-    );
-    // Not ticked while it asks, nor after a cancel.
-    expect(remember).not.toBeChecked();
-    await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
-    expect(remember).not.toBeChecked();
-
-    await user.click(remember);
-    await user.click(await screen.findByRole("button", { name: "Remember passphrase" }));
+    // Nothing asked in the page: the native dialog says what it gives away.
     expect(remember).toBeChecked();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
 
     await user.click(openOf("Main collection"));
     expect(session.openDatabase).toHaveBeenCalledWith(main.path, { rememberPassphrase: true });

@@ -549,6 +549,10 @@ fn stopped_notice(path: &Path, stopped: &StoppedOperation) -> ChooserNotice {
 /// the rest (003 FR-037). A sleep the OS gave no usable notice of is only
 /// noticed now, and locks now if the idle lock is on (003 research.md §14).
 pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
+    // However the sleep was noticed, its dialogs go and a passphrase kept for
+    // a restore is wiped, as `will_sleep` does (amended 2026-11-04).
+    session.prompts().dismiss_all();
+    session.drop_backup_check();
     complete_immediate(session, machine);
     session.wait_closed(IMMEDIATE_WAIT);
     let idle_lock_on = session.idle().settings().is_some_and(|settings| settings.idle_enabled);

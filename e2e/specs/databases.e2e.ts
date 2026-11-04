@@ -317,21 +317,21 @@ describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another C
 describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7-databases)", () => {
   const SAVED_NOTE = "Opens without a passphrase on this computer";
 
-  it("remembers a passphrase at open, after the confirmation (003 FR-017)", async () => {
+  it("remembers a passphrase at open, saying in the native dialog what that gives away (003 FR-017)", async () => {
     await switchDatabase();
     await selectChooserRow("Home");
     expect(await asksForPassphrase()).toBe(true);
 
     await toggle("Remember on this computer");
-    const confirm = '[role="alertdialog"]';
-    await $(confirm).waitForExist();
-    await expect($(confirm)).toHaveText(
-      expect.stringContaining("will be able to open “Home” without knowing the passphrase"),
-    );
-    await clickButton("Remember passphrase");
-    await $(confirm).waitForExist({ reverse: true });
-
     await unlock(home.passphrase);
+
+    const asked = passphraseLog()
+      .filter((line) => "asked" in line)
+      .at(-1)?.asked as { primary: string; message: string };
+    expect(asked.primary).toBe("Open and remember");
+    expect(asked.message).toContain(
+      "will be able to open the database without knowing the passphrase",
+    );
     expect(await showsFirearm("HomeGun")).toBe(true);
   });
 

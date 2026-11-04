@@ -336,7 +336,9 @@ pub mod ops {
     /// passphrase returns that refusal, so the chooser can offer a restore
     /// (003 US3-6); Cancel before any try is `PASSPHRASE_CANCELLED`.
     /// `take_over` asks for it as the take-over's confirmation (003 FR-032),
-    /// naming the computer the last open found it open on.
+    /// naming the computer the last open found it open on. `remember` says in
+    /// the dialog what saving it gives away (003 FR-017), so the page can't
+    /// have it saved unnoticed (amended 2026-11-04 to 003 contracts/ui-databases.md §8).
     pub fn open_database_typed(
         session: &Session,
         machine: &MachineSettings,
@@ -346,6 +348,14 @@ pub mod ops {
         take_over: bool,
     ) -> Result<DatabaseStatus, CommandError> {
         let quoted = quoted_name(Path::new(path));
+        let (remembering, and_remember) = if remember {
+            (
+                format!("\n\nThe passphrase will be remembered on this computer. {REMEMBER_FACTS}"),
+                " and remember",
+            )
+        } else {
+            (String::new(), "")
+        };
         let request = if take_over {
             let elsewhere = session
                 .open_elsewhere(Path::new(path))
@@ -358,17 +368,17 @@ pub mod ops {
                     "Only do this if {elsewhere} no longer has {quoted} open, or if it crashed. \
                      If it still has it open, or its latest changes haven't synced here yet, \
                      those changes can be lost.\n\nEnter the passphrase for {quoted} again to \
-                     take it over."
+                     take it over.{remembering}"
                 ),
-                primary: "Take over".to_owned(),
+                primary: format!("Take over{and_remember}"),
                 busy: "Opening\u{2026}".to_owned(),
             }
         } else {
             Request {
                 shape: Shape::Enter,
                 title: format!("Open {quoted}"),
-                message: format!("Enter the passphrase for {quoted}."),
-                primary: "Open".to_owned(),
+                message: format!("Enter the passphrase for {quoted}.{remembering}"),
+                primary: format!("Open{and_remember}"),
                 busy: "Opening\u{2026}".to_owned(),
             }
         };

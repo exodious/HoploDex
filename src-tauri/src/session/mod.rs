@@ -304,6 +304,13 @@ pub struct SessionInner {
     /// kept while the restore's confirmation is asked (amended 2026-11-04 to
     /// 003 FR-007, as 009 research.md §4 keeps one for the upgrade question).
     backup_check: Mutex<Option<BackupCheckHeld>>,
+    /// How many times the held check has been dropped by a screen lock, a
+    /// sleep, a shutdown or a close (the generation). Only raised under
+    /// `backup_check`'s mutex. A check is held only if the generation is
+    /// still the one read before its passphrase was asked for, so one of
+    /// those that came while the backup was being checked still wins, as for
+    /// the upgrade slot (`awaiting_drops`).
+    backup_check_drops: AtomicU64,
     /// The database an open last found marked open on another computer, and
     /// that computer's name, for the take-over dialog's words.
     open_elsewhere: Mutex<Option<(PathBuf, String)>>,
@@ -421,6 +428,7 @@ impl Session {
             screen_locked_in_upgrade: AtomicBool::new(false),
             prompts: Prompts::default(),
             backup_check: Mutex::new(None),
+            backup_check_drops: AtomicU64::new(0),
             open_elsewhere: Mutex::new(None),
         }))
     }
@@ -484,19 +492,34 @@ impl SessionInner {
         &self.prompts
     }
 
+    /// The held check's generation now, read before a backup's passphrase
+    /// is asked for and passed to [`hold_backup_check`](Self::hold_backup_check).
+    pub fn backup_check_generation(&self) -> u64 {
+        self.backup_check_drops.load(Ordering::SeqCst)
+    }
+
     /// Keeps a checked backup's passphrase for its restore, under a new
-    /// `checkId`, in place of any held before.
+    /// `checkId`, in place of any held before, unless the check has been
+    /// dropped since `generation` was read: the passphrase is wiped instead,
+    /// and `None` returned.
     pub fn hold_backup_check(
         &self,
         backup_path: String,
         target: HeldTarget,
         passphrase: Passphrase,
-    ) -> SessionId {
+        generation: u64,
+    ) -> Option<SessionId> {
+        let mut slot = self.backup_check.lock().expect("session mutex poisoned");
+        if self.backup_check_drops.load(Ordering::SeqCst) != generation {
+            drop(slot);
+            drop(passphrase);
+            return None;
+        }
         let id = SessionId::next();
-        let held = BackupCheckHeld { id, backup_path, target, passphrase };
-        let replaced = self.backup_check.lock().expect("session mutex poisoned").replace(held);
+        let replaced = slot.replace(BackupCheckHeld { id, backup_path, target, passphrase });
+        drop(slot);
         drop(replaced);
-        id
+        Some(id)
     }
 
     /// The check held under `id`, taken out of the session.
@@ -507,7 +530,11 @@ impl SessionInner {
 
     /// Drops the held check, if any, wiping its passphrase.
     pub fn drop_backup_check(&self) {
-        let dropped = self.backup_check.lock().expect("session mutex poisoned").take();
+        let dropped = {
+            let mut slot = self.backup_check.lock().expect("session mutex poisoned");
+            self.backup_check_drops.fetch_add(1, Ordering::SeqCst);
+            slot.take()
+        };
         drop(dropped);
     }
 
@@ -813,14 +840,6 @@ impl SessionInner {
             slot.take()
         };
         self.forget_open();
-        // The dialogs asked for it go with it, and so does a backup checked
-        // to restore over it.
-        self.prompts.dismiss_for(id);
-        let mut held = self.backup_check.lock().expect("session mutex poisoned");
-        if held.as_ref().is_some_and(|check| check.target == HeldTarget::Open(id)) {
-            held.take();
-        }
-        drop(held);
         taken
     }
 
@@ -834,11 +853,22 @@ impl SessionInner {
         drop(ended);
     }
 
-    /// Nothing is open any more: the idle clock stops.
+    /// Nothing is open any more, however it closed: the idle clock stops,
+    /// and the dialogs asked for the open database go with it, as does a
+    /// backup checked to restore over it (only one is ever open).
     pub(crate) fn forget_open(&self) {
         self.current.store(0, Ordering::SeqCst);
         self.idle.stop();
         *self.open_path.lock().expect("session mutex poisoned") = None;
+        self.prompts.dismiss_bound();
+        let dropped = {
+            let mut slot = self.backup_check.lock().expect("session mutex poisoned");
+            self.backup_check_drops.fetch_add(1, Ordering::SeqCst);
+            let for_open =
+                slot.as_ref().is_some_and(|check| matches!(check.target, HeldTarget::Open(_)));
+            if for_open { slot.take() } else { None }
+        };
+        drop(dropped);
     }
 
     fn awaiting(&self) -> MutexGuard<'_, Option<AwaitingUpgrade>> {

@@ -1214,6 +1214,8 @@ pub mod ops {
             primary: "Continue".to_owned(),
             busy: "Checking the backup\u{2026}".to_owned(),
         };
+        // A screen lock, sleep or close while the backup is checked wins.
+        let generation = session.backup_check_generation();
         let mut outcome = None;
         let asked =
             passphrase_dialog::ask(session, dialog, bound, &request, |answer| {
@@ -1239,13 +1241,18 @@ pub mod ops {
                         Step::Done
                     }
                     Ok(inspected) => {
-                        let check_id = session.hold_backup_check(
+                        let held = session.hold_backup_check(
                             backup_path.to_owned(),
                             held_target.clone(),
                             answer.passphrase,
+                            generation,
                         );
-                        outcome =
-                            Some(Ok(CheckedBackup { check_id, upgrade_to: inspected.upgrade_to }));
+                        outcome = Some(match held {
+                            Some(check_id) => {
+                                Ok(CheckedBackup { check_id, upgrade_to: inspected.upgrade_to })
+                            }
+                            None => Err(CommandError::passphrase_cancelled()),
+                        });
                         Step::Done
                     }
                 }

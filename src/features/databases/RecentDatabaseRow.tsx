@@ -5,7 +5,6 @@ import { formatDateTime, formatRecentDay, formatRecentMoment } from "../../lib/d
 import type { BackupSummary } from "./types";
 import { folderOf, middleTruncate } from "./paths";
 import { outOfReachText } from "./outOfReach";
-import { RememberPassphraseConfirm } from "./RememberPassphraseConfirm";
 
 export interface ChooserRow {
   path: string;
@@ -94,7 +93,6 @@ export function RecentDatabaseRow({
   /** Opens with the saved passphrase, with no prompt. */
   const usesSaved = entry.passphraseSaved && !savedFailed;
   const [remember, setRemember] = useState(false);
-  const [confirmingRemember, setConfirmingRemember] = useState(false);
 
   // Back to Open for another try once a failed or cancelled open returns.
   const wasOpening = useRef(opening);
@@ -228,15 +226,9 @@ export function RecentDatabaseRow({
                     ? undefined
                     : "Not available: this computer has no keyring service."
                 }
-                onCheckedChange={(checked) =>
-                  checked ? setConfirmingRemember(true) : setRemember(false)
-                }
-              />
-              <RememberPassphraseConfirm
-                open={confirmingRemember}
-                name={entry.name}
-                onClose={() => setConfirmingRemember(false)}
-                onConfirm={() => setRemember(true)}
+                // The native dialog says what remembering gives away (003
+                // FR-017), where the page can't leave it out.
+                onCheckedChange={setRemember}
               />
             </div>
           )}

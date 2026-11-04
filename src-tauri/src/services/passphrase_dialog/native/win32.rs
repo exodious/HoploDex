@@ -20,6 +20,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::System::SystemServices::SS_NOPREFIX;
 use windows_sys::Win32::UI::Controls::{
     BST_CHECKED, EM_SETPASSWORDCHAR, ICC_PROGRESS_CLASS, INITCOMMONCONTROLSEX,
     InitCommonControlsEx, PBM_SETPOS, PBM_SETRANGE32,
@@ -418,6 +419,9 @@ impl State {
                         y: i32,
                         x: i32,
                         w: i32| {
+                // An `&` in a label (a database's or computer's name) is shown,
+                // not taken as a keyboard shortcut.
+                let style = if class == "STATIC" { style | SS_NOPREFIX } else { style };
                 let control = CreateWindowExW(
                     ex,
                     wide(class).as_ptr(),

@@ -215,10 +215,10 @@ impl Prompts {
         }
     }
 
-    /// Takes down the dialogs asked for the open database `id`, which is
-    /// closing.
-    pub fn dismiss_for(&self, id: SessionId) {
-        for up in self.lock().iter().filter(|up| up.bound == Some(id)) {
+    /// Takes down the dialogs asked for an open database: it closed, and
+    /// nothing is open any more.
+    pub fn dismiss_bound(&self) {
+        for up in self.lock().iter().filter(|up| up.bound.is_some()) {
             let _ = up.events.send(Event::Dismissed);
         }
     }
@@ -258,6 +258,10 @@ pub fn ask(
     }
     let (events, answers) = mpsc::channel();
     let _registered = session.prompts().register(bound, events.clone());
+    // The database it is for may have closed before it was registered.
+    if bound.is_some_and(|id| session.current_id() != id) {
+        return Asked::Cancelled;
+    }
     let window = match dialog.open(request, events) {
         Ok(window) => window,
         Err(err) => {

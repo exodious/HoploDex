@@ -151,7 +151,7 @@ collection data, top-bar tabs or counts are shown.
   service." when the keyring is unavailable (FR-019). Ticking it opens the
   FR-017 confirmation (§8) first, and the box stays unticked unless the user
   confirms.
-  _Amended 2026-11-04: no field in the row: **Open…** (primary, focused) shows the native passphrase dialog (§0's note), titled "Open <name>", which asks again under its field for a wrong passphrase. The row shows **Opening…** while it is up, and what stopped the open below **Open…** afterwards. **Remember on this computer** and its confirmation stay in the row._
+  _Amended 2026-11-04: no field in the row: **Open…** (primary, focused) shows the native passphrase dialog (§0's note), titled "Open <name>", which asks again under its field for a wrong passphrase. The row shows **Opening…** while it is up, and what stopped the open below **Open…** afterwards. **Remember on this computer** stays in the row, with no confirmation of its own: ticked, the dialog says what remembering gives away (§8's facts) and its primary is **Open and remember** (**Take over and remember** for a take-over), so the page can't have a passphrase saved without the user being told in a window it can't word._
 - **Selected row, passphrase saved**: **Open** (primary), no prompt. After a
   lock the selected row shows the same (US6-8).
 - **Opening** (SC-003, constitution IV): within 100 ms of **Open** being
@@ -437,7 +437,7 @@ other computers."
 
 _Amended 2026-10-15 (#44): Enter in its "Passphrase" field confirms, as **Remember passphrase** does (§0); the settings form behind it is not submitted._
 
-_Amended 2026-11-04: from the settings, the confirmation is the native passphrase dialog (§0's note), titled "Remember this database's passphrase?", with these facts as its message, the passphrase field and **Remember passphrase**; a wrong passphrase is asked for again in it. From the chooser it stays this `ConfirmDialog`, asked when **Remember on this computer** is ticked._
+_Amended 2026-11-04: from the settings, the confirmation is the native passphrase dialog (§0's note), titled "Remember this database's passphrase?", with these facts as its message, the passphrase field and **Remember passphrase**; a wrong passphrase is asked for again in it. From the chooser it is the Open dialog itself (§1's note): no `ConfirmDialog` is asked when **Remember on this computer** is ticked._
 
 **Change passphrase** (FR-015, FR-016, US4): a `Dialog` titled "Change
 passphrase", with **Current

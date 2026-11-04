@@ -20,11 +20,11 @@ use hoplodex_lib::models::database::{CloseReason, IdlePauseReason};
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::passphrase_dialog::{
-    Answer, DialogWindow, Event, Field, PassphraseDialog, Request, Retry, Shape,
+    self, Answer, Asked, DialogWindow, Event, Field, PassphraseDialog, Request, Retry, Shape, Step,
 };
 use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::scoped::Target;
-use hoplodex_lib::session::{Session, SessionId, lifecycle};
+use hoplodex_lib::session::{Session, lifecycle};
 use support::{
     ManualClock, TEST_PASSPHRASE, TestEvents, other_machine, passphrase, test_session_at,
 };
@@ -43,6 +43,8 @@ struct Scripted {
     retries: Mutex<Vec<Retry>>,
     /// Sends nothing when shown, so a test can take it down.
     silent: bool,
+    /// Runs once the first press is sent, while what was typed is tried.
+    then: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 impl Scripted {
@@ -84,6 +86,10 @@ impl PassphraseDialog for ScriptedDialog {
         self.0.asked.lock().unwrap().push(request.clone());
         if !self.0.silent {
             let _ = events.send(self.0.next());
+        }
+        let then = self.0.then.lock().unwrap().take();
+        if let Some(then) = then {
+            then();
         }
         Ok(Box::new(ScriptedWindow { script: Arc::clone(&self.0), events }))
     }
@@ -492,6 +498,60 @@ fn a_screen_lock_drops_a_checked_backup() {
     assert_eq!(err.code, "OPERATION_STOPPED");
 }
 
+/// 003 FR-007: a screen lock that comes while the backup is being checked
+/// wins: the passphrase it was checked with isn't kept after the lock.
+#[test]
+fn a_screen_lock_while_a_backup_is_checked_keeps_nothing() {
+    let world = World::new();
+    let backup = backed_up(&world);
+    let id = world.session.current_id();
+    let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    let (session, machine) = (world.session.clone(), Arc::clone(&world.machine));
+    *script.then.lock().unwrap() =
+        Some(Box::new(move || lifecycle::screen_locked(&session, &machine)));
+    let dialog = ScriptedDialog(Arc::clone(&script));
+
+    let err = backups_ops::check_backup_typed(
+        &world.session,
+        &world.machine,
+        &dialog,
+        &backup,
+        Target::Open(id),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "PASSPHRASE_CANCELLED");
+}
+
+/// 003 FR-007: a sleep noticed only on waking, and an immediate close (as at
+/// a take-over), wipe a passphrase kept for a restore, as a lock does.
+#[test]
+fn a_wake_or_an_immediate_close_drops_a_checked_backup() {
+    let events: [fn(&Session, &MachineSettings); 2] =
+        [lifecycle::finish_on_wake, |session, machine| {
+            lifecycle::close_immediate(session, machine, CloseReason::Sleep)
+        }];
+    for event in events {
+        let world = World::new();
+        let backup = backed_up(&world);
+        let id = world.session.current_id();
+        let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+        let dialog = ScriptedDialog(Arc::clone(&script));
+        let checked = backups_ops::check_backup_typed(
+            &world.session,
+            &world.machine,
+            &dialog,
+            &backup,
+            Target::Open(id),
+        )
+        .unwrap();
+
+        event(&world.session, &world.machine);
+
+        assert!(world.session.take_backup_check(checked.check_id).is_none());
+    }
+}
+
 /// A dialog stays up until answered: run on a thread of its own, as the
 /// commands run it, while the test takes it down.
 fn open_in_background(world: &World, script: &Arc<Scripted>) -> std::thread::JoinHandle<String> {
@@ -531,30 +591,86 @@ fn a_screen_lock_or_a_sleep_takes_a_dialog_down() {
     }
 }
 
-/// A dialog for the open database (a change) goes when it closes; one that
-/// isn't for it stays.
+/// A dialog for the open database (a change) goes when it closes, however it
+/// closes: a lock, or an immediate close as at a sleep noticed only on
+/// waking or a take-over, which don't go through a lock.
 #[test]
-fn closing_a_database_takes_down_only_the_dialogs_for_it() {
+fn closing_a_database_takes_down_the_dialogs_for_it() {
+    for immediate in [false, true] {
+        let world = World::new();
+        lifecycle::create(&world.session, &world.machine, &world.path(), &passphrase()).unwrap();
+        let id = world.session.current_id();
+        let scratch = TempDir::new().unwrap();
+        let script = Scripted::silent();
+        let changing = {
+            let (session, machine) = (world.session.clone(), Arc::clone(&world.machine));
+            let dialog = ScriptedDialog(Arc::clone(&script));
+            let scratch = scratch.path().to_owned();
+            std::thread::spawn(move || {
+                backups_ops::change_passphrase_typed(&session, id, &machine, &scratch, &dialog)
+                    .unwrap_err()
+                    .code
+            })
+        };
+        wait_until_up(&world);
+
+        if immediate {
+            lifecycle::close_immediate(&world.session, &world.machine, CloseReason::Sleep);
+        } else {
+            world.close();
+        }
+
+        assert_eq!(changing.join().unwrap(), "PASSPHRASE_CANCELLED", "immediate: {immediate}");
+    }
+}
+
+/// A dialog for a database that closed before it came up isn't shown.
+#[test]
+fn a_dialog_for_a_database_that_closed_isnt_shown() {
     let world = World::new();
     lifecycle::create(&world.session, &world.machine, &world.path(), &passphrase()).unwrap();
     let id = world.session.current_id();
-    let scratch = TempDir::new().unwrap();
-    let script = Scripted::silent();
-    let changing = {
-        let (session, machine) = (world.session.clone(), Arc::clone(&world.machine));
-        let dialog = ScriptedDialog(Arc::clone(&script));
-        let scratch = scratch.path().to_owned();
-        std::thread::spawn(move || {
-            backups_ops::change_passphrase_typed(&session, id, &machine, &scratch, &dialog)
-                .unwrap_err()
-                .code
-        })
-    };
-    wait_until_up(&world);
-    world.session.prompts().dismiss_for(SessionId::NONE);
-    assert_eq!(world.session.prompts().count(), 1);
-
     world.close();
+    let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    let request = Request {
+        shape: Shape::Enter,
+        title: "Remember this database's passphrase?".to_owned(),
+        message: String::new(),
+        primary: "Remember passphrase".to_owned(),
+        busy: String::new(),
+    };
 
-    assert_eq!(changing.join().unwrap(), "PASSPHRASE_CANCELLED");
+    let asked = passphrase_dialog::ask(
+        &world.session,
+        &ScriptedDialog(Arc::clone(&script)),
+        Some(id),
+        &request,
+        |_| Step::Done,
+    );
+
+    assert_eq!(asked, Asked::Cancelled);
+    assert!(script.asked().is_empty());
+}
+
+/// 003 FR-017: asked to remember, the Open dialog says what that gives away
+/// and its button says so, since the page's word isn't the user's.
+#[test]
+fn opening_to_remember_says_so_in_the_dialog() {
+    let world = World::new();
+    world.create_closed();
+    let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    let dialog = ScriptedDialog(Arc::clone(&script));
+
+    let _ = ops::open_database_typed(
+        &world.session,
+        &world.machine,
+        &dialog,
+        &world.path_text(),
+        true,
+        false,
+    );
+
+    let asked = &script.asked()[0];
+    assert_eq!(asked.primary, "Open and remember");
+    assert!(asked.message.contains(ops::REMEMBER_FACTS), "{}", asked.message);
 }
