@@ -362,8 +362,15 @@ static OPEN_SURFACES: AtomicUsize = AtomicUsize::new(0);
 /// surface is open: the next one uses the same folder.
 pub fn clear_data_directory(folder: &Path) {
     if OPEN_SURFACES.load(Ordering::SeqCst) == 0 {
-        let _ = std::fs::remove_dir_all(folder);
+        remove_data_directory(folder);
     }
+}
+
+/// Removes the surface's data folder, after securely deleting the crash
+/// reports WebView2 left in it, which can hold a document (#166).
+fn remove_data_directory(folder: &Path) -> bool {
+    crate::services::crash_reports::sweep_web_view_reports(&[folder.to_path_buf()]);
+    std::fs::remove_dir_all(folder).is_ok() || !folder.exists()
 }
 
 /// The app's [`PreviewSurface`]: a [`Surface`] that closes with its last
@@ -455,7 +462,7 @@ impl<R: Runtime> PreviewSurface for AppSurface<R> {
                     if OPEN_SURFACES.load(Ordering::SeqCst) != 0 {
                         return;
                     }
-                    if std::fs::remove_dir_all(&folder).is_ok() || !folder.exists() {
+                    if remove_data_directory(&folder) {
                         return;
                     }
                 }
