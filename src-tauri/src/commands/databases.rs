@@ -214,8 +214,8 @@ pub mod ops {
     /// What opens a database.
     pub enum Unlock<'a> {
         /// A passphrase the user typed. `remember` saves it in this
-        /// computer's keyring once it has opened the database; the UI sends
-        /// it only after the 003 FR-017 confirmation.
+        /// computer's keyring once it has opened the database; the native
+        /// dialog it was typed in said so (003 FR-017).
         Typed { passphrase: &'a Passphrase, remember: bool },
         /// The passphrase saved in this computer's keyring (003 FR-017).
         Saved,
@@ -231,7 +231,8 @@ pub mod ops {
     /// Opens the database at `path` (003 FR-005, FR-006), closing any other open
     /// database first as a switch. A refused open changes neither the file
     /// nor the session. `take_over` opens a database marked open on another
-    /// computer (003 FR-032); the UI sends it only after its confirmation. A
+    /// computer (003 FR-032), confirmed by typing the passphrase in the
+    /// take-over dialog (`open_database_typed`). A
     /// database that is damaged, or that the passphrase didn't open (the two
     /// can't be told apart at page 1), says whether it has backups to
     /// restore from (003 FR-028, US3-6).
@@ -270,17 +271,27 @@ pub mod ops {
             }
         };
         // Whether the open saves or refreshes the passphrase in the keyring
-        // once it succeeds (003 FR-017, FR-018), as the recent entry stood
-        // before the open.
-        let save_typed = match unlock {
-            Unlock::Typed { remember, .. } => {
-                remember || machine.recent_entry(path).is_some_and(|entry| entry.passphrase_saved)
-            }
-            Unlock::Saved => false,
+        // once it succeeds (003 FR-017, FR-018): asked to remember, or the
+        // recent entry, as it stood before the open, says this computer saved
+        // it. The entry's flag counts only for the database it was saved for,
+        // so an entry the page re-located onto another file doesn't save
+        // that one's passphrase behind a dialog that never said so.
+        let (remember, saved_for) = match unlock {
+            Unlock::Typed { remember, .. } => (
+                remember,
+                machine
+                    .recent_entry(path)
+                    .filter(|entry| entry.passphrase_saved)
+                    .and_then(|entry| entry.database_id),
+            ),
+            Unlock::Saved => (false, None),
         };
         match lifecycle::open(session, machine, path, passphrase, take_over) {
             Ok(()) => {
-                if let (Unlock::Typed { passphrase, .. }, true) = (unlock, save_typed) {
+                let opened = machine.recent_entry(path).and_then(|entry| entry.database_id);
+                if let Unlock::Typed { passphrase, .. } = unlock
+                    && (remember || (saved_for.is_some() && saved_for == opened))
+                {
                     save_if_listed(machine, path, passphrase);
                 }
                 database_status(session, machine)
@@ -288,10 +299,12 @@ pub mod ops {
             Err(err) if err.code == "UPGRADE_NEEDED" => {
                 // Saving waits for the upgrade to succeed, so the passphrase
                 // stays with the database that waits, and nowhere else.
-                if let (Unlock::Typed { passphrase, .. }, true) = (unlock, save_typed)
+                if let Unlock::Typed { passphrase, .. } = unlock
+                    && (remember || saved_for.is_some())
                     && let Some(id) = err.awaiting_id()
                 {
-                    session.keep_passphrase_for_upgrade(id, passphrase.clone());
+                    let only_for = if remember { None } else { saved_for.as_deref() };
+                    session.keep_passphrase_for_upgrade(id, passphrase.clone(), only_for);
                 }
                 Err(err)
             }
@@ -672,8 +685,9 @@ pub mod ops {
 
     /// Saves the open database's passphrase in this computer's keyring
     /// (003 FR-017), once it is proved to be the one the file opens with,
-    /// against its first page (003 research.md §1a). The UI sends it only after
-    /// the 003 FR-017 confirmation. `scratch_dir` takes the page-1 probe.
+    /// against its first page (003 research.md §1a), typed in the native
+    /// dialog that says what that gives away (`save_passphrase_typed`).
+    /// `scratch_dir` takes the page-1 probe.
     pub fn save_passphrase(
         session: &Session,
         id: SessionId,

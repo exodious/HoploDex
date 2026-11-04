@@ -248,6 +248,26 @@ fn remembering_at_a_typed_open_writes_the_entry() {
     world.open("Main", Unlock::Saved).unwrap();
 }
 
+/// 003 FR-017, FR-018: the recent list's "saved" mark belongs to the database
+/// it was saved for. An entry the page re-located onto another database's
+/// file (`locate_database`) doesn't get that database's passphrase saved at
+/// its open, behind a dialog that never said it would be.
+#[test]
+fn a_relocated_entry_doesnt_save_another_databases_passphrase() {
+    let world = World::new();
+    world.create("Saved");
+    world.save(TEST_PASSPHRASE).unwrap();
+    world.close();
+    world.create("Other");
+    let other_id = world.database_id();
+    world.close();
+    world.machine.locate_recent(&world.path("Saved"), &world.path("Other")).unwrap();
+
+    world.open_typed("Other", TEST_PASSPHRASE).unwrap();
+
+    assert_eq!(stored(&other_id), None);
+}
+
 #[test]
 fn forgetting_removes_the_entry_for_the_open_database_or_a_listed_one() {
     let world = World::new();

@@ -977,8 +977,17 @@ impl SessionInner {
     /// refresh in the keyring once it is upgraded and open (003 FR-017,
     /// FR-018; 009 research.md §4 "The passphrase"). Nothing happens for any
     /// other id.
-    pub(crate) fn keep_passphrase_for_upgrade(&self, id: SessionId, passphrase: Passphrase) {
-        if let Some(waiting) = self.awaiting().as_mut().filter(|waiting| waiting.id == id) {
+    /// With `only_for`, only if the waiting database is that one (a saved
+    /// passphrase refreshed, never carried over to another database).
+    pub(crate) fn keep_passphrase_for_upgrade(
+        &self,
+        id: SessionId,
+        passphrase: Passphrase,
+        only_for: Option<&str>,
+    ) {
+        if let Some(waiting) = self.awaiting().as_mut().filter(|waiting| {
+            waiting.id == id && only_for.is_none_or(|database| database == waiting.database_id)
+        }) {
             waiting.save_passphrase = Some(passphrase);
         }
     }
