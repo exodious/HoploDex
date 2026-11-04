@@ -20,7 +20,8 @@
 //!    `quick-xml`, before `calamine` is given the workbook, since `calamine`
 //!    reserves what the shared strings declare; so are the styles' records,
 //!    number format codes and font names, since `calamine` keeps every record
-//!    and copies a code and a name into every cell format;
+//!    and copies a code and a name into every cell format, and the theme's
+//!    colour slots, since it keeps a colour for each;
 //! 3. more than [`MAX_SHEETS`] sheets are refused;
 //! 4. each sheet is read cell by cell with `worksheet_cells_reader`, which
 //!    builds no dense grid, under the row, column, cell and text limits.
@@ -593,6 +594,42 @@ fn scan_styles(xml: impl Read) -> Result<(), Stop> {
     }
 }
 
+/// Reads the theme and finds it unreadable past [`MAX_CELL_FORMATS`] colour
+/// slots (Excel writes 12): `calamine` (since 0.38) keeps a colour for every
+/// slot. It reads the theme with these settings and, past an error in the
+/// XML, uses its default colours, so the rest of the part is only inflated.
+fn scan_theme(xml: impl Read, block: &mut [u8]) -> Result<(), Stop> {
+    use quick_xml::events::Event;
+
+    const SLOTS: [&str; 12] = [
+        "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5",
+        "accent6", "hlink", "folHlink",
+    ];
+    let mut reader = quick_xml::Reader::from_reader(io::BufReader::new(xml));
+    let config = reader.config_mut();
+    config.check_end_names = false;
+    config.check_comments = false;
+    let mut buf = Vec::new();
+    let mut slots = 0usize;
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e) | Event::Empty(e)) if SLOTS.contains(&e.local_name().as_ref()) => {
+                slots += 1;
+                if slots > MAX_CELL_FORMATS {
+                    return Err(Stop::Unreadable);
+                }
+            }
+            Ok(Event::Eof) => return Ok(()),
+            Ok(_) => {}
+            // Includes the counting reader stopping: the caller looks at the
+            // total.
+            Err(quick_xml::Error::Io(_)) => return Err(Stop::Unreadable),
+            Err(_) => return drain(reader.get_mut(), block),
+        }
+    }
+}
+
 /// Is this archive entry the part named `file`, in whatever folder? `calamine`
 /// finds a part with `\` read as `/` and in any case, so this does too.
 fn is_part(name: &str, file: &str) -> bool {
@@ -636,6 +673,8 @@ fn check_archive<W: Write>(bytes: &[u8], sink: &mut Sink<'_, W>) -> Result<Vec<P
             scan_shared_strings(&mut counted)
         } else if is_part(&name, "styles.xml") {
             scan_styles(&mut counted)
+        } else if is_part(&name, "theme1.xml") {
+            scan_theme(&mut counted, &mut block)
         } else {
             drain(&mut counted, &mut block)
         };
@@ -990,6 +1029,37 @@ mod tests {
         for unreadable in [num_fmt(&over), font(&over), fed, xfs(MAX_CELL_FORMATS + 1)] {
             assert!(matches!(scan(unreadable), Err(Stop::Unreadable)));
         }
+    }
+
+    #[test]
+    fn a_theme_past_excels_colour_slots_is_unreadable_however_it_ends() {
+        let theme = |slots: usize, end: &str| {
+            format!(
+                "<a:theme xmlns:a=\"x\"><a:themeElements><a:clrScheme name=\"x\">{}{end}",
+                "<a:dk1><a:srgbClr val=\"000000\"/></a:dk1><a:accent6/>".repeat(slots / 2)
+            )
+        };
+        let scan = |xml: String| scan_theme(xml.as_bytes(), &mut [0u8; 64]);
+        let closed = "</a:clrScheme></a:themeElements></a:theme>";
+        for end in [closed, "</a:other></a:theme>", "<a:broken"] {
+            assert!(scan(theme(12, end)).is_ok(), "{end}");
+            assert!(scan(theme(MAX_CELL_FORMATS, end)).is_ok(), "{end}");
+            assert!(
+                matches!(scan(theme(MAX_CELL_FORMATS + 2, end)), Err(Stop::Unreadable)),
+                "{end}"
+            );
+        }
+        let mismatched = format!("<a:x></a:y>{}", theme(MAX_CELL_FORMATS + 2, closed));
+        assert!(matches!(scan(mismatched), Err(Stop::Unreadable)));
+        // A damaged part is unreadable, as `drain` finds it.
+        struct Failing;
+        impl Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::other("damaged"))
+            }
+        }
+        let damaged = (&b"<a:theme>"[..]).chain(Failing);
+        assert!(matches!(scan_theme(damaged, &mut [0u8; 64]), Err(Stop::Unreadable)));
     }
 
     #[test]

@@ -38,7 +38,8 @@ pub const MAX_SHARED_STRINGS: u64 = 2_000_000;
 pub const MAX_STYLE_TEXT_CHARS: usize = 255;
 /// `<xf>` records in a workbook's styles (Excel's 65,490 cell formats and
 /// styles), and each of `<numFmt>`, `<font>`, `<fill>` and `<border>`, which
-/// no file needs more of than it has cell formats.
+/// no file needs more of than it has cell formats, and the theme's colour
+/// slots (Excel writes 12).
 pub const MAX_CELL_FORMATS: usize = 65_490;
 /// The import helper's data limit (Linux, Windows).
 pub const HELPER_MEMORY_BYTES: usize = 536_870_912;

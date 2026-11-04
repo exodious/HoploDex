@@ -130,6 +130,7 @@ pub fn corpus() -> Vec<Case> {
         unreadable(|d| one(styles_amplified(d)), "styles-amplified"),
         unreadable(|d| one(styles_amplified_backslash(d)), "styles-amplified-backslash"),
         unreadable(|d| one(styles_fonts(d)), "styles-fonts"),
+        unreadable(|d| one(theme_colors(d)), "theme-colors"),
         // Two files.
         refused_second(&[Rows], second_file_passes_a_limit, "two-files-second-rows"),
         refused_second(&[Cells], cells_pass_together, "two-files-cells-together"),
@@ -661,7 +662,39 @@ fn workbook_with_styles(
         "<font/>".repeat(fonts - 1),
         "<xf numFmtId=\"164\" fontId=\"0\"/>".repeat(formats)
     );
+    workbook_with_part(dir, name, "xl/styles.xml", styles_part, styles)
+}
+
+/// The valid export workbook whose theme's colour scheme holds 1,048,576
+/// `<a:dk1/>` slots, 7 MiB in a few kilobytes: `calamine` 0.38 keeps a colour
+/// for every slot, unless the reader finds more than Excel's 12 first.
+pub fn theme_colors(dir: &Path) -> PathBuf {
+    let theme = format!(
+        "{XML_DECLARATION}<a:theme xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" \
+         name=\"Office Theme\"><a:themeElements><a:clrScheme name=\"Office\">{}</a:clrScheme>\
+         </a:themeElements></a:theme>",
+        "<a:dk1/>".repeat(1 << 20)
+    );
+    workbook_with_part(
+        dir,
+        "theme-colors.xlsx",
+        "xl/theme/theme1.xml",
+        "xl/theme/theme1.xml",
+        theme,
+    )
+}
+
+/// The valid export workbook with its part `replaced` holding `content` and
+/// stored as `stored_as`.
+fn workbook_with_part(
+    dir: &Path,
+    name: &str,
+    replaced: &str,
+    stored_as: &str,
+    content: String,
+) -> PathBuf {
     let mut source = zip::ZipArchive::new(Cursor::new(valid_workbook_bytes(dir))).unwrap();
+    assert!(source.index_for_name(replaced).is_some(), "{replaced}");
     let path = dir.join(name);
     let mut zip = ZipWriter::new(BufWriter::new(File::create(&path).unwrap()));
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -670,9 +703,9 @@ fn workbook_with_styles(
         let part_name = part.name().unwrap().into_owned();
         let mut bytes = Vec::new();
         part.read_to_end(&mut bytes).unwrap();
-        let part_name = if part_name == "xl/styles.xml" {
-            bytes = styles.clone().into_bytes();
-            styles_part.to_owned()
+        let part_name = if part_name == replaced {
+            bytes = content.clone().into_bytes();
+            stored_as.to_owned()
         } else {
             part_name
         };
