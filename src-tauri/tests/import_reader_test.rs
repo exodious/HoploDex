@@ -313,6 +313,31 @@ fn a_valid_workbook_and_a_valid_csv_read_as_firearm_tables() {
     assert!(no_helper_runs());
 }
 
+/// RUSTSEC-2026-0436: a workbook behind a crafted Compound File Binary
+/// header. `calamine` parses the header to look for an encrypted workbook
+/// before it opens the archive, and before 0.38 it panicked on a short
+/// directory entry and grew without bound on a DIFAT chain that loops, so the
+/// helper died and the file was "could not read the file". The archive is
+/// found from the file's end, so it passes the reader's own checks, and the
+/// workbook reads, quickly and with the helper gone afterwards.
+#[test]
+fn a_workbook_behind_a_crafted_compound_file_header_reads() {
+    let _serial = serial();
+    let dir = TempDir::new().unwrap();
+    for path in [hostile::cfb_short_directory(dir.path()), hostile::cfb_difat_loop(dir.path())] {
+        let memory = PeakMemory::start();
+        let began = Instant::now();
+        let tables =
+            read(&[import_file(&path)]).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+        let took = began.elapsed();
+        let rise = memory.finish();
+        assert_eq!(makes(&tables[0]), ["Springfield"; 3], "{}", path.display());
+        support::assert_budget!(took < REFUSAL_BUDGET, "{}: read in {took:?}", path.display());
+        assert!(rise <= MEMORY_BUDGET, "{}: memory rose {} MB", path.display(), rise >> 20);
+        assert!(no_helper_runs(), "{}: the helper is still running", path.display());
+    }
+}
+
 #[test]
 fn progress_counts_the_bytes_of_the_files_up_to_their_total() {
     let _serial = serial();

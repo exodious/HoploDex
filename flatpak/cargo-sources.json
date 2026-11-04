@@ -613,14 +613,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/calamine/calamine-0.37.0.crate",
-        "sha256": "c9ca341b94bc4b29e08970b1a03914fad2dfe177e2ecb67fcd6de9046004aafb",
-        "dest": "cargo/vendor/calamine-0.37.0"
+        "url": "https://static.crates.io/crates/calamine/calamine-0.38.0.crate",
+        "sha256": "f431b67cba6122a1f7d26b7adafc71bbdf07026095fe811f5efc025d8748e1d8",
+        "dest": "cargo/vendor/calamine-0.38.0"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"c9ca341b94bc4b29e08970b1a03914fad2dfe177e2ecb67fcd6de9046004aafb\", \"files\": {}}",
-        "dest": "cargo/vendor/calamine-0.37.0",
+        "contents": "{\"package\": \"f431b67cba6122a1f7d26b7adafc71bbdf07026095fe811f5efc025d8748e1d8\", \"files\": {}}",
+        "dest": "cargo/vendor/calamine-0.38.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {

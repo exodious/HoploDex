@@ -560,6 +560,79 @@ pub fn archive_not_a_spreadsheet(dir: &Path) -> PathBuf {
     path
 }
 
+/// The valid export workbook behind a Compound File Binary (OLE2) header whose
+/// directory chain ends in a sector cut short, 50 bytes into a 128-byte
+/// directory entry (RUSTSEC-2026-0436). The archive's directory is found from
+/// its end, so the file is still a workbook; `calamine`'s check for an
+/// encrypted workbook parses the header first, and before 0.38 it panicked on
+/// the short entry.
+pub fn cfb_short_directory(dir: &Path) -> PathBuf {
+    let workbook = valid_workbook_bytes(dir);
+    // The header, the FAT (sector 0) and padding, so that the file's last
+    // sector, which holds the archive's end, is 50 bytes long.
+    let used = 512 + 512 + workbook.len();
+    let padding = (512 + 50 - (used - 512) % 512) % 512;
+    let last_sector = (used + padding - 512) / 512;
+    let mut header = cfb_header();
+    put_u32(&mut header, 48, last_sector as u32); // the directory's first sector
+    put_u32(&mut header, 68, CFB_END_OF_CHAIN); // no DIFAT sector
+    put_u32(&mut header, 76, 0); // the FAT is sector 0
+    let mut bytes = header;
+    bytes.extend(cfb_sector(&[]));
+    bytes.resize(bytes.len() + padding, 0);
+    bytes.extend(workbook);
+    assert_eq!((bytes.len() - 512) % 512, 50);
+    let path = dir.join("cfb-short-directory.xlsx");
+    std::fs::write(&path, &bytes).unwrap();
+    path
+}
+
+/// The valid export workbook behind a Compound File Binary header whose DIFAT
+/// chain names its own sector as the next one (RUSTSEC-2026-0436): before
+/// `calamine` 0.38 the check for an encrypted workbook added 127 entries for
+/// each turn of the loop and never stopped, until the memory ran out.
+pub fn cfb_difat_loop(dir: &Path) -> PathBuf {
+    let mut header = cfb_header();
+    put_u32(&mut header, 48, CFB_END_OF_CHAIN); // no directory
+    put_u32(&mut header, 68, 0); // the DIFAT starts at sector 0
+    let mut bytes = header;
+    // Sector 0's last entry, the next DIFAT sector, is sector 0.
+    bytes.extend(cfb_sector(&[(127, 0)]));
+    bytes.extend(valid_workbook_bytes(dir));
+    let path = dir.join("cfb-difat-loop.xlsx");
+    std::fs::write(&path, &bytes).unwrap();
+    path
+}
+
+const CFB_END_OF_CHAIN: u32 = 0xFFFF_FFFE;
+const CFB_FREE: u32 = 0xFFFF_FFFF;
+
+/// A version 3 Compound File Binary header (512-byte sectors, 64-byte mini
+/// sectors), every DIFAT entry free.
+fn cfb_header() -> Vec<u8> {
+    let mut header = vec![0u8; 512];
+    header[..8].copy_from_slice(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1");
+    header[24..34].copy_from_slice(&[0x3E, 0, 3, 0, 0xFE, 0xFF, 9, 0, 6, 0]);
+    put_u32(&mut header, 60, CFB_END_OF_CHAIN); // no mini FAT
+    for at in (76..512).step_by(4) {
+        put_u32(&mut header, at, CFB_FREE);
+    }
+    header
+}
+
+/// A sector of 128 entries, each the end of a chain but those given.
+fn cfb_sector(entries: &[(usize, u32)]) -> Vec<u8> {
+    let mut sector: Vec<u8> = CFB_END_OF_CHAIN.to_le_bytes().repeat(128);
+    for &(index, value) in entries {
+        put_u32(&mut sector, index * 4, value);
+    }
+    sector
+}
+
+fn put_u32(bytes: &mut [u8], at: usize, value: u32) {
+    bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+}
+
 fn valid_workbook_bytes(dir: &Path) -> Vec<u8> {
     let source = valid_export_workbook(&dir.join("valid-source.xlsx"));
     let bytes = std::fs::read(&source).unwrap();
