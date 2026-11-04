@@ -188,8 +188,9 @@ fn stop_running_cancels_and_interrupts_a_long_query() {
         // Give the query a moment to be under way.
         thread::sleep(Duration::from_millis(50));
 
+        // The worker may already have dropped its guard by now, so the cancel is
+        // checked through the guard (`cancelled`) rather than `operations`.
         assert_eq!(operations.stop_running(), Some(OperationKind::PassphraseChange));
-        assert!(operations.is_cancelled());
 
         let (result, cancelled) = worker.join().unwrap();
         let code = result.unwrap_err().sqlite_error_code();
