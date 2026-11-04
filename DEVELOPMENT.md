@@ -2484,7 +2484,7 @@ in it which ran where. The jobs run natively on pinned images (`ubuntu-26.04`,
 | Checks (Linux) | `npm run format:check`, `cargo fmt --check`, `npm run lint`, both clippys ([Linting & formatting](#linting--formatting)), `npm test`, `cargo nextest run --features test-kdf --no-fail-fast`, the doctests, `npm run build` |
 | Checks (Windows, macOS) | both clippys, `npm test`, nextest as above |
 | E2E (Linux, Windows, macOS) | `npm run build`, `npm run test:e2e`, then the quit-cleanup script for that OS |
-| Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary; no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
+| Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary, then `dpkg-deb -c` checks the `.deb` installs `/usr/bin/hoplodex` and apport's ignore entry for it (#166); no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
 | Packages (Windows) | `npm run tauri build -- --bundles msi,nsis`, then `scripts/check-no-webdriver.mjs` on `hoplodex.exe` |
 | Packages (macOS) | `npm run tauri build -- --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary |
 | Flatpak | `npm run bundle:flatpak`, whose manifest runs `scripts/check-no-webdriver.mjs` on the release binary (the check's variant carries the driver on purpose); then, only when the pull request changes one of the paths [The Flatpak check](#the-flatpak-check) lists, the check's stand-ins and `npm run build && npm run test:flatpak` |
