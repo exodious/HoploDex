@@ -288,11 +288,11 @@ pub mod ops {
         };
         match lifecycle::open(session, machine, path, passphrase, take_over) {
             Ok(()) => {
-                let opened = machine.recent_entry(path).and_then(|entry| entry.database_id);
                 if let Unlock::Typed { passphrase, .. } = unlock
-                    && (remember || (saved_for.is_some() && saved_for == opened))
+                    && let Some(opened) = open_database_id(session)
+                    && (remember || saved_for.as_ref() == Some(&opened))
                 {
-                    save_if_listed(machine, path, passphrase);
+                    save_for(machine, path, &opened, passphrase);
                 }
                 database_status(session, machine)
             }
@@ -328,12 +328,10 @@ pub mod ops {
         }
     }
 
-    /// Saves the typed `passphrase` in the keyring for the database just
-    /// opened at `path`, whose recent entry carries its id.
-    fn save_if_listed(machine: &MachineSettings, path: &Path, passphrase: &Passphrase) {
-        if let Some(id) = machine.recent_entry(path).and_then(|entry| entry.database_id) {
-            save_for(machine, path, &id, passphrase);
-        }
+    /// The open database's id, as the session has it: what a passphrase is
+    /// saved under, never an id a recent entry the page can move carries.
+    fn open_database_id(session: &Session) -> Option<String> {
+        session.inspect(session.current_id(), |open| Ok(open.database_id.clone())).ok()
     }
 
     /// The quoted name a dialog calls the database at `path` by.
@@ -548,11 +546,11 @@ pub mod ops {
             awaiting_id,
             backup_folder.map(Path::new),
         )?;
-        if let Some(passphrase) = &upgraded.save_passphrase {
-            let path = session.open_path();
-            if let Some(path) = path {
-                save_if_listed(machine, &path, passphrase);
-            }
+        if let Some(passphrase) = &upgraded.save_passphrase
+            && let Some(path) = session.open_path()
+            && let Some(id) = open_database_id(session)
+        {
+            save_for(machine, &path, &id, passphrase);
         }
         database_status(session, machine)
     }
@@ -574,7 +572,7 @@ pub mod ops {
         passphrase: &Passphrase,
     ) -> bool {
         let saved = machine.keyring().save(database_id, passphrase).is_ok();
-        machine.set_passphrase_saved(path, saved);
+        machine.set_passphrase_saved(path, database_id, saved);
         saved
     }
 
@@ -588,7 +586,9 @@ pub mod ops {
         database_id: &str,
         passphrase: &Passphrase,
     ) -> bool {
-        let was_saved = machine.recent_entry(path).is_some_and(|entry| entry.passphrase_saved);
+        let was_saved = machine.recent_entry(path).is_some_and(|entry| {
+            entry.passphrase_saved && entry.database_id.as_deref() == Some(database_id)
+        });
         was_saved && save_for(machine, path, database_id, passphrase)
     }
 
@@ -710,7 +710,7 @@ pub mod ops {
             }
         })?;
         machine.keyring().save(&database_id, passphrase)?;
-        machine.set_passphrase_saved(&path, true);
+        machine.set_passphrase_saved(&path, &database_id, true);
         Ok(PassphraseSaved { passphrase_saved: true })
     }
 
@@ -722,20 +722,17 @@ pub mod ops {
         machine: &MachineSettings,
         target: Target<'_>,
     ) -> Result<PassphraseSaved, CommandError> {
-        let (path, database_id) = match target {
+        let database_id = match target {
             Target::At(path) => {
-                let path = PathBuf::from(path);
-                let id = machine.recent_entry(&path).and_then(|entry| entry.database_id);
-                (path, id)
+                machine.recent_entry(Path::new(path)).and_then(|entry| entry.database_id)
             }
-            Target::Open(id) => session
-                .inspect(id, |open| Ok((open.path.clone(), Some(open.database_id.clone()))))?,
+            Target::Open(id) => session.inspect(id, |open| Ok(Some(open.database_id.clone())))?,
         };
+        // The mark is cleared under every path the database is listed at.
         if let Some(id) = database_id {
             machine.keyring().forget(&id)?;
             machine.clear_passphrase_saved(&id);
         }
-        machine.set_passphrase_saved(&path, false);
         Ok(PassphraseSaved { passphrase_saved: false })
     }
 

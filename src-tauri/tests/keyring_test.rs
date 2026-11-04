@@ -272,6 +272,27 @@ fn a_relocated_entry_doesnt_save_another_databases_passphrase() {
     assert_eq!(stored(&other_id), None);
 }
 
+/// 003 FR-017: saving the open database's passphrase marks only its own
+/// entry. Another database's entry the page moved to its path (and later
+/// back) doesn't get the mark, so its next typed open saves nothing.
+#[test]
+fn saving_marks_only_the_open_databases_own_entry() {
+    let world = World::new();
+    world.create("Mine");
+    let mine_id = world.database_id();
+    world.close();
+    world.create("Open");
+    world.machine.locate_recent(&world.path("Mine"), &world.path("Open")).unwrap();
+    world.save(TEST_PASSPHRASE).unwrap();
+    world.machine.locate_recent(&world.path("Open"), &world.path("Mine")).unwrap();
+    world.close();
+
+    world.open_typed("Mine", TEST_PASSPHRASE).unwrap();
+
+    assert_eq!(stored(&mine_id), None);
+    assert!(!world.saved_flag("Mine"));
+}
+
 #[test]
 fn forgetting_removes_the_entry_for_the_open_database_or_a_listed_one() {
     let world = World::new();

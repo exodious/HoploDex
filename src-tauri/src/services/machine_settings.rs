@@ -375,11 +375,15 @@ impl MachineSettings {
         removed
     }
 
-    /// Records whether a passphrase is saved for the database at `path`
-    /// (003 FR-017). Nothing happens when `path` isn't in the list.
-    pub fn set_passphrase_saved(&self, path: &Path, saved: bool) {
+    /// Records whether a passphrase is saved for the database `database_id`
+    /// at `path` (003 FR-017). Nothing happens when its entry isn't at
+    /// `path`: the page chooses which entry is where (`locate_database`), so
+    /// the mark never goes on another database's.
+    pub fn set_passphrase_saved(&self, path: &Path, database_id: &str, saved: bool) {
         self.update(|file| {
-            if let Some(entry) = file.recent_databases.iter_mut().find(|entry| entry.path == path) {
+            if let Some(entry) = file.recent_databases.iter_mut().find(|entry| {
+                entry.path == path && entry.database_id.as_deref() == Some(database_id)
+            }) {
                 entry.passphrase_saved = saved;
             }
         });

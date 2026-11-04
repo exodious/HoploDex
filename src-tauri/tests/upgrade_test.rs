@@ -1047,7 +1047,7 @@ mod remembering {
             .keyring()
             .save(&database_id, &Passphrase::from_input("stale".into()))
             .unwrap();
-        world.machine.set_passphrase_saved(&world.path(), true);
+        world.machine.set_passphrase_saved(&world.path(), &database_id, true);
         let _scope = world.steps(&[STEP_A]);
         let refused = databases::open_database(
             &world.session,
