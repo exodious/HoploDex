@@ -1,0 +1,3 @@
+# HoploDex: no apport crash report of HoploDex, which would hold the open
+# collection's decrypted records and its passphrase (exodious/HoploDex#166).
+/usr/bin/hoplodex

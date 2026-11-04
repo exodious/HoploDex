@@ -976,7 +976,9 @@ What it does, in order:
    file chooser; and that a saved passphrase lands in the app's keyring file,
    which the check reads back with the stand-in portal's key
    (`src-tauri/examples/flatpak_keyring_read.rs`) and which opens the database
-   from the recent list after a restart. One of its tests prints the
+   from the recent list after a restart; and that the web process the Flatpak
+   portal starts for WebKit runs with core dumps off, soft and hard, as the
+   app sets them at each page load (#166). One of its tests prints the
    cold start to the chooser for the Flatpak and for the `e2e` build outside it
    and fails on a difference over a second (`011 SC-006`).
 6. Uninstalls the check variant whatever happened, and fails unless the

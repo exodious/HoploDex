@@ -29,6 +29,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "linux": {
+      "deb": {
+        "files": {
+          "/etc/apport/blacklist.d/hoplodex": "packaging/apport-ignore"
+        }
+      }
+    },
     "macOS": {
       "minimumSystemVersion": "26.0"
     }

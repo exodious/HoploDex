@@ -1301,6 +1301,26 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     expect(appLog()).toContain("[INFO] WebKit's sandbox is on");
   });
 
+  it("#166: the web process the Flatpak portal starts runs with core dumps off, soft and hard", async function () {
+    this.timeout(120000);
+    await relaunchApp();
+    await waitForChooser();
+    // The portal's child, so it doesn't inherit the app's limit of 0: the app
+    // lowers it at each page load (src-tauri/src/platform/core_dumps.rs).
+    const webProcesses = containerProcesses().filter(
+      (p) => path.basename(p.command[0] ?? "") === "WebKitWebProcess",
+    );
+    expect(webProcesses.length).toBeGreaterThan(0);
+    await browser.waitUntil(
+      () =>
+        webProcesses.every((p) => {
+          const limit = resourceLimit(p.pid, "Max core file size");
+          return limit.soft === 0 && limit.hard === 0;
+        }),
+      { timeout: 10000, timeoutMsg: "a web process the Flatpak portal started can still dump core" },
+    );
+  });
+
   it("011 US2-7, 011 FR-011: a process in a sub-sandbox started with WebKit's own flags reaches no file, no network and no bus name", async function () {
     this.timeout(120000);
     expect(webKitSpawnFlags).toContain("--sandbox");
