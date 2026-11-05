@@ -8,7 +8,6 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use hoplodex_lib::app_dirs;
 #[cfg(not(app_opener))]
 use hoplodex_lib::commands::documents::E2eOpener;
 #[cfg(app_opener)]
@@ -38,8 +37,15 @@ use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler,
 use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
+use hoplodex_lib::{allocator, app_dirs};
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+
+/// Every process this executable runs (the app and both helpers) zeroes each
+/// block it frees and, on Windows, never reaches Windows Error Reporting
+/// through a failed allocation (`allocator.rs`).
+#[global_allocator]
+static ALLOCATOR: allocator::Wiping<std::alloc::System> = allocator::Wiping(std::alloc::System);
 
 /// What the frontend is sent when the user closes the window or quits: it
 /// asks about unsaved changes, then calls `quit_application` (003 research.md

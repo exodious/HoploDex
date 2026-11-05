@@ -77,6 +77,12 @@ use serde_json::json;
 use support::{TEST_PASSPHRASE, TestDb, TestEvents, firearm, passphrase, policy};
 use tempfile::TempDir;
 
+/// The app's allocator (`main.rs`), so the timings include its wipe of every
+/// freed block.
+#[global_allocator]
+static ALLOCATOR: hoplodex_lib::allocator::Wiping<std::alloc::System> =
+    hoplodex_lib::allocator::Wiping(std::alloc::System);
+
 const RECORD_COUNT: usize = 10_000;
 const BUDGET_MS: u128 = 500;
 
