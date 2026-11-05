@@ -46,6 +46,7 @@
 //! `failureReason`) rather than through their Rust types, so only their JSON
 //! spelling (011 contracts/tauri-commands.md "Shared types") is assumed.
 
+use crate::passphrase_dialog_test::{Scripted, ScriptedDialog};
 use crate::support;
 
 use std::collections::{BTreeMap, HashMap};
@@ -76,9 +77,13 @@ use hoplodex_lib::services::sandbox::Need;
 use hoplodex_lib::services::sandbox::{ByDocument, Grant, HostPaths, Reach};
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use hoplodex_lib::session::scoped::Target;
+use hoplodex_lib::session::upgrade::testing as waiting;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::{Value, json};
-use support::{ManualClock, TestDb, document_fixture, passphrase, sample_png_bytes};
+use support::{
+    ManualClock, TEST_PASSPHRASE, TestDb, document_fixture, other_machine, passphrase,
+    sample_png_bytes,
+};
 use tempfile::TempDir;
 
 const START: &str = "2026-10-19T09:00:00+02:00";
@@ -1155,6 +1160,58 @@ fn a_portal_path_whose_host_path_is_within_reach_opens_from_the_host_path() {
     world.change(&world.boxed);
     assert_eq!(world.close(&world.boxed)["backup"], json!("made"));
     assert_eq!(names_in(&world.home().join("HoploDex backups")).len(), 2, "beside the host file");
+}
+
+/// 003 FR-032: a database picked as a Documents-portal path and refused for
+/// another computer's marker, at the open or at the upgrade, has that computer
+/// named by the take-over's dialog, which is asked for with the portal path.
+#[cfg(unix)]
+#[test]
+fn a_take_over_through_a_portal_path_names_the_other_computer() {
+    for at_upgrade in [false, true] {
+        let mut world = World::new();
+        let host = world.make_db(&world.home(), "Mine", true);
+        let picked = portal("t038f", "Mine.hoplodex");
+        world.reach_for_portal(&picked, &host);
+        let _scope = at_upgrade.then(|| testing::scope(&world.home()).extra_steps(&[STEP_A]));
+        let other = other_machine();
+
+        let refused = if at_upgrade {
+            let asked = world.open_boxed(&text(&picked)).unwrap_err();
+            let awaiting_id = details(&asked)["awaitingId"].as_u64().expect("an awaitingId");
+            waiting::with_waiting_connection(&world.boxed, awaiting_id, |conn| {
+                conn.execute(
+                    "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, \
+                     open_since = ?3",
+                    rusqlite::params![other.id, other.display_name, "2026-11-04T15:00:00Z"],
+                )
+                .unwrap();
+            })
+            .unwrap();
+            databases::upgrade_database(&world.boxed, &world.machine, awaiting_id, None)
+                .unwrap_err()
+        } else {
+            let theirs = hoplodex_lib::db::open_database(&host, &passphrase(), &other, false);
+            drop(theirs.unwrap());
+            world.open_boxed(&text(&picked)).unwrap_err()
+        };
+        assert_eq!(refused.code, "DATABASE_OPEN_ELSEWHERE", "at upgrade: {at_upgrade}");
+
+        let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+        let _ = databases::open_database_typed(
+            &world.boxed,
+            &world.machine,
+            &ScriptedDialog(Arc::clone(&script)),
+            &text(&picked),
+            false,
+            true,
+        );
+        let message = &script.asked()[0].message;
+        assert!(
+            message.contains("Only do this if Workshop PC no longer has"),
+            "at upgrade: {at_upgrade}: {message}"
+        );
+    }
 }
 
 // Used by the portal tests, which are Unix-only.

@@ -254,8 +254,7 @@ pub mod ops {
         take_over: bool,
         reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
-        let requested = Path::new(path);
-        let checked = reach.check(requested, Need::DatabaseFolder)?;
+        let checked = reach.check(Path::new(path), Need::DatabaseFolder)?;
         let path = checked.as_path();
         let loaded;
         let (passphrase, saved) = match unlock {
@@ -327,7 +326,7 @@ pub mod ops {
             }
             Err(err) if err.code == "DATABASE_OPEN_ELSEWHERE" => {
                 if let Some(name) = err.details_str("machineName") {
-                    session.note_open_elsewhere(requested, &name);
+                    session.note_open_elsewhere(path, &name);
                 }
                 Err(err)
             }
@@ -375,8 +374,12 @@ pub mod ops {
             (String::new(), "")
         };
         let request = if take_over {
+            let checked = session
+                .reach()
+                .check(Path::new(path), Need::DatabaseFolder)
+                .unwrap_or_else(|_| PathBuf::from(path));
             let elsewhere = session
-                .open_elsewhere(Path::new(path))
+                .open_elsewhere(&checked)
                 .map(|machine| display_name(&machine))
                 .unwrap_or_else(|| "the other computer".to_owned());
             Request {
