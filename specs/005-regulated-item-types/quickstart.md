@@ -93,6 +93,8 @@ Everything above is automated. These need a person.
 
 ### M1. The grouping menu with a screen reader
 
+_Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so this check is no longer run and #48 is closed._
+
 Setup: Linux with Orca, and the human-testing seed open via
 `scripts/dev-container.sh --gui scripts/human-testing.sh`.
 

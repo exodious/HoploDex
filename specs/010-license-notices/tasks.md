@@ -256,11 +256,13 @@ Existing Tauri desktop app: React/TypeScript frontend in `src/`, Rust backend in
 ### Manual check (best effort before a release, not a merge gate)
 
 Everything else is automated: a build's notices matching its OS in T014 (run on each OS) and T031, and `NOTICES.txt`'s content in T014. Only the screen reader needs a person. That check is deferred to #48 (below).
+_Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so it is no longer run._
 
 - [X] T058 [P] On Linux, do quickstart.md's manual check **M1** with Orca (on "Main collection", passphrase `human testing passphrase`), and record the result for the PR
   - **Deferred** (2026-10-18) to #48, with 004's to 009's screen reader checks, and listed in #37's pre-release checks: not run before the PR. The dialog's name, the focus on open and on close, the text regions' names and the polite count are covered by `AboutDialog.test.tsx` (T027) and `SessionProvider.test.tsx` (T029)
 - [X] T059 [P] On macOS, do quickstart.md's manual check **M1** with VoiceOver (on "Main collection", passphrase `human testing passphrase`), and record the result for the PR
   - **Deferred** (2026-10-18) to #48, with 004's to 009's screen reader checks, and listed in #37's pre-release checks: not run before the PR. The dialog's name, the focus on open and on close, the text regions' names and the polite count are covered by `AboutDialog.test.tsx` (T027) and `SessionProvider.test.tsx` (T029)
+  _Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so these screen reader checks (T058, T059) are no longer run and #48 is closed; the tests named above stay._
 
 ### Close-out (at pull request time)
 
@@ -402,6 +404,7 @@ All three ship in one pull request, before 0.1.0 is tagged: the first release ca
 - About shows a muted line when the notices document is a development build's (T071).
 - `app:about-requested` and `app:quit-requested` go to the main web view only, `emit_to("main", …)` (T072).
 - Distinct region names for a component's several texts (a NOTICE, an attribution) are left to #48's screen-reader pass; the names stay as contracts/ui.md gives them.
+  _Amended 2026-11-04: that pass is no longer run (constitution 1.6.0), and #48 is closed._
 - Accepted earlier: the `objc2` crates' Apple SDK note (research.md §8).
 
 - [X] T065 [US2] **HIGH** (partial; FR-009, FR-010; fail closed, research.md §5) Make every way a notice can drop out silently a failure naming the file or component, with a red fixture and a test asserting each message: a missing record file (`records.mjs` `readJson` reads it as `[]`); a hand-recorded `os` value outside `linux`, `windows`, `macos`, or an empty `os`, and a `kind` outside `compiled-in`, `linked`, `data`; a hand-recorded entry no target uses, under `--all-targets` (`unusedAcrossTargets` skips hand-recorded entries); a native-code `what: hand-recorded:<name>` that names no hand-recorded entry; an exception or hand-recorded entry with `texts: []`, and a clarification with no `files`; a shipped lockfile package with no `version` (`notices.mjs` `shippedNpm` skips it)

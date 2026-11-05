@@ -342,6 +342,7 @@ Existing Tauri desktop app: Rust backend in `src-tauri/`, React/TypeScript front
   - **Deferred** (2026-10-08) to #48, with 004's, 005's and 006's M1: not run before the PR. The region's name, the F6 hint and the focus moves it depends on are covered by `PreviewSurface.test.tsx`, `DocumentPreview.test.tsx` and `us13-document-preview.e2e.ts`
 - [X] T131 [P] On Windows, do quickstart.md's manual check **M4** with NVDA, and record the result for the PR
   - **Deferred** (2026-10-08) to #48, with 004's, 005's and 006's M1: not run before the PR. The region's name, the F6 hint and the focus moves it depends on are covered by `PreviewSurface.test.tsx`, `DocumentPreview.test.tsx` and `us13-document-preview.e2e.ts`
+  _Amended 2026-11-04: constitution 1.6.0 drops the WCAG 2.1 AA baseline, so these screen reader checks (T129–T131) are no longer run and #48 is closed; the tests named above stay._
 - [X] T132 [P] On Linux, do quickstart.md's manual check **M5** (a password-protected PDF uses the viewer's own prompt), and record the result for the PR (Linux, 2026-10-08, done by the owner: passed)
 - [X] T133 [P] On macOS, do quickstart.md's manual check **M5**, and record the result for the PR
   - **Deferred** (2026-10-08) to #36, which automates 007's manual checks on each OS: not run before the PR. Passed on Linux by hand (T132); #36 adds a password-protected PDF to `pdf-surface-check` on each OS

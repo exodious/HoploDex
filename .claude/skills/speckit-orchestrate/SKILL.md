@@ -180,7 +180,7 @@ decisions they might want to revisit, deviations from the spec, and blockers. No
 what tasks do; tasks.md says that. Report each phase when it completes. Mention usage
 limits when a long phase is about to start near one.
 
-Manual tasks (a screen reader, eyeballing drawings) and pull request close-out tasks go
+Manual tasks (eyeballing drawings) and pull request close-out tasks go
 to the user; don't attempt them, and don't open the PR until the user says so.
 
 ## 7. Converge

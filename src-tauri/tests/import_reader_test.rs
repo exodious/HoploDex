@@ -275,6 +275,10 @@ corpus_cases! {
     a_workbook_with_flipped_bits_in_its_parts => "bit-flipped-data",
     a_workbook_with_a_flipped_directory_signature => "bit-flipped-directory",
     an_archive_that_is_not_a_spreadsheet => "not-a-spreadsheet",
+    styles_that_calamine_would_copy_into_a_gibibyte => "styles-amplified",
+    the_same_styles_stored_with_a_backslash => "styles-amplified-backslash",
+    a_million_fonts_that_calamine_would_keep => "styles-fonts",
+    a_million_theme_colours_that_calamine_would_keep => "theme-colors",
     a_second_file_past_the_row_limit => "two-files-second-rows",
     two_files_past_the_cell_limit_together => "two-files-cells-together",
 }
@@ -311,6 +315,47 @@ fn a_valid_workbook_and_a_valid_csv_read_as_firearm_tables() {
         assert_eq!(makes(&tables[0]), ["Springfield"; 3], "{}", path.display());
     }
     assert!(no_helper_runs());
+}
+
+/// RUSTSEC-2026-0436: a workbook behind a crafted Compound File Binary
+/// header. `calamine` parses the header to look for an encrypted workbook
+/// before it opens the archive, and before 0.38 it panicked on a short
+/// directory entry and grew without bound on a DIFAT chain that loops, so the
+/// helper died and the file was "could not read the file". The archive is
+/// found from the file's end, so it passes the reader's own checks, and the
+/// workbook reads, quickly and with the helper gone afterwards.
+#[test]
+fn a_workbook_behind_a_crafted_compound_file_header_reads() {
+    let _serial = serial();
+    let dir = TempDir::new().unwrap();
+    for path in [hostile::cfb_short_directory(dir.path()), hostile::cfb_difat_loop(dir.path())] {
+        let memory = PeakMemory::start();
+        let began = Instant::now();
+        let tables =
+            read(&[import_file(&path)]).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+        let took = began.elapsed();
+        let rise = memory.finish();
+        assert_eq!(makes(&tables[0]), ["Springfield"; 3], "{}", path.display());
+        support::assert_budget!(took < REFUSAL_BUDGET, "{}: read in {took:?}", path.display());
+        assert!(rise <= MEMORY_BUDGET, "{}: memory rose {} MB", path.display(), rise >> 20);
+        assert!(no_helper_runs(), "{}: the helper is still running", path.display());
+    }
+}
+
+/// What `styles_amplified` exceeds, Excel's 255 characters in a number
+/// format's code and a font's name and its 65,490 cell formats, still reads,
+/// within the helper's memory limit.
+#[test]
+fn a_workbook_whose_styles_are_at_excels_limits_reads() {
+    let _serial = serial();
+    let dir = TempDir::new().unwrap();
+    for formats in [10, 65_490] {
+        let path = hostile::styles_at_excels_limits(dir.path(), formats);
+        let tables =
+            read(&[import_file(&path)]).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+        assert_eq!(makes(&tables[0]), ["Springfield"; 3], "{}", path.display());
+        assert!(no_helper_runs(), "{}: the helper is still running", path.display());
+    }
 }
 
 #[test]
