@@ -690,8 +690,7 @@ fn rebuildable_database() -> (TempDir, std::path::PathBuf) {
         (RecordRef::Firearm(glock.id), "side.png"),
         (RecordRef::Accessory(scope.id), "scope.png"),
     ] {
-        photos_ops::add_photo(&conn, owner, &support::sample_png_bytes(), name, "image/png")
-            .unwrap();
+        photos_ops::add_photo(&conn, owner, &support::sample_png_bytes(), name).unwrap();
     }
     for (firearm, accessory) in [
         (Some(colt.id), None),

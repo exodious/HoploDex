@@ -284,3 +284,48 @@ describe("PhotoGallery: choosing the thumbnail (001 US4-2)", () => {
     expect(within(first).queryByText("Thumbnail")).not.toBeInTheDocument();
   });
 });
+
+describe("PhotoGallery: size limits (001 FR-007, amended 2026-11-04)", () => {
+  const TOO_LARGE = "A photo can be at most 15 MiB.";
+
+  it("carries on past photos refused for their size and names them", async () => {
+    let photos = [photo(1, "a.jpg")];
+    backend.invoke.mockImplementation(async (command: string, args = {}) => {
+      if (command === "list_photos") return photos;
+      if (command === "add_photo_from_path") {
+        if (String(args.path).includes("big")) {
+          throw new CommandFailure({ code: "ATTACHMENT_TOO_LARGE", message: TOO_LARGE });
+        }
+        const added = photo(photos.length + 1, "new.jpg");
+        photos = [...photos, added];
+        return added;
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+    renderGallery(createSessionScope(1));
+    await waitFor(() => expect(calls("list_photos")).toHaveLength(1));
+
+    act(() => backend.drop(["/p/big.jpg", "/p/b.jpg", "/p/c.jpg"]));
+
+    expect(await screen.findByText("Added 2 photos.")).toBeInTheDocument();
+    expect(await screen.findByText(`big.jpg wasn't added. ${TOO_LARGE}`)).toBeInTheDocument();
+    expect(calls("add_photo_from_path")).toHaveLength(3);
+  });
+
+  it("refuses a chosen photo over 15 MiB from its size, without sending it", async () => {
+    backend.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_photos") return [];
+      throw new Error(`unexpected command ${command}`);
+    });
+    const user = userEvent.setup();
+    renderGallery(createSessionScope(1));
+    await waitFor(() => expect(calls("list_photos")).toHaveLength(1));
+    const big = new File(["x"], "Big.jpg", { type: "image/jpeg" });
+    Object.defineProperty(big, "size", { value: 15 * 1024 * 1024 + 1 });
+
+    await user.upload(screen.getByLabelText("Add photos"), big);
+
+    expect(await screen.findByText(`Big.jpg wasn't added. ${TOO_LARGE}`)).toBeInTheDocument();
+    expect(calls("add_photo")).toEqual([]);
+  });
+});

@@ -305,6 +305,8 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#li
 
 _Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 photos ([spec FR-007](../spec.md)). The message names the owner's kind ("This firearm has 50 photos, the most it can have."), `details` is `{ limit: 50 }`, and nothing is stored. It is checked after the mime type and the owner, before the photo is decoded._
 
+_Amended 2026-11-04: `ATTACHMENT_TOO_LARGE` when the photo is over 15 MiB ("A photo can be at most 15 MiB.") or would take the owner's photos and documents past 1 GiB together ("This firearm's photos and documents can total at most 1 GiB."), checked after the count; `details` is `{ limit }` in bytes, the message names no file, and nothing is stored ([spec FR-007](../spec.md)). The type is the one the first bytes show, JPEG or PNG, whatever the name says, and `mimeType` is no longer taken; `VALIDATION_ERROR` when they show neither ("photo.jpg isn't a JPEG or PNG photo."), judged before the photo is decoded._
+
 - **Input**: `firearmId: number`, `fileBytes: Uint8Array`, `originalFilename: string`, `mimeType: string`.
 - **Output**: `Photo` (with generated `thumbnailBytes`). First photo added
   to a firearm automatically becomes `thumbnail_photo_id` (FR-008).
@@ -313,6 +315,8 @@ _Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 ph
 ### `add_photo_from_path` / `add_document_from_path`
 
 _Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED`, as `add_photo` and `add_document`._
+
+_Amended 2026-11-04: `ATTACHMENT_TOO_LARGE`, as `add_photo` and `add_document`, judged from the opened file's size before any of it is read; then the type from the first 1,024 bytes (a document's from its name too) before the rest is read; and a file that grows past that size while it is read is refused (`VALIDATION_ERROR`)._
 
 - **Input**: `firearmId: number`, `path: string`.
 - **Output**: as `add_photo` / `add_document`. The backend reads the
@@ -360,6 +364,8 @@ _Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED`, as `add_photo` and `add_documen
 _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#add_document): `add_document` accepts only document types, recognised by name and content, and stores the content's own type; deleting also removes the name from the search index._
 
 _Amended 2026-10-11: `add_document` fails with `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 documents ([spec FR-010](../spec.md)), as `add_photo` does for photos ("This firearm has 50 documents, the most it can have."). It is checked after the type and the owner._
+
+_Amended 2026-11-04: `add_document` fails with `ATTACHMENT_TOO_LARGE` when the document is over 30 MiB ("A document can be at most 30 MiB."), checked first, or would take the owner's photos and documents past 1 GiB, checked after the count, as `add_photo` does ([spec FR-010](../spec.md))._
 
 - Analogous to photo commands, without thumbnail generation. The stored
   `file_bytes` never cross the IPC boundary; `open_document` is the only

@@ -69,7 +69,6 @@ fn scenario_1_first_photo_becomes_the_thumbnail() {
         RecordRef::Firearm(firearm.id),
         &sample_png_bytes(),
         "range-day.png",
-        "image/png",
     )
     .unwrap();
 
@@ -87,7 +86,6 @@ fn scenario_2_a_second_photo_can_be_explicitly_selected_as_thumbnail() {
         RecordRef::Firearm(firearm.id),
         &sample_png_bytes(),
         "a.png",
-        "image/png",
     )
     .unwrap();
     let second = photo_ops::add_photo(
@@ -95,7 +93,6 @@ fn scenario_2_a_second_photo_can_be_explicitly_selected_as_thumbnail() {
         RecordRef::Firearm(firearm.id),
         &sample_png_bytes(),
         "b.png",
-        "image/png",
     )
     .unwrap();
 
@@ -124,7 +121,6 @@ fn scenario_3_deleting_the_thumbnail_falls_back_to_next_oldest_then_to_generic()
         RecordRef::Firearm(firearm.id),
         &sample_png_bytes(),
         "a.png",
-        "image/png",
     )
     .unwrap();
     let second = photo_ops::add_photo(
@@ -132,7 +128,6 @@ fn scenario_3_deleting_the_thumbnail_falls_back_to_next_oldest_then_to_generic()
         RecordRef::Firearm(firearm.id),
         &sample_png_bytes(),
         "b.png",
-        "image/png",
     )
     .unwrap();
 
@@ -161,7 +156,6 @@ fn delete_photo_requires_confirmation() {
         RecordRef::Firearm(firearm.id),
         &sample_png_bytes(),
         "a.png",
-        "image/png",
     )
     .unwrap();
 
@@ -169,18 +163,17 @@ fn delete_photo_requires_confirmation() {
 }
 
 #[test]
-fn rejects_an_unsupported_mime_type() {
+fn rejects_a_file_that_is_neither_jpeg_nor_png() {
     let db = TestDb::new();
     let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
 
     let err = photo_ops::add_photo(
         &db.conn,
         RecordRef::Firearm(firearm.id),
-        &sample_png_bytes(),
+        b"MZ\x90\x00 a program",
         "a.exe",
-        "application/x-msdownload",
     )
-    .expect_err("non-image mime types must be rejected");
+    .expect_err("only JPEG and PNG photos are kept");
     assert_eq!(err.code, "VALIDATION_ERROR");
 }
 
@@ -285,10 +278,8 @@ fn an_accessorys_first_photo_becomes_its_thumbnail() {
     let id = create_accessory(&db, "A-1");
     let owner = RecordRef::Accessory(id);
 
-    let first =
-        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png", "image/png").unwrap();
-    let second =
-        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "b.png", "image/png").unwrap();
+    let first = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png").unwrap();
+    let second = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "b.png").unwrap();
 
     assert_eq!(first.owner, owner);
     assert!(!first.thumbnail_bytes.is_empty(), "a real thumbnail must be generated");
@@ -323,10 +314,8 @@ fn an_accessorys_thumbnail_can_be_switched_and_the_result_is_the_photo_id() {
     let db = TestDb::new();
     let id = create_accessory(&db, "A-1");
     let owner = RecordRef::Accessory(id);
-    let first =
-        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png", "image/png").unwrap();
-    let second =
-        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "b.png", "image/png").unwrap();
+    let first = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png").unwrap();
+    let second = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "b.png").unwrap();
     assert_eq!(accessory_thumbnail(&db, id), Some(first.id));
 
     let chosen = photo_ops::set_thumbnail_photo(&db.conn, owner, second.id).unwrap();
@@ -350,7 +339,6 @@ fn photos_are_listed_by_owner_and_only_that_owners() {
         RecordRef::Firearm(firearm.id),
         &sample_png_bytes(),
         "firearm.png",
-        "image/png",
     )
     .unwrap();
     let on_accessory = photo_ops::add_photo(
@@ -358,17 +346,10 @@ fn photos_are_listed_by_owner_and_only_that_owners() {
         RecordRef::Accessory(accessory),
         &sample_png_bytes(),
         "accessory.png",
-        "image/png",
     )
     .unwrap();
-    photo_ops::add_photo(
-        &db.conn,
-        RecordRef::Accessory(other),
-        &sample_png_bytes(),
-        "other.png",
-        "image/png",
-    )
-    .unwrap();
+    photo_ops::add_photo(&db.conn, RecordRef::Accessory(other), &sample_png_bytes(), "other.png")
+        .unwrap();
 
     let ids = |owner| -> Vec<i64> {
         photo_ops::list_photos(&db.conn, owner).unwrap().iter().map(|p| p.id).collect()
@@ -389,7 +370,6 @@ fn naming_a_photo_with_the_wrong_owner_is_not_found() {
         RecordRef::Firearm(firearm.id),
         &sample_png_bytes(),
         "f.png",
-        "image/png",
     )
     .unwrap();
     let accessory_photo = photo_ops::add_photo(
@@ -397,7 +377,6 @@ fn naming_a_photo_with_the_wrong_owner_is_not_found() {
         RecordRef::Accessory(accessory),
         &sample_png_bytes(),
         "a.png",
-        "image/png",
     )
     .unwrap();
 
@@ -421,10 +400,8 @@ fn deleting_an_accessorys_thumbnail_falls_back_to_the_next_oldest_then_to_generi
     let db = TestDb::new();
     let id = create_accessory(&db, "A-1");
     let owner = RecordRef::Accessory(id);
-    let first =
-        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png", "image/png").unwrap();
-    let second =
-        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "b.png", "image/png").unwrap();
+    let first = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png").unwrap();
+    let second = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "b.png").unwrap();
 
     photo_ops::delete_photo(&db.conn, first.id, true).unwrap();
     assert_eq!(accessory_thumbnail(&db, id), Some(second.id));
@@ -467,16 +444,10 @@ fn deleting_an_accessory_deletes_its_photos_and_only_its_photos() {
     for owner in
         [RecordRef::Accessory(gone), RecordRef::Accessory(gone), RecordRef::Accessory(kept)]
     {
-        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "p.png", "image/png").unwrap();
+        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "p.png").unwrap();
     }
-    photo_ops::add_photo(
-        &db.conn,
-        RecordRef::Firearm(firearm.id),
-        &sample_png_bytes(),
-        "f.png",
-        "image/png",
-    )
-    .unwrap();
+    photo_ops::add_photo(&db.conn, RecordRef::Firearm(firearm.id), &sample_png_bytes(), "f.png")
+        .unwrap();
     assert_eq!(count(&db, "photos"), 4);
 
     accessory_ops::delete_accessory(&db.conn, gone, true).unwrap();
@@ -492,14 +463,7 @@ fn deleting_an_accessory_deletes_its_photos_and_only_its_photos() {
 /// Gives `owner` its 50 photos.
 fn fill_with_photos(db: &TestDb, owner: RecordRef) {
     for n in 0..50 {
-        photo_ops::add_photo(
-            &db.conn,
-            owner,
-            &sample_png_bytes(),
-            &format!("{n}.png"),
-            "image/png",
-        )
-        .unwrap();
+        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), &format!("{n}.png")).unwrap();
     }
 }
 
@@ -510,7 +474,7 @@ fn a_firearm_with_50_photos_refuses_another_and_stores_nothing() {
     let owner = RecordRef::Firearm(firearm.id);
     fill_with_photos(&db, owner);
 
-    let err = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "51.png", "image/png")
+    let err = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "51.png")
         .expect_err("a 51st photo is refused");
     assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
     assert_eq!(err.message, "This firearm has 50 photos, the most it can have.");
@@ -536,8 +500,7 @@ fn a_full_record_is_refused_before_the_photo_is_decoded() {
 
     // Bytes that wouldn't decode: the limit is what's reported, so no
     // thumbnail is made for a photo that can't be kept.
-    let err =
-        photo_ops::add_photo(&db.conn, owner, b"not an image", "51.png", "image/png").unwrap_err();
+    let err = photo_ops::add_photo(&db.conn, owner, b"not an image", "51.png").unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
 }
 
@@ -550,9 +513,8 @@ fn deleting_a_photo_from_a_full_record_makes_room_for_one_more() {
 
     let first = photo_ops::list_photos(&db.conn, owner).unwrap()[0].id;
     photo_ops::delete_photo(&db.conn, first, true).unwrap();
-    photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "again.png", "image/png").unwrap();
-    let err = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "more.png", "image/png")
-        .unwrap_err();
+    photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "again.png").unwrap();
+    let err = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "more.png").unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
 }
 
@@ -568,7 +530,6 @@ fn the_photo_limit_is_each_records_own() {
         RecordRef::Accessory(accessory),
         &sample_png_bytes(),
         "51.png",
-        "image/png",
     )
     .unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_LIMIT_REACHED");
@@ -577,6 +538,6 @@ fn the_photo_limit_is_each_records_own() {
     // Another record, firearm or accessory, still takes photos.
     let other = create_accessory(&db, "A-2");
     for owner in [RecordRef::Firearm(firearm.id), RecordRef::Accessory(other)] {
-        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png", "image/png").unwrap();
+        photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png").unwrap();
     }
 }

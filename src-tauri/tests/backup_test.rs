@@ -1164,7 +1164,6 @@ impl World {
                     RecordRef::Accessory(id),
                     &support::sample_png_bytes(),
                     "scope.png",
-                    "image/png",
                 )?;
                 Ok(id)
             })

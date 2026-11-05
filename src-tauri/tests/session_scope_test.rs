@@ -590,7 +590,6 @@ impl World {
                     RecordRef::Firearm(firearm),
                     &sample_png_bytes(),
                     &format!("{tag}.png"),
-                    "image/png",
                 )?
                 .id;
                 let document = documents::add_document(

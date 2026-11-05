@@ -11,7 +11,16 @@ import * as mediaService from "./mediaService";
 import type { PhotoSummary } from "./types";
 import { fileName, isPhotoPath } from "./filePaths";
 import { useFileDrop } from "./useFileDrop";
-import { MAX_PHOTOS_PER_RECORD, fullNote, isLimitReached, limitRefusal } from "./attachmentLimits";
+import {
+  MAX_PHOTOS_PER_RECORD,
+  MAX_PHOTO_BYTES,
+  fullNote,
+  isLimitReached,
+  isTooLarge,
+  limitRefusal,
+  sizeRefusals,
+  tooLarge,
+} from "./attachmentLimits";
 import "./media.css";
 
 export interface PhotoGalleryProps {
@@ -75,6 +84,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
     let added = 0;
     let failure: string | null = null;
     let full: string | null = null;
+    const oversized = sizeRefusals();
     for (const [index, { name, add }] of pending.entries()) {
       if (scope.ended) break;
       try {
@@ -87,6 +97,10 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
           full = limitRefusal(left, "photos", "added", e);
           break;
         }
+        if (isTooLarge(e)) {
+          oversized.add(name, e);
+          continue;
+        }
         failure ??= failureMessage(e, `${name} couldn't be added.`);
       }
     }
@@ -98,6 +112,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
       notify(`Added ${plural(added, "photo", "photos")}.`);
     }
     if (full) notify(full, "error");
+    for (const message of oversized.messages("photos", "added")) notify(message, "error");
     if (failure) notify(failure, "error");
   }
 
@@ -113,8 +128,11 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
     await addAll(
       accepted.map((file) => ({
         name: file.name,
-        add: async () =>
-          mediaService.addPhoto(scope, owner, await fileToByteArray(file), file.name, file.type),
+        add: async () => {
+          // Refused from its size before any of it is read (001 FR-007, amended 2026-11-04).
+          if (file.size > MAX_PHOTO_BYTES) throw tooLarge("photo", MAX_PHOTO_BYTES);
+          return mediaService.addPhoto(scope, owner, await fileToByteArray(file), file.name);
+        },
       })),
     );
   }

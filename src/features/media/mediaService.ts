@@ -20,9 +20,8 @@ export function addPhoto(
   owner: RecordRef,
   fileBytes: number[],
   originalFilename: string,
-  mimeType: string,
 ): Promise<PhotoSummary> {
-  return scope.invoke<PhotoSummary>("add_photo", { owner, fileBytes, originalFilename, mimeType });
+  return scope.invoke<PhotoSummary>("add_photo", { owner, fileBytes, originalFilename });
 }
 
 /** Adds a photo from a file on disk — what a drop onto the window delivers. */

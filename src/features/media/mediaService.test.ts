@@ -27,8 +27,8 @@ describe("mediaService", () => {
     ["list_photos", { owner: OWNER }, () => mediaService.listPhotos(scope, OWNER)],
     [
       "add_photo",
-      { owner: OWNER, fileBytes: [1], originalFilename: "a.jpg", mimeType: "image/jpeg" },
-      () => mediaService.addPhoto(scope, OWNER, [1], "a.jpg", "image/jpeg"),
+      { owner: OWNER, fileBytes: [1], originalFilename: "a.jpg" },
+      () => mediaService.addPhoto(scope, OWNER, [1], "a.jpg"),
     ],
     [
       "add_photo_from_path",

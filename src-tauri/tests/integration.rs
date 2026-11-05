@@ -21,6 +21,7 @@ mod acl_manifest_test;
 mod action_type_test;
 mod amount_cap_test;
 mod app_version_test;
+mod attachment_size_test;
 mod backup_due_tracking_test;
 mod backup_location_change_test;
 mod backup_test;

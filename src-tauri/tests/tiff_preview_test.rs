@@ -287,6 +287,8 @@ fn each_crafted_tiff_fails_cleanly_and_the_session_stays_usable() {
 
 /// A valid 8192-pixel-wide TIFF of at least 100 MB, made once.
 fn large() -> &'static hostile::Generated {
+    // Over the 30 MiB a new document may be (001 FR-010, amended 2026-11-04),
+    // so it is stored as a database made before that limit holds it.
     static LARGE: OnceLock<hostile::Generated> = OnceLock::new();
     LARGE.get_or_init(|| {
         let large = hostile::large_tiff(100_000_000);
@@ -299,7 +301,7 @@ fn large() -> &'static hostile::Generated {
 fn closing_during_the_load_of_a_large_tiff_is_prompt_and_kills_the_helper() {
     let _serial = serial();
     let world = Fixture::new();
-    let large_id = world.add(&large().name, &large().bytes);
+    let large_id = world.add_stored(&large().name, &large().bytes);
     // Learn where the session's preview ids are, so the id of the next open
     // is known before `open_preview` returns it.
     let text = world.add("note.txt", b"hello");
@@ -410,7 +412,8 @@ fn the_page_is_clamped_to_24_megapixels_for_its_aspect_ratio() {
     let mut world = Fixture::new();
     // The decode of 100 MB takes a while in a debug build.
     world.preview.env.helper_limits.render = Duration::from_secs(120);
-    let preview_id = Fixture::id_of(&world.open_ok(world.add(&large().name, &large().bytes)));
+    let preview_id =
+        Fixture::id_of(&world.open_ok(world.add_stored(&large().name, &large().bytes)));
     let native = png_aspect_of_large();
 
     // At 4096 wide this page would be about 25 megapixels.

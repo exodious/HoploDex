@@ -82,7 +82,6 @@ fn scenario_1_exports_a_spreadsheet_and_photos_folder() {
         RecordRef::Firearm(f1.id),
         &sample_png_bytes(),
         "range-day.png",
-        "image/png",
     )
     .unwrap();
 
@@ -640,7 +639,6 @@ fn accessory_photos_are_named_with_an_a_prefix_and_counted() {
         rifle,
         &sample_png_bytes(),
         "range.png",
-        "image/png",
     )
     .unwrap();
     let accessory_photo = hoplodex_lib::commands::photos::ops::add_photo(
@@ -648,7 +646,6 @@ fn accessory_photos_are_named_with_an_a_prefix_and_counted() {
         optic,
         &sample_png_bytes(),
         "range.png",
-        "image/png",
     )
     .unwrap();
     let dest = TempDir::new().unwrap();
@@ -923,7 +920,6 @@ fn a_photo_added_with_a_path_in_its_name_is_stored_and_exported_as_a_basename() 
         rifle,
         &sample_png_bytes(),
         "../../outside/../escape.png",
-        "image/png",
     )
     .unwrap();
     assert_eq!(photo.original_filename, "escape.png");
@@ -1031,14 +1027,8 @@ fn exports_with_the_same_name_in_one_folder_each_get_their_own_spreadsheet_and_p
     let first = new_firearm(&db, &firearm_with_photo("Glock"));
     let second = new_firearm(&db, &firearm_with_photo("Sig"));
     for (record, name) in [(first, "glock.png"), (second, "sig.png")] {
-        hoplodex_lib::commands::photos::ops::add_photo(
-            &db.conn,
-            record,
-            &sample_png_bytes(),
-            name,
-            "image/png",
-        )
-        .unwrap();
+        hoplodex_lib::commands::photos::ops::add_photo(&db.conn, record, &sample_png_bytes(), name)
+            .unwrap();
     }
     let dest = TempDir::new().unwrap();
     let everything = firearms(&[first.id(), second.id()]);
@@ -1146,14 +1136,8 @@ fn a_workbook_export_holds_50_photos_with_the_longest_names() {
     for n in 0..50 {
         let name = format!("{n:02}{}.png", "x".repeat(114));
         assert_eq!(name.chars().count(), 120);
-        hoplodex_lib::commands::photos::ops::add_photo(
-            &db.conn,
-            owner,
-            &sample_png_bytes(),
-            &name,
-            "image/png",
-        )
-        .unwrap();
+        hoplodex_lib::commands::photos::ops::add_photo(&db.conn, owner, &sample_png_bytes(), &name)
+            .unwrap();
     }
     let dest = TempDir::new().unwrap();
 

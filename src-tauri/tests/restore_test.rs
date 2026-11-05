@@ -109,7 +109,6 @@ impl World {
                     RecordRef::Firearm(firearm.id),
                     &sample_png_bytes(),
                     "front.png",
-                    "image/png",
                 )
                 .map(|_| ())
             })
