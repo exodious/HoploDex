@@ -93,7 +93,7 @@ keyring-core = "1"
 # The embedded W3C WebDriver server, E2E builds only (the `e2e` feature).
 tauri-plugin-wdio-webdriver = { version = "1.4.0", optional = true }
 rust_xlsxwriter = "0.100"
-calamine = "0.37"
+calamine = "0.38"
 csv = "1.4"
 # The import helper's CSV parser, bounded by the field (008 research.md §8):
 # `csv`'s own reader grows a record's buffer to the size of the field.
