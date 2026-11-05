@@ -63,7 +63,7 @@ if (screenshotDir && !extraArgs.some((arg) => arg === "--spec" || arg.startsWith
 }
 
 // On Linux, each worker starts an isolated Xvfb virtual display of its own
-// (through @wdio/display-server) and points DISPLAY at it
+// and points DISPLAY at it
 // (e2e/support/display.ts), so the app never renders on the developer's real
 // desktop and parallel workers' windows and real input don't share a screen.
 // Windows and macOS have no equivalent concern.
