@@ -40,3 +40,8 @@ paths-ignore:
   # Unit and component tests beside the code they test.
   - "**/*.test.ts"
   - "**/*.test.tsx"
+  # The E2E build's passphrase dialog, a whole file behind
+  # `#[cfg(feature = "e2e")] pub mod e2e;`. The extractor still reads a file
+  # whose `mod` is configured out (as one outside the crate), so the feature
+  # override that drops inline `#[cfg(feature = "e2e")]` items doesn't drop it.
+  - src-tauri/src/services/passphrase_dialog/e2e.rs

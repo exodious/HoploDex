@@ -46,6 +46,7 @@
 //! `failureReason`) rather than through their Rust types, so only their JSON
 //! spelling (011 contracts/tauri-commands.md "Shared types") is assumed.
 
+#[cfg(unix)]
 use crate::passphrase_dialog_test::{Scripted, ScriptedDialog};
 use crate::support;
 
@@ -77,13 +78,13 @@ use hoplodex_lib::services::sandbox::Need;
 use hoplodex_lib::services::sandbox::{ByDocument, Grant, HostPaths, Reach};
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use hoplodex_lib::session::scoped::Target;
+#[cfg(unix)]
 use hoplodex_lib::session::upgrade::testing as waiting;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::{Value, json};
-use support::{
-    ManualClock, TEST_PASSPHRASE, TestDb, document_fixture, other_machine, passphrase,
-    sample_png_bytes,
-};
+use support::{ManualClock, TestDb, document_fixture, passphrase, sample_png_bytes};
+#[cfg(unix)]
+use support::{TEST_PASSPHRASE, other_machine};
 use tempfile::TempDir;
 
 const START: &str = "2026-10-19T09:00:00+02:00";
