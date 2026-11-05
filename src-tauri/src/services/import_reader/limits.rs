@@ -32,6 +32,15 @@ pub const MAX_CELL_CHARS: usize = 32_767;
 pub const MAX_TOTAL_TEXT_BYTES: u64 = 268_435_456;
 /// Declared (`count`, `uniqueCount`) or present.
 pub const MAX_SHARED_STRINGS: u64 = 2_000_000;
+/// Characters in a number format's code or a font's name in a workbook's
+/// styles (Excel's own limit). A file past it, or past [`MAX_CELL_FORMATS`],
+/// is unreadable, not a limit the user is told of: Excel writes no such file.
+pub const MAX_STYLE_TEXT_CHARS: usize = 255;
+/// `<xf>` records in a workbook's styles (Excel's 65,490 cell formats and
+/// styles), and each of `<numFmt>`, `<font>`, `<fill>` and `<border>`, which
+/// no file needs more of than it has cell formats, and the theme's colour
+/// slots (Excel writes 12).
+pub const MAX_CELL_FORMATS: usize = 65_490;
 /// The import helper's data limit (Linux, Windows).
 pub const HELPER_MEMORY_BYTES: usize = 536_870_912;
 /// How long the parent waits with no frame from the helper.

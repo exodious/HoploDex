@@ -42,6 +42,13 @@ pub fn preview_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> tauri::Result
     Ok(preview_webview_dir(&cache_dir(app)?))
 }
 
+/// Both web views' data folders under the cache directory `cache`, whose
+/// WebView2 crash reports are deleted with the decrypted document copies
+/// (#166).
+pub fn web_view_dirs(cache: &Path) -> Vec<PathBuf> {
+    vec![main_webview_dir(cache), preview_webview_dir(cache)]
+}
+
 const MAIN_WEBVIEW_FOLDER: &str = "main-webview";
 const PREVIEW_WEBVIEW_FOLDER: &str = "preview-webview2";
 

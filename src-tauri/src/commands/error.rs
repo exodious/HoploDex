@@ -460,6 +460,15 @@ impl CommandError {
         .with_details(Some(json!({ "limit": limit })))
     }
 
+    /// 001 FR-007 and FR-010 (amended 2026-11-04): a photo or document is
+    /// larger than one may be, or would take its record's attachments past
+    /// their total (`ATTACHMENT_TOO_LARGE`, 001 contracts/tauri-commands.md).
+    /// `limit` is in bytes. The message names no file, so a batch can follow
+    /// the names it refused with it.
+    pub fn attachment_too_large(message: String, limit: u64) -> Self {
+        Self::new("ATTACHMENT_TOO_LARGE", message).with_details(Some(json!({ "limit": limit })))
+    }
+
     /// 008 FR-007: an import file couldn't be read: not a table, damaged,
     /// or the reader's child died, timed out or sent a malformed frame. No
     /// parser detail is shown.

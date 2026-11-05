@@ -109,6 +109,8 @@ type DocumentOpening = "preview" | "external";
 
   _Amended 2026-10-11: also `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 documents, checked after the type and the owner ([001 contract](../../001-firearms-inventory/contracts/tauri-commands.md#add_document--delete_document))._
 
+  _Amended 2026-11-04: also `ATTACHMENT_TOO_LARGE` for a document over 30 MiB or past the owner's 1 GiB total, and `DOCUMENT_CONTENT_MISMATCH` when the first bytes aren't the extension's type (`classify_header`), judged before the whole-content check ([001 contract](../../001-firearms-inventory/contracts/tauri-commands.md#add_document--delete_document))._
+
 ### `add_document_from_path`
 
 - **Input and output**: unchanged.

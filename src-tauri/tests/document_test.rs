@@ -740,7 +740,6 @@ fn the_document_limit_is_each_records_own_and_apart_from_photos() {
         RecordRef::Accessory(accessory),
         &support::sample_png_bytes(),
         "a.png",
-        "image/png",
     )
     .unwrap();
 }

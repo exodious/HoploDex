@@ -137,14 +137,9 @@ fn deleting_a_photo_wipes_its_bytes_and_returns_the_space() {
     let scratch = tempfile::TempDir::new().unwrap();
     let created =
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-2"), false, None).unwrap();
-    let photo = photo_ops::add_photo(
-        &db.conn,
-        RecordRef::Firearm(created.id),
-        &marker_png(),
-        "range.png",
-        "image/png",
-    )
-    .unwrap();
+    let photo =
+        photo_ops::add_photo(&db.conn, RecordRef::Firearm(created.id), &marker_png(), "range.png")
+            .unwrap();
     let size_before = file_size(&db.conn);
 
     photo_ops::delete_photo(&db.conn, photo.id, true).unwrap();
@@ -158,14 +153,8 @@ fn deleting_a_firearm_wipes_its_photos_and_documents_too() {
     let scratch = tempfile::TempDir::new().unwrap();
     let created =
         firearm_ops::create_firearm(&db.conn, &firearm("Glock", "19", "W-3"), false, None).unwrap();
-    photo_ops::add_photo(
-        &db.conn,
-        RecordRef::Firearm(created.id),
-        &marker_png(),
-        "range.png",
-        "image/png",
-    )
-    .unwrap();
+    photo_ops::add_photo(&db.conn, RecordRef::Firearm(created.id), &marker_png(), "range.png")
+        .unwrap();
     document_ops::add_document(
         &db.conn,
         RecordRef::Firearm(created.id),
@@ -356,7 +345,7 @@ fn deleting_an_accessory_wipes_its_serial_number_notes_photo_and_document() {
     let doomed = create_accessory(&db, "Leupold", SERIAL, NOTES);
     let kept = create_accessory(&db, "Aimpoint", "KEEP-1", "kept notes");
     let owner = RecordRef::Accessory(doomed);
-    photo_ops::add_photo(&db.conn, owner, &marker_png(), "scope.png", "image/png").unwrap();
+    photo_ops::add_photo(&db.conn, owner, &marker_png(), "scope.png").unwrap();
     document_ops::add_document(&db.conn, owner, &marker_document(), "warranty.pdf").unwrap();
     // Guard: the search sees every one of them while stored.
     let before = decrypted_export(&db.conn, scratch.path());
@@ -415,14 +404,9 @@ fn deleting_an_accessorys_photo_wipes_its_bytes_and_returns_the_space() {
     let db = TestDb::new();
     let scratch = tempfile::TempDir::new().unwrap();
     let id = create_accessory(&db, "Leupold", "W-A2", "notes");
-    let photo = photo_ops::add_photo(
-        &db.conn,
-        RecordRef::Accessory(id),
-        &marker_png(),
-        "scope.png",
-        "image/png",
-    )
-    .unwrap();
+    let photo =
+        photo_ops::add_photo(&db.conn, RecordRef::Accessory(id), &marker_png(), "scope.png")
+            .unwrap();
     let size_before = file_size(&db.conn);
 
     photo_ops::delete_photo(&db.conn, photo.id, true).unwrap();

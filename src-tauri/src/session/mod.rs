@@ -251,6 +251,9 @@ pub struct SessionInner {
     /// Where `open_document` puts decrypted copies, deleted at every close
     /// (003 FR-022). `None` where nothing makes them.
     opened_documents_dir: Option<PathBuf>,
+    /// The web view data folders whose WebView2 crash reports are deleted
+    /// with those copies (#166). Empty where nothing makes them.
+    web_view_folders: Vec<PathBuf>,
     /// What this run may reach on the filesystem (011 research.md §5), the
     /// same value the commands get as state, so closes started by OS events
     /// and upgrades can ask it too.
@@ -372,6 +375,7 @@ impl Session {
             current: AtomicU64::new(0),
             events,
             opened_documents_dir,
+            web_view_folders: Vec::new(),
             reach,
             last_closed: Mutex::new(None),
             operations: Arc::default(),
@@ -394,6 +398,15 @@ impl Session {
             panic!("a session that has been cloned can't change its clock");
         };
         Self(Arc::new(SessionInner { clock, ..inner }))
+    }
+
+    /// The same session, deleting the WebView2 crash reports in the web view
+    /// data `folders` at every close (#166). Before any clone of it exists.
+    pub fn with_web_view_folders(self, folders: Vec<PathBuf>) -> Self {
+        let Ok(inner) = Arc::try_unwrap(self.0) else {
+            panic!("a session that has been cloned can't change its web view folders");
+        };
+        Self(Arc::new(SessionInner { web_view_folders: folders, ..inner }))
     }
 
     /// The session this handle is a handle to, as an `Arc` of its own.
@@ -863,8 +876,17 @@ impl SessionInner {
         *self.last_closed.lock().expect("session mutex poisoned") = Some(path.to_owned());
     }
 
-    /// Deletes this session's decrypted document copies (003 FR-022).
+    /// Deletes this session's decrypted document copies (003 FR-022), and
+    /// the crash reports WebView2 left, which can hold the same (#166).
     pub(crate) fn clear_opened_documents(&self) {
+        for leftover in
+            crate::services::crash_reports::sweep_web_view_reports(&self.web_view_folders)
+        {
+            log::warn!(
+                "could not delete a web view crash report in {}",
+                crate::logging::folder_of(&leftover)
+            );
+        }
         let Some(dir) = &self.opened_documents_dir else { return };
         for leftover in crate::commands::documents::ops::clear_opened_documents(dir) {
             log::warn!(

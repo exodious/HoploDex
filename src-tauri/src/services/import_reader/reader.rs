@@ -18,7 +18,10 @@
 //!    [`MAX_UNPACKED_BYTES`] in all (the true sizes, not the declared ones),
 //!    and the shared strings' declared and present counts are read with
 //!    `quick-xml`, before `calamine` is given the workbook, since `calamine`
-//!    reserves what the shared strings declare;
+//!    reserves what the shared strings declare; so are the styles' records,
+//!    number format codes and font names, since `calamine` keeps every record
+//!    and copies a code and a name into every cell format, and the theme's
+//!    colour slots, since it keeps a colour for each;
 //! 3. more than [`MAX_SHEETS`] sheets are refused;
 //! 4. each sheet is read cell by cell with `worksheet_cells_reader`, which
 //!    builds no dense grid, under the row, column, cell and text limits.
@@ -38,9 +41,9 @@ use super::frames::{
     write_from_helper, write_rows,
 };
 use super::limits::{
-    HELPER_MEMORY_BYTES, ImportLimit, MAX_CELL_CHARS, MAX_CELLS, MAX_COLUMNS, MAX_FILE_BYTES,
-    MAX_ROWS, MAX_SHARED_STRINGS, MAX_SHEETS, MAX_TOTAL_TEXT_BYTES, MAX_UNPACKED_BYTES,
-    MAX_ZIP_ENTRIES,
+    HELPER_MEMORY_BYTES, ImportLimit, MAX_CELL_CHARS, MAX_CELL_FORMATS, MAX_CELLS, MAX_COLUMNS,
+    MAX_FILE_BYTES, MAX_ROWS, MAX_SHARED_STRINGS, MAX_SHEETS, MAX_STYLE_TEXT_CHARS,
+    MAX_TOTAL_TEXT_BYTES, MAX_UNPACKED_BYTES, MAX_ZIP_ENTRIES,
 };
 use crate::services::helper::confine;
 
@@ -51,7 +54,12 @@ pub const ARGUMENT: &str = "--import-helper";
 /// process's arguments after the program name, the first being
 /// [`ARGUMENT`]. It never returns to the app's own start-up path.
 pub fn run(args: &[String]) -> ! {
-    // Nothing a panic says is wanted anywhere, and stderr is discarded.
+    // Nothing a panic says is wanted anywhere, and stderr is discarded. On
+    // Windows the panic also ends the process at once, before abort's
+    // fail-fast reaches Windows Error Reporting (#166).
+    #[cfg(windows)]
+    crate::services::crash_reports::end_process_on_panic(false);
+    #[cfg(not(windows))]
     std::panic::set_hook(Box::new(|_| {}));
     let _ = args;
     if confine::confine(HELPER_MEMORY_BYTES).is_err() {
@@ -542,14 +550,104 @@ fn declares_too_many(value: &[u8]) -> bool {
     }
 }
 
-/// Is this archive entry the workbook's shared strings?
-fn is_shared_strings(name: &str) -> bool {
-    name.rsplit('/').next().is_some_and(|file| file.eq_ignore_ascii_case("sharedStrings.xml"))
+/// Reads the styles part and finds it unreadable past Excel's own limits:
+/// more than [`MAX_CELL_FORMATS`] `<xf>`, `<numFmt>`, `<font>`, `<fill>` or
+/// `<border>` records of one kind, or a number format's code or a font's name
+/// over [`MAX_STYLE_TEXT_CHARS`]. `calamine` (since 0.38) keeps every such
+/// record and copies the code and the font's name into every cell format, so
+/// without them a few kilobytes of styles could ask for gigabytes.
+fn scan_styles(xml: impl Read) -> Result<(), Stop> {
+    use quick_xml::events::Event;
+
+    let mut reader = quick_xml::Reader::from_reader(io::BufReader::new(xml));
+    // As `calamine` reads it, so a part it reads is not refused here.
+    let config = reader.config_mut();
+    config.check_end_names = false;
+    config.check_comments = false;
+    let mut buf = Vec::new();
+    const RECORDS: [&str; 5] = ["xf", "numFmt", "font", "fill", "border"];
+    let mut records = [0usize; RECORDS.len()];
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e) | Event::Empty(e)) => {
+                let name = e.local_name();
+                if let Some(kind) = RECORDS.iter().position(|&r| r == name.as_ref()) {
+                    records[kind] += 1;
+                    if records[kind] > MAX_CELL_FORMATS {
+                        return Err(Stop::Unreadable);
+                    }
+                }
+                if !matches!(name.as_ref(), "numFmt" | "name") {
+                    continue;
+                }
+                // Every attribute, not only `formatCode` and `val`: `calamine`
+                // splits attributes itself, and a key `quick-xml` reads as
+                // "\x0CformatCode" is `formatCode` to it.
+                for attribute in e.attributes().with_checks(false) {
+                    let value = attribute
+                        .map_err(|_| Stop::Unreadable)?
+                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                        .map_err(|_| Stop::Unreadable)?;
+                    if value.chars().count() > MAX_STYLE_TEXT_CHARS {
+                        return Err(Stop::Unreadable);
+                    }
+                }
+            }
+            Ok(Event::Eof) => return Ok(()),
+            Ok(_) => {}
+            // Includes the counting reader stopping: the caller looks at the
+            // total.
+            Err(_) => return Err(Stop::Unreadable),
+        }
+    }
+}
+
+/// Reads the theme and finds it unreadable past [`MAX_CELL_FORMATS`] colour
+/// slots (Excel writes 12): `calamine` (since 0.38) keeps a colour for every
+/// slot. It reads the theme with these settings and, past an error in the
+/// XML, uses its default colours, so the rest of the part is only inflated.
+fn scan_theme(xml: impl Read, block: &mut [u8]) -> Result<(), Stop> {
+    use quick_xml::events::Event;
+
+    const SLOTS: [&str; 12] = [
+        "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5",
+        "accent6", "hlink", "folHlink",
+    ];
+    let mut reader = quick_xml::Reader::from_reader(io::BufReader::new(xml));
+    let config = reader.config_mut();
+    config.check_end_names = false;
+    config.check_comments = false;
+    let mut buf = Vec::new();
+    let mut slots = 0usize;
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e) | Event::Empty(e)) if SLOTS.contains(&e.local_name().as_ref()) => {
+                slots += 1;
+                if slots > MAX_CELL_FORMATS {
+                    return Err(Stop::Unreadable);
+                }
+            }
+            Ok(Event::Eof) => return Ok(()),
+            Ok(_) => {}
+            // Includes the counting reader stopping: the caller looks at the
+            // total.
+            Err(quick_xml::Error::Io(_)) => return Err(Stop::Unreadable),
+            Err(_) => return drain(reader.get_mut(), block),
+        }
+    }
+}
+
+/// Is this archive entry the part named `file`, in whatever folder? `calamine`
+/// finds a part with `\` read as `/` and in any case, so this does too.
+fn is_part(name: &str, file: &str) -> bool {
+    name.rsplit(['/', '\\']).next().is_some_and(|last| last.eq_ignore_ascii_case(file))
 }
 
 /// The archive's checks that need no `calamine`: the number of parts, the
-/// true size of all of them, and the shared strings. Returns where the parts
-/// are, for the bar.
+/// true size of all of them, the shared strings, the styles and the theme.
+/// Returns where the parts are, for the bar.
 fn check_archive<W: Write>(bytes: &[u8], sink: &mut Sink<'_, W>) -> Result<Vec<Part>, Stop> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| Stop::Unreadable)?;
     if archive.len() > MAX_ZIP_ENTRIES {
@@ -578,10 +676,14 @@ fn check_archive<W: Write>(bytes: &[u8], sink: &mut Sink<'_, W>) -> Result<Vec<P
         if entry.is_dir() {
             continue;
         }
-        let shared = is_shared_strings(&entry.name().map_err(|_| Stop::Unreadable)?);
+        let name = entry.name().map_err(|_| Stop::Unreadable)?.into_owned();
         let mut counted = Counted { inner: entry, total: &mut unpacked, declared, sink };
-        let result = if shared {
+        let result = if is_part(&name, "sharedStrings.xml") {
             scan_shared_strings(&mut counted)
+        } else if is_part(&name, "styles.xml") {
+            scan_styles(&mut counted)
+        } else if is_part(&name, "theme1.xml") {
+            scan_theme(&mut counted, &mut block)
         } else {
             drain(&mut counted, &mut block)
         };
@@ -895,6 +997,93 @@ mod tests {
             scan(sst("count=\"1\" uniqueCount=\"1\"", "<si><t>a</t></si><si><t>b</t></si>"))
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn styles_past_excels_limits_are_unreadable_before_calamine_copies_them() {
+        let styles = |body: String| format!("<styleSheet xmlns=\"x\">{body}</styleSheet>");
+        let num_fmt = |code: &str| {
+            format!("<numFmts><numFmt numFmtId=\"164\" formatCode=\"{code}\"/></numFmts>")
+        };
+        let font = |name: &str| format!("<fonts><font><name val=\"{name}\"/></font></fonts>");
+        let xfs = |n: usize| format!("<cellXfs>{}</cellXfs>", "<xf numFmtId=\"164\"/>".repeat(n));
+        let scan = |body: String| scan_styles(styles(body).as_bytes());
+        let records = |record: &str, n: usize| {
+            format!("<{record}s>{}</{record}s>", format!("<{record}/>").repeat(n))
+        };
+        for record in ["numFmt", "font", "fill", "border"] {
+            assert!(scan(records(record, MAX_CELL_FORMATS)).is_ok(), "{record}");
+            let both_kinds = records(record, MAX_CELL_FORMATS) + &xfs(MAX_CELL_FORMATS);
+            assert!(scan(both_kinds).is_ok(), "{record}");
+            let over = records(record, MAX_CELL_FORMATS + 1);
+            assert!(matches!(scan(over), Err(Stop::Unreadable)), "{record}");
+            let opened = format!(
+                "<{record}s>{}</{record}s>",
+                format!("<{record}></{record}>").repeat(MAX_CELL_FORMATS + 1)
+            );
+            assert!(matches!(scan(opened), Err(Stop::Unreadable)), "{record}");
+        }
+        let at = "\u{1F600}".repeat(MAX_STYLE_TEXT_CHARS);
+        let over = "0".repeat(MAX_STYLE_TEXT_CHARS + 1);
+        // Counted in characters, after entities are replaced.
+        let escaped = "&quot;".repeat(MAX_STYLE_TEXT_CHARS);
+
+        for fine in [num_fmt(&at), num_fmt(&escaped), font(&at), xfs(MAX_CELL_FORMATS)] {
+            assert!(scan(fine).is_ok());
+        }
+        // A form feed before the key: `quick-xml` reads another key, and
+        // `calamine` this one.
+        let fed =
+            format!("<numFmts><numFmt numFmtId=\"164\" \x0CformatCode=\"{over}\"/></numFmts>");
+        for unreadable in [num_fmt(&over), font(&over), fed, xfs(MAX_CELL_FORMATS + 1)] {
+            assert!(matches!(scan(unreadable), Err(Stop::Unreadable)));
+        }
+        // A mismatched end tag, which `calamine` reads past, neither stops
+        // the count nor makes the part unreadable.
+        assert!(scan(format!("<a></b>{}", xfs(MAX_CELL_FORMATS))).is_ok());
+        let mismatched = format!("<a></b>{}", xfs(MAX_CELL_FORMATS + 1));
+        assert!(matches!(scan(mismatched), Err(Stop::Unreadable)));
+    }
+
+    #[test]
+    fn a_theme_past_excels_colour_slots_is_unreadable_however_it_ends() {
+        let theme = |slots: usize, end: &str| {
+            format!(
+                "<a:theme xmlns:a=\"x\"><a:themeElements><a:clrScheme name=\"x\">{}{end}",
+                "<a:dk1><a:srgbClr val=\"000000\"/></a:dk1><a:accent6/>".repeat(slots / 2)
+            )
+        };
+        let scan = |xml: String| scan_theme(xml.as_bytes(), &mut [0u8; 64]);
+        let closed = "</a:clrScheme></a:themeElements></a:theme>";
+        for end in [closed, "</a:other></a:theme>", "<a:broken"] {
+            assert!(scan(theme(12, end)).is_ok(), "{end}");
+            assert!(scan(theme(MAX_CELL_FORMATS, end)).is_ok(), "{end}");
+            assert!(
+                matches!(scan(theme(MAX_CELL_FORMATS + 2, end)), Err(Stop::Unreadable)),
+                "{end}"
+            );
+        }
+        let mismatched = format!("<a:x></a:y>{}", theme(MAX_CELL_FORMATS + 2, closed));
+        assert!(matches!(scan(mismatched), Err(Stop::Unreadable)));
+        // A damaged part is unreadable, as `drain` finds it.
+        struct Failing;
+        impl Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::other("damaged"))
+            }
+        }
+        let damaged = (&b"<a:theme>"[..]).chain(Failing);
+        assert!(matches!(scan_theme(damaged, &mut [0u8; 64]), Err(Stop::Unreadable)));
+    }
+
+    #[test]
+    fn a_part_is_found_whatever_its_folder_separator_and_case() {
+        for name in ["xl/styles.xml", "xl\\styles.xml", "XL/STYLES.XML", "styles.xml"] {
+            assert!(is_part(name, "styles.xml"), "{name}");
+        }
+        for name in ["xl/styles.xml.bak", "xl/mystyles.xml", "xl/styles.xml/"] {
+            assert!(!is_part(name, "styles.xml"), "{name}");
+        }
     }
 
     #[test]

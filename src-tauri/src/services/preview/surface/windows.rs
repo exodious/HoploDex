@@ -37,6 +37,7 @@ use windows_sys::Win32::{
 };
 
 use super::{Hooks, Rect};
+use crate::services::crash_reports::{WRY_DEFAULT_ARGS, web_view_environment};
 
 /// How long `attach` waits for the main thread to set the web view up.
 const ATTACH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -51,10 +52,6 @@ const RECENT_INPUT_MS: u32 = 1500;
 /// `VK_ESCAPE` and `VK_F6`.
 const VK_ESCAPE: u32 = 0x1B;
 const VK_F6: u32 = 0x75;
-
-/// wry's default browser arguments, which it adds only when an app gives
-/// none (wry 0.55's `webview2/mod.rs`), so they are written out here.
-const WRY_DEFAULT_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
 /// The surface's browser arguments, in full (007 research.md §6): wry's defaults,
 /// the proxy (which also takes loopback, and is the layer that covers Edge's
@@ -93,15 +90,33 @@ fn request_allowed(uri: &str, document: &Url) -> bool {
 
 /// A user data folder of its own, so the surface has a browser process of its
 /// own: browser arguments belong to that process, which every web view
-/// sharing a folder shares (007 research.md §6).
+/// sharing a folder shares (007 research.md §6). Its environment, with those
+/// arguments, is HoploDex's own, which sends no crash report to Microsoft
+/// (#166); it is built on the main thread, where the web view lives, and
+/// without it there is no surface. Called off the main thread.
 pub(super) fn customize<R: Runtime>(
+    window: &Window<R>,
     builder: WebviewBuilder<R>,
     proxy_url: &Url,
     data_directory: &Path,
-) -> WebviewBuilder<R> {
-    builder
-        .data_directory(data_directory.to_path_buf())
-        .additional_browser_args(&browser_args(proxy_url))
+) -> tauri::Result<WebviewBuilder<R>> {
+    /// The environment, carried back from the main thread, which alone uses it.
+    struct OnMainThread(ICoreWebView2Environment);
+    // SAFETY: only moved across threads: it is made on the main thread, and
+    // only the web view built there with it ever calls it.
+    unsafe impl Send for OnMainThread {}
+
+    let unavailable = |e: String| tauri::Error::Io(std::io::Error::other(e));
+    let (folder, args) = (data_directory.to_path_buf(), browser_args(proxy_url));
+    let (tx, rx) = mpsc::channel();
+    window.run_on_main_thread(move || {
+        let _ = tx.send(web_view_environment(&folder, &args).map(OnMainThread));
+    })?;
+    let environment = rx
+        .recv_timeout(ATTACH_TIMEOUT)
+        .map_err(|_| unavailable("the main thread didn't build the environment".into()))?
+        .map_err(unavailable)?;
+    Ok(builder.data_directory(data_directory.to_path_buf()).with_environment(environment.0))
 }
 
 /// A string out-parameter's value, or "" if the call fails.

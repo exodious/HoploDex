@@ -209,6 +209,12 @@ impl Fixture {
         add_document(&self.session, self.firearm, name, bytes)
     }
 
+    /// A TIFF stored as an older database holds it, past the attach limits a
+    /// new one must meet (001 FR-010, amended 2026-11-04).
+    pub fn add_stored(&self, name: &str, bytes: &[u8]) -> i64 {
+        insert_raw_document(&self.session, self.firearm, name, "image/tiff", bytes)
+    }
+
     /// `open_preview`, with its answer as the JSON the viewer would get.
     pub fn open(&self, document_id: i64) -> Result<Value, hoplodex_lib::commands::CommandError> {
         preview::open_preview(

@@ -83,7 +83,6 @@ impl World {
                     RecordRef::Firearm(firearm.id),
                     &sample_png_bytes(),
                     "front.png",
-                    "image/png",
                 )?;
                 documents::add_document(conn, RecordRef::Firearm(firearm.id), PDF_BYTES, "bill.pdf")
                     .map(|_| ())

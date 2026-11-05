@@ -218,20 +218,59 @@ fn type_names() -> String {
 /// Judges a file by its name and content (007 research.md §2). Returns the type
 /// to record for it, or why it isn't one.
 pub fn classify(filename: &str, bytes: &[u8]) -> Result<&'static DocumentType, Refusal> {
-    let name = filename.rsplit(['/', '\\']).next().unwrap_or(filename);
-    let extension = name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase());
-    let found =
-        extension.as_deref().and_then(|ext| TYPES.iter().find(|t| t.extensions.contains(&ext)));
-    let Some(document_type) = found else {
-        return Err(match extension.as_deref() {
-            Some("jpg" | "jpeg" | "png") => Refusal::Photo { name: name.to_owned() },
-            _ => Refusal::TypeNotAllowed { name: name.to_owned() },
-        });
-    };
+    let (name, document_type) = by_extension(filename)?;
     if has_signature(document_type.signature, bytes) {
         Ok(document_type)
     } else {
         Err(Refusal::ContentMismatch { name: name.to_owned(), label: document_type.label })
+    }
+}
+
+/// How many leading bytes [`classify_header`] needs.
+pub const HEADER_BYTES: usize = 1024;
+
+/// Judges a file to attach by its name and its first [`HEADER_BYTES`] (or
+/// fewer, for a shorter file), before the rest is read (001 FR-010, amended
+/// 2026-11-04): the extension must be on the list and the file must begin as
+/// that type does. Unlike [`classify`], it also requires an Office or
+/// OpenDocument package to begin with its first entry's local header, and
+/// [`classify`] still judges the whole file once it is read.
+pub fn classify_header(filename: &str, head: &[u8]) -> Result<&'static DocumentType, Refusal> {
+    let (name, document_type) = by_extension(filename)?;
+    if has_header(document_type.signature, head) {
+        Ok(document_type)
+    } else {
+        Err(Refusal::ContentMismatch { name: name.to_owned(), label: document_type.label })
+    }
+}
+
+/// The file name's last component and the type its extension names.
+fn by_extension(filename: &str) -> Result<(&str, &'static DocumentType), Refusal> {
+    let name = filename.rsplit(['/', '\\']).next().unwrap_or(filename);
+    let extension = name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase());
+    let found =
+        extension.as_deref().and_then(|ext| TYPES.iter().find(|t| t.extensions.contains(&ext)));
+    match found {
+        Some(document_type) => Ok((name, document_type)),
+        None => Err(match extension.as_deref() {
+            Some("jpg" | "jpeg" | "png") => Refusal::Photo { name: name.to_owned() },
+            _ => Refusal::TypeNotAllowed { name: name.to_owned() },
+        }),
+    }
+}
+
+/// A compound file's signature.
+const OLE_MAGIC: &[u8] = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
+
+/// Whether `head` begins as a file of `signature` does. An Office or
+/// OpenDocument package must begin with its first entry's local header, as
+/// every one the apps write does.
+fn has_header(signature: Signature, head: &[u8]) -> bool {
+    match signature {
+        Signature::Pdf | Signature::Tiff | Signature::Text => has_signature(signature, head),
+        Signature::Rtf => head.starts_with(b"{\\rtf"),
+        Signature::Ole(_) => head.starts_with(OLE_MAGIC),
+        Signature::Ooxml(_) | Signature::Odf(_) => head.starts_with(LOCAL_HEADER),
     }
 }
 

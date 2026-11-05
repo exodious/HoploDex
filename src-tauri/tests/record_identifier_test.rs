@@ -462,7 +462,7 @@ fn identifiers(conn: &Connection) -> Vec<(String, i64, String)> {
 }
 
 fn add_photo(conn: &Connection, owner: RecordRef) -> PhotoSummary {
-    photo_ops::add_photo(conn, owner, &sample_png_bytes(), "front.png", "image/png").unwrap().into()
+    photo_ops::add_photo(conn, owner, &sample_png_bytes(), "front.png").unwrap().into()
 }
 
 fn add_document(

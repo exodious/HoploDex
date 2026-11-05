@@ -292,13 +292,6 @@ mod imp {
     use std::mem::size_of;
 
     use windows_sys::Win32::Foundation::{FALSE, GetLastError};
-    use windows_sys::Win32::System::Diagnostics::Debug::{
-        SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SEM_NOOPENFILEERRORBOX, SetErrorMode,
-    };
-    use windows_sys::Win32::System::ErrorReporting::{
-        WER_FAULT_REPORTING_DISABLE_SNAPSHOT_CRASH, WER_FAULT_REPORTING_FLAG_NO_HEAP_ON_QUEUE,
-        WER_FAULT_REPORTING_FLAG_NOHEAP, WER_FAULT_REPORTING_NO_UI, WerSetFlags,
-    };
     use windows_sys::Win32::System::JobObjects::{
         IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
@@ -345,7 +338,8 @@ mod imp {
     /// best effort, as Landlock is on an older kernel.
     pub fn confine(memory_limit: usize) -> Result<Confinement, String> {
         in_the_parents_job(memory_limit)?;
-        errors();
+        // No error box, and no heap or snapshot in a report (007 FR-003).
+        crate::services::crash_reports::quiet_error_reporting();
         let _ = mitigate(ProcessImageLoadPolicy, NO_REMOTE_OR_LOW_LABEL_IMAGES);
         mitigate(ProcessDynamicCodePolicy, PROHIBIT_DYNAMIC_CODE)?;
         mitigate(ProcessChildProcessPolicy, NO_CHILD_PROCESS_CREATION)?;
@@ -397,24 +391,6 @@ mod imp {
             }
         }
         Ok(())
-    }
-
-    /// No error box and no Windows Error Reporting heap or snapshot for this
-    /// process, so a crash writes no content (007 FR-003). Excluding the program
-    /// by name would write the user's registry, so `WerSetFlags` (per
-    /// process) is used instead; its failure isn't fatal, since
-    /// `SetErrorMode` has already stopped the dialog.
-    fn errors() {
-        // SAFETY: plain system calls with integer arguments.
-        unsafe {
-            SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
-            let _ = WerSetFlags(
-                WER_FAULT_REPORTING_FLAG_NOHEAP
-                    | WER_FAULT_REPORTING_FLAG_NO_HEAP_ON_QUEUE
-                    | WER_FAULT_REPORTING_NO_UI
-                    | WER_FAULT_REPORTING_DISABLE_SNAPSHOT_CRASH,
-            );
-        }
     }
 
     /// One mitigation policy, whose `Flags` word is `flags`, on this process.
