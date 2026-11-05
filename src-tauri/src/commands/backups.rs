@@ -393,7 +393,6 @@ pub mod ops {
         upgrade: Option<RestoreUpgrade>,
     ) -> Result<RestoredCopy, CommandError> {
         let events = session.events();
-        log::info!("restore: copying {} to {}", backup.display(), new.display());
         let source = File::open(backup).map_err(|err| io_failure(backup, &err))?;
         let copied = backups::copy_chunked(
             &source,
@@ -408,7 +407,6 @@ pub mod ops {
         }
 
         progress(events, RestorePhase::Checking, 0, 0);
-        log::info!("restore: checking the copy {}", new.display());
         let conn = db::check_copy(new, passphrase).map_err(|err| match err {
             OpenError::Damaged => CommandError::database_damaged(false),
             other => other.into(),
@@ -502,7 +500,6 @@ pub mod ops {
         // The bar shows at once (003 SC-005); checking the passphrase derives a
         // key, which takes longer than the 100 ms feedback budget.
         progress(events, RestorePhase::Copying, 0, restored_len);
-        log::info!("restore: opening the backup {} for {}", backup.display(), path.display());
         let inspected = inspect_backup(backup, passphrase, &path)?;
         // Before anything is copied: the user was not told it is upgraded.
         let upgrade_to = inspected.upgrade_to.as_deref();
@@ -528,7 +525,6 @@ pub mod ops {
         // and even with automatic backups off: it makes the restore
         // undoable (003 FR-028). Without it there is no restore.
         progress(events, RestorePhase::SavingCurrent, 0, current_len);
-        log::info!("restore: backing up {} before restoring", path.display());
         let saved = backups::make_backup(
             machine,
             BackupJob {
@@ -572,7 +568,6 @@ pub mod ops {
         // Its file is about to be replaced, so nothing more is written to it.
         drop(slot.take());
         session.clear_opened_documents();
-        log::info!("restore: replacing {}", path.display());
         if let Err(err) = file_swap::replace(&path) {
             // The original is unchanged, but closed, and the backend never
             // holds its passphrase (003 FR-007): the user opens it again.
@@ -589,11 +584,9 @@ pub mod ops {
             return Err(err);
         }
         backups::rotate(&settings.folder, &database_id, settings.keep, Some(backup));
-        log::info!("restore: reopening {}", path.display());
         let conn =
             db::open_database(&path, passphrase, &machine.identity(), false)?.into_ready()?;
         let mut reopened = lifecycle::prepare(machine, conn, &path)?;
-        log::info!("restore: reopened {}", path.display());
         reopened.notes.restored_with_passphrase_of = restored.made_at;
         reopened.notes.upgraded =
             restored.upgraded.then(|| upgraded_note(backup, at_backup_location));
