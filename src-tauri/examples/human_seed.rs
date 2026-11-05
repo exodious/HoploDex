@@ -494,9 +494,8 @@ fn seed_shared(conn: &Connection) -> i64 {
     // the main database's first photo (the Glock's thumbnail) has, with other
     // bytes, so a thumbnail kept across a switch shows the wrong image
     // (e2e/specs/session-isolation.e2e.ts).
-    let (name, bytes, mime) = seed_photo!("beretta-92fs-atf.jpg");
-    let photo =
-        must(photo_ops::add_photo(conn, RecordRef::Firearm(beretta), &bytes, name, mime), name);
+    let (name, bytes) = seed_photo!("beretta-92fs-atf.jpg");
+    let photo = must(photo_ops::add_photo(conn, RecordRef::Firearm(beretta), &bytes, name), name);
     assert_eq!(photo.id, 1, "the shared database's first photo must have id 1");
     add(FirearmInput {
         estimated_value: Some(1_100),

@@ -99,15 +99,13 @@ impl Images {
 }
 
 /// A real photo from `seed-photos/`, whose README records where each came
-/// from and its licence, as the `(name, bytes, mime type)` that `photos`
-/// takes.
+/// from and its licence, as the `(name, bytes)` that `photos` takes.
 macro_rules! seed_photo {
     ($name:literal) => {
         (
             $name,
             include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/seed-photos/", $name))
                 .to_vec(),
-            "image/jpeg",
         )
     };
 }
@@ -298,16 +296,13 @@ pub fn seed(conn: &Connection, extra: usize, mode: Images) {
         };
         must(firearm_ops::dispose_firearm(conn, id, &input), "a disposition");
     };
-    let photos = |firearm_id: i64, images: &[(&str, Vec<u8>, &str)]| -> Vec<i64> {
+    let photos = |firearm_id: i64, images: &[(&str, Vec<u8>)]| -> Vec<i64> {
         images
             .iter()
-            .map(|(name, bytes, mime)| {
+            .map(|(name, bytes)| {
                 let bytes = mode.prepare(bytes.clone());
-                must(
-                    photo_ops::add_photo(conn, RecordRef::Firearm(firearm_id), &bytes, name, mime),
-                    name,
-                )
-                .id
+                must(photo_ops::add_photo(conn, RecordRef::Firearm(firearm_id), &bytes, name), name)
+                    .id
             })
             .collect()
     };
@@ -707,13 +702,10 @@ pub fn seed(conn: &Connection, extra: usize, mode: Images) {
         (1600, 1200, true),
     ];
     for (i, &(width, height, jpeg)) in PRESENTATION_SHAPES.iter().enumerate() {
-        let (extension, mime) = if jpeg { ("jpg", "image/jpeg") } else { ("png", "image/png") };
+        let extension = if jpeg { "jpg" } else { "png" };
         let name = format!("presentation-{:02}.{extension}", i + 1);
         let bytes = mode.prepare(gradient_image(width, height, i as u32 * 36, jpeg));
-        must(
-            photo_ops::add_photo(conn, RecordRef::Firearm(commemorative), &bytes, &name, mime),
-            &name,
-        );
+        must(photo_ops::add_photo(conn, RecordRef::Firearm(commemorative), &bytes, &name), &name);
     }
 
     // -- Scheduled under an expired policy: uninsured despite the amount ----
@@ -1150,8 +1142,7 @@ pub fn seed_accessories(conn: &Connection, policies: &Policies, glock: i64, mode
     };
     let photo = |id: i64, name: &str, hue: u32| {
         let bytes = mode.prepare(gradient_image(1200, 800, hue, true));
-        must(photo_ops::add_photo(conn, RecordRef::Accessory(id), &bytes, name, "image/jpeg"), name)
-            .id
+        must(photo_ops::add_photo(conn, RecordRef::Accessory(id), &bytes, name), name).id
     };
 
     // -- Active: one of every kind -------------------------------------------

@@ -773,7 +773,6 @@ mod document_names {
             RecordRef::Firearm(id),
             &sample_png_bytes(),
             "zebra-range.png",
-            "image/png",
         )
         .unwrap();
 

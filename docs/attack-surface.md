@@ -194,7 +194,7 @@ and peer review catch that.
 - **Ask:**
   - JPEG and PNG are decoded in the app's own process, unconfined, with the `image` crate's default limits (`models/photo.rs`, and `image` in `src-tauri/Cargo.toml`). Is that bounded against decompression bombs and decoder bugs? Should it move into the render helper as TIFF did?
   - Originals are shown in the main web view, which holds IPC. Is the type checked by content, not by name?
-  - Beside the 50-per-record cap (#98), is every photo and document judged against its byte cap (15 MiB, 30 MiB) and the record's 1 GiB total from the opened file's size before any of it is read, on every path (a drop's path, the picker's bytes), and is the read bounded at the size admitted (`services::attachments::read_attachment_file`)? Is a photo's first bytes checked against its type before it is decoded?
+  - Beside the 50-per-record cap (#98), is every photo and document judged against its byte cap (15 MiB, 30 MiB) and the record's 1 GiB total from the opened file's size before any of it is read, on every path (a drop's path, the picker's bytes), and is the read bounded at the size admitted (`services::attachments::read_attachment_file`)? Is a photo's type taken from its first bytes, not its name, and anything but JPEG or PNG refused before it is decoded?
 - **Since:** 001 (in the baseline review's scope, but on no list until this one).
 
 ## database-files: opening, upgrading and restoring database files

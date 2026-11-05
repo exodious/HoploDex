@@ -131,13 +131,7 @@ export function PhotoGallery({ owner, thumbnailPhotoId, onChanged }: PhotoGaller
         add: async () => {
           // Refused from its size before any of it is read (001 FR-007, amended 2026-11-04).
           if (file.size > MAX_PHOTO_BYTES) throw tooLarge("photo", MAX_PHOTO_BYTES);
-          return mediaService.addPhoto(
-            scope,
-            owner,
-            await fileToByteArray(file),
-            file.name,
-            file.type,
-          );
+          return mediaService.addPhoto(scope, owner, await fileToByteArray(file), file.name);
         },
       })),
     );

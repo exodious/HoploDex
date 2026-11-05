@@ -1,9 +1,10 @@
 //! The size limits on what is attached (001 FR-007 and FR-010, amended
 //! 2026-11-04): a photo at most 15 MiB, a document at most 30 MiB, and one
 //! record's photos and documents at most 1 GiB together, each judged before
-//! the file is read; and a file's type judged from its name and first bytes
-//! before the rest is read. Run against a real temporary SQLCipher database,
-//! with the large files made here (sparse where only their size matters).
+//! the file is read; and a file's type judged before the rest is read, a
+//! document's from its name and first bytes, a photo's from its first bytes.
+//! Run against a real temporary SQLCipher database, with the large files made
+//! here (sparse where only their size matters).
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -65,7 +66,7 @@ fn a_photo_of_15_mib_is_added_and_one_byte_more_is_refused_before_it_is_read() {
     let at = sparse_file(dir.path(), "at.png", &sample_png_bytes(), MAX_PHOTO_BYTES);
     photo_ops::add_photo_from_path(&db.conn, owner, &at, &Reach::Unconfined).unwrap();
     let under = padded(&sample_png_bytes(), MAX_PHOTO_BYTES - 1);
-    photo_ops::add_photo(&db.conn, owner, &under, "under.png", "image/png").unwrap();
+    photo_ops::add_photo(&db.conn, owner, &under, "under.png").unwrap();
     assert_eq!(count(&db, "photos"), 2);
 
     // Just over: refused by its size, not its content, which is no PNG at all
@@ -88,7 +89,7 @@ fn a_photo_of_15_mib_is_added_and_one_byte_more_is_refused_before_it_is_read() {
 
     // And as bytes.
     let over = padded(&sample_png_bytes(), MAX_PHOTO_BYTES + 1);
-    let err = photo_ops::add_photo(&db.conn, owner, &over, "over.png", "image/png").unwrap_err();
+    let err = photo_ops::add_photo(&db.conn, owner, &over, "over.png").unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_TOO_LARGE");
     assert_eq!(count(&db, "photos"), 2);
 }
@@ -158,7 +159,7 @@ fn a_record_takes_attachments_up_to_1_gib_together_and_refuses_one_past_it() {
     store_zero_document(&db, owner, filler - filler / 2);
 
     // Photos count toward the same total as documents.
-    photo_ops::add_photo(&db.conn, owner, &photo, "a.png", "image/png").unwrap();
+    photo_ops::add_photo(&db.conn, owner, &photo, "a.png").unwrap();
 
     // 101 bytes is one past what's left; 99 is just under.
     let err = document_ops::add_document(&db.conn, owner, &[b'a'; 101], "over.txt")
@@ -178,7 +179,7 @@ fn a_record_takes_attachments_up_to_1_gib_together_and_refuses_one_past_it() {
     document_ops::add_document(&db.conn, owner, b"a", "at.txt").unwrap();
 
     // Full: a photo is refused as a document is, and nothing is stored.
-    let err = photo_ops::add_photo(&db.conn, owner, &photo, "b.png", "image/png").unwrap_err();
+    let err = photo_ops::add_photo(&db.conn, owner, &photo, "b.png").unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_TOO_LARGE");
     let path = dir.path().join("b.png");
     std::fs::write(&path, &photo).unwrap();
@@ -189,7 +190,7 @@ fn a_record_takes_attachments_up_to_1_gib_together_and_refuses_one_past_it() {
     assert_eq!(count(&db, "document_attachments"), 4);
 
     // The total is each record's own.
-    photo_ops::add_photo(&db.conn, other, &photo, "c.png", "image/png").unwrap();
+    photo_ops::add_photo(&db.conn, other, &photo, "c.png").unwrap();
 }
 
 #[test]
@@ -252,27 +253,30 @@ fn a_document_whose_first_bytes_are_not_its_type_is_refused_and_nothing_is_store
 }
 
 #[test]
-fn a_photo_whose_first_bytes_are_not_its_type_is_refused_and_nothing_is_stored() {
+fn a_photo_takes_the_type_its_first_bytes_show_and_a_non_photo_is_refused() {
     let db = TestDb::new();
     let owner = new_firearm(&db, "HS-2");
     let dir = tempfile::tempdir().unwrap();
 
-    // A PNG named as a JPEG.
-    let path = dir.path().join("photo.jpg");
+    // A PNG named as a JPEG is a PNG, dropped or sent.
+    let path = dir.path().join("holster.jpg");
     std::fs::write(&path, sample_png_bytes()).unwrap();
-    let err =
-        photo_ops::add_photo_from_path(&db.conn, owner, &path, &Reach::Unconfined).unwrap_err();
-    assert_eq!(err.code, "VALIDATION_ERROR");
-    assert_eq!(err.message, "photo.jpg isn't a real JPEG photo.");
-    let err = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "photo.jpg", "image/jpeg")
-        .unwrap_err();
-    assert_eq!(err.message, "photo.jpg isn't a real JPEG photo.");
+    let dropped =
+        photo_ops::add_photo_from_path(&db.conn, owner, &path, &Reach::Unconfined).unwrap();
+    assert_eq!(dropped.mime_type, "image/png");
+    assert_eq!(dropped.original_filename, "holster.jpg");
+    let sent = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "holster.jpg").unwrap();
+    assert_eq!(sent.mime_type, "image/png");
 
-    // Not a PNG at all, under a PNG's name.
-    let path = dir.path().join("photo.png");
+    // A PDF under a photo's name is refused, and nothing is stored.
+    let path = dir.path().join("photo.jpg");
     std::fs::write(&path, b"%PDF-1.4 a receipt").unwrap();
     let err =
         photo_ops::add_photo_from_path(&db.conn, owner, &path, &Reach::Unconfined).unwrap_err();
-    assert_eq!(err.message, "photo.png isn't a real PNG photo.");
-    assert_eq!(count(&db, "photos"), 0);
+    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert_eq!(err.message, "photo.jpg isn't a JPEG or PNG photo.");
+    let err =
+        photo_ops::add_photo(&db.conn, owner, b"%PDF-1.4 a receipt", "photo.png").unwrap_err();
+    assert_eq!(err.message, "photo.png isn't a JPEG or PNG photo.");
+    assert_eq!(count(&db, "photos"), 2);
 }

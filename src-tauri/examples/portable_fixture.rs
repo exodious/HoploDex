@@ -115,7 +115,7 @@ fn main() {
     let passphrase = Passphrase::from_input(PASSPHRASE.to_owned());
     let conn = db::create_database(&path, &passphrase, &machine).expect("creating the fixture");
     let firearm = firearms::create_firearm(&conn, &firearm(), false, None).expect("the firearm");
-    photos::add_photo(&conn, RecordRef::Firearm(firearm.id), PHOTO_PNG, PHOTO_NAME, "image/png")
+    photos::add_photo(&conn, RecordRef::Firearm(firearm.id), PHOTO_PNG, PHOTO_NAME)
         .expect("the photo");
     documents::add_document(&conn, RecordRef::Firearm(firearm.id), DOCUMENT, DOCUMENT_NAME)
         .expect("the document");

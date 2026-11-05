@@ -13,31 +13,16 @@ use crate::models::record::RecordRef;
 /// so browse performance is independent of photo file size (Principle IV).
 const THUMBNAIL_MAX_DIMENSION: u32 = 200;
 
-const SUPPORTED_MIME_TYPES: &[&str] = &["image/jpeg", "image/png"];
-
-pub fn validate_photo_mime_type(mime_type: &str) -> Result<(), CommandError> {
-    if SUPPORTED_MIME_TYPES.contains(&mime_type) {
-        Ok(())
+/// The type a photo's first bytes show, JPEG or PNG; its name and the type
+/// it was sent with don't decide it, and anything else is refused before it is
+/// read on or decoded (001 FR-007, amended 2026-11-04).
+pub fn photo_type(name: &str, head: &[u8]) -> Result<&'static str, CommandError> {
+    if head.starts_with(b"\xFF\xD8\xFF") {
+        Ok("image/jpeg")
+    } else if head.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Ok("image/png")
     } else {
-        Err(CommandError::new(
-            "VALIDATION_ERROR",
-            format!("Unsupported photo type: {mime_type}. Use JPEG or PNG."),
-        ))
-    }
-}
-
-/// Whether `head`, a photo's first bytes, begins as its `mime_type` (already
-/// validated) does, so a file named for one type but holding another is
-/// refused before it is read on or decoded (001 FR-007, amended 2026-11-04).
-pub fn check_photo_header(name: &str, mime_type: &str, head: &[u8]) -> Result<(), CommandError> {
-    let (magic, label): (&[u8], &str) = match mime_type {
-        "image/png" => (b"\x89PNG\r\n\x1a\n", "PNG"),
-        _ => (b"\xFF\xD8\xFF", "JPEG"),
-    };
-    if head.starts_with(magic) {
-        Ok(())
-    } else {
-        Err(CommandError::new("VALIDATION_ERROR", format!("{name} isn't a real {label} photo.")))
+        Err(CommandError::new("VALIDATION_ERROR", format!("{name} isn't a JPEG or PNG photo.")))
     }
 }
 

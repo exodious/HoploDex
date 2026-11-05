@@ -180,38 +180,9 @@ pub fn safe_basename(name: &str, fallback: &str) -> String {
     format!("{}{extension}", stem.trim_end_matches(|c: char| c == '.' || c.is_whitespace()))
 }
 
-/// The type to record for a photo, going by its extension. Anything else is
-/// generic binary data, which the photo rules refuse. Documents don't use
-/// this: their type comes from `services::document_types::classify`, which
-/// looks at the content (007 research.md §2).
-pub fn mime_type_for(filename: &str) -> &'static str {
-    let extension = filename.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase());
-    match extension.as_deref() {
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("png") => "image/png",
-        Some("gif") => "image/gif",
-        Some("webp") => "image/webp",
-        Some("heic") => "image/heic",
-        _ => "application/octet-stream",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn mime_type_ignores_extension_case() {
-        assert_eq!(mime_type_for("Front.PNG"), "image/png");
-        assert_eq!(mime_type_for("range day.JPeG"), "image/jpeg");
-    }
-
-    #[test]
-    fn mime_type_falls_back_to_generic_binary() {
-        assert_eq!(mime_type_for("appraisal"), "application/octet-stream");
-        assert_eq!(mime_type_for("notes.unknownext"), "application/octet-stream");
-        assert_eq!(mime_type_for("receipt.pdf"), "application/octet-stream");
-    }
 
     #[test]
     fn safe_basename_keeps_a_plain_name() {

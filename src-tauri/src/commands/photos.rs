@@ -6,14 +6,11 @@ use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
-use crate::models::photo::{
-    Photo, PhotoSummary, check_photo_header, generate_thumbnail, validate_photo_mime_type,
-};
+use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, photo_type};
 use crate::models::record::RecordRef;
 use crate::models::rules::{MAX_PHOTO_BYTES, MAX_PHOTOS_PER_RECORD};
 use crate::services::attachments::{
-    mime_type_for, read_attachment_file, require_room, require_size, require_total_room,
-    safe_basename,
+    read_attachment_file, require_room, require_size, require_total_room, safe_basename,
 };
 use crate::services::sandbox::{Need, Reach};
 use crate::session::scoped::ScopedSession;
@@ -80,14 +77,12 @@ pub mod ops {
         owner: RecordRef,
         file_bytes: &[u8],
         original_filename: &str,
-        mime_type: &str,
     ) -> Result<Photo, CommandError> {
-        validate_photo_mime_type(mime_type)?;
         admit_photo(conn, owner, file_bytes.len() as u64)?;
         // The name comes over IPC. A name is only ever a name: no path in it
         // (issue #68; the export checks again, for rows made before this).
         let original_filename = safe_basename(original_filename, "photo");
-        check_photo_header(&original_filename, mime_type, file_bytes)?;
+        let mime_type = photo_type(&original_filename, file_bytes)?;
         let thumbnail_bytes = generate_thumbnail(file_bytes)?;
 
         let next_sort_order: i64 = conn
@@ -181,13 +176,9 @@ pub mod ops {
         let file = read_attachment_file(
             &path,
             |size| admit_photo(conn, owner, size),
-            |name, head| {
-                let mime_type = mime_type_for(name);
-                validate_photo_mime_type(mime_type)?;
-                check_photo_header(&safe_basename(name, "photo"), mime_type, head)
-            },
+            |name, head| photo_type(&safe_basename(name, "photo"), head).map(drop),
         )?;
-        add_photo(conn, owner, &file.bytes, &file.filename, mime_type_for(&file.filename))
+        add_photo(conn, owner, &file.bytes, &file.filename)
     }
 
     /// Makes `photo_id` the owner's thumbnail; a photo of a different owner
@@ -276,12 +267,10 @@ pub async fn add_photo(
     owner: RecordRef,
     file_bytes: Vec<u8>,
     original_filename: String,
-    mime_type: String,
     session: ScopedSession,
 ) -> Result<PhotoSummary, CommandError> {
-    session.write(|conn| {
-        ops::add_photo(conn, owner, &file_bytes, &original_filename, &mime_type).map(Into::into)
-    })
+    session
+        .write(|conn| ops::add_photo(conn, owner, &file_bytes, &original_filename).map(Into::into))
 }
 
 /// Adds a photo from a file on disk: what a drop onto the window delivers.

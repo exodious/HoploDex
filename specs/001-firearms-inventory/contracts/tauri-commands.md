@@ -305,7 +305,7 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#li
 
 _Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 photos ([spec FR-007](../spec.md)). The message names the owner's kind ("This firearm has 50 photos, the most it can have."), `details` is `{ limit: 50 }`, and nothing is stored. It is checked after the mime type and the owner, before the photo is decoded._
 
-_Amended 2026-11-04: `ATTACHMENT_TOO_LARGE` when the photo is over 15 MiB ("A photo can be at most 15 MiB.") or would take the owner's photos and documents past 1 GiB together ("This firearm's photos and documents can total at most 1 GiB."), checked after the count; `details` is `{ limit }` in bytes, the message names no file, and nothing is stored ([spec FR-007](../spec.md)). `VALIDATION_ERROR` when the bytes don't begin as the mime type's ("photo.jpg isn't a real JPEG photo.")._
+_Amended 2026-11-04: `ATTACHMENT_TOO_LARGE` when the photo is over 15 MiB ("A photo can be at most 15 MiB.") or would take the owner's photos and documents past 1 GiB together ("This firearm's photos and documents can total at most 1 GiB."), checked after the count; `details` is `{ limit }` in bytes, the message names no file, and nothing is stored ([spec FR-007](../spec.md)). The type is the one the first bytes show, JPEG or PNG, whatever the name says, and `mimeType` is no longer taken; `VALIDATION_ERROR` when they show neither ("photo.jpg isn't a JPEG or PNG photo."), judged before the photo is decoded._
 
 - **Input**: `firearmId: number`, `fileBytes: Uint8Array`, `originalFilename: string`, `mimeType: string`.
 - **Output**: `Photo` (with generated `thumbnailBytes`). First photo added
@@ -316,7 +316,7 @@ _Amended 2026-11-04: `ATTACHMENT_TOO_LARGE` when the photo is over 15 MiB ("A ph
 
 _Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED`, as `add_photo` and `add_document`._
 
-_Amended 2026-11-04: `ATTACHMENT_TOO_LARGE`, as `add_photo` and `add_document`, judged from the opened file's size before any of it is read; then the type from the name and the first 1,024 bytes before the rest is read; and a file that grows past that size while it is read is refused (`VALIDATION_ERROR`)._
+_Amended 2026-11-04: `ATTACHMENT_TOO_LARGE`, as `add_photo` and `add_document`, judged from the opened file's size before any of it is read; then the type from the first 1,024 bytes (a document's from its name too) before the rest is read; and a file that grows past that size while it is read is refused (`VALIDATION_ERROR`)._
 
 - **Input**: `firearmId: number`, `path: string`.
 - **Output**: as `add_photo` / `add_document`. The backend reads the

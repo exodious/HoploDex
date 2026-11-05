@@ -451,7 +451,6 @@ impl World {
                     RecordRef::Accessory(scope.id),
                     &support::sample_png_bytes(),
                     "scope.png",
-                    "image/png",
                 )?;
                 mounts::mount_record(
                     conn,
