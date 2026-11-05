@@ -157,11 +157,18 @@ describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databa
 
     // The dialog asks again under its field, and Cancel then brings the
     // refusal to the row.
+    const mark = passphraseLog().length;
     await submitPassphrase("not the right passphrase");
-    await browser.waitUntil(() => passphraseLog().some((line) => "retry" in line), {
-      timeout: 10000,
-      timeoutMsg: "the dialog never asked again",
-    });
+    await browser.waitUntil(
+      () =>
+        passphraseLog()
+          .slice(mark)
+          .some((line) => "retry" in line),
+      {
+        timeout: 10000,
+        timeoutMsg: "the dialog never asked again",
+      },
+    );
     await expect(
       $(
         "p=That passphrase didn't open “Test”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",

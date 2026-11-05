@@ -254,7 +254,8 @@ pub mod ops {
         take_over: bool,
         reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
-        let checked = reach.check(Path::new(path), Need::DatabaseFolder)?;
+        let requested = Path::new(path);
+        let checked = reach.check(requested, Need::DatabaseFolder)?;
         let path = checked.as_path();
         let loaded;
         let (passphrase, saved) = match unlock {
@@ -323,6 +324,12 @@ pub mod ops {
                 // (009 FR-018).
                 let folder = machine.recent_entry(path).and_then(|entry| entry.backup_folder);
                 Err(CommandError::database_newer_version(folder.as_deref()))
+            }
+            Err(err) if err.code == "DATABASE_OPEN_ELSEWHERE" => {
+                if let Some(name) = err.details_str("machineName") {
+                    session.note_open_elsewhere(requested, &name);
+                }
+                Err(err)
             }
             Err(err) => Err(err),
         }
@@ -409,12 +416,6 @@ pub mod ops {
                     })
                 }
                 result => {
-                    if let Err(err) = &result
-                        && err.code == "DATABASE_OPEN_ELSEWHERE"
-                        && let Some(name) = err.details_str("machineName")
-                    {
-                        session.note_open_elsewhere(Path::new(path), &name);
-                    }
                     outcome = Some(result);
                     Step::Done
                 }

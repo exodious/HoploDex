@@ -9,6 +9,7 @@ use crate::support;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
@@ -32,12 +33,12 @@ use tempfile::TempDir;
 
 /// One press of the dialog's primary button: the passphrase and, for a
 /// change, the current one. `None` is Cancel.
-type Press = Option<(&'static str, Option<&'static str>)>;
+pub(crate) type Press = Option<(&'static str, Option<&'static str>)>;
 
 /// A dialog that answers from a script, records what it was asked and the
 /// retries it showed, and cancels once the script runs out.
 #[derive(Default)]
-struct Scripted {
+pub(crate) struct Scripted {
     script: Mutex<VecDeque<Press>>,
     asked: Mutex<Vec<Request>>,
     retries: Mutex<Vec<Retry>>,
@@ -45,10 +46,11 @@ struct Scripted {
     silent: bool,
     /// Runs once the first press is sent, while what was typed is tried.
     then: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    closed: AtomicBool,
 }
 
 impl Scripted {
-    fn answering(script: impl IntoIterator<Item = Press>) -> Arc<Self> {
+    pub(crate) fn answering(script: impl IntoIterator<Item = Press>) -> Arc<Self> {
         Arc::new(Self { script: Mutex::new(script.into_iter().collect()), ..Self::default() })
     }
 
@@ -66,7 +68,7 @@ impl Scripted {
         }
     }
 
-    fn asked(&self) -> Vec<Request> {
+    pub(crate) fn asked(&self) -> Vec<Request> {
         self.asked.lock().unwrap().clone()
     }
 
@@ -75,7 +77,7 @@ impl Scripted {
     }
 }
 
-struct ScriptedDialog(Arc<Scripted>);
+pub(crate) struct ScriptedDialog(pub(crate) Arc<Scripted>);
 
 impl PassphraseDialog for ScriptedDialog {
     fn open(
@@ -106,7 +108,9 @@ impl DialogWindow for ScriptedWindow {
         let _ = self.events.send(self.script.next());
     }
 
-    fn close(&self) {}
+    fn close(&self) {
+        self.script.closed.store(true, Ordering::SeqCst);
+    }
 }
 
 const WRONG: &str = "not the passphrase at all";
@@ -650,6 +654,35 @@ fn a_dialog_for_a_database_that_closed_isnt_shown() {
 
     assert_eq!(asked, Asked::Cancelled);
     assert!(script.asked().is_empty());
+}
+
+/// A step that panics, as on a poisoned lock while a passphrase is tried,
+/// still takes the dialog down, so it isn't left busy holding what was typed.
+#[test]
+fn a_panicking_step_still_closes_the_dialog() {
+    let world = World::new();
+    let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    let request = Request {
+        shape: Shape::Enter,
+        title: "Open \u{201C}Mine\u{201D}".to_owned(),
+        message: String::new(),
+        primary: "Open".to_owned(),
+        busy: String::new(),
+    };
+
+    let asked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        passphrase_dialog::ask(
+            &world.session,
+            &ScriptedDialog(Arc::clone(&script)),
+            None,
+            &request,
+            |_| panic!("the step failed"),
+        )
+    }));
+
+    assert!(asked.is_err());
+    assert!(script.closed.load(Ordering::SeqCst));
+    assert_eq!(world.session.prompts().count(), 0);
 }
 
 /// 003 FR-017: asked to remember, the Open dialog says what that gives away

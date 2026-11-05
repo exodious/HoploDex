@@ -25,7 +25,7 @@ use windows_sys::Win32::UI::Controls::{
     BST_CHECKED, EM_SETPASSWORDCHAR, ICC_PROGRESS_CLASS, INITCOMMONCONTROLSEX,
     InitCommonControlsEx, PBM_SETPOS, PBM_SETRANGE32,
 };
-use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, SystemParametersInfoForDpi};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, BM_GETCHECK, BN_CLICKED, BN_SETFOCUS, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON,
@@ -37,10 +37,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     NONCLIENTMETRICSW, PostMessageW, PostQuitMessage, RegisterClassW, RemovePropW, SM_CXSCREEN,
     SM_CYSCREEN, SPI_GETNONCLIENTMETRICS, SW_HIDE, SW_SHOW, SWP_NOZORDER, SendMessageW,
     SetForegroundWindow, SetPropW, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
-    ShowWindow, SystemParametersInfoW, TranslateMessage, WA_INACTIVE, WM_ACTIVATE, WM_APP,
-    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY, WM_KEYDOWN, WM_SETFONT,
-    WM_TIMER, WNDCLASSW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
-    WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    ShowWindow, TranslateMessage, WA_INACTIVE, WM_ACTIVATE, WM_APP, WM_CLOSE, WM_COMMAND,
+    WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY, WM_KEYDOWN, WM_SETFONT, WM_TIMER, WNDCLASSW,
+    WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_POPUP, WS_SYSMENU,
+    WS_TABSTOP, WS_VISIBLE,
 };
 use zeroize::Zeroizing;
 
@@ -398,13 +398,13 @@ impl State {
             let px = |points: i32| points * dpi as i32 / 96;
             let mut metrics: NONCLIENTMETRICSW = std::mem::zeroed();
             metrics.cbSize = std::mem::size_of::<NONCLIENTMETRICSW>() as u32;
-            SystemParametersInfoW(
+            SystemParametersInfoForDpi(
                 SPI_GETNONCLIENTMETRICS,
                 metrics.cbSize,
                 (&mut metrics as *mut NONCLIENTMETRICSW).cast(),
                 0,
+                dpi,
             );
-            metrics.lfMessageFont.lfHeight = metrics.lfMessageFont.lfHeight * dpi as i32 / 96;
             self.font.set(CreateFontIndirectW(&metrics.lfMessageFont));
 
             let margin = px(14);

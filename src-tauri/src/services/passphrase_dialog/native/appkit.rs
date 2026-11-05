@@ -5,8 +5,11 @@
 //! busy, while the backend tries what was typed.
 //!
 //! Each field's text is read into a buffer that is wiped straight after,
-//! through `getCharacters:range:`; what AppKit keeps of it is the OS's own
-//! input path. Everything here runs on the main thread. The dialog's state is
+//! through `getCharacters:range:`. Reading `stringValue()` of the field being
+//! edited, as each change and pause does, makes AppKit commit the field
+//! editor's text into the cell as a new `NSString`, and AppKit frees those
+//! copies unwiped: what it keeps is its own (docs/attack-surface.md,
+//! `key-passphrase`). Everything here runs on the main thread. The dialog's state is
 //! kept in a thread-local map by its id; the [`DialogWindow`] the caller gets
 //! posts its `retry` and `close` there.
 

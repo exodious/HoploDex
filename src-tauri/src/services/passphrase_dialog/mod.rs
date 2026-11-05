@@ -262,26 +262,29 @@ pub fn ask(
     if bound.is_some_and(|id| session.current_id() != id) {
         return Asked::Cancelled;
     }
-    let window = match dialog.open(request, events) {
+    let window = Shown(match dialog.open(request, events) {
         Ok(window) => window,
         Err(err) => {
             log::error!("could not show the passphrase dialog: {err}");
             return Asked::Cancelled;
         }
-    };
+    });
     loop {
         match answers.recv() {
             Ok(Event::Submitted(answer)) => match step(answer) {
-                Step::Done => {
-                    window.close();
-                    return Asked::Done;
-                }
-                Step::Retry(retry) => window.retry(&retry),
+                Step::Done => return Asked::Done,
+                Step::Retry(retry) => window.0.retry(&retry),
             },
-            Ok(Event::Cancelled | Event::Dismissed) | Err(_) => {
-                window.close();
-                return Asked::Cancelled;
-            }
+            Ok(Event::Cancelled | Event::Dismissed) | Err(_) => return Asked::Cancelled,
         }
+    }
+}
+
+/// A shown dialog, closed however [`ask`] ends, a panicking step included.
+struct Shown(Box<dyn DialogWindow>);
+
+impl Drop for Shown {
+    fn drop(&mut self) {
+        self.0.close();
     }
 }

@@ -602,3 +602,5 @@ third action to the shared `ConfirmDialog`), `26-database-guide-settings`
 Existing
 screens are unchanged apart from the database menu in the top bar and the
 export wording.
+
+_Amended 2026-11-04: `20-change-passphrase` is gone from the walk, since the change is asked for in the native passphrase dialog (§0's note, §8), which a page screenshot can't take; `16-create-database` shows only the page's part, the name and folder, and `21-restore-backup` the page's restore dialog without a passphrase field._

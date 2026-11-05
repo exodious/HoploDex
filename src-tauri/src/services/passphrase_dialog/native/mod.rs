@@ -80,11 +80,12 @@ pub(crate) struct Controller {
     shape: Shape,
     shown: Shown,
     retry: Option<Retry>,
+    estimate: Option<Estimate>,
 }
 
 impl Controller {
     pub fn new(shape: Shape) -> Self {
-        Self { shape, shown: Shown::default(), retry: None }
+        Self { shape, shown: Shown::default(), retry: None, estimate: None }
     }
 
     /// `field` changed, or the acknowledgement was ticked (`None`).
@@ -92,24 +93,30 @@ impl Controller {
         if field.is_some() && self.retry.as_ref().map(|retry| retry.field) == field {
             self.retry = None;
         }
+        if field == Some(Field::Passphrase) {
+            self.rate(texts);
+        }
         let verdict = checks::inspect(self.shape, texts);
         let problems = self.shown.typed(verdict.problems);
-        self.view(verdict, problems, texts)
+        self.view(verdict, problems)
     }
 
     /// The typing paused.
     pub fn paused(&mut self, texts: Texts<'_>) -> View {
         let verdict = checks::inspect(self.shape, texts);
         let problems = self.shown.paused(verdict.problems);
-        self.view(verdict, problems, texts)
+        self.view(verdict, problems)
     }
 
     /// The last try was refused: `retry`'s field has been emptied.
     pub fn retried(&mut self, retry: &Retry, texts: Texts<'_>) -> View {
         self.retry = Some(retry.clone());
+        if retry.field == Field::Passphrase {
+            self.rate(texts);
+        }
         let verdict = checks::inspect(self.shape, texts);
         let problems = self.shown.typed(verdict.problems);
-        self.view(verdict, problems, texts)
+        self.view(verdict, problems)
     }
 
     /// Whether the primary button may send these fields: the checks pass.
@@ -117,13 +124,17 @@ impl Controller {
         checks::inspect(self.shape, texts).ready
     }
 
-    fn view(&self, verdict: Verdict, problems: Problems, texts: Texts<'_>) -> View {
+    /// Scores the new passphrase, only when it changed.
+    fn rate(&mut self, texts: Texts<'_>) {
+        self.estimate = (self.shape.has_strength() && !texts.passphrase.is_empty())
+            .then(|| strength::estimate(texts.passphrase))
+            .flatten();
+    }
+
+    fn view(&self, verdict: Verdict, problems: Problems) -> View {
         let refused = |field| {
             self.retry.as_ref().filter(|retry| retry.field == field).map(|r| r.message.clone())
         };
-        let estimate = (self.shape.has_strength() && !texts.passphrase.is_empty())
-            .then(|| strength::estimate(texts.passphrase))
-            .flatten();
         let view = View {
             ready: verdict.ready,
             current: refused(Field::Current),
@@ -131,7 +142,7 @@ impl Controller {
                 .or_else(|| problems.passphrase.map(str::to_owned)),
             confirmation: refused(Field::Confirmation)
                 .or_else(|| problems.confirmation.map(str::to_owned)),
-            estimate,
+            estimate: self.estimate.clone(),
         };
         #[cfg(feature = "e2e")]
         super::e2e::note_view(&view);
@@ -183,5 +194,21 @@ mod tests {
         assert!(!view.ready);
         let view = controller.typed(Some(Field::Passphrase), texts);
         assert_eq!(view.line(Field::Current), Some("That isn't the current one."));
+    }
+
+    #[test]
+    fn the_strength_hint_follows_the_new_passphrase_and_nothing_else() {
+        let mut controller = Controller::new(CREATE);
+        let weak = controller.typed(Some(Field::Passphrase), texts("password", "")).estimate;
+        assert_eq!(weak, strength::estimate("password"));
+        let confirming = controller.typed(Some(Field::Confirmation), texts("password", "pass"));
+        assert_eq!(confirming.estimate, weak);
+        assert_eq!(controller.paused(texts("password", "pass")).estimate, weak);
+        let stronger = "correct horse battery staple";
+        let view = controller.typed(Some(Field::Passphrase), texts(stronger, "pass"));
+        assert_eq!(view.estimate, strength::estimate(stronger));
+        assert_ne!(view.estimate, weak);
+        let retry = Retry { field: Field::Passphrase, message: "Not that one.".to_owned() };
+        assert_eq!(controller.retried(&retry, texts("", "pass")).estimate, None);
     }
 }

@@ -212,7 +212,8 @@ describe("008 US4 - Pending Changes Kept by Another Version (was us9-locking)", 
 // operates the radio: WebKitGTK would otherwise submit the radio's form.
 describe("Issue #44 - Enter on a radio", () => {
   // Enter in the take-over's passphrase field is the native dialog's now
-  // (amended 2026-11-04 to 003 FR-007): passphrase-dialog.e2e.ts presses it.
+  // (amended 2026-11-04 to 003 FR-007); passphrase-dialog.e2e.ts presses
+  // Enter in the create, open and change dialogs.
   it("takes over, then Enter on a radio submits nothing", async function () {
     skipWithoutRealInput(this);
     await reseed();
