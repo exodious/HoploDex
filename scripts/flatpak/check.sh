@@ -290,8 +290,10 @@ fresh_install_check() {
   node "$here/contents.mjs" --installed "$location/files" || fail "the installed app's files are not what contents.mjs allows"
 
   step "start the shipped build under a throwaway home and the stand-in buses"
-  # A display of its own (the container has none), as the E2E run has.
-  Xvfb -displayfd 5 -screen 0 1280x1024x24 -nolisten tcp -ac 5>"$scratch/display" >"$log_dir/xvfb.log" 2>&1 &
+  # A display of its own (the container has none), as the E2E run has, and
+  # with -noreset for the same reason (e2e/support/display.ts): the app's own
+  # GTK init mustn't meet a reset when its sandbox probe leaves the display.
+  Xvfb -displayfd 5 -screen 0 1280x1024x24 -nolisten tcp -ac -noreset 5>"$scratch/display" >"$log_dir/xvfb.log" 2>&1 &
   xvfb_pid="$!"
   local tries=0
   until [ -s "$scratch/display" ]; do

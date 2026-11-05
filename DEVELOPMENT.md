@@ -863,10 +863,10 @@ through page scripts. For genuine input, see "Real keyboard and mouse
 input" below.
 
 On Linux each worker starts an isolated Xvfb virtual display of its own
-(`e2e/support/display.ts`, through `@wdio/display-server`'s
-`XvfbDisplayServer`) and points `DISPLAY` at it, so the app never
-touches your real desktop and parallel workers never share a screen, a
-pointer or a keyboard. WebdriverIO 10's testrunner would otherwise start one
+(`e2e/support/display.ts`, with `-noreset`, so that the display can't
+reset under the app's GTK init when the sandbox probe leaves it) and
+points `DISPLAY` at it, so the app never touches your real desktop and
+parallel workers never share a screen, a pointer or a keyboard. WebdriverIO 10's testrunner would otherwise start one
 display shared by the whole run, so `wdio.conf.ts` turns it off
 (`displayServerEnabled: false`), and `run-e2e.mjs` drops `WAYLAND_DISPLAY`,
 which would make the testrunner point GTK at your compositor even then. The harness self-heals after an interrupted prior run,
