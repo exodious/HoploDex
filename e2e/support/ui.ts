@@ -840,9 +840,10 @@ export function passphraseLog(): Record<string, unknown>[] {
   const log = process.env.HOPLODEX_E2E_PASSPHRASE_LOG;
   if (!log) throw new Error("HOPLODEX_E2E_PASSPHRASE_LOG is not set (sandbox.ts)");
   if (!fs.existsSync(log)) return [];
-  return fs
-    .readFileSync(log, "utf-8")
-    .split(/\r?\n/)
+  const lines = fs.readFileSync(log, "utf-8").split(/\r?\n/);
+  // The last piece is "" after a whole line, or a line the app is still writing.
+  lines.pop();
+  return lines
     .filter((line) => line.trim() !== "")
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
