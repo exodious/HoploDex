@@ -538,13 +538,14 @@ impl SessionInner {
         drop(dropped);
     }
 
-    /// Notes that an open found `path` marked open on `machine_name`.
+    /// Notes that an open or an upgrade found `path` (as `Reach::check`
+    /// returned it) marked open on `machine_name`.
     pub fn note_open_elsewhere(&self, path: &Path, machine_name: &str) {
         *self.open_elsewhere.lock().expect("session mutex poisoned") =
             Some((path.to_owned(), machine_name.to_owned()));
     }
 
-    /// The computer an open last found `path` marked open on.
+    /// The computer an open or an upgrade last found `path` marked open on.
     pub fn open_elsewhere(&self, path: &Path) -> Option<String> {
         let found = self.open_elsewhere.lock().expect("session mutex poisoned");
         found.as_ref().filter(|(seen, _)| seen == path).map(|(_, machine)| machine.clone())
