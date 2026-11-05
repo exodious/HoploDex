@@ -131,10 +131,13 @@ describe("003 US3 - Automatic Backups and Restoring From One (was us8-backups)",
     // then brings the confirmation (003 US3-5, 003 contracts/ui-databases.md
     // §9; 009 FR-019, 009 contracts/ui.md §6; amended 2026-11-04 to 003 FR-007;
     // the page's side is in RestoreBackupDialog.test.tsx).
+    const mark = passphraseLog().length;
     answerPassphrase("not the backup's passphrase", E2E_PASSPHRASE);
     await clickEl('[role="dialog"] button[type="submit"]');
     await $('[role="alertdialog"]').waitForExist({ timeout: 20000 });
-    const retries = passphraseLog().filter((line) => "retry" in line);
+    const retries = passphraseLog()
+      .slice(mark)
+      .filter((line) => "retry" in line);
     expect((retries.at(-1)?.retry as { message: string }).message).toMatch(
       /^That passphrase didn't open the backup from /,
     );

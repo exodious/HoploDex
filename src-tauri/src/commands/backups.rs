@@ -235,23 +235,55 @@ pub mod ops {
         passphrase: &Passphrase,
         target: Target<'_>,
     ) -> Result<BackupCheck, CommandError> {
+        let checking = checking_backup(session, machine, backup_path, target)?;
+        let inspected = checking.inspect(passphrase)?;
+        Ok(BackupCheck { upgrade_to: inspected.upgrade_to })
+    }
+
+    /// A backup [`check_backup`] has let through the refusals that need no
+    /// passphrase, and what its passphrase must then show.
+    struct CheckingBackup {
+        /// The backup, within reach.
+        backup: PathBuf,
+        /// The database it would replace.
+        database_path: PathBuf,
+        /// For a damaged database, the id the backup must carry to be its own.
+        expected_id: Option<String>,
+    }
+
+    impl CheckingBackup {
+        /// Opens the backup with `passphrase`, refusing one that isn't the
+        /// damaged database's own.
+        fn inspect(&self, passphrase: &Passphrase) -> Result<InspectedBackup, CommandError> {
+            let inspected = inspect_backup(&self.backup, passphrase, &self.database_path)?;
+            match &self.expected_id {
+                Some(expected) if inspected.database_id != *expected => Err(not_its_backup()),
+                _ => Ok(inspected),
+            }
+        }
+    }
+
+    /// `check_backup`'s refusals before a passphrase: the backup within reach,
+    /// a damaged database's restore authorized and its file replaceable, and
+    /// the backup still there.
+    fn checking_backup(
+        session: &Session,
+        machine: &MachineSettings,
+        backup_path: &str,
+        target: Target<'_>,
+    ) -> Result<CheckingBackup, CommandError> {
         let backup = session.reach().check(Path::new(backup_path), Need::ReadFile)?;
-        let backup = backup.as_path();
         let (database_path, expected_id) = match target {
             Target::Open(id) => (session.inspect(id, |open| Ok(open.path.clone()))?, None),
             Target::At(path) => {
                 let path = Path::new(path);
-                let expected = authorize_damaged_restore(machine, backup, path)?;
+                let expected = authorize_damaged_restore(machine, &backup, path)?;
                 replaceable_target(path)?;
                 (path.to_owned(), Some(expected))
             }
         };
-        backup_len(backup)?;
-        let inspected = inspect_backup(backup, passphrase, &database_path)?;
-        if expected_id.is_some_and(|expected| inspected.database_id != expected) {
-            return Err(not_its_backup());
-        }
-        Ok(BackupCheck { upgrade_to: inspected.upgrade_to })
+        backup_len(&backup)?;
+        Ok(CheckingBackup { backup, database_path, expected_id })
     }
 
     /// The backup's length, which must be a file that is there.
@@ -1177,26 +1209,17 @@ pub mod ops {
         backup_path: &str,
         target: Target<'_>,
     ) -> Result<CheckedBackup, CommandError> {
-        let backup = session.reach().check(Path::new(backup_path), Need::ReadFile)?;
-        let backup = backup.as_path();
-        let (database_path, expected_id, held_target, bound) = match target {
-            Target::Open(id) => {
-                let path = session.inspect(id, |open| Ok(open.path.clone()))?;
-                (path, None, HeldTarget::Open(id), Some(id))
-            }
-            Target::At(path) => {
-                let at = Path::new(path);
-                let expected = authorize_damaged_restore(machine, backup, at)?;
-                replaceable_target(at)?;
-                (at.to_owned(), Some(expected), HeldTarget::At(path.to_owned()), None)
-            }
+        let checking = checking_backup(session, machine, backup_path, target)?;
+        let (held_target, bound) = match target {
+            Target::Open(id) => (HeldTarget::Open(id), Some(id)),
+            Target::At(path) => (HeldTarget::At(path.to_owned()), None),
         };
-        backup_len(backup)?;
         let whose = match &held_target {
-            HeldTarget::At(_) => databases_ops::quoted_name(&database_path),
+            HeldTarget::At(_) => databases_ops::quoted_name(&checking.database_path),
             HeldTarget::Open(_) => "the database".to_owned(),
         };
-        let made = backup
+        let made = checking
+            .backup
             .file_name()
             .and_then(|name| backups::made_at_of(&name.to_string_lossy()))
             .map(|made| made.format("%B %-d, %Y at %-I:%M:%S %p").to_string());
@@ -1219,14 +1242,7 @@ pub mod ops {
         let mut outcome = None;
         let asked =
             passphrase_dialog::ask(session, dialog, bound, &request, |answer| {
-                let inspected = inspect_backup(backup, &answer.passphrase, &database_path)
-                    .and_then(|inspected| match &expected_id {
-                        Some(expected) if inspected.database_id != *expected => {
-                            Err(not_its_backup())
-                        }
-                        _ => Ok(inspected),
-                    });
-                match inspected {
+                match checking.inspect(&answer.passphrase) {
                     Err(err) if err.code == "PASSPHRASE_INCORRECT" => Step::Retry(Retry {
                         field: Field::Passphrase,
                         message: match &made {

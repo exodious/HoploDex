@@ -184,13 +184,31 @@ pub mod ops {
     ) -> Result<DatabaseStatus, CommandError> {
         let path =
             validate_create_database_input(folder, name, passphrase, acknowledged_unrecoverable)?;
-        let path = reach.check(&path, Need::DatabaseFolder).map_err(|refusal| {
+        let path = reachable_new_database(&path, reach)?;
+        create_at(session, machine, &path, passphrase)
+    }
+
+    /// Refuses a new database's folder out of reach, on the folder field
+    /// (011 FR-004), and gives the path to create it at.
+    fn reachable_new_database(path: &Path, reach: &Reach) -> Result<PathBuf, CommandError> {
+        reach.check(path, Need::DatabaseFolder).map_err(|refusal| {
             let message = refusal.message.clone();
             refusal.on_field("folder", message)
-        })?;
-        let folder = path.parent().unwrap_or(Path::new(folder));
-        fs::create_dir_all(folder).map_err(|err| folder_error(folder, &err))?;
-        lifecycle::create(session, machine, &path, passphrase)?;
+        })
+    }
+
+    /// Makes the new database's folder when it is missing, then creates the
+    /// database at `path` and opens it.
+    fn create_at(
+        session: &Session,
+        machine: &MachineSettings,
+        path: &Path,
+        passphrase: &Passphrase,
+    ) -> Result<DatabaseStatus, CommandError> {
+        if let Some(folder) = path.parent() {
+            fs::create_dir_all(folder).map_err(|err| folder_error(folder, &err))?;
+        }
+        lifecycle::create(session, machine, path, passphrase)?;
         database_status(session, machine)
     }
 
@@ -444,11 +462,7 @@ pub mod ops {
         name: &str,
         reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
-        let path = validate_create_location(folder, name)?;
-        let path = reach.check(&path, Need::DatabaseFolder).map_err(|refusal| {
-            let message = refusal.message.clone();
-            refusal.on_field("folder", message)
-        })?;
+        let path = reachable_new_database(&validate_create_location(folder, name)?, reach)?;
         let request = Request {
             shape: Shape::Choose { current: false, acknowledgement: true },
             title: "Choose a passphrase".to_owned(),
@@ -468,13 +482,7 @@ pub mod ops {
                     message: problem.to_owned(),
                 });
             }
-            let made = path.parent().map_or(Ok(()), |parent| {
-                fs::create_dir_all(parent).map_err(|err| folder_error(parent, &err))
-            });
-            outcome = Some(
-                made.and_then(|()| lifecycle::create(session, machine, &path, &answer.passphrase))
-                    .and_then(|()| database_status(session, machine)),
-            );
+            outcome = Some(create_at(session, machine, &path, &answer.passphrase));
             Step::Done
         });
         match (asked, outcome) {

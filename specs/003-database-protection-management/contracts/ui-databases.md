@@ -151,7 +151,7 @@ collection data, top-bar tabs or counts are shown.
   service." when the keyring is unavailable (FR-019). Ticking it opens the
   FR-017 confirmation (§8) first, and the box stays unticked unless the user
   confirms.
-  _Amended 2026-11-04: no field in the row: **Open…** (primary, focused) shows the native passphrase dialog (§0's note), titled "Open <name>", which asks again under its field for a wrong passphrase. The row shows **Opening…** while it is up, and what stopped the open below **Open…** afterwards. **Remember on this computer** stays in the row, with no confirmation of its own: ticked, the dialog says what remembering gives away (§8's facts) and its primary is **Open and remember** (**Take over and remember** for a take-over), so the page can't have a passphrase saved without the user being told in a window it can't word._
+  _Amended 2026-11-04: no field in the row: **Open…** (primary, focused) shows the native passphrase dialog (§0's note), titled "Open <name>", which asks again under its field for a wrong passphrase. The row shows **Opening…** while it is up, and what stopped the open below **Open…** afterwards. **Remember on this computer** stays in the row, with no confirmation of its own: ticked, the dialog says what remembering gives away (§8's facts) and its primary is **Open and remember**, so the page can't have a passphrase saved without the user being told in a window it can't word._
 - **Selected row, passphrase saved**: **Open** (primary), no prompt. After a
   lock the selected row shows the same (US6-8).
 - **Opening** (SC-003, constitution IV): within 100 ms of **Open** being
