@@ -14,7 +14,8 @@
 # extractors honour these filters. Rust's inline `#[cfg(test)]` modules and
 # `#[cfg(feature = "e2e")]` code can't be excluded by path, so the workflow
 # turns `cfg(test)` off and enables only the release build's features
-# instead (see the Rust job's environment there).
+# instead (see the Rust job's environment there). A whole file behind a
+# configured-out `mod` is still extracted, so it is listed in `paths-ignore`.
 name: HoploDex CodeQL config
 
 queries:
