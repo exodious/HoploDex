@@ -2,6 +2,7 @@ pub mod attachments;
 pub mod backups;
 pub mod cartridges;
 pub mod consent;
+pub mod crash_reports;
 pub mod disk_space;
 pub mod document_types;
 pub mod entry_text;

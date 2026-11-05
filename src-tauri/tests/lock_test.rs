@@ -66,8 +66,10 @@ impl World {
         Self {
             dir: TempDir::new().unwrap(),
             machine: Arc::new(MachineSettings::load(config.path()).unwrap()),
+            session: Arc::new(
+                session.with_web_view_folders(vec![config.path().join("main-webview")]),
+            ),
             config,
-            session: Arc::new(session),
             events,
             clock,
         }
@@ -149,6 +151,16 @@ impl World {
         let copy = folder.join("receipt.pdf");
         fs::write(&copy, b"%PDF-1.4 decrypted").unwrap();
         copy
+    }
+
+    /// A minidump WebView2's Crashpad wrote into the main web view's data
+    /// folder, which can hold some of a crashed process's memory (#166).
+    fn web_view_crash_report(&self) -> PathBuf {
+        let reports = self.config.path().join("main-webview/EBWebView/Crashpad/reports");
+        fs::create_dir_all(&reports).unwrap();
+        let report = reports.join("report.dmp");
+        fs::write(&report, b"a crashed web process's memory").unwrap();
+        report
     }
 
     fn set_lock(&self, idle_enabled: bool, idle_minutes: i64, on_screen_lock: bool) {
@@ -261,6 +273,18 @@ fn stopped_notice(world: &World, operation: &str, extra: Value) -> Value {
 }
 
 // --- Lock now (003 FR-033, FR-035) -------------------------------------------
+
+#[test]
+fn a_lock_deletes_the_crash_reports_webview2_left() {
+    let world = World::new();
+    world.create();
+    let report = world.web_view_crash_report();
+
+    databases::lock_database(&world.session, world.session.current_id(), &world.machine, None)
+        .unwrap();
+
+    assert!(!report.exists(), "WebView2's crash reports go with the decrypted copies (#166)");
+}
 
 #[test]
 fn lock_now_keeps_the_draft_then_closes_like_a_normal_close() {

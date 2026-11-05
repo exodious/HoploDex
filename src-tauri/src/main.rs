@@ -25,6 +25,8 @@ use hoplodex_lib::services::consent::Consent;
 use hoplodex_lib::services::consent::DialogConsent;
 #[cfg(feature = "e2e")]
 use hoplodex_lib::services::consent::E2eConsent;
+#[cfg(windows)]
+use hoplodex_lib::services::crash_reports;
 use hoplodex_lib::services::import_reader::reader as import_helper;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
@@ -236,6 +238,15 @@ fn main() {
     // The render helper, the import helper and the sandbox probe are this executable started
     // again (007 research.md §9, §11; 008 research.md §8): before any Tauri, keyring, session
     // or logging setup, so they have none of them, and they never return here.
+    // No Windows Error Reporting box, heap or snapshot, and a panic ends the
+    // process at once rather than in abort's fail-fast, which Windows Error
+    // Reporting would report to Microsoft (#166). First, so the helpers below
+    // start with it too, and replace the panic hook with a silent one.
+    #[cfg(windows)]
+    {
+        crash_reports::quiet_error_reporting();
+        crash_reports::end_process_on_panic(true);
+    }
     let args: Vec<String> =
         std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
     #[cfg(target_os = "linux")]
@@ -314,11 +325,12 @@ fn main() {
             let reach = Arc::new(read_reach(app.handle()));
             log::info!("{}", reach.describe());
             app.manage(reach.clone());
-            app.manage(Session::new(
-                Arc::new(app.handle().clone()),
-                Some(opened_documents),
-                reach.clone(),
-            ));
+            app.manage(
+                Session::new(Arc::new(app.handle().clone()), Some(opened_documents), reach.clone())
+                    .with_web_view_folders(app_dirs::web_view_dirs(&app_dirs::cache_dir(
+                        app.handle(),
+                    )?)),
+            );
             // Saved passphrases (003 FR-017); the keyring itself is first asked
             // about when the chooser needs to know whether it is there.
             let machine = MachineSettings::load(&app_dirs::config_dir(app.handle())?)?
@@ -383,14 +395,22 @@ fn main() {
             let origins = main_navigation::app_origins(cfg!(windows), dev_url.as_ref());
             #[cfg(windows)]
             let filter_origins = origins.clone();
-            let _main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::default())
+            //
+            // On Windows its WebView2 environment is HoploDex's own, which sends
+            // no crash report to Microsoft (#166).
+            let main_data_dir = app_dirs::main_webview_data_dir(app.handle())?;
+            let main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::default())
                 .on_navigation(move |url| main_navigation::navigation_allowed(&origins, url))
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .title("HoploDex")
                 .inner_size(1200.0, 800.0)
-                .min_inner_size(800.0, 600.0)
-                .data_directory(app_dirs::main_webview_data_dir(app.handle())?)
-                .build()?;
+                .min_inner_size(800.0, 600.0);
+            #[cfg(windows)]
+            let main = main.with_environment(crash_reports::web_view_environment(
+                &main_data_dir,
+                &crash_reports::main_browser_args(),
+            )?);
+            let _main = main.data_directory(main_data_dir).build()?;
             #[cfg(windows)]
             main_navigation::refuse_foreign_documents(&_main, filter_origins)?;
             // The native half of the browser controls (008 FR-010 to FR-012,

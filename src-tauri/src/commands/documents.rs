@@ -309,13 +309,22 @@ pub mod ops {
 /// (001 FR-035) so decrypted copies never outlive the session that made them.
 pub const OPENED_DOCUMENTS_DIR: &str = "opened-documents";
 
-/// Clears [`OPENED_DOCUMENTS_DIR`] under the app cache directory, logging
+/// Clears [`OPENED_DOCUMENTS_DIR`] under the app cache directory, and the
+/// crash reports WebView2 left in the web views' data folders (#166), logging
 /// (never failing on) anything that couldn't be deleted — the next startup
 /// sweep retries it.
 pub fn clear_opened_documents_cache(app: &AppHandle) {
     let Ok(cache_dir) = app_dirs::cache_dir(app) else {
         return;
     };
+    for path in
+        crate::services::crash_reports::sweep_web_view_reports(&app_dirs::web_view_dirs(&cache_dir))
+    {
+        log::warn!(
+            "could not delete a web view crash report in {}",
+            crate::logging::folder_of(&path)
+        );
+    }
     for path in ops::clear_opened_documents(&cache_dir.join(OPENED_DOCUMENTS_DIR)) {
         log::warn!(
             "could not delete an opened-document copy in {}",

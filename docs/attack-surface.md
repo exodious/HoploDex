@@ -65,12 +65,13 @@ and peer review catch that.
 
 ## webview-config: CSP, navigation and browser controls
 
-- **Code:** `src-tauri/tauri.conf.json` (`app.security.csp`); `src-tauri/tests/csp_test.rs`; `src-tauri/src/main.rs` (the main window, built in `setup()`); `src-tauri/src/app_menu.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/window_controls/**`; `src/features/app/browserControls.ts`; `src/main.tsx`; `src-tauri/examples/window_controls_check.rs`; `scripts/window-controls-check.sh`; `scripts/macos/window-controls-check.sh`; `scripts/windows/window-controls-check.ps1`
+- **Code:** `src-tauri/tauri.conf.json` (`app.security.csp`); `src-tauri/tests/csp_test.rs`; `src-tauri/src/main.rs` (the main window, built in `setup()`); `src-tauri/src/app_menu.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/crash_reports.rs` (`web_view_environment`, `main_browser_args`, `WRY_DEFAULT_ARGS`); `src-tauri/src/window_controls/**`; `src/features/app/browserControls.ts`; `src/main.tsx`; `src-tauri/examples/window_controls_check.rs`; `scripts/window-controls-check.sh`; `scripts/macos/window-controls-check.sh`; `scripts/windows/window-controls-check.ps1`
 - **Ask:**
   - Is there no `unsafe-inline` or `unsafe-eval` for scripts? The CSP allows `asset:` and `http://asset.localhost` in `img-src`, but the asset protocol is off (no `assetProtocol`, no `protocol-asset` feature, no `convertFileSrc`). Should those sources go?
   - Can any top-level navigation or new window leave the app's origin (#73)? Does Windows' filter act only on document requests, so IPC works and nothing else loads?
   - In release builds, are dev tools, reload, history, print, save, find and view-source off, and is only the context-menu allowlist left?
   - Does `src/` have no HTML sink (`dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`) outside tests? Is everything the page shows from a database, a spreadsheet, a file name or `notices.json` rendered as text?
+  - On Windows, the main window's WebView2 environment is HoploDex's own (`crash_reports::web_view_environment`): is it the one the main window actually uses, with its own data folder, and are its browser arguments (`main_browser_args`) only wry's defaults and the autoplay policy, with nothing that loosens the web view (a debugging port, a switch that turns off a protection)?
 - **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
   - macOS's menu hook may miss items AppKit adds later (Writing Tools, Services).
   - AutoFill is kept (owner's decision).
@@ -126,14 +127,14 @@ and peer review catch that.
 
 ## plaintext-lifetime: secure deletion, locking and what outlives a session
 
-- **Code:** `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/db/mod.rs` (`secure_delete`, `reclaim_deleted_record`); `src-tauri/src/main.rs` (`turn_off_core_dumps`, `end_web_processes`); `src-tauri/src/session/lifecycle.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/session/clock.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/session/fingerprint.rs`; `src-tauri/src/platform/**`; `src/features/session/**`; `src/components/Toast.tsx`
+- **Code:** `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/db/mod.rs` (`secure_delete`, `reclaim_deleted_record`); `src-tauri/src/main.rs` (`turn_off_core_dumps`, `end_web_processes`); `src-tauri/src/services/crash_reports.rs`; `src-tauri/src/session/lifecycle.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/session/clock.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/session/fingerprint.rs`; `src-tauri/src/platform/**`; `src/features/session/**`; `src/components/Toast.tsx`
 - **Ask:**
   - Is a deleted record's text gone from the file, both search indexes and the journal (`src-tauri/tests/deletion_wipe_test.rs`)?
   - Is a partial file securely deleted?
   - Does the database lock on idle, sleep, screen lock and shutdown on each OS, and inside the Flatpak (logind `session/auto`)?
   - On a lock, are the key dropped, the session's web-view state ended (`SessionScope.end()`) and late responses dropped (#69)?
   - Is a pending draft written only inside the encrypted file?
-  - Are core dumps off, soft and hard limit, for the app and every process it starts, WebKit's included (#166)? What else can keep a crashed process's memory on each OS: the web process the Flatpak portal starts, apport where it is the kernel's core handler, macOS crash reports, Windows Error Reporting and WebView2's crash reports?
+  - Are core dumps off, soft and hard limit, for the app and every process it starts, WebKit's included (#166)? What else can keep a crashed process's memory on each OS: the web process the Flatpak portal starts, apport where it is the kernel's core handler, macOS crash reports, Windows Error Reporting and WebView2's crash reports? On Windows, does every web view's environment have custom crash reporting on, are WebView2's Crashpad reports deleted at startup, close and exit, and does a panic end the app or a helper before abort's fail-fast reaches Windows Error Reporting?
   - Regression: #69.
 - **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
   - The last-saved version is recorded after the commit.
@@ -160,9 +161,9 @@ and peer review catch that.
 
 ## document-preview: the PDF surface, TIFF and text preview
 
-- **Code:** `src-tauri/src/services/preview/**`; `src-tauri/src/commands/preview.rs`; `src/features/media/DocumentPreview.tsx`; `src/features/media/PreviewSurface.tsx`; `src-tauri/examples/pdf_surface_check.rs`; `src-tauri/examples/pdf_surface_dns.c`; `scripts/pdf-surface-check.sh`; `scripts/macos/pdf-surface-check.sh`; `scripts/windows/pdf-surface-check.ps1`
+- **Code:** `src-tauri/src/services/preview/**`; `src-tauri/src/services/crash_reports.rs` (`web_view_environment`); `src-tauri/src/commands/preview.rs`; `src/features/media/DocumentPreview.tsx`; `src/features/media/PreviewSurface.tsx`; `src-tauri/examples/pdf_surface_check.rs`; `src-tauri/examples/pdf_surface_dns.c`; `scripts/pdf-surface-check.sh`; `scripts/macos/pdf-surface-check.sh`; `scripts/windows/pdf-surface-check.ps1`
 - **Ask** (007 research.md §4 to §8, §11):
-  - Does the surface have no network, no disk and no running code?
+  - Does the surface have no network, no disk and no running code? On Windows, does the environment HoploDex builds for it (`surface/windows.rs`'s `customize`) carry all of `browser_args` and the surface's own data folder?
   - Is the `hdpreview` token one-time, and refused to every web view but the preview's?
   - On macOS, are the WebKit SPI switches (`webkit_switches`) and their startup check, the watch and the `pdfPreviewHold` in place?
   - Is `tripwire.rs` intact?
@@ -178,9 +179,9 @@ and peer review catch that.
 
 ## helpers: the confined child processes
 
-- **Code:** `src-tauri/src/services/helper/**`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/helper_handle.rs`; `src-tauri/src/services/preview/helper_protocol.rs`; `src-tauri/src/main.rs` (`--render-helper`, `--import-helper`, `--webkit-sandbox-probe`)
+- **Code:** `src-tauri/src/services/helper/**`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/helper_handle.rs`; `src-tauri/src/services/preview/helper_protocol.rs`; `src-tauri/src/services/crash_reports.rs` (`quiet_error_reporting`, `end_process_on_panic`); `src-tauri/src/main.rs` (`--render-helper`, `--import-helper`, `--webkit-sandbox-probe`)
 - **Ask:**
-  - Does no database, key or IPC reach a child? Are core dumps off?
+  - Does no database, key or IPC reach a child? Are core dumps off, and on Windows are Windows Error Reporting's box, heap and snapshot off (`quiet_error_reporting`)?
   - Linux: Landlock (no files, and no network where the ABI has it) and `RLIMIT_DATA`. macOS: `sandbox_init`'s pure-computation profile. Windows: a job object (kill on close, one process, 2 GiB) and process mitigations.
   - Does each child die with the app (`PR_SET_PDEATHSIG`, the job, `kqueue`)?
   - Are frames bounded both ways?
@@ -251,12 +252,12 @@ and peer review catch that.
 
 ## unsafe-ffi: unsafe Rust and platform FFI
 
-- **Code:** (every backend file with `unsafe`) `src-tauri/src/commands/documents.rs`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/main.rs`; `src-tauri/src/platform/macos.rs`; `src-tauri/src/platform/windows.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/helper/confine.rs`; `src-tauri/src/services/helper/job.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/preview/availability.rs`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/services/preview/surface/linux.rs`; `src-tauri/src/services/preview/surface/macos.rs`; `src-tauri/src/services/preview/surface/windows.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/window_controls/macos.rs`; `src-tauri/src/window_controls/windows.rs`
+- **Code:** (every backend file with `unsafe`) `src-tauri/src/commands/documents.rs`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/main.rs`; `src-tauri/src/platform/macos.rs`; `src-tauri/src/platform/windows.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/crash_reports.rs`; `src-tauri/src/services/helper/confine.rs`; `src-tauri/src/services/helper/job.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/preview/availability.rs`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/services/preview/surface/linux.rs`; `src-tauri/src/services/preview/surface/macos.rs`; `src-tauri/src/services/preview/surface/windows.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/window_controls/macos.rs`; `src-tauri/src/window_controls/windows.rs`
 - **Ask:**
   - Does each `unsafe` block's `SAFETY` comment hold?
   - Check ObjC and WebKit SPI on macOS; COM and Win32 (DACLs, job objects, WebView2); GTK and WebKitGTK; and libc (Landlock, `prctl`, descriptors, the `NonNull` in `db/raw_file.rs` from CodeQL alert 68).
   - Is `set_var` called only before any thread starts?
-- **Since:** grew from 4 files at the baseline review to 20 (007, 008, 011, #166).
+- **Since:** grew from 4 files at the baseline review to 21 (007, 008, 011, #166).
 
 ## build-ci: what can change what ships, or the repository
 
