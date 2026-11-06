@@ -31,6 +31,8 @@ _Amended by [spec 009](../../009-upgrade-readiness/contracts/database-file.md): 
   These are defined once (`db::cipher::CIPHER_SETTINGS`).
   `tests/portability_test.rs` opens a committed fixture made with them, and
   fails if any of them changes.
+
+  _Amended 2026-11-04: the key is applied through SQLCipher's C API, `sqlite3_key_v2` (`db::cipher::key`), not `PRAGMA key`, so the passphrase never becomes SQL text (FR-007); the key it derives, and so the format, is unchanged._
 - Every connection also sets `PRAGMA foreign_keys = ON`,
   `PRAGMA secure_delete = ON` (001, constitution V) and
   `PRAGMA locking_mode = EXCLUSIVE` (research §2). These are behaviour

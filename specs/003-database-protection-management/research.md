@@ -13,6 +13,8 @@ kept; its findings are quoted where they are used.
 
 ## §1 Passphrase to key: SQLCipher's own key derivation, with pinned settings
 
+_Amended 2026-11-04: the key is applied through `sqlite3_key_v2` (`db::cipher::key`), not `PRAGMA key`; see the note under "Passing the passphrase to SQLCipher" below._
+
 **Decision**: The passphrase is the SQLCipher key (`PRAGMA key = '<passphrase>'`),
 so SQLCipher derives the page key with PBKDF2 from the passphrase and the
 random 16-byte salt it keeps in the file's first page. Every connection the
@@ -66,6 +68,8 @@ written exactly in SQLCipher's raw-key syntax (`x'` + 64 or 96 hex digits + `'`)
 would be read as a raw key. That is deterministic on every platform, so it
 does not break portability, and it is too unlikely to be worth a rule that
 would contradict FR-003.
+
+_Amended 2026-11-04: the passphrase no longer becomes SQL text. Every connection and the passphrase change's `rekey` attachment are keyed through SQLCipher's C API, `sqlite3_key_v2` (`db::cipher::key`); the attachment is `ATTACH DATABASE ?1 AS rekey KEY ''`, then keyed the same way. SQLite's parser copied a `PRAGMA key` string into blocks the wipe-on-free allocator can't reach, which SQLite freed unwiped (FR-007). The key itself, the raw-key syntax included, is read as before._
 
 **Memory (FR-007)**: every passphrase the backend receives is moved at once
 into `zeroize::Zeroizing<String>` (zeroize 1.9 is already in the dependency
@@ -206,6 +210,7 @@ running under another account).
   without `SQLITE_OPEN_CREATE`, so it can only attach a file that exists),
   `apply_cipher_settings(conn, "rekey")`, `SELECT sqlcipher_export('rekey')`,
   stamp the copy's housekeeping, `DETACH`, then verify (§4) and replace (§4).
+  _Amended 2026-11-04: the attachment is `ATTACH DATABASE ?tmp AS rekey KEY ''`, then keyed with the new passphrase through `sqlite3_key_v2` (`db::cipher::key`), so it never becomes SQL text (§1's note)._
 - **Restore**: a chunked byte copy of the chosen backup to a temporary file
   next to the database, then opened with the **backup's** passphrase, verified
   and stamped (§8), then used to replace the database (§4).

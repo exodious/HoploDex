@@ -4,7 +4,11 @@
 //! first read, so a different SQLCipher build default can never write a file
 //! another platform cannot open.
 
-use rusqlite::Connection;
+use std::ffi::{CString, c_int};
+
+use rusqlite::{Connection, ffi};
+
+use crate::services::passphrase::Passphrase;
 
 // `test-kdf` makes every database a build keys unreadable to every other
 // build, so it must never reach one that opens a user's files.
@@ -26,6 +30,31 @@ pub const CIPHER_SETTINGS: &[(&str, &str)] = &[
     ("cipher_hmac_algorithm", "HMAC_SHA512"),
     ("cipher_plaintext_header_size", "0"),
 ];
+
+/// Keys `schema` (`"main"` or an attached schema's name) through SQLCipher's
+/// C API, `sqlite3_key_v2`, so the passphrase never becomes SQL text: a
+/// `PRAGMA key='…'` string would be copied by SQLite's parser into blocks
+/// the wipe-on-free allocator can't reach, which SQLite frees unwiped
+/// (003 FR-007). A failure carries SQLCipher's own code, so
+/// `OpenError::classify` reads it as it read the pragma's.
+pub fn key(conn: &Connection, schema: &str, passphrase: &Passphrase) -> rusqlite::Result<()> {
+    let name = CString::new(schema).expect("schema names are our own identifiers");
+    let bytes = passphrase.as_str().as_bytes();
+    let rc = match c_int::try_from(bytes.len()) {
+        // SAFETY: the handle is this open connection's, `name` is a
+        // NUL-terminated string and `bytes` is `len` readable bytes, all
+        // alive for the call; SQLCipher copies the key before returning.
+        Ok(len) => unsafe {
+            ffi::sqlite3_key_v2(conn.handle(), name.as_ptr(), bytes.as_ptr().cast(), len)
+        },
+        Err(_) => ffi::SQLITE_TOOBIG,
+    };
+    if rc == ffi::SQLITE_OK {
+        Ok(())
+    } else {
+        Err(rusqlite::Error::SqliteFailure(ffi::Error::new(rc), None))
+    }
+}
 
 /// Applies [`CIPHER_SETTINGS`] to `schema` (`"main"` or an attached
 /// schema's name). Call it after the key and before anything reads the

@@ -45,7 +45,7 @@ impl Passphrase {
         Self(normalized)
     }
 
-    /// The normalized passphrase, for `PRAGMA key` and `ATTACH … KEY` only.
+    /// The normalized passphrase, for keying a database (`db::cipher::key`) only.
     pub fn as_str(&self) -> &str {
         &self.0
     }
