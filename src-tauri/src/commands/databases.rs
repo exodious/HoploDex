@@ -398,7 +398,6 @@ pub mod ops {
                 .unwrap_or_else(|_| PathBuf::from(path));
             let elsewhere = session
                 .open_elsewhere(&checked)
-                .filter(|machine| !machine.trim().is_empty())
                 .map(|machine| display_name(&machine))
                 .unwrap_or_else(|| "the other computer".to_owned());
             Request {

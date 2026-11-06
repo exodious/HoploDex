@@ -781,6 +781,8 @@ impl State {
 
 #[cfg(test)]
 mod tests {
+    use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
+
     use super::*;
     use crate::services::passphrase_dialog::Shape;
 
@@ -808,5 +810,10 @@ mod tests {
         thread.join().unwrap();
 
         assert_eq!(*live.lock().unwrap(), None);
+        // SAFETY: both only touch this thread's last-error value.
+        unsafe { SetLastError(0) };
+        window.close();
+        // SAFETY: as above.
+        assert_eq!(unsafe { GetLastError() }, 0, "a post to a destroyed window fails with 1400");
     }
 }

@@ -263,7 +263,7 @@ fn a_take_over_asks_again_naming_the_other_computer() {
 }
 
 /// 003 FR-032: a marker that names nothing still reads as a sentence, in the
-/// refusal and in the dialog, whether or not the refusal stood in for the name.
+/// refusal and in the dialog.
 #[test]
 fn a_marker_with_an_empty_name_reads_sensibly() {
     let world = World::new();
@@ -285,13 +285,10 @@ fn a_marker_with_an_empty_name_reads_sensibly() {
     );
     assert_eq!(refused.details_str("machineName").as_deref(), Some("another computer"));
 
-    // An upgrade's second look notes the marker's name as it stands.
-    world.session.note_open_elsewhere(&world.path(), "");
-    assert_eq!(world.session.open_elsewhere(&world.path()).as_deref(), Some(""));
     let script = Scripted::answering([None]);
     world.open_typed(&script, true).unwrap_err();
     let message = &script.asked()[0].message;
-    assert!(message.contains("Only do this if the other computer no longer has"), "{message}");
+    assert!(message.contains("Only do this if another computer no longer has"), "{message}");
 }
 
 /// The name and folder are checked before the passphrase is asked for, so a

@@ -1873,6 +1873,20 @@ fn a_marker_written_by_another_computer_during_the_question_refuses_the_upgrade(
 /// take-over's dialog names that computer.
 #[test]
 fn a_take_over_after_an_upgrade_refused_for_another_computer_names_it() {
+    let message = take_over_message_after_an_upgrade_refused_for("Workshop PC");
+    assert!(message.contains("Only do this if Workshop PC no longer has"), "{message}");
+}
+
+/// 003 FR-032: a marker that names nothing still reads as a sentence.
+#[test]
+fn a_take_over_after_an_upgrade_refused_for_a_blank_name_reads_sensibly() {
+    let message = take_over_message_after_an_upgrade_refused_for("");
+    assert!(message.contains("Only do this if another computer no longer has"), "{message}");
+}
+
+/// What the take-over's dialog says after another computer's marker, naming
+/// `machine_name`, refused an upgrade.
+fn take_over_message_after_an_upgrade_refused_for(machine_name: &str) -> String {
     let world = World::new();
     world.older_database(Older::default());
     let _scope = world.steps(&[STEP_A]);
@@ -1881,7 +1895,7 @@ fn a_take_over_after_an_upgrade_refused_for_another_computer_names_it() {
     world.with_held(id, |conn| {
         conn.execute(
             "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",
-            rusqlite::params![other.id, other.display_name, "2026-09-25T15:00:00Z"],
+            rusqlite::params![other.id, machine_name, "2026-09-25T15:00:00Z"],
         )
         .unwrap();
     });
@@ -1898,8 +1912,7 @@ fn a_take_over_after_an_upgrade_refused_for_another_computer_names_it() {
     );
 
     assert_eq!(taken.unwrap_err().code, "UPGRADE_NEEDED");
-    let message = &script.asked()[0].message;
-    assert!(message.contains("Only do this if Workshop PC no longer has"), "{message}");
+    script.asked()[0].message.clone()
 }
 
 /// A backup of "Mine" made today, in the world's backup folder, and the world's
