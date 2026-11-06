@@ -212,7 +212,8 @@ function Invoke-Quit([string]$How) {
         # The webview's processes can hold its folder a moment longer.
         for ($attempt = 0; $attempt -lt 10 -and (Test-Path $scratch); $attempt++) {
             Start-Sleep -Milliseconds 500
-            Remove-Item -Recurse -Force $scratch -ErrorAction SilentlyContinue
+            # try as well: a web view still starting up can make this throw, whatever ErrorAction says.
+            try { Remove-Item -Recurse -Force $scratch -ErrorAction SilentlyContinue } catch { }
         }
     }
 }
