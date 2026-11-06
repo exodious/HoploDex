@@ -15,8 +15,9 @@ the app must still exit.
 On Linux it also checks #166's two fixes. No process of the app may leave a
 core dump: the app, WebKit's processes and the helpers all run with a core
 limit of 0, soft and hard, although the script starts the app with the
-highest limit it may. And on a quit by signal the app ends its web processes itself before
-it exits, so none of them runs its exit handlers, which crash on WebKitGTK
+highest limit it may, and with a core dump filter of 0, which keeps their
+memory out of a core that apport takes anyway. And on a quit by signal the
+app ends its web processes itself before it exits, so none of them runs its exit handlers, which crash on WebKitGTK
 before 2.54.1: the script stops each web process first (SIGSTOP), so one the
 app leaves alone is still there after the app has gone. A window closed
 can't be checked that way, since the page answers the quit, but it ends
