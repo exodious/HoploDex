@@ -92,6 +92,10 @@ class X11:
         x11.XFlush.argtypes = [c_void_p]
         x11.XSendEvent.argtypes = [c_void_p, c_ulong, c_int, c_long, POINTER(X11.Event)]
         self.x11 = x11
+        # A window can vanish mid-walk, and Xlib's default handler ends the
+        # process on the BadWindow. The call just fails instead, which the walk handles.
+        self.ignore_x_error = ctypes.CFUNCTYPE(c_int, c_void_p, c_void_p)(lambda _dpy, _error: 0)
+        x11.XSetErrorHandler(self.ignore_x_error)
         self.dpy = x11.XOpenDisplay(None)
         if not self.dpy:
             sys.exit("no X display: run under xvfb-run -a")
