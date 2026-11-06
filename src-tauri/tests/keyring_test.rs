@@ -396,6 +396,45 @@ fn a_saved_open_found_elsewhere_names_the_other_computer_at_the_take_over() {
     assert!(message.contains("Only do this if Workshop PC no longer has"), "{message}");
 }
 
+/// 003 FR-032: the saved passphrase doesn't stand in for the take-over's
+/// confirmation, whatever the page sends. Only typing it in the native dialog
+/// takes the database over; without a take-over it opens without asking.
+#[test]
+fn a_take_over_with_the_saved_passphrase_still_needs_the_native_confirmation() {
+    let world = World::new();
+    world.create("Main");
+    world.save(TEST_PASSPHRASE).unwrap();
+    world.close();
+    drop(db::open_database(&world.path("Main"), &passphrase(), &other_machine(), false).unwrap());
+    let open = |script: &Arc<Scripted>, take_over: bool| {
+        ops::open_database_requested(
+            &world.session,
+            &world.machine,
+            &ScriptedDialog(Arc::clone(script)),
+            &world.path_text("Main"),
+            true,
+            false,
+            take_over,
+        )
+    };
+
+    let unasked = Scripted::answering([]);
+    let err = open(&unasked, false).unwrap_err();
+    assert_eq!(err.code, "DATABASE_OPEN_ELSEWHERE");
+    assert!(unasked.asked().is_empty());
+
+    let cancelled = Scripted::answering([None]);
+    let err = open(&cancelled, true).unwrap_err();
+    assert_eq!(err.code, "PASSPHRASE_CANCELLED");
+    assert!(!world.session.is_open());
+    assert_eq!(cancelled.asked()[0].title, "Take over \u{201C}Main\u{201D}?");
+
+    let confirmed = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    open(&confirmed, true).unwrap();
+    assert!(world.session.is_open());
+    assert_eq!(confirmed.asked()[0].primary, "Take over");
+}
+
 #[test]
 fn a_passphrase_change_updates_the_saved_one_and_a_restore_sets_the_backups() {
     let world = World::new();

@@ -78,32 +78,45 @@ pub(super) fn open<R: tauri::Runtime>(
 ) -> Result<Box<dyn DialogWindow>, String> {
     let owner = window.hwnd().map_err(|err| format!("no HWND: {err}"))?.0 as isize;
     let retry = Arc::new(Mutex::new(None));
+    let live = Arc::new(Mutex::new(None));
     let (made, result) = mpsc::channel();
     let slot = Arc::clone(&retry);
+    let dialog_live = Arc::clone(&live);
     std::thread::Builder::new()
         .name("passphrase-dialog".to_owned())
-        .spawn(move || run(owner, request, events, slot, made))
+        .spawn(move || run(owner, request, events, slot, dialog_live, made))
         .map_err(|err| format!("no thread for the dialog: {err}"))?;
-    let hwnd = result.recv().map_err(|_| "the dialog's thread ended".to_owned())??;
-    Ok(Box::new(Win32Window { hwnd, retry }))
+    result.recv().map_err(|_| "the dialog's thread ended".to_owned())??;
+    Ok(Box::new(Win32Window { live, retry }))
 }
 
 /// The caller's handle: posts to the dialog's thread.
 struct Win32Window {
-    hwnd: isize,
+    /// The dialog's handle until WM_DESTROY empties it.
+    live: Arc<Mutex<Option<isize>>>,
     retry: Arc<Mutex<Option<Retry>>>,
+}
+
+impl Win32Window {
+    /// Held across the post, so the handle can't be one Windows has since
+    /// given to another window.
+    fn post(&self, message: u32) {
+        if let Some(hwnd) = *self.live.lock().expect("live mutex poisoned") {
+            // SAFETY: a window WM_DESTROY hasn't reached, and posting doesn't
+            // wait for its thread.
+            unsafe { PostMessageW(hwnd as HWND, message, 0, 0) };
+        }
+    }
 }
 
 impl DialogWindow for Win32Window {
     fn retry(&self, retry: &Retry) {
         *self.retry.lock().expect("retry mutex poisoned") = Some(retry.clone());
-        // SAFETY: posting to a window handle is safe whatever its state.
-        unsafe { PostMessageW(self.hwnd as HWND, WM_RETRY, 0, 0) };
+        self.post(WM_RETRY);
     }
 
     fn close(&self) {
-        // SAFETY: as above.
-        unsafe { PostMessageW(self.hwnd as HWND, WM_END, 0, 0) };
+        self.post(WM_END);
     }
 }
 
@@ -134,6 +147,7 @@ struct State {
     last_focus: Cell<HWND>,
     events: Sender<Event>,
     retry: Arc<Mutex<Option<Retry>>>,
+    live: Arc<Mutex<Option<isize>>>,
     controller: RefCell<Controller>,
     busy: Cell<bool>,
     ended: Cell<bool>,
@@ -173,7 +187,8 @@ fn run(
     request: Request,
     events: Sender<Event>,
     retry: Arc<Mutex<Option<Retry>>>,
-    made: Sender<Result<isize, String>>,
+    live: Arc<Mutex<Option<isize>>>,
+    made: Sender<Result<(), String>>,
 ) {
     register_class();
     let shape = request.shape;
@@ -194,6 +209,7 @@ fn run(
         last_focus: Cell::new(std::ptr::null_mut()),
         events,
         retry,
+        live,
         controller: RefCell::new(Controller::new(shape)),
         busy: Cell::new(false),
         ended: Cell::new(false),
@@ -227,6 +243,7 @@ fn run(
     }
     // SAFETY: the state lives until this function frees it, after the loop.
     let st = unsafe { &*state };
+    *st.live.lock().expect("live mutex poisoned") = Some(hwnd as isize);
     st.build();
     // SAFETY: plain Win32 calls on windows this thread made, and on the
     // owner, which a modal dialog disables while it is up.
@@ -240,7 +257,7 @@ fn run(
     }
     #[cfg(feature = "e2e")]
     crate::services::passphrase_dialog::e2e::note_shown();
-    let _ = made.send(Ok(hwnd as isize));
+    let _ = made.send(Ok(()));
 
     let mut msg: MSG = unsafe { std::mem::zeroed() };
     // SAFETY: this thread's own message loop.
@@ -362,6 +379,7 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_DESTROY => {
+            *state.live.lock().expect("live mutex poisoned") = None;
             unsafe { RemovePropW(hwnd, FOCUS_PROP.as_ptr()) };
             state.send_end(Event::Cancelled);
             unsafe { PostQuitMessage(0) };
@@ -758,5 +776,37 @@ impl State {
             EnableWindow(self.owner, 1);
             DestroyWindow(self.hwnd.get());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::passphrase_dialog::Shape;
+
+    /// A handle Windows may have given to another window is never posted to.
+    #[test]
+    fn a_dialog_that_is_gone_is_not_posted_to() {
+        let retry = Arc::new(Mutex::new(None));
+        let live = Arc::new(Mutex::new(None));
+        let (events, _received) = mpsc::channel();
+        let (made, result) = mpsc::channel();
+        let request = Request {
+            shape: Shape::Enter,
+            title: "Test".to_owned(),
+            message: "Test".to_owned(),
+            primary: "Open".to_owned(),
+            busy: "Opening".to_owned(),
+        };
+        let (slot, dialog_live) = (Arc::clone(&retry), Arc::clone(&live));
+        let thread = std::thread::spawn(move || run(0, request, events, slot, dialog_live, made));
+        result.recv().unwrap().unwrap();
+        assert!(live.lock().unwrap().is_some());
+
+        let window = Win32Window { live: Arc::clone(&live), retry };
+        window.close();
+        thread.join().unwrap();
+
+        assert_eq!(*live.lock().unwrap(), None);
     }
 }

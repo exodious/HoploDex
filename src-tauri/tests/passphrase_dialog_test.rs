@@ -262,6 +262,38 @@ fn a_take_over_asks_again_naming_the_other_computer() {
     );
 }
 
+/// 003 FR-032: a marker that names nothing still reads as a sentence, in the
+/// refusal and in the dialog, whether or not the refusal stood in for the name.
+#[test]
+fn a_marker_with_an_empty_name_reads_sensibly() {
+    let world = World::new();
+    {
+        let conn = db::create_database(&world.path(), &passphrase(), &other_machine()).unwrap();
+        conn.execute(
+            "UPDATE app_state SET open_machine_id = ?1, open_machine_name = '', open_since = ?2",
+            rusqlite::params![other_machine().id, "2026-11-03T14:30:05Z"],
+        )
+        .unwrap();
+    }
+
+    let refused = world.open_typed(&Scripted::answering([Some((TEST_PASSPHRASE, None))]), false);
+    let refused = refused.unwrap_err();
+    assert_eq!(refused.code, "DATABASE_OPEN_ELSEWHERE");
+    assert_eq!(
+        refused.message,
+        "This database is open on another computer, or was when it last closed there."
+    );
+    assert_eq!(refused.details_str("machineName").as_deref(), Some("another computer"));
+
+    // An upgrade's second look notes the marker's name as it stands.
+    world.session.note_open_elsewhere(&world.path(), "");
+    assert_eq!(world.session.open_elsewhere(&world.path()).as_deref(), Some(""));
+    let script = Scripted::answering([None]);
+    world.open_typed(&script, true).unwrap_err();
+    let message = &script.asked()[0].message;
+    assert!(message.contains("Only do this if the other computer no longer has"), "{message}");
+}
+
 /// The name and folder are checked before the passphrase is asked for, so a
 /// refusal there costs no typing.
 #[test]
