@@ -280,6 +280,7 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): s
 
 ### `quit_application`
 - **Input**: none → **Output**: never returns normally (the process exits)
+  _Amended 2026-11-06: a new command, `quit_listener_ready` (no input, no output), tells the backend the page listens for `app:quit-requested`. Until it does, a close or quit with no database open exits at once rather than emitting a request nobody can answer._
 - Normal close with `reason: "quit"` if a database is open, then exit. The frontend calls it after `app:quit-requested` and the unsaved-changes question.
 
 ---

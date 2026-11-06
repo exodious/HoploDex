@@ -105,6 +105,21 @@ describe("listen", () => {
 
     expect(unlisten).toHaveBeenCalledTimes(1);
   });
+
+  it("says when it is listening, and not when stopped before that", async () => {
+    vi.mocked(tauriListen).mockResolvedValue(vi.fn());
+    const listening = vi.fn();
+
+    listen("app:quit-requested", vi.fn(), listening);
+    expect(listening).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(listening).toHaveBeenCalledTimes(1);
+
+    const stopped = vi.fn();
+    listen("app:quit-requested", vi.fn(), stopped)();
+    await Promise.resolve();
+    expect(stopped).not.toHaveBeenCalled();
+  });
 });
 
 describe("invoke and the busy counter", () => {

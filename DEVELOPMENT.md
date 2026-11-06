@@ -874,7 +874,8 @@ killing anything left over on a worker's port before launching the app.
 
 The E2E suite kills the app rather than quitting it, so a script checks
 that decrypted document copies are removed when the app quits, against the
-built E2E binary:
+built E2E binary. It also closes the window as soon as it shows, before the
+page listens for the quit request, and there checks only that the app exits:
 
 - **Linux:** `xvfb-run -a python3 e2e/scripts/quit-cleanup.py` (needs Xvfb,
   no other packages). Window closed, SIGTERM, SIGHUP and SIGINT. It also

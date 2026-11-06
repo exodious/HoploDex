@@ -14,6 +14,10 @@ plants a file where `open_document` writes its temporary copies, asks the
 app to quit, and looks at what is left. Windows has no termination signals
 for a windowed app; it asks in these ways instead:
   - window closed: WM_CLOSE to the app's window, as its close button does.
+  - window closed before the page listens: the same, as soon as the window
+    shows. Nothing can answer the page's question yet, and the app must still
+    exit; there is no copy to look for, since this early the startup sweep may
+    still be running.
   - taskkill: `taskkill /PID` without /F, which sends WM_CLOSE to every
     top-level window of the process, the hidden system-messages one too.
   - log-off: WM_QUERYENDSESSION and then WM_ENDSESSION to every top-level
@@ -152,6 +156,7 @@ public static class QuitCleanupWindows {
 '@
 
 function Invoke-Quit([string]$How) {
+    $early = $How -eq 'early'
     $scratch = Join-Path ([IO.Path]::GetTempPath()) ("hoplodex-quit-" + [guid]::NewGuid().ToString('N'))
     $config, $cache, $documents = 'config', 'cache', 'documents' |
         ForEach-Object { New-Item -ItemType Directory -Path (Join-Path $scratch $_) | Select-Object -ExpandProperty FullName }
@@ -167,17 +172,20 @@ function Invoke-Quit([string]$How) {
     try {
         $deadline = (Get-Date).AddSeconds(30)
         while ((Get-Date) -lt $deadline -and [QuitCleanupWindows]::Shown($app.Id, $WindowTitle) -eq [IntPtr]::Zero) {
-            Start-Sleep -Milliseconds 500
+            Start-Sleep -Milliseconds $(if ($early) { 10 } else { 500 })
         }
         $window = [QuitCleanupWindows]::Shown($app.Id, $WindowTitle)
         if ($window -eq [IntPtr]::Zero) { return $false, "the app's window never appeared" }
-        Start-Sleep -Seconds 3  # let startup (and its sweep of old copies) finish first
+        if (-not $early) {
+            Start-Sleep -Seconds 3  # let startup (and its sweep of old copies) finish first
 
-        New-Item -ItemType Directory -Path (Split-Path $planted) | Out-Null
-        Set-Content -Path $planted -Value '%PDF-1.4 decrypted copy' -NoNewline
+            New-Item -ItemType Directory -Path (Split-Path $planted) | Out-Null
+            Set-Content -Path $planted -Value '%PDF-1.4 decrypted copy' -NoNewline
+        }
 
         switch ($How) {
             'close' { [QuitCleanupWindows]::Post($window, [QuitCleanupWindows]::WM_CLOSE) }
+            'early' { [QuitCleanupWindows]::Post($window, [QuitCleanupWindows]::WM_CLOSE) }
             'taskkill' {
                 & taskkill.exe /PID $app.Id | Out-Null
                 if ($LASTEXITCODE -ne 0) { return $false, "taskkill failed with exit code $LASTEXITCODE" }
@@ -191,6 +199,7 @@ function Invoke-Quit([string]$How) {
             'kill' { Stop-Process -Id $app.Id -Force }
         }
         if (-not $app.WaitForExit(20000)) { return $false, "the app didn't exit within 20s" }
+        if ($early) { return $true, 'exited' }
         Start-Sleep -Milliseconds 500
         $left = Test-Path $planted
         if ($How -eq 'kill') {
@@ -203,7 +212,8 @@ function Invoke-Quit([string]$How) {
         # The webview's processes can hold its folder a moment longer.
         for ($attempt = 0; $attempt -lt 10 -and (Test-Path $scratch); $attempt++) {
             Start-Sleep -Milliseconds 500
-            Remove-Item -Recurse -Force $scratch -ErrorAction SilentlyContinue
+            # try as well: a web view still starting up can make this throw, whatever ErrorAction says.
+            try { Remove-Item -Recurse -Force $scratch -ErrorAction SilentlyContinue } catch { }
         }
     }
 }
@@ -215,6 +225,7 @@ if (-not (Test-Path $Binary)) {
 $failures = 0
 foreach ($case in @(
         @('close', 'window closed'),
+        @('early', 'window closed before the page listens'),
         @('taskkill', 'taskkill without /F'),
         @('logoff', 'log-off (WM_QUERYENDSESSION, WM_ENDSESSION)'),
         @('kill', 'TerminateProcess (control)'))) {

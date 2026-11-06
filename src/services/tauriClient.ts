@@ -85,14 +85,23 @@ export async function invoke<T>(
  * Subscribes to a backend event (`session:closed`, `backup:progress`, …)
  * with a typed payload; returns the function that unsubscribes. Safe to call
  * from an effect: stopping before the subscription is ready still
- * unsubscribes once it is.
+ * unsubscribes once it is. `onListening` runs once it is ready, unless stopped
+ * by then.
  */
-export function listen<T>(event: string, handler: (payload: T) => void): () => void {
+export function listen<T>(
+  event: string,
+  handler: (payload: T) => void,
+  onListening?: () => void,
+): () => void {
   let unlisten: (() => void) | undefined;
   let stopped = false;
   void tauriListen<T>(event, ({ payload }) => handler(payload)).then((stop) => {
-    if (stopped) stop();
-    else unlisten = stop;
+    if (stopped) {
+      stop();
+    } else {
+      unlisten = stop;
+      onListening?.();
+    }
   });
   return () => {
     stopped = true;

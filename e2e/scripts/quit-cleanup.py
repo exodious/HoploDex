@@ -8,7 +8,9 @@ wdio specs verify the crash/relaunch half (the startup sweep) and this script
 verifies the exit half. It launches the app with scratch config, cache,
 documents and (on macOS) home directories, never the real ones, plants a file
 where `open_document` writes its temporary copies, quits the app, and looks at
-what is left.
+what is left. It also closes the window as soon as it shows, before the page
+listens for the quit request: nothing can answer the page's question yet, and
+the app must still exit.
 
 On Linux it also checks #166's two fixes. No process of the app may leave a
 core dump: the app, WebKit's processes and the helpers all run with a core
@@ -90,6 +92,10 @@ class X11:
         x11.XFlush.argtypes = [c_void_p]
         x11.XSendEvent.argtypes = [c_void_p, c_ulong, c_int, c_long, POINTER(X11.Event)]
         self.x11 = x11
+        # A window can vanish mid-walk, and Xlib's default handler ends the
+        # process on the BadWindow. The call just fails instead, which the walk handles.
+        self.ignore_x_error = ctypes.CFUNCTYPE(c_int, c_void_p, c_void_p)(lambda _dpy, _error: 0)
+        x11.XSetErrorHandler(self.ignore_x_error)
         self.dpy = x11.XOpenDisplay(None)
         if not self.dpy:
             sys.exit("no X display: run under xvfb-run -a")
@@ -300,18 +306,20 @@ def run(desktop, how):
     env = scratch_env(scratch)
     planted = os.path.join(scratch, "cache", IDENTIFIER, "opened-documents", "7", "receipt.pdf")
     problems, stopped = [], []
+    early = how == "early"
     app = subprocess.Popen([BINARY], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         deadline = time.time() + 30
-        while time.time() < deadline and not (webdriver_answers() and desktop.has_window(app)):
+        while time.time() < deadline and not ((early or webdriver_answers()) and desktop.has_window(app)):
             if app.poll() is not None:
                 return False, f"the app exited at launch ({app.returncode})"
-            time.sleep(0.5)
+            time.sleep(0.01 if early else 0.5)
         if not desktop.has_window(app):
             return False, "the app's window never appeared"
-        time.sleep(3)  # let startup (and its sweep of old copies) finish first
+        if not early:
+            time.sleep(3)  # let startup (and its sweep of old copies) finish first
 
-        if LINUX:
+        if LINUX and not early:
             tree = [app.pid] + descendants(app.pid)
             web = [pid for pid in tree if web_process(pid)]
             if not web:
@@ -325,11 +333,12 @@ def run(desktop, how):
                     os.kill(pid, signal.SIGSTOP)
                 stopped = web
 
-        os.makedirs(os.path.dirname(planted))
-        with open(planted, "w") as f:
-            f.write("%PDF-1.4 decrypted copy")
+        if not early:
+            os.makedirs(os.path.dirname(planted))
+            with open(planted, "w") as f:
+                f.write("%PDF-1.4 decrypted copy")
 
-        if how == "close":
+        if how in ("close", "early"):
             desktop.close(app)
         elif how == "quit":
             desktop.quit(app)
@@ -340,6 +349,8 @@ def run(desktop, how):
             app.wait(timeout=20)
         except subprocess.TimeoutExpired:
             return False, "the app didn't exit within 20s"
+        if early:
+            return True, "exited"
         time.sleep(0.5)
         if stopped:
             deadline = time.time() + 5
@@ -384,7 +395,7 @@ if __name__ == "__main__":
             sys.exit("the hard core limit is 0 here, so the core dump check can't fail: raise it first")
         resource.setrlimit(resource.RLIMIT_CORE, (hard, hard))
     desktop = X11() if LINUX else MacOS()
-    cases = [("close", "window closed")]
+    cases = [("close", "window closed"), ("early", "window closed before the page listens")]
     if MACOS:
         cases.append(("quit", "Cmd+Q"))
     cases += [("term", "SIGTERM"), ("hup", "SIGHUP"), ("int", "SIGINT"), ("kill", "SIGKILL (control)")]

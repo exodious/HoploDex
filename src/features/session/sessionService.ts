@@ -115,9 +115,14 @@ export function onSessionClosed(handler: (closed: SessionClosed) => void): () =>
 }
 
 /** The window's close button or an application quit: ask about unsaved
- * changes, then call {@link quitApplication}. */
+ * changes, then call {@link quitApplication}. The backend is told once this
+ * listens: before that, a quit would reach nobody, so it exits by itself. */
 export function onQuitRequested(handler: () => void): () => void {
-  return listen<unknown>("app:quit-requested", () => handler());
+  return listen<unknown>(
+    "app:quit-requested",
+    () => handler(),
+    () => void invoke<void>("quit_listener_ready"),
+  );
 }
 
 /** The macOS application menu's "About HoploDex" item was chosen (010
