@@ -157,13 +157,12 @@ mod imp {
     /// The helper's exit code when its parent is gone.
     const PARENT_GONE: c_int = 5;
 
-    /// `kSBXProfilePureComputation`: the profile that denies everything but
-    /// pure computation: no file, no network, no Mach service, no process
-    /// creation (`fork` and `exec`), no IPC. Files and pipes already open
-    /// stay usable, which is how the helper reads and writes its frames.
-    const PURE_COMPUTATION: &CStr = c"pure-computation";
-    /// `SANDBOX_NAMED`: the profile argument is the name of a built-in one.
-    const SANDBOX_NAMED: u64 = 0x1;
+    /// The profile, as source (`flags` 0): denies everything, so no file, no
+    /// network, no Mach service, no process creation (`fork` and `exec`), no
+    /// IPC. Files and pipes already open stay usable, which is how the helper
+    /// reads and writes its frames. Not the built-in `pure-computation` it
+    /// replaced: macOS 27 kills a process that enters a named profile.
+    const DENY_EVERYTHING: &CStr = c"(version 1)(deny default)";
 
     // `sandbox_init` is deprecated, and still what a plain command-line
     // process has: it is in libSystem, which every Rust program links.
@@ -174,8 +173,8 @@ mod imp {
 
     pub fn log_support() {
         log::info!(
-            "the helpers are confined with sandbox_init's pure-computation profile and end \
-             with HoploDex"
+            "the helpers are confined with a sandbox_init profile that denies everything and \
+             end with HoploDex"
         );
     }
 
@@ -265,14 +264,14 @@ mod imp {
         }
     }
 
-    /// Enters the pure-computation sandbox: it can't be left.
+    /// Enters the sandbox: it can't be left.
     fn sandbox() -> Result<(), String> {
         let mut error: *mut c_char = std::ptr::null_mut();
-        // SAFETY: a NUL-terminated name and a pointer to a local; a message
+        // SAFETY: a NUL-terminated profile and a pointer to a local; a message
         // `sandbox_init` returns is read once and handed back to
         // `sandbox_free_error`.
         unsafe {
-            if sandbox_init(PURE_COMPUTATION.as_ptr(), SANDBOX_NAMED, &mut error) == 0 {
+            if sandbox_init(DENY_EVERYTHING.as_ptr(), 0, &mut error) == 0 {
                 return Ok(());
             }
             let message = if error.is_null() {
