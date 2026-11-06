@@ -129,6 +129,18 @@ async function glockId(): Promise<number> {
   return listed.groups[0].firearms[0].id;
 }
 
+/** Holds or restarts the idle lock's clock, as a native dialog does; restarting
+ * starts the idle time again from zero. */
+async function setIdlePaused(paused: boolean) {
+  await browser.execute(async (hold: boolean) => {
+    await (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__.invoke("set_idle_paused", { reason: "nativeDialog", paused: hold });
+  }, paused);
+}
+
 /** Attaches a document through the Documents panel's file input. */
 async function attach(name: string, type: string, bytes: Buffer) {
   await attachFile('input[aria-label="Attach documents"]', {
@@ -783,6 +795,9 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     await chooseMainCollection();
     await unlock(process.env.HOPLODEX_E2E_SEED_PASSPHRASE!);
     await recordPreviewEvents();
+    // Scripted clicks aren't input to the idle clock, so its 3 s run from Save
+    // and the lock could come before the PDF is ready. Hold it until then.
+    await setIdlePaused(true);
 
     await chooseMenuItem("button.hd-db-menu", "Database settings…");
     await $('[role="dialog"]').waitForExist();
@@ -800,6 +815,7 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     expect(await viewerTitle()).toBe("Purchase receipt.pdf");
 
     // No input from here: the clock runs out while the PDF is on the screen.
+    await setIdlePaused(false);
     await browser.waitUntil(async () => $(".hd-chooser__title").isExisting(), {
       timeout: 30000,
       interval: 500,
