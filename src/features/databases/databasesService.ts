@@ -35,13 +35,14 @@ export function createDatabase(input: CreateDatabaseInput): Promise<DatabaseStat
 }
 
 export interface OpenOptions {
-  /** Open with the passphrase saved on this computer, without asking. */
+  /** Open with the passphrase saved on this computer, without asking, unless
+   * `takeOver` is set, which ignores it. */
   useSavedPassphrase?: boolean;
   /** Save the typed passphrase in this computer's keyring once it opens the
    * database (003 FR-017), sent only after the confirmation. */
   rememberPassphrase?: boolean;
-  /** Open a database marked open on another computer (003 FR-032), sent only
-   * after the take-over confirmation. */
+  /** Open a database marked open on another computer (003 FR-032). The backend
+   * always asks in the native dialog, where typing the passphrase confirms it. */
   takeOver?: boolean;
 }
 
