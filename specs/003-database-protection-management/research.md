@@ -13,6 +13,8 @@ kept; its findings are quoted where they are used.
 
 ## §1 Passphrase to key: SQLCipher's own key derivation, with pinned settings
 
+_Amended 2026-11-04: the key is applied through `sqlite3_key_v2` (`db::cipher::key`), not `PRAGMA key`; see the note under "Passing the passphrase to SQLCipher" below._
+
 **Decision**: The passphrase is the SQLCipher key (`PRAGMA key = '<passphrase>'`),
 so SQLCipher derives the page key with PBKDF2 from the passphrase and the
 random 16-byte salt it keeps in the file's first page. Every connection the

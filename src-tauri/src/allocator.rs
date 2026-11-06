@@ -3,11 +3,11 @@
 //!
 //! - **Every freed block is zeroed first.** A Rust buffer that held the
 //!   passphrase or a record's text (wry's and Tauri's IPC bodies, serde's
-//!   values, rusqlite's SQL text) would otherwise stay readable in freed memory
-//!   until it is reused, and with it in a crash's memory. `realloc` is the
-//!   trait's own (a new block, a copy, then [`GlobalAlloc::dealloc`] of the
-//!   old one), so an old block is wiped too. This reaches only Rust's
-//!   allocations, not WebKit's, GLib's or WebView2's.
+//!   values) would otherwise stay readable in freed memory until it is reused,
+//!   and with it in a crash's memory. `realloc` is the trait's own (a new
+//!   block, a copy, then [`GlobalAlloc::dealloc`] of the old one), so an old
+//!   block is wiped too. This reaches only Rust's allocations, not WebKit's,
+//!   GLib's or WebView2's.
 //! - **On Windows, a failed allocation ends the process with
 //!   `TerminateProcess`.** Rust's default handler would `abort()`, whose
 //!   fail-fast goes to Windows Error Reporting whatever the error mode is, with
