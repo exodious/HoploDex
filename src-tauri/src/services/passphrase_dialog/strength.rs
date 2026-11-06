@@ -7,8 +7,8 @@
 //! word lists), worked out in the app process, since the passphrase is typed
 //! only in the native dialog (amended 2026-11-04 to 003 FR-003 and 010 FR-015).
 //! The crate copies the passphrase and its pieces into buffers of its own
-//! while it scores, which are freed without being wiped
-//! (`docs/attack-surface.md`, `key-passphrase`).
+//! while it scores; the global allocator wipes each one when it is freed
+//! (`allocator.rs`).
 
 /// The meter's label for each score.
 pub const LABELS: [&str; 5] = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
