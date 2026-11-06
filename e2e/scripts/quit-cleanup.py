@@ -282,6 +282,15 @@ def core_limits(pid):
     return None
 
 
+def core_filter(pid):
+    """Linux: `pid`'s core dump filter, as /proc writes it."""
+    try:
+        with open(f"/proc/{pid}/coredump_filter") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
 def web_process(pid):
     """Linux: whether `pid` is a WebKit web process, and not a zombie (the
     name is checked again, since an ended process's id can be reused)."""
@@ -328,6 +337,10 @@ def run(desktop, how):
                        if (limits := core_limits(pid)) not in ("0/0", None)]
             if dumping:
                 problems.append("core dumps on for " + ", ".join(dumping))
+            filtering = [f"{name_of(pid)} {pid}: {mask}" for pid in tree
+                         if (mask := core_filter(pid)) not in ("00000000", None)]
+            if filtering:
+                problems.append("memory would go into a core of " + ", ".join(filtering))
             if how in ("term", "hup", "int"):
                 for pid in web:
                     os.kill(pid, signal.SIGSTOP)
