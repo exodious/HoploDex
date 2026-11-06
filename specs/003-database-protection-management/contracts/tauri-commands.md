@@ -211,6 +211,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 - Remembering the passphrase is offered at the prompt and in the settings (US5-1), not at creation.
 - Creates `<folder>/<name>.hoplodex` with pinned settings, default `collection_settings`, a new `database_id`, and the open marker set. Adds the recent entry.
 
+  _Amended 2026-11-04: no command takes or returns a passphrase. **Input**: `{ folder: string; name: string }`. The name and folder are checked first (`VALIDATION_ERROR` with `fieldErrors.name` or `.folder`, `DATABASE_EXISTS`, `LOCATION_OUT_OF_REACH`); then the native passphrase dialog asks for the passphrase twice with the acknowledgement (`services::passphrase_dialog`), and `PASSPHRASE_CANCELLED` (new: "No passphrase was entered. Nothing has been changed.") answers its Cancel, with nothing made. The command runs on a blocking thread, since the dialog waits for the user._
+
 ### `open_database` 🔑
 - **Input**: `{ path: string; passphrase?: string; useSavedPassphrase?: boolean; rememberPassphrase?: boolean; takeOver?: boolean }`. Exactly one of `passphrase` or `useSavedPassphrase: true` is given.
 - **Output**: `DatabaseStatus`
@@ -219,6 +221,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 - Any other database that is open is closed first, as a `switched` close. The frontend only opens from the chooser, where nothing is open (FR-010: switching is a lock, then an open). On success with a typed passphrase: the recent entry is added or refreshed, and the keyring entry is written when `rememberPassphrase` is set, or refreshed when it was saved but failed (FR-018). Nothing is written to the file on any failure (FR-006, FR-014).
 
   _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#open_database-amended-fr-009-fr-010): when steps are due, `open_database` answers `UPGRADE_NEEDED` with the keyed database waiting and nothing written, until `upgrade_database` or `cancel_upgrade` (009 FR-009, FR-010)._
+
+  _Amended 2026-11-04: **Input**: `{ path: string; useSavedPassphrase?: boolean; rememberPassphrase?: boolean; takeOver?: boolean }`, with no `passphrase`. Without `useSavedPassphrase`, the native passphrase dialog asks for it ("Open <name>", or "Take over <name>?" naming the computer the last open found it open on when `takeOver` is set), stays up while each passphrase is tried, and asks again under its field for a wrong one. Cancel before any try is `PASSPHRASE_CANCELLED`; after a wrong passphrase it is that `PASSPHRASE_INCORRECT`, with `backupsAvailable` as before._
 
 ### `remove_recent_database`
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
@@ -306,6 +310,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): s
 - **Errors**: `PASSPHRASE_INCORRECT` (checked with the page-1 probe, research §1a; `fieldErrors.passphrase`), `KEYRING_UNAVAILABLE`
 - The UI sends it only after the FR-017 confirmation.
 
+  _Amended 2026-11-04: **Input**: none. The native passphrase dialog says what saving it gives away (the FR-017 confirmation) and asks for it; a passphrase that isn't the database's is asked for again there. `PASSPHRASE_CANCELLED` answers its Cancel, and the close of the database takes it down._
+
 ### `forget_saved_passphrase`
 - **Input**: `{ path?: string }` (defaults to the open database) → **Output**: `{ passphraseSaved: false }`
 - **Errors**: `KEYRING_UNAVAILABLE` (the keyring can't be reached to delete it; nothing is changed)
@@ -325,6 +331,8 @@ sleep stops it (FR-037).
 - **Errors**: `PASSPHRASE_INCORRECT` (current, `fieldErrors.currentPassphrase`, checked on the file's first page, research §1a), `VALIDATION_ERROR` (new, `fieldErrors.newPassphrase`: too short, a NUL, or the same as the current passphrase once both are NFC-normalized), `INSUFFICIENT_SPACE` (checked before anything is written), `PENDING_CHANGES_UNRESOLVED` (the copy would drop them, FR-039), `REPLACE_FAILED` (the original is unchanged and is reopened with the current passphrase, so the session stays open), `OPERATION_STOPPED`, and `INTERNAL_ERROR` when the new copy fails its checks (research §4; nothing is changed)
 - **Progress**: `passphrase_change:progress` `{ phase: "copying" | "checking" | "replacing"; processed: number; total: number }` (bytes; `checking` and `replacing` are indeterminate, with `total: 0`). The first `copying` event, with the total, is sent once the space check has passed and before the current passphrase is checked, whose key derivation takes longer than SC-005's 100 ms; a `PASSPHRASE_INCORRECT` refusal can follow it
 - Copy, verify, then replace (FR-015, FR-016, research §3, §4). Sets `changes_waiting` in the new copy (FR-025). Updates the saved keyring passphrase when there is one (FR-018). If the old file cannot be removed, `oldFileRemoved: false` and `oldFilePath` are returned (US4-5).
+
+  _Amended 2026-11-04: **Input**: none. The native passphrase dialog asks for the current passphrase and the new one twice, checks the new one as it is typed, and checks the current one against the file while it waits, asking again under that field when it is wrong; `PASSPHRASE_CANCELLED` answers its Cancel. The copy starts once it has closed, so the first `copying` event comes after the current passphrase is checked._
 
 ### `list_backups`
 - **Input**: `{ databasePath?: string }` (defaults to the open database; given for a damaged database that cannot be opened, research §8)
@@ -347,6 +355,8 @@ sleep stops it (FR-037).
   _Amended 2026-10-09 ([#62](https://github.com/exodious/HoploDex/issues/62)): with `databasePath`, the backend authorizes the target itself and no longer takes the web view's word for it. `databasePath` must be in this computer's recent list (as for `list_backups`), else `NOT_FOUND`. `backupPath` must be in that entry's cached backup folder, and the database id stored inside the backup (read when its passphrase is checked) must be the entry's cached one, else `VALIDATION_ERROR` with `fieldErrors.backupPath`. An entry `locate_database` re-pointed and that hasn't opened at its new path since is refused with `VALIDATION_ERROR` and `fieldErrors.databasePath`. What is at `databasePath` must be a regular file or nothing, never a symlink (not followed), a directory or anything else, else `VALIDATION_ERROR` with `fieldErrors.databasePath`; it is checked before anything is closed and again right before it is renamed aside, and what was renamed is checked after, so a swap in between is put back and refused with `REPLACE_FAILED`, as is a `damaged` name that is already taken. No refusal changes a file. The frontend needs no new code: the dialog only offers the listed backups and shows the message of any other refusal._
 
   _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#restore_backup-amended-fr-019): `restore_backup` takes `upgrade?: boolean`, refuses an older-layout backup without it as `UPGRADE_NEEDED`, upgrades the restored copy with it, and gains the progress phase `"upgrading"`; the new unscoped `check_backup` runs first (009 FR-019, [research.md §9](../../009-upgrade-readiness/research.md))._
+
+  _Amended 2026-11-04: **Input**: `{ checkId: number; databasePath?: string; upgrade?: boolean }`, with no passphrase. `checkId` is what `check_backup` returned once the passphrase typed in the native dialog opened the backup; the backend kept that passphrase, wiped when dropped, and the restore uses it, once. A check that is gone (dropped at Cancel by the new unscoped `drop_backup_check { checkId }`, a screen lock, a sleep, a shutdown or a close) or was for another target is `OPERATION_STOPPED`, with nothing changed._
 
 ### `delete_all_backups`
 - **Input**: `{ confirmed: boolean }` → **Output**: `{ deletedCount: number; failedPaths: string[] }`

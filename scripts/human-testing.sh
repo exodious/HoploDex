@@ -46,7 +46,8 @@
 # same sandbox. An E2E build takes its config, cache and documents folders from
 # HOPLODEX_E2E_* variables (set here, to the sandbox), keeps saved passphrases
 # in a file in the sandbox instead of the OS keyring, answers the "open in
-# another app" confirmation "open" itself, and runs the E2E suite's WebDriver
+# another app" confirmation "open" itself (the passphrase dialog is the real
+# one, HOPLODEX_E2E_PASSPHRASE_DIALOG=native), and runs the E2E suite's WebDriver
 # server on 127.0.0.1 (TAURI_WEBDRIVER_PORT, default 4445; it has no
 # authentication, so don't leave it running).
 set -euo pipefail
@@ -105,6 +106,10 @@ if [[ $launch -eq 1 ]]; then
       HOPLODEX_E2E_OPENED_LOG="$dir/opened.log"
       HOPLODEX_E2E_CONSENT_LOG="$dir/consent.log"
       HOPLODEX_E2E_CONSENT=open
+      # The real passphrase dialog, for a person to type into, not the E2E
+      # suite's queue.
+      HOPLODEX_E2E_PASSPHRASE_DIALOG=native
+      HOPLODEX_E2E_PASSPHRASE_LOG="$dir/passphrase.log"
     )
     mkdir -p "$dir/cache"
     if [[ "$os" == "Darwin" ]]; then

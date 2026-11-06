@@ -21,9 +21,10 @@ describe("010 research.md §2 - each withdrawn marker occurs in its file's real 
     it.skip("node_modules is not installed here; run npm ci to check the withdrawn markers", () => {});
     return;
   }
-  it("lists at least one withdrawn file", () => {
-    expect(WITHDRAWN.length).toBeGreaterThan(0);
-  });
+  if (WITHDRAWN.length === 0) {
+    it.skip("nothing is withdrawn now (amended 2026-11-04), so there is no marker to check", () => {});
+    return;
+  }
   for (const entry of WITHDRAWN) {
     it(`010 contracts/notices.md: the marker for ${entry.file} is in its module`, () => {
       const path = moduleFor(entry.file);

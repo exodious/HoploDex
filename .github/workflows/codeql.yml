@@ -83,7 +83,9 @@ jobs:
       # turns on, so inline `#[cfg(test)]` modules aren't extracted. Only
       # `custom-protocol` is enabled (the extractor otherwise enables every
       # feature), so the E2E-only `e2e` and `mock-keyring` code (the embedded
-      # WebDriver server, the mock keyring) is left out too.
+      # WebDriver server, the mock keyring) is left out too; a whole file
+      # behind such a `mod` is still extracted, so codeql-config.yml's
+      # `paths-ignore` lists it.
       CODEQL_EXTRACTOR_RUST_OPTION_CARGO_CFG_OVERRIDES: -test
       CODEQL_EXTRACTOR_RUST_OPTION_CARGO_FEATURES: custom-protocol
 

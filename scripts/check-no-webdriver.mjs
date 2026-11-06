@@ -5,7 +5,8 @@
 // through it. The same goes for the E2E-only switches that change what the app
 // does (007: HOPLODEX_E2E_PDF_PREVIEW turns PDF preview off, and
 // HOPLODEX_E2E_CONSENT answers the native confirmation before a document goes
-// to another app), each held out of a shipped build by the same feature and
+// to another app, and HOPLODEX_E2E_PASSPHRASES answers the native passphrase
+// dialog), each held out of a shipped build by the same feature and
 // checked by its name in the binary.
 //
 //   node scripts/check-no-webdriver.mjs            the dependency graph only
@@ -37,6 +38,10 @@ const markers = [
   {
     name: "HOPLODEX_E2E_CONSENT",
     what: "the E2E stand-in that answers the native confirmation to open a document in another app",
+  },
+  {
+    name: "HOPLODEX_E2E_PASSPHRASES",
+    what: "the E2E stand-in that answers the native passphrase dialog from a queue file",
   },
 ].map((marker) => ({ ...marker, bytes: Buffer.from(marker.name) }));
 

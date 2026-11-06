@@ -7,7 +7,7 @@ import {
   clickEl,
   confirmTakeOver,
   expect,
-  fill,
+  answerPassphrase,
   invokeCommand,
   selectChooserRow,
   settle,
@@ -200,7 +200,7 @@ describe("008 US1 - Each Database's Data Stays With Its Own Session (was us14-se
     await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
     await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
     await settle();
-    await fill("Passphrase for this backup", passphrase());
+    answerPassphrase(passphrase());
     await clickEl('[role="dialog"] button[type="submit"]');
     await $('[role="alertdialog"]').waitForExist();
     await clickEl('[role="alertdialog"] .hd-button--danger');

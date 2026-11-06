@@ -70,7 +70,7 @@ import {
   $,
   $$,
   E2E_PASSPHRASE,
-  ACKNOWLEDGEMENT,
+  answerPassphrase,
   addFirearm,
   browser,
   choose,
@@ -361,10 +361,8 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     // sandbox (support/flatpak.ts reads it there), as a `.deb` would suggest.
     expect(await fieldValue("Folder")).toBe(folder());
     await fill("Name", "Journey");
-    await fill("Passphrase", E2E_PASSPHRASE);
-    await fill("Confirm passphrase", E2E_PASSPHRASE);
-    await toggle(ACKNOWLEDGEMENT);
-    await clickButton("Create database");
+    answerPassphrase(E2E_PASSPHRASE);
+    await clickButton("Create database…");
     await waitForCollection();
 
     expect(fs.existsSync(database())).toBe(true);
@@ -392,12 +390,8 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     expect(await selectedChooserRow()).toBe("Journey");
     await unlock(E2E_PASSPHRASE);
 
+    answerPassphrase({ current: E2E_PASSPHRASE, passphrase: NEW_PASSPHRASE });
     await chooseMenuItem("button.hd-db-menu", "Change passphrase…");
-    await $('[role="dialog"] input[autocomplete="current-password"]').waitForExist();
-    await fill("Current passphrase", E2E_PASSPHRASE);
-    await fill("New passphrase", NEW_PASSPHRASE);
-    await fill("Confirm new passphrase", NEW_PASSPHRASE);
-    await clickButton("Change passphrase");
     await $('[role="dialog"] [role="status"]').waitForExist({
       timeout: 60000,
       timeoutMsg: "the passphrase change never finished",
@@ -426,7 +420,7 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
     await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
     await settle();
-    await fill("Passphrase for this backup", E2E_PASSPHRASE);
+    answerPassphrase(E2E_PASSPHRASE);
     await clickEl('[role="dialog"] button[type="submit"]');
     await $('[role="alertdialog"]').waitForExist();
     await clickEl('[role="alertdialog"] .hd-button--danger');
@@ -684,9 +678,6 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     expect(keyringEntries()).toEqual([]);
     await ensureSelected("Journey");
     await toggle("Remember on this computer");
-    await $('[role="alertdialog"]').waitForExist();
-    await clickButton("Remember passphrase");
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await unlock(E2E_PASSPHRASE);
     await switchDatabase();
 
@@ -756,10 +747,8 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
       await $('[role="dialog"]').waitForExist();
       await fill("Name", "Nowhere");
       await fill("Folder", outside);
-      await fill("Passphrase", E2E_PASSPHRASE);
-      await fill("Confirm passphrase", E2E_PASSPHRASE);
-      await toggle(ACKNOWLEDGEMENT);
-      await clickButton("Create database");
+      // Refused before the passphrase is asked for: nothing is queued.
+      await clickButton("Create database…");
       await browser.waitUntil(
         async () =>
           ((await dialogFieldError("Folder")) ?? "").includes(`${outside}/Nowhere.hoplodex`),
@@ -1566,10 +1555,8 @@ describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Run
     await clickButton("Create a new database…");
     await $('[role="dialog"]').waitForExist();
     await fill("Name", "Upgrade");
-    await fill("Passphrase", E2E_PASSPHRASE);
-    await fill("Confirm passphrase", E2E_PASSPHRASE);
-    await toggle(ACKNOWLEDGEMENT);
-    await clickButton("Create database");
+    answerPassphrase(E2E_PASSPHRASE);
+    await clickButton("Create database…");
     await waitForCollection();
     expect(fs.existsSync(database())).toBe(true);
     await addFirearm({
@@ -1592,9 +1579,6 @@ describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Run
 
     await ensureSelected("Upgrade");
     await toggle("Remember on this computer");
-    await $('[role="alertdialog"]').waitForExist();
-    await clickButton("Remember passphrase");
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
     await unlock(E2E_PASSPHRASE);
     await switchDatabase();
     // The entry is in the app's keyring file, read with the portal's key.

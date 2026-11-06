@@ -398,6 +398,17 @@ pub struct BackupCheck {
     pub upgrade_to: Option<String>,
 }
 
+/// What `check_backup` found once the passphrase typed in the dialog opened
+/// the backup (amended 2026-11-04 to 009 FR-019): the `checkId` the restore
+/// sends, under which the backend keeps that passphrase, and the version the
+/// backup is upgraded for.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckedBackup {
+    pub check_id: SessionId,
+    pub upgrade_to: Option<String>,
+}
+
 /// The payload of `upgrade:progress` (009 contracts/tauri-commands.md
 /// "Events"): bytes of the backup made before an upgrade, then the upgrade's
 /// steps. `Upgrading` is sent once with `processed = total = 0` and again after
@@ -661,14 +672,7 @@ pub fn validate_create_database_input(
     passphrase: &Passphrase,
     acknowledged_unrecoverable: bool,
 ) -> Result<PathBuf, CommandError> {
-    let folder = Path::new(folder);
-    let mut errors = HashMap::new();
-    if let Some(problem) = name_problem(name) {
-        errors.insert("name".to_owned(), problem.to_owned());
-    }
-    if let Some(problem) = folder_problem(folder) {
-        errors.insert("folder".to_owned(), problem.to_owned());
-    }
+    let mut errors = location_problems(folder, name);
     if let Some(problem) = new_passphrase_problem(passphrase) {
         errors.insert("passphrase".to_owned(), problem.to_owned());
     }
@@ -682,7 +686,34 @@ pub fn validate_create_database_input(
     if !errors.is_empty() {
         return Err(CommandError::validation("Check the new database's details.", errors));
     }
-    let target = folder.join(format!("{name}.{DATABASE_EXTENSION}"));
+    free_target(folder, name)
+}
+
+/// The name and folder of a database to create, checked before its
+/// passphrase is asked for in the dialog (amended 2026-11-04), so a refusal
+/// never costs a typed passphrase: the path it will have.
+pub fn validate_create_location(folder: &str, name: &str) -> Result<PathBuf, CommandError> {
+    let errors = location_problems(folder, name);
+    if !errors.is_empty() {
+        return Err(CommandError::validation("Check the new database's details.", errors));
+    }
+    free_target(folder, name)
+}
+
+fn location_problems(folder: &str, name: &str) -> HashMap<String, String> {
+    let mut errors = HashMap::new();
+    if let Some(problem) = name_problem(name) {
+        errors.insert("name".to_owned(), problem.to_owned());
+    }
+    if let Some(problem) = folder_problem(Path::new(folder)) {
+        errors.insert("folder".to_owned(), problem.to_owned());
+    }
+    errors
+}
+
+/// The new database's path, unless something is there already.
+fn free_target(folder: &str, name: &str) -> Result<PathBuf, CommandError> {
+    let target = Path::new(folder).join(format!("{name}.{DATABASE_EXTENSION}"));
     // `symlink_metadata`, so even a dangling link at the path counts as taken.
     if fs::symlink_metadata(&target).is_ok() {
         return Err(CommandError::database_exists(&target));

@@ -942,8 +942,9 @@ What it does, in order:
    with the real routes: its `AppOpener` hands a document to the OpenURI
    portal and its keyring is the real one (inside the Flatpak, the file keyring
    keyed by the Secret portal) instead of the `e2e` build's log and in-memory
-   store. The consent dialog is still the
-   `e2e` build's, which no WebDriver could click. Only the Flatpak check
+   store. The consent and passphrase dialogs are still the
+   `e2e` build's stand-ins, which no WebDriver could click (the passphrase one
+   answers from the queue the spec fills). Only the Flatpak check
    builds it; the main E2E suite and every shipped build are unchanged.
 3. Starts a private session bus with a scripted desktop portal
    (`scripts/flatpak/openuri_mock.py`, a dbusmock template with two interfaces:
@@ -1287,6 +1288,23 @@ which leaves the database as it found it, and the other tests don't depend
 on it. `backups`' restore-dialog regressions are an example. The screenshot walk
 uses no real input, so it runs everywhere.
 
+A second exception runs on every OS: `passphrase-dialog`'s tests type into the
+native passphrase dialog, which no WebDriver can reach, with real keys:
+XTest on Linux (`realInput.ts`'s `realKeyOutsidePage`), `real_input.swift`'s
+`key-to` to the app's process on macOS (`macInput.ts`), and
+`e2e/scripts/dialog-input.ps1` on Windows, which posts the keys to the app's
+dialog itself, since another worker's app can have the foreground (as macOS
+addresses its keys to the process, #122), all through `e2e/support/dialogInput.ts`.
+The app runs with `HOPLODEX_E2E_PASSPHRASE_DIALOG=native` there, and the spec
+reads what the dialog shows from its log (`HOPLODEX_E2E_PASSPHRASE_LOG`: each
+prompt, refusal, view and close, never a passphrase). Every other spec answers
+the dialog from a queue file (`answerPassphrase` in `ui.ts`, through
+`HOPLODEX_E2E_PASSPHRASES`), as `E2eConsent` answers the consent dialog. A
+click that opens a passphrase dialog mustn't wait for the app to settle: its
+command is busy until the dialog is answered. On Linux the spec also scans
+the WebKit web process's memory for the passphrase (`memoryScan.ts`), which
+the worker may read, being the app's ancestor.
+
 One exception runs on macOS only: `databases`' quit test (#107) presses ⌘Q, chooses
 the app menu's Quit and sends the quit Apple Event the Dock's Quit sends (to
 the sandboxed app's process only) with `e2e/support/macInput.ts`, which
@@ -1354,8 +1372,8 @@ stops the display and removes the sandbox. In another terminal:
 
 ```bash
 npx wdio session snapshot --interactive            # the page as text; what is clickable
-npx wdio session click e3                          # a ref from the snapshot, or a selector such as 'button=Open'
-npx wdio session fill 'aria/Passphrase for “Main collection”' '<passphrase>'
+npx wdio session click e3                          # a ref from the snapshot, or a selector such as 'button=Open…'
+echo '{"passphrase":"<passphrase>"}' >> <sandbox>/passphrases.queue   # the native passphrase dialog's answer, before Open…
 npx wdio session exec -e "await browser.getTitle()"
 npx wdio session screenshot
 npx wdio session export --out e2e/specs/<name>.e2e.ts
@@ -1385,14 +1403,16 @@ override that:
   `.wdio/session/default/`, git-ignored. The window is on the virtual display
   on Linux: use `screenshot`.
 - The sandbox starts with the harness's defaults: the in-memory keyring, the
-  native "open in another app" confirmation answered "Open", PDF preview on,
-  the real idle minute. A spec's own settings (PDF preview off, the
+  native "open in another app" confirmation answered "Open", the native
+  passphrase dialog answered from `<sandbox>/passphrases.queue` (one JSON
+  answer a line, as `answerPassphrase` in `e2e/support/ui.ts` writes them; with
+  nothing queued it cancels), PDF preview on, the real idle minute. A spec's own settings (PDF preview off, the
   locking spec's shortened minute) aren't offered; `exec` can't set the app's
   environment.
 - In the macOS VM, `scripts/tart-vm.sh ssh` splits its arguments again on
   the VM's side, so give a selector with spaces or quotes as one plain
   single-quoted argument: `scripts/tart-vm.sh ssh npx wdio session fill
-  'aria/Passphrase for “Main collection”' '<passphrase>'`.
+  'aria/Name' 'Club armory'`.
 
 An exported spec is a starting point, not a test, and needs review before it
 joins the suite. It records only your steps, in WebdriverIO's style, so
@@ -2159,36 +2179,33 @@ fails when the two differ). Before adding a license, check it against the FSF's
 [list of GPL-compatible licenses](https://www.gnu.org/licenses/license-list.html).
 A license that's only acceptable for particular packages goes in `EXCEPTIONS`
 in `policy.mjs`, scoped to those packages or hand-recorded entries, with the
-reason. Today they are OFL-1.1 for the `@fontsource` fonts, and four licenses
-for data the strength hint's dictionary uses (below).
+reason. Today they are OFL-1.1 for the `@fontsource` fonts, and the licenses
+for data the strength hint's dictionary uses (below; the EFF, OpenSubtitles and
+Moby entries are kept, though those lists no longer ship).
 
 The Flatpak ships the same binary, built from the same lockfiles, and adds no
 module of its own, so these checks already cover it; `scripts/flatpak/manifest.test.ts`
 fails if its manifest gains a module or a source ([011's research.md §13](specs/011-flatpak/research.md)).
 
-The passphrase strength hint's dictionary (`src/components/strength/estimate.ts`)
-is built from `@zxcvbn-ts`'s word lists, and the package's MIT license doesn't
-speak for their data. Each list ships only on a ground
-(010 research.md §2):
+The passphrase strength hint is the `zxcvbn` crate's (`services/passphrase_dialog/strength.rs`),
+worked out in the backend, since the passphrase is typed only in the native
+dialog and the page never has it. The crate builds in six word lists, and its
+MIT license doesn't speak for their data. Each ships on a ground (010 FR-015,
+010 research.md §2, both amended 2026-11-04):
 
-- **`commonWords.json`** (OpenSubtitles 2024, ODC-BY): a data license whose
-  only condition is attribution, accepted because the list is data the
-  strength estimate looks words up in, not code combined with the program
-  (003's clarification of 2026-09-26).
-- **`firstnames.json`, `lastnames.json`, `passwords.json`**: public domain, by
-  the author's grant (Moby's names, Mark Burnett's passwords) or by statute
-  (the 1990 Census surnames, a US government work).
-- **`diceware.json`** (the EFF Large Wordlist): CC BY 4.0, which the FSF lists
-  as GPL-compatible, with the attribution it requires.
-- **`wordSequences.json`, `adjacencyGraphs.json`**: facts the package's
-  maintainers wrote by hand or generated, under its MIT license.
-- **`wikipedia.json` doesn't ship.** Its 2015 text is under CC BY-SA 3.0 and
-  the GFDL, which GPLv3 doesn't accept, and no GPL-compatible grant was found.
-  `estimate.ts` imports the other lists from the packages' per-list modules,
-  a test fails if its dictionary has a `wikipedia` key, and the build fails,
-  naming the file, if any emitted chunk (the strength worker's included)
-  contains the list's marker (`WITHDRAWN` in `scripts/licenses/policy.mjs`,
-  checked by the Vite plugin).
+- **`passwords`** (Mark Burnett's ten million passwords) and **`female_names`,
+  `male_names`, `surnames`** (the 1990 US Census lists): public domain, by the
+  author's grant or by statute (US government works).
+- **`english_wikipedia`, `us_tv_and_film`**: word-frequency lists counted
+  mechanically from text (Wikipedia, and Wiktionary's subtitle frequency
+  lists, both CC BY-SA 3.0 and the GFDL). They ship by the owner's exception
+  to FR-015: in the US such a list is facts, which copyright doesn't protect
+  (Feist), whatever license the counted text carries. Another list counted
+  that way takes the same ground; any other data needs a found grant.
+
+The page bundles no word list now, so `WITHDRAWN` in
+`scripts/licenses/policy.mjs`, which the Vite plugin checks every emitted chunk
+against, is empty.
 
 The attributions these lists need (and SQLCipher's, SQLite's, OpenSSL's and the
 WebView2 loader's) are hand-recorded entries in `licenses/hand-recorded.json`,
@@ -2287,7 +2304,7 @@ audit and the notices both use it:
 
 - **npm**: every package in `package-lock.json` that is neither `dev` nor
   `devOptional`. The build also collects the package of every module in the
-  main bundle and the strength worker, and fails when one isn't in that set.
+  main bundle (and any web worker's, of which there are none now), and fails when one isn't in that set.
   A package in the set that the bundler drops as unused stays listed.
 - **Rust**: the crates `cargo tree -e normal,no-proc-macro --features custom-protocol --target <triple>`
   lists, `hoplodex` itself excluded. Build scripts' dependencies, procedural

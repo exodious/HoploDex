@@ -161,15 +161,16 @@ describe("DatabaseMenu (003 contracts/ui-databases.md §4)", () => {
 
   it("opens the passphrase change (003 contracts/ui-databases.md §8)", async () => {
     const user = userEvent.setup();
+    vi.mocked(databasesService.changePassphrase).mockReturnValue(new Promise(() => {}));
+    vi.mocked(databasesService.onPassphraseChangeProgress).mockReturnValue(() => {});
     renderMenu();
 
     await user.click(await screen.findByRole("button", { name: "Database" }));
     await user.click(await screen.findByRole("menuitem", { name: "Change passphrase…" }));
 
-    const dialog = await screen.findByRole("dialog", {
-      name: "Change passphrase",
-    });
-    expect(within(dialog).getByLabelText("Current passphrase")).toBeInTheDocument();
+    // Both passphrases are asked for in the native dialog the command shows.
+    await waitFor(() => expect(databasesService.changePassphrase).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText("Current passphrase")).not.toBeInTheDocument();
   });
 
   it("opens the restore dialog (003 contracts/ui-databases.md §9)", async () => {

@@ -12,6 +12,7 @@
 //! the "API the upgrade flow is assumed to have" section below, so one place
 //! says what the implementation was built to.
 
+use crate::passphrase_dialog_test::{Scripted, ScriptedDialog};
 use crate::support;
 
 use std::collections::BTreeMap;
@@ -1047,7 +1048,7 @@ mod remembering {
             .keyring()
             .save(&database_id, &Passphrase::from_input("stale".into()))
             .unwrap();
-        world.machine.set_passphrase_saved(&world.path(), true);
+        world.machine.set_passphrase_saved(&world.path(), &database_id, true);
         let _scope = world.steps(&[STEP_A]);
         let refused = databases::open_database(
             &world.session,
@@ -1866,6 +1867,39 @@ fn a_marker_written_by_another_computer_during_the_question_refuses_the_upgrade(
     assert_eq!(marker_of(&file), Some(other.id), "and the other computer's marker stands");
     assert_eq!(world.upgrade(id, None).unwrap_err().code, "DATABASE_CLOSED");
     assert!(!world.session.is_open());
+}
+
+/// 003 FR-032: after an upgrade refused for another computer's marker, the
+/// take-over's dialog names that computer.
+#[test]
+fn a_take_over_after_an_upgrade_refused_for_another_computer_names_it() {
+    let world = World::new();
+    world.older_database(Older::default());
+    let _scope = world.steps(&[STEP_A]);
+    let id = world.waiting();
+    let other = other_machine();
+    world.with_held(id, |conn| {
+        conn.execute(
+            "UPDATE app_state SET open_machine_id = ?1, open_machine_name = ?2, open_since = ?3",
+            rusqlite::params![other.id, other.display_name, "2026-09-25T15:00:00Z"],
+        )
+        .unwrap();
+    });
+    assert_eq!(world.upgrade(id, None).unwrap_err().code, "DATABASE_OPEN_ELSEWHERE");
+
+    let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    let taken = databases::open_database_typed(
+        &world.session,
+        &world.machine,
+        &ScriptedDialog(Arc::clone(&script)),
+        &world.path().to_string_lossy(),
+        false,
+        true,
+    );
+
+    assert_eq!(taken.unwrap_err().code, "UPGRADE_NEEDED");
+    let message = &script.asked()[0].message;
+    assert!(message.contains("Only do this if Workshop PC no longer has"), "{message}");
 }
 
 /// A backup of "Mine" made today, in the world's backup folder, and the world's

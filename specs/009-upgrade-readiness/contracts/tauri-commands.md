@@ -187,6 +187,8 @@ only.
   header naming the open session, as `restore_backup` does (008
   contracts/tauri-commands.md).
 
+_Amended 2026-11-04: **Input**: `{ backupPath: string; databasePath?: string }`, with no passphrase; **Output**: `{ checkId: number; upgradeTo: string | null }`. Everything that needs no passphrase is refused before the native passphrase dialog asks for the backup's; it stays up while each passphrase is tried, and asks again for a wrong one. The passphrase that opened the backup is kept, wiped when dropped, under `checkId` for the one `restore_backup` that follows the confirmation (003 contracts/tauri-commands.md's note). `PASSPHRASE_CANCELLED` answers the dialog's Cancel._
+
 ## Events (added and amended)
 
 | Event | Payload | When |

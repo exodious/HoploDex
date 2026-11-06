@@ -30,6 +30,7 @@ pub const COMMANDS: &[&str] = &[
     "list_backups",
     "restore_backup",
     "check_backup",
+    "drop_backup_check",
     "delete_all_backups",
     "change_passphrase",
     "create_firearm",
@@ -90,7 +91,8 @@ pub const COMMANDS: &[&str] = &[
 // The commands that don't name the open session in a `HoploDex-Session` header
 // (008 research.md §2, contracts/tauri-commands.md "Every request names its
 // session"): the chooser's, the status that tells the frontend the id, the
-// ones that act on the running operation or on this computer, and the ones
+// ones that act on the running operation or on this computer, the held backup
+// check (`drop_backup_check`, which needs only its id), and the ones
 // that take a database path and need the header only when they work on the
 // open database (`restore_backup`, `list_backups`, `forget_saved_passphrase`).
 // Every other command takes `session: ScopedSession`;
@@ -114,6 +116,7 @@ pub const UNSCOPED_COMMANDS: &[&str] = &[
     "set_document_opening",
     "restore_backup",
     "check_backup",
+    "drop_backup_check",
     "list_backups",
     "forget_saved_passphrase",
 ];

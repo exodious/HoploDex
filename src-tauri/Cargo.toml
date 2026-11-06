@@ -55,8 +55,8 @@ e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 # `E2eOpener`, and the real keyring (inside a Flatpak, the Secret portal's store,
 # `services::keyring::portal`) instead of keyring-core's in-memory store. The
 # check scripts an OpenURI and a Secret portal on its private bus for them. build.rs turns it into the
-# `app_opener` and `mock_keyring` cfgs. The consent dialog stays `E2eConsent`: no
-# WebDriver can click a native dialog. Never in a shipped build, since `e2e`
+# `app_opener` and `mock_keyring` cfgs. The consent dialog stays `E2eConsent`,
+# and the passphrase dialog `E2eDialog`: no WebDriver can click a native dialog. Never in a shipped build, since `e2e`
 # is refused there (scripts/check-no-webdriver.mjs).
 flatpak-check = ["e2e"]
 # The Rust tests only (#77 step 11; DEVELOPMENT.md "Test"): keys every database
@@ -107,6 +107,10 @@ log = "0.4"
 image = { version = "0.25.6", default-features = false, features = ["jpeg", "png"] }
 # Passphrase NFC normalization (003 research.md §1).
 unicode-normalization = "0.1.25"
+# The strength hint, worked out in the app process as the passphrase is typed
+# in the native dialog (003 FR-003; amended 2026-11-04 to 010 FR-015 for its
+# `english_wikipedia` list).
+zxcvbn = { version = "3.1.1", default-features = false }
 # The open marker's machine name (003 research.md §6).
 gethostname = "1.1.0"
 # Free space before a copy (003 research.md §4).
@@ -152,6 +156,9 @@ landlock = "0.4.7"
 # The PDF surface's filter, settings and signals (007 research.md §6-§10). The
 # version and features wry uses, `v2_40` on top of its `v2_38`.
 webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
+# The native passphrase dialog (amended 2026-11-04 to 003 FR-007). Promoted from
+# transitive, at the version already in Cargo.lock (tao and wry use it).
+gtk = "0.18.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
@@ -163,8 +170,42 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "NSNotification",
     "NSString",
     "NSURL",
+    # The passphrase dialog's pause timer and text (amended 2026-11-04 to 003
+    # FR-007).
+    "NSDate",
+    "NSObjCRuntime",
+    "NSRange",
+    "NSRunLoop",
 ] }
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSEvent", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "NSEvent",
+    "NSWorkspace",
+    # The passphrase dialog: an alert as a sheet, with secure fields, a
+    # strength meter and checkboxes (amended 2026-11-04 to 003 FR-007).
+    "objc2-core-foundation",
+    "NSAccessibilityProtocols",
+    "NSAlert",
+    "NSApplication",
+    "NSButton",
+    "NSCell",
+    "NSColor",
+    "NSControl",
+    "NSLayoutAnchor",
+    "NSLayoutConstraint",
+    "NSLevelIndicator",
+    "NSLevelIndicatorCell",
+    "NSProgressIndicator",
+    "NSResponder",
+    "NSSecureTextField",
+    "NSStackView",
+    "NSText",
+    "NSTextField",
+    "NSUserInterfaceLayout",
+    "NSView",
+    "NSWindow",
+] }
 # The PDF surface's content rule list, SPI switches and input (007 research.md
 # §6, §7, §10). Promoted from dev-dependencies.
 block2 = "0.6.2"
@@ -228,6 +269,11 @@ windows-sys = { version = "0.61", features = [
     # `AssocQueryStringW`: whether a program is registered for a document type
     # (007 research.md §18, amended 2026-10-07).
     "Win32_UI_Shell",
+    # The passphrase dialog's edit controls, meter, DPI and module handle
+    # (amended 2026-11-04 to 003 FR-007).
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_System_LibraryLoader",
 ] }
 # The PDF surface's settings and events (007 research.md §6-§10). The versions
 # wry uses.

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { $, $$, browser } from "@wdio/globals";
 
 /**
@@ -762,10 +763,6 @@ export async function dialogFieldError(label: string): Promise<string | null> {
 /** The passphrase of every database a spec creates. */
 export const E2E_PASSPHRASE = "end to end test passphrase";
 
-/** The 003 FR-004 acknowledgement in the create dialog. */
-export const ACKNOWLEDGEMENT =
-  "I have stored this passphrase somewhere safe. If it is forgotten, nobody, including HoploDex, can open this database or recover the collection.";
-
 /** The sandbox's documents folder, where the harness points the app's
  * suggested location (wdio.conf.ts). Specs type locations under it rather
  * than use the native pickers, which WebDriver can't drive. */
@@ -808,9 +805,60 @@ export async function waitForCollection() {
   await settle();
 }
 
+/** One press of the native passphrase dialog's primary button, as the E2E
+ * build's stand-in for it answers (src-tauri/src/services/passphrase_dialog/
+ * e2e.rs): the passphrase, the current one for a change, a confirmation that
+ * differs, or an unticked acknowledgement; or Cancel. */
+export type PassphraseAnswer =
+  | string
+  | {
+      passphrase?: string;
+      current?: string;
+      confirmation?: string;
+      acknowledged?: boolean;
+      cancel?: true;
+    };
+
+/** Queues answers for the next native passphrase dialogs, in order: no
+ * WebDriver can type into one, so an E2E build answers from this queue
+ * (amended 2026-11-04 to 003 FR-007). A dialog with nothing queued cancels. */
+export function answerPassphrase(...answers: PassphraseAnswer[]) {
+  const queue = process.env.HOPLODEX_E2E_PASSPHRASES;
+  if (!queue) throw new Error("HOPLODEX_E2E_PASSPHRASES is not set (sandbox.ts)");
+  const lines = answers.map((answer) =>
+    JSON.stringify(typeof answer === "string" ? { passphrase: answer } : answer),
+  );
+  fs.appendFileSync(queue, `${lines.join("\n")}\n`);
+}
+
+/** What the passphrase dialog logged, a JSON object a line: `asked` (its
+ * title, message, primary button and fields), `shown` (the real dialog has
+ * the focus in its first field), `retry` (the refusal under a field),
+ * `refused` (what kept its button disabled), `view` (what the real dialog
+ * shows), `cancelled` and `closed`. Never a passphrase. */
+export function passphraseLog(): Record<string, unknown>[] {
+  const log = process.env.HOPLODEX_E2E_PASSPHRASE_LOG;
+  if (!log) throw new Error("HOPLODEX_E2E_PASSPHRASE_LOG is not set (sandbox.ts)");
+  if (!fs.existsSync(log)) return [];
+  const lines = fs.readFileSync(log, "utf-8").split(/\r?\n/);
+  // The last piece is "" after a whole line, or a line the app is still writing.
+  lines.pop();
+  return lines
+    .filter((line) => line.trim() !== "")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+/** The titles of the passphrase dialogs asked for so far. */
+export function passphraseTitles(): string[] {
+  return passphraseLog()
+    .filter((line) => "asked" in line)
+    .map((line) => (line.asked as { title: string }).title);
+}
+
 /** Creates a database from the chooser by typing its location, and waits
  * for its (empty) collection. Defaults: "Test", in the sandbox's suggested
- * folder, with {@link E2E_PASSPHRASE}. */
+ * folder, with {@link E2E_PASSPHRASE}, which the native dialog's stand-in
+ * answers with, the acknowledgement ticked. */
 export async function createDatabase({
   folder = `${scratchDocuments()}/HoploDex`,
   name = "Test",
@@ -821,38 +869,31 @@ export async function createDatabase({
   await $('[role="dialog"]').waitForExist();
   await fill("Name", name);
   await fill("Folder", folder);
-  await fill("Passphrase", passphrase);
-  await fill("Confirm passphrase", passphrase);
-  await toggle(ACKNOWLEDGEMENT);
-  await clickButton("Create database");
+  answerPassphrase(passphrase);
+  await clickButton("Create database…");
   await waitForCollection();
 }
 
-/** Types `passphrase` into the chooser's selected database and presses
- * **Open**, without waiting for the outcome. */
-export async function submitPassphrase(passphrase: string) {
+/** Presses **Open…** on the chooser's selected database, with `passphrase`
+ * queued for the native dialog it shows, without waiting for the outcome.
+ * More than one answer is tried in turn, as the dialog asks again after a
+ * wrong one. */
+export async function submitPassphrase(...passphrases: PassphraseAnswer[]) {
   await waitForChooser();
-  const found = await browser.execute((value: string) => {
-    const field = document.querySelector<HTMLInputElement>(".hd-db-row--selected input");
-    if (!field) return false;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-    field.form?.requestSubmit();
-    return true;
-  }, passphrase);
-  if (!found) throw new Error("no database is selected in the chooser");
+  answerPassphrase(...passphrases);
+  const open = await $(".hd-db-row--selected button[type=submit]");
+  if (!(await open.isExisting())) throw new Error("no database is selected in the chooser");
+  await open.click();
   await settle();
 }
 
-/** Answers the chooser's "Take over" question for the selected database,
- * which another computer has open: asks to take it over, types the passphrase
- * again (the confirmation, 003 FR-032) and confirms. */
-export async function confirmTakeOver(name: string, passphrase: string) {
+/** Takes over the chooser's selected database, which another computer has
+ * open: **Take over…** shows the native dialog, where typing the passphrase
+ * again is the confirmation (003 FR-032). */
+export async function confirmTakeOver(_name: string, passphrase: string) {
+  answerPassphrase(passphrase);
   await clickEl("button=Take over…");
-  await $('[role="alertdialog"]').waitForExist();
-  await fill(`Passphrase for “${name}”`, passphrase);
-  await clickButton("Take over");
-  await $('[role="alertdialog"]').waitForExist({ reverse: true });
+  await settle();
 }
 
 /** Opens the chooser's selected database with `passphrase` and waits for

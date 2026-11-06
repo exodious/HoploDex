@@ -124,6 +124,12 @@ impl CommandError {
         .with_details((!details.is_empty()).then_some(Value::Object(details)))
     }
 
+    /// The passphrase dialog was cancelled, or the system took it down,
+    /// before anything was tried (amended 2026-11-04 to 003 FR-007).
+    pub fn passphrase_cancelled() -> Self {
+        Self::new("PASSPHRASE_CANCELLED", "No passphrase was entered. Nothing has been changed.")
+    }
+
     pub fn database_not_found(path: &Path) -> Self {
         Self::new("DATABASE_NOT_FOUND", "The database file is not at this location.")
             .with_details(path_details(path))
@@ -190,6 +196,11 @@ impl CommandError {
     pub fn awaiting_id(&self) -> Option<SessionId> {
         let raw = self.details.as_ref()?.get("awaitingId")?.as_u64()?;
         SessionId::from_request(raw)
+    }
+
+    /// A text detail, such as `machineName` of a `DATABASE_OPEN_ELSEWHERE`.
+    pub fn details_str(&self, key: &str) -> Option<String> {
+        self.details.as_ref()?.get(key)?.as_str().map(str::to_owned)
     }
 
     /// 009 FR-019: `restore_backup` without `upgrade: true` for a backup that

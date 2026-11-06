@@ -33,7 +33,9 @@ describe("databasesService", () => {
   });
 
   it.each([
-    ["save_passphrase", { passphrase: "pw" }, () => databasesService.savePassphrase(scope, "pw")],
+    // No passphrase is ever sent: the backend asks for it in the native
+    // dialog (amended 2026-11-04 to 003 FR-007).
+    ["save_passphrase", undefined, () => databasesService.savePassphrase(scope)],
     ["forget_saved_passphrase", {}, () => databasesService.forgetSavedPassphrase(scope)],
     [
       "forget_saved_passphrase",
@@ -51,28 +53,14 @@ describe("databasesService", () => {
       () => databasesService.updateLockSettings(scope, lockSettings),
     ],
     ["list_backups", {}, () => databasesService.listBackups(scope)],
+    ["restore_backup", { checkId: 5 }, () => databasesService.restoreBackup(scope, 5)],
+    ["check_backup", { backupPath: "/b" }, () => databasesService.checkBackup(scope, "/b")],
     [
       "restore_backup",
-      { backupPath: "/b", backupPassphrase: "pw" },
-      () => databasesService.restoreBackup(scope, "/b", "pw"),
+      { checkId: 5, upgrade: true },
+      () => databasesService.restoreBackup(scope, 5, undefined, true),
     ],
-    // 009 contracts/tauri-commands.md "check_backup": the passphrase is named
-    // `passphrase` here, not `backupPassphrase` as `restore_backup` names it.
-    [
-      "check_backup",
-      { backupPath: "/b", passphrase: "pw" },
-      () => databasesService.checkBackup(scope, "/b", "pw"),
-    ],
-    [
-      "restore_backup",
-      { backupPath: "/b", backupPassphrase: "pw", upgrade: true },
-      () => databasesService.restoreBackup(scope, "/b", "pw", undefined, true),
-    ],
-    [
-      "change_passphrase",
-      { currentPassphrase: "old", newPassphrase: "new" },
-      () => databasesService.changePassphrase(scope, "old", "new"),
-    ],
+    ["change_passphrase", undefined, () => databasesService.changePassphrase(scope)],
     [
       "delete_all_backups",
       { confirmed: true },
@@ -85,11 +73,18 @@ describe("databasesService", () => {
 
   it.each([
     ["get_chooser_state", undefined, () => databasesService.getChooserState()],
+    ["open_database", { path: "/a" }, () => databasesService.openDatabase("/a")],
     [
       "open_database",
-      { path: "/a", passphrase: "pw" },
-      () => databasesService.openDatabase("/a", "pw"),
+      { path: "/a", useSavedPassphrase: true },
+      () => databasesService.openDatabase("/a", { useSavedPassphrase: true }),
     ],
+    [
+      "create_database",
+      { folder: "/f", name: "N" },
+      () => databasesService.createDatabase({ folder: "/f", name: "N" }),
+    ],
+    ["drop_backup_check", { checkId: 5 }, () => databasesService.dropBackupCheck(5)],
     ["remove_recent_database", { path: "/a" }, () => databasesService.removeRecentDatabase("/a")],
     [
       "locate_database",
@@ -99,18 +94,18 @@ describe("databasesService", () => {
     ["list_backups", { databasePath: "/a" }, () => databasesService.listBackups(null, "/a")],
     [
       "restore_backup",
-      { backupPath: "/b", backupPassphrase: "pw", databasePath: "/a" },
-      () => databasesService.restoreBackup(null, "/b", "pw", "/a"),
+      { checkId: 5, databasePath: "/a" },
+      () => databasesService.restoreBackup(null, 5, "/a"),
     ],
     [
       "restore_backup",
-      { backupPath: "/b", backupPassphrase: "pw", databasePath: "/a", upgrade: true },
-      () => databasesService.restoreBackup(null, "/b", "pw", "/a", true),
+      { checkId: 5, databasePath: "/a", upgrade: true },
+      () => databasesService.restoreBackup(null, 5, "/a", true),
     ],
     [
       "check_backup",
-      { backupPath: "/b", passphrase: "pw", databasePath: "/a" },
-      () => databasesService.checkBackup(null, "/b", "pw", "/a"),
+      { backupPath: "/b", databasePath: "/a" },
+      () => databasesService.checkBackup(null, "/b", "/a"),
     ],
     // 009 contracts/tauri-commands.md: all three are unscoped.
     ["upgrade_database", { awaitingId: 7 }, () => databasesService.upgradeDatabase(7)],
@@ -128,8 +123,8 @@ describe("databasesService", () => {
 
   it("sends the database it names with no session even when a scope is held", async () => {
     await databasesService.listBackups(scope, "/a");
-    await databasesService.restoreBackup(scope, "/b", "pw", "/a");
-    await databasesService.checkBackup(scope, "/b", "pw", "/a");
+    await databasesService.restoreBackup(scope, 5, "/a");
+    await databasesService.checkBackup(scope, "/b", "/a");
     expect(backend.invoke.mock.calls.map((call) => call.length)).toEqual([2, 2, 2]);
   });
 
@@ -137,14 +132,16 @@ describe("databasesService", () => {
   // undefined; the backend must not be sent one (009 contracts/tauri-commands.md).
   it("leaves out the folder, the database and the upgrade flag when there are none", async () => {
     await databasesService.upgradeDatabase(7);
-    await databasesService.restoreBackup(scope, "/b", "pw");
-    await databasesService.restoreBackup(scope, "/b", "pw", undefined, false);
-    await databasesService.checkBackup(scope, "/b", "pw");
+    await databasesService.restoreBackup(scope, 5);
+    await databasesService.restoreBackup(scope, 5, undefined, false);
+    await databasesService.checkBackup(scope, "/b");
+    await databasesService.openDatabase("/a", {});
     expect(backend.invoke.mock.calls.map(([, args]) => Object.keys(args).sort())).toEqual([
       ["awaitingId"],
-      ["backupPassphrase", "backupPath"],
-      ["backupPassphrase", "backupPath"],
-      ["backupPath", "passphrase"],
+      ["checkId"],
+      ["checkId"],
+      ["backupPath"],
+      ["path"],
     ]);
   });
 
@@ -152,10 +149,11 @@ describe("databasesService", () => {
     const status = { sessionId: 3 };
     backend.invoke
       .mockResolvedValueOnce(status)
-      .mockResolvedValueOnce({ upgradeTo: "0.2.0" })
+      .mockResolvedValueOnce({ checkId: 5, upgradeTo: "0.2.0" })
       .mockResolvedValueOnce(null);
     await expect(databasesService.upgradeDatabase(7)).resolves.toBe(status);
-    await expect(databasesService.checkBackup(scope, "/b", "pw")).resolves.toEqual({
+    await expect(databasesService.checkBackup(scope, "/b")).resolves.toEqual({
+      checkId: 5,
       upgradeTo: "0.2.0",
     });
     await expect(databasesService.cancelUpgrade(7)).resolves.toBeNull();
@@ -182,10 +180,10 @@ describe("databasesService", () => {
     await expect(databasesService.listBackups(null)).rejects.toMatchObject({
       code: "DATABASE_CLOSED",
     });
-    await expect(databasesService.restoreBackup(null, "/b", "pw")).rejects.toMatchObject({
+    await expect(databasesService.restoreBackup(null, 5)).rejects.toMatchObject({
       code: "DATABASE_CLOSED",
     });
-    await expect(databasesService.checkBackup(null, "/b", "pw")).rejects.toMatchObject({
+    await expect(databasesService.checkBackup(null, "/b")).rejects.toMatchObject({
       code: "DATABASE_CLOSED",
     });
     expect(backend.invoke).not.toHaveBeenCalled();

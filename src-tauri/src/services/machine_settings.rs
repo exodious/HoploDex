@@ -308,14 +308,17 @@ impl MachineSettings {
 
     /// Adds `path` to the top of the recent list, or moves it there and
     /// refreshes what an open learns about it. Whether a passphrase is saved
-    /// for it is kept.
+    /// for it is kept when it is still the same database: an entry the page
+    /// re-located onto another database's file, or a backup opened directly,
+    /// doesn't pass the mark on (003 FR-017).
     pub fn touch_recent(&self, path: &Path, name: &str, database_id: &str, backup_folder: &Path) {
         self.update(|file| {
-            let passphrase_saved = file
-                .recent_databases
-                .iter()
-                .find(|entry| entry.path == path)
-                .is_some_and(|entry| entry.passphrase_saved);
+            let passphrase_saved =
+                file.recent_databases.iter().find(|entry| entry.path == path).is_some_and(
+                    |entry| {
+                        entry.passphrase_saved && entry.database_id.as_deref() == Some(database_id)
+                    },
+                );
             file.recent_databases.retain(|entry| entry.path != path);
             file.recent_databases.insert(
                 0,
@@ -372,11 +375,15 @@ impl MachineSettings {
         removed
     }
 
-    /// Records whether a passphrase is saved for the database at `path`
-    /// (003 FR-017). Nothing happens when `path` isn't in the list.
-    pub fn set_passphrase_saved(&self, path: &Path, saved: bool) {
+    /// Records whether a passphrase is saved for the database `database_id`
+    /// at `path` (003 FR-017). Nothing happens when its entry isn't at
+    /// `path`: the page chooses which entry is where (`locate_database`), so
+    /// the mark never goes on another database's.
+    pub fn set_passphrase_saved(&self, path: &Path, database_id: &str, saved: bool) {
         self.update(|file| {
-            if let Some(entry) = file.recent_databases.iter_mut().find(|entry| entry.path == path) {
+            if let Some(entry) = file.recent_databases.iter_mut().find(|entry| {
+                entry.path == path && entry.database_id.as_deref() == Some(database_id)
+            }) {
                 entry.passphrase_saved = saved;
             }
         });

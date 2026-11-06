@@ -12,7 +12,6 @@ import {
   browser,
   chooseMenuItem,
   clickButton,
-  clickEl,
   chooserSays,
   confirmTakeOver,
   createDatabase,
@@ -20,7 +19,6 @@ import {
   editNotes,
   expect,
   fieldValue,
-  fill,
   openFirearm,
   scratchDocuments,
   selectChooserRow,
@@ -212,23 +210,19 @@ describe("008 US4 - Pending Changes Kept by Another Version (was us9-locking)", 
 // Issue #44: the app's Enter rule, with real key presses in the real app.
 // Enter in a confirmation's field confirms it, and Enter on a radio only
 // operates the radio: WebKitGTK would otherwise submit the radio's form.
-describe("Issue #44 - Enter in a confirmation's field and on a radio", () => {
-  it("takes over with Enter in the passphrase field, then Enter on a radio submits nothing", async function () {
+describe("Issue #44 - Enter on a radio", () => {
+  // Enter in the take-over's passphrase field is the native dialog's now
+  // (amended 2026-11-04 to 003 FR-007); passphrase-dialog.e2e.ts presses
+  // Enter in the create, open and change dialogs.
+  it("takes over, then Enter on a radio submits nothing", async function () {
     skipWithoutRealInput(this);
     await reseed();
     await waitForChooser();
     if ((await selectedChooserRow()) !== SHARED) await selectChooserRow(SHARED);
     const passphrase = process.env.HOPLODEX_E2E_SEED_PASSPHRASE!;
     await submitPassphrase(passphrase);
-    await clickEl("button=Take over…");
-    await $('[role="alertdialog"]').waitForExist();
-    const field = await $(`[role="alertdialog"] input[type="password"]`);
-    await browser.waitUntil(async () => field.isFocused(), { timeoutMsg: "no focus in the field" });
-    await fill(`Passphrase for “${SHARED}”`, passphrase);
+    await confirmTakeOver(SHARED, passphrase);
 
-    await realKey("Return");
-
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
     expect(await dialogTitled(`Unsaved changes to ${BERETTA_LABEL}`)).toContain(
       "Your changes were kept.",
     );

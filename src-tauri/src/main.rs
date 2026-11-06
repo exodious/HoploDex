@@ -30,6 +30,9 @@ use hoplodex_lib::services::import_reader::reader as import_helper;
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::main_navigation;
+#[cfg(feature = "e2e")]
+use hoplodex_lib::services::passphrase_dialog;
+use hoplodex_lib::services::passphrase_dialog::{NativeDialog, PassphraseDialog};
 use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide_at_startup};
 #[cfg(target_os = "linux")]
 use hoplodex_lib::services::preview::sandbox_probe;
@@ -373,6 +376,24 @@ fn main() {
             app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
             #[cfg(feature = "e2e")]
             app.manage::<Arc<dyn Consent>>(Arc::new(E2eConsent));
+            // Passphrases are typed only in the OS's own dialog, never in the
+            // page (amended 2026-11-04 to 003 FR-007). An E2E build answers from
+            // the spec's queue, or shows the real dialog for the specs that type
+            // into it with real input.
+            #[cfg(not(feature = "e2e"))]
+            app.manage::<Arc<dyn PassphraseDialog>>(Arc::new(NativeDialog::new(
+                app.handle().clone(),
+            )));
+            #[cfg(feature = "e2e")]
+            if passphrase_dialog::e2e::native_requested() {
+                app.manage::<Arc<dyn PassphraseDialog>>(Arc::new(passphrase_dialog::e2e::Logged(
+                    NativeDialog::new(app.handle().clone()),
+                )));
+            } else {
+                app.manage::<Arc<dyn PassphraseDialog>>(Arc::new(
+                    passphrase_dialog::e2e::E2eDialog,
+                ));
+            }
             #[cfg(app_opener)]
             app.manage::<Arc<dyn Opener>>(Arc::new(AppOpener::new(
                 app.handle().clone(),
@@ -484,6 +505,7 @@ fn main() {
             hoplodex_lib::commands::backups::list_backups,
             hoplodex_lib::commands::backups::restore_backup,
             hoplodex_lib::commands::backups::check_backup,
+            hoplodex_lib::commands::backups::drop_backup_check,
             hoplodex_lib::commands::backups::delete_all_backups,
             hoplodex_lib::commands::backups::change_passphrase,
             hoplodex_lib::commands::firearms::create_firearm,

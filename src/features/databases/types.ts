@@ -227,13 +227,11 @@ export interface ChooserState {
 }
 
 /** `create_database`'s input. */
+/** Where a new database goes. Its passphrase, and the 003 FR-004
+ * acknowledgement, are asked for in the native dialog. */
 export interface CreateDatabaseInput {
   folder: string;
   name: string;
-  passphrase: string;
-  /** 003 FR-004: the user has stored the passphrase and knows it can't be
-   * recovered. */
-  acknowledgedUnrecoverable: boolean;
 }
 
 /** A note shown once in the collection (003 contracts/ui-databases.md §10). */
@@ -377,6 +375,9 @@ export interface UpgradeProgress {
 /** `check_backup`'s answer (009 FR-019): the version the backup will be
  * upgraded for when restored, or `null` when it is in the current layout. */
 export interface BackupCheck {
+  /** What `restore_backup` sends: the backend keeps the passphrase that
+   * opened the backup under it until then. */
+  checkId: number;
   upgradeTo: string | null;
 }
 

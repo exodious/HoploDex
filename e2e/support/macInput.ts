@@ -52,6 +52,23 @@ function bringToFront(pid: number) {
   execFileSync(realInput(), ["activate", String(pid)]);
 }
 
+/** Posts the key with virtual key code `code` (and `mods`, such as "shift")
+ * to the process `pid` alone, as `pressCommandQ` does: the native passphrase
+ * dialog is a sheet on its window (amended 2026-11-04 to 003 FR-007). */
+export function keyTo(pid: number, code: number, mods?: string) {
+  execFileSync(realInput(), ["key-to", String(pid), String(code), ...(mods ? [mods] : [])]);
+}
+
+/** Presses the element of `pid`'s accessibility tree named `title` (a button
+ * or a checkbox), as VoiceOver's press does. Returns whether it was found. */
+export function pressElement(pid: number, title: string): boolean {
+  return (
+    execFileSync(realInput(), ["press", String(pid), title])
+      .toString()
+      .trim() === "pressed"
+  );
+}
+
 /** Presses ⌘Q in the app with process id `pid`. The key is posted to that
  * process alone (`CGEvent.postToPid`), not to whichever app is frontmost when
  * it arrives: another worker's app, launched meanwhile, takes the front, and

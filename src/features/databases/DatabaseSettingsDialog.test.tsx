@@ -505,9 +505,6 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
 });
 
 describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md ยง7, ยง8, issue #34)", () => {
-  const FACTS =
-    "Anyone who can use this computer account, or its keyring while it's unlocked, will be able to open the database without knowing the passphrase.";
-
   beforeEach(() => {
     vi.mocked(databasesService.listBackups)
       .mockReset()
@@ -540,15 +537,11 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md ย
   });
 
   /** Ticks Remember, clicks Save and answers the passphrase prompt that follows. */
-  async function rememberWith(user: ReturnType<typeof userEvent.setup>, passphrase: string) {
+  /** Ticks Remember and saves: the native dialog (the mocked command) says
+   * what it gives away and asks for the passphrase (amended 2026-11-04). */
+  async function remembering(user: ReturnType<typeof userEvent.setup>) {
     await user.click(remember());
     await user.click(save());
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Remember this database's passphrase?",
-    });
-    await user.type(within(confirm).getByLabelText("Passphrase"), passphrase);
-    await user.click(within(confirm).getByRole("button", { name: "Remember passphrase" }));
-    return confirm;
   }
 
   it("says the passphrase isn't remembered, and offers to remember it", () => {
@@ -580,60 +573,26 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md ย
     expect(save()).toBeEnabled();
   });
 
-  it("asks for the passphrase with the 003 FR-017 confirmation only when Save is clicked, then remembers it and closes", async () => {
+  it("asks for the passphrase in the native dialog only when Save is clicked, then closes", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
     const props = renderSettings(withKeyring());
 
     await user.click(remember());
-    await user.click(save());
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Remember this database's passphrase?",
-    });
-    expect(confirm).toHaveTextContent(FACTS);
-    expect(confirm).toHaveTextContent(
-      "Locking will no longer need the passphrase on this computer, though it still clears the collection from memory, deletes opened document copies, and releases the database for other computers.",
-    );
     expect(databasesService.savePassphrase).not.toHaveBeenCalled();
-    await user.type(within(confirm).getByLabelText("Passphrase"), "correct horse battery staple");
-    // A choice, not a destructive action.
-    const confirmButton = within(confirm).getByRole("button", { name: "Remember passphrase" });
-    expect(confirmButton).not.toHaveClass("hd-button--danger");
-    await user.click(confirmButton);
+    await user.click(save());
 
-    await waitFor(() =>
-      expect(databasesService.savePassphrase).toHaveBeenCalledWith(
-        SCOPE,
-        "correct horse battery staple",
-      ),
-    );
+    // The native dialog says what saving it gives away (003 FR-017): the
+    // page shows no confirmation and has no field of its own.
+    await waitFor(() => expect(databasesService.savePassphrase).toHaveBeenCalledWith(SCOPE));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Passphrase")).not.toBeInTheDocument();
     await waitFor(() => expect(props.onPassphraseSavedChange).toHaveBeenCalled());
     await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
     // Nothing else differed, so the settings were not sent again.
     expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
     expect(databasesService.updateLockSettings).not.toHaveBeenCalled();
     expect(props.onSaved).toHaveBeenCalled();
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-  });
-
-  // Issue #44: Enter in the confirmation's passphrase field confirms it, and
-  // doesn't also save the settings form behind it.
-  it("takes Enter in the 003 FR-017 confirmation's passphrase field as Remember passphrase", async () => {
-    const user = userEvent.setup();
-    vi.mocked(databasesService.savePassphrase).mockResolvedValue({ passphraseSaved: true });
-    renderSettings(withKeyring());
-    await user.click(remember());
-    await user.click(save());
-    const confirm = await screen.findByRole("alertdialog", {
-      name: "Remember this database's passphrase?",
-    });
-
-    await user.type(within(confirm).getByLabelText("Passphrase"), "correct horse battery{Enter}");
-
-    await waitFor(() =>
-      expect(databasesService.savePassphrase).toHaveBeenCalledWith(SCOPE, "correct horse battery"),
-    );
-    expect(databasesService.savePassphrase).toHaveBeenCalledTimes(1);
   });
 
   it("remembers the passphrase before it saves the other settings", async () => {
@@ -644,7 +603,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md ย
     const keep = screen.getByLabelText("Keep the latest");
     await user.clear(keep);
     await user.type(keep, "9");
-    await rememberWith(user, "correct horse battery staple");
+    await remembering(user);
 
     await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
     expect(vi.mocked(databasesService.savePassphrase).mock.invocationCallOrder[0]).toBeLessThan(
@@ -656,50 +615,40 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md ย
     );
   });
 
-  it("keeps the prompt open with the error, and saves nothing, when the passphrase is wrong", async () => {
+  it("returns to the form with nothing saved, and Remember still staged, when the dialog is cancelled", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.savePassphrase).mockRejectedValue(
-      new CommandFailure({
-        code: "PASSPHRASE_INCORRECT",
-        message: "The passphrase is incorrect.",
-        fieldErrors: { passphrase: "That isn't this database's passphrase." },
-      }),
+      new CommandFailure({ code: "PASSPHRASE_CANCELLED", message: "No passphrase was entered." }),
     );
     const props = renderSettings(withKeyring());
     const keep = screen.getByLabelText("Keep the latest");
     await user.clear(keep);
     await user.type(keep, "9");
 
-    const confirm = await rememberWith(user, "a guess");
+    await remembering(user);
 
-    expect(
-      await within(confirm).findByText("That isn't this database's passphrase."),
-    ).toBeInTheDocument();
-    expect(within(confirm).getByLabelText("Passphrase")).toHaveValue("");
-    expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
-    expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
-    expect(props.onOpenChange).not.toHaveBeenCalled();
-  });
-
-  it("returns to the form with nothing saved, and Remember still staged, when the prompt is cancelled", async () => {
-    const user = userEvent.setup();
-    const props = renderSettings(withKeyring());
-    const keep = screen.getByLabelText("Keep the latest");
-    await user.clear(keep);
-    await user.type(keep, "9");
-
-    await user.click(remember());
-    await user.click(save());
-    const confirm = await screen.findByRole("alertdialog");
-    await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
-    expect(databasesService.savePassphrase).not.toHaveBeenCalled();
+    await waitFor(() => expect(save()).toBeEnabled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
     expect(props.onOpenChange).not.toHaveBeenCalled();
     expect(remember()).toBeChecked();
     expect(keep).toHaveValue("9");
-    expect(save()).toBeEnabled();
+  });
+
+  it("saves nothing, and says so, when the keyring isn't there", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.savePassphrase).mockRejectedValue(
+      new CommandFailure({ code: "KEYRING_UNAVAILABLE", message: "No keyring." }),
+    );
+    const props = renderSettings(withKeyring());
+
+    await remembering(user);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Not available: this computer has no keyring service. Nothing was saved.",
+    );
+    expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
   });
 
   it("says what was done when the passphrase is remembered but the settings then fail", async () => {
@@ -713,7 +662,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md ย
     await user.clear(keep);
     await user.type(keep, "9");
 
-    await rememberWith(user, "correct horse battery staple");
+    await remembering(user);
 
     const dialog = await screen.findByRole("dialog", { name: "Database settings" });
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(

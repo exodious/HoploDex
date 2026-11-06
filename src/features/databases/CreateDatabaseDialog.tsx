@@ -2,19 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { withIdlePaused } from "../session/useIdleActivity";
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  Icon,
-  MIN_PASSPHRASE_CHARS,
-  PASSPHRASE_TOO_SHORT,
-  PASSPHRASES_DIFFER,
-  PassphraseField,
-  TextField,
-  usePassphraseChecks,
-} from "../../components";
-import type { PassphraseFieldHandle } from "../../components";
+import { Button, Dialog, Icon, TextField } from "../../components";
 import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { CommandFailure } from "../../services/tauriClient";
 import { joinPath } from "./paths";
@@ -23,20 +11,20 @@ import type { CreateDatabaseInput, SuggestedLocation } from "./types";
 import "../firearms/forms.css";
 import "./databases.css";
 
-const ACKNOWLEDGEMENT =
-  "I have stored this passphrase somewhere safe. If it is forgotten, nobody, including HoploDex, can open this database or recover the collection.";
-
 export interface CreateDatabaseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   suggested: SuggestedLocation;
-  /** Creates and opens the database; rejects with the command's failure. */
+  /** Creates and opens the database once its passphrase is chosen in the
+   * native dialog; rejects with the command's failure. */
   onCreate: (input: CreateDatabaseInput) => Promise<void>;
 }
 
 /** Creates a database protected by a passphrase the user chooses (003 FR-003,
  * FR-004, FR-009), saying before it exists where it and its backups will be
- * (003 FR-024). */
+ * (003 FR-024). The passphrase and the acknowledgement are asked for in the
+ * native dialog **Create database…** opens, never in the page (amended
+ * 2026-11-04 to 003 contracts/ui-databases.md §2). */
 export function CreateDatabaseDialog({
   open,
   onOpenChange,
@@ -55,18 +43,10 @@ export function CreateDatabaseDialog({
   );
 }
 
-type Errors = Partial<
-  Record<"name" | "folder" | "passphrase" | "confirmation" | "acknowledgedUnrecoverable", string>
->;
+type Errors = Partial<Record<"name" | "folder", string>>;
 
 /** The order the fields are read in, for the first one refused to take the focus. */
-const FIELD_ORDER = [
-  "name",
-  "folder",
-  "passphrase",
-  "confirmation",
-  "acknowledgedUnrecoverable",
-] as const satisfies readonly (keyof Errors)[];
+const FIELD_ORDER = ["name", "folder"] as const satisfies readonly (keyof Errors)[];
 
 function CreateDatabaseForm({
   suggested,
@@ -79,11 +59,9 @@ function CreateDatabaseForm({
 }) {
   const [name, setName] = useState(suggested.name);
   const [folder, setFolder] = useState(suggested.folder);
-  const [acknowledged, setAcknowledged] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const passphrase = useRef<PassphraseFieldHandle>(null);
   const formRef = useRef<HTMLFormElement>(null);
   // The field the backend refused, to focus once the form is enabled again
   // (a disabled field can't take focus).
@@ -98,15 +76,6 @@ function CreateDatabaseForm({
   function clearError(field: keyof Errors) {
     setErrors((current) => ({ ...current, [field]: undefined }));
   }
-  const confirmation = useRef<PassphraseFieldHandle>(null);
-  // Checked as they are typed; Create database waits until all is well.
-  const checks = usePassphraseChecks({ passphrase, confirmation });
-
-  function edited(field: "passphrase" | "confirmation") {
-    clearError(field);
-    checks.check();
-  }
-
   const trimmedName = name.trim();
   const trimmedFolder = folder.trim();
   const shownName = trimmedName || suggested.name;
@@ -130,41 +99,25 @@ function CreateDatabaseForm({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    // Each passphrase is read once and the field emptied at once, whatever
-    // happens next (003 FR-007).
-    const typed = passphrase.current?.read() ?? "";
-    const confirmed = confirmation.current?.read() ?? "";
-    passphrase.current?.reset();
-    confirmation.current?.reset();
-    checks.clear();
-
     const found: Errors = {};
     if (!trimmedName) found.name = "Enter a name.";
     if (!trimmedFolder) found.folder = "Enter a folder.";
-    if ([...typed.normalize("NFC")].length < MIN_PASSPHRASE_CHARS) {
-      found.passphrase = PASSPHRASE_TOO_SHORT;
-    } else if (typed !== confirmed) {
-      found.confirmation = PASSPHRASES_DIFFER;
-    }
     setErrors(found);
     setServerError(null);
     if (Object.keys(found).length > 0) {
-      // The emptied field that needs retyping gets the focus.
-      if (found.passphrase) passphrase.current?.focus();
-      else if (found.confirmation) confirmation.current?.focus();
+      setRefused(firstRefusedField(FIELD_ORDER, found) ?? null);
       return;
     }
 
     setSubmitting(true);
     try {
-      await onCreate({
-        folder: trimmedFolder,
-        name: trimmedName,
-        passphrase: typed,
-        acknowledgedUnrecoverable: acknowledged,
-      });
+      // The backend checks the name and folder, then asks for the
+      // passphrase in the native dialog.
+      await onCreate({ folder: trimmedFolder, name: trimmedName });
     } catch (e) {
-      if (e instanceof CommandFailure && e.fieldErrors) {
+      if (e instanceof CommandFailure && e.code === "PASSPHRASE_CANCELLED") {
+        // Cancelled in the dialog: nothing was made, and the form stays.
+      } else if (e instanceof CommandFailure && e.fieldErrors) {
         setErrors(e.fieldErrors);
         // As every form does (the constitution's UI consistency): the first
         // field the backend refused takes the focus.
@@ -231,29 +184,6 @@ function CreateDatabaseForm({
             }
           />
         </div>
-        <div className="hd-form-grid hd-form-grid--2">
-          <PassphraseField
-            ref={passphrase}
-            dataField="passphrase"
-            label="Passphrase"
-            autoComplete="new-password"
-            required
-            strength
-            disabled={submitting}
-            error={errors.passphrase ?? checks.errors.passphrase}
-            onInput={() => edited("passphrase")}
-          />
-          <PassphraseField
-            ref={confirmation}
-            dataField="confirmation"
-            label="Confirm passphrase"
-            autoComplete="new-password"
-            required
-            disabled={submitting}
-            error={errors.confirmation ?? checks.errors.confirmation}
-            onInput={() => edited("confirmation")}
-          />
-        </div>
         <section className="hd-privacy-note" role="note" aria-labelledby="create-db-backups">
           <Icon name="archive" size={16} />
           <div>
@@ -272,34 +202,13 @@ function CreateDatabaseForm({
             </p>
           </div>
         </section>
-        <div data-field="acknowledgedUnrecoverable">
-          <Checkbox
-            label={ACKNOWLEDGEMENT}
-            checked={acknowledged}
-            disabled={submitting}
-            onCheckedChange={(checked) => {
-              setAcknowledged(checked);
-              clearError("acknowledgedUnrecoverable");
-            }}
-          />
-          {errors.acknowledgedUnrecoverable && (
-            <p className="hd-field__error" role="alert">
-              {errors.acknowledgedUnrecoverable}
-            </p>
-          )}
-        </div>
       </div>
       <footer className="hd-dialog__footer">
         <Button variant="secondary" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
-        <Button
-          type="submit"
-          variant="primary"
-          pending={submitting}
-          disabled={!acknowledged || !checks.ready}
-        >
-          {submitting ? "Creating…" : "Create database"}
+        <Button type="submit" variant="primary" pending={submitting}>
+          {submitting ? "Creating…" : "Create database…"}
         </Button>
       </footer>
     </form>

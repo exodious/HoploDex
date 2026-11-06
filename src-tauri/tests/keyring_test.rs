@@ -4,6 +4,7 @@
 //! `--features mock-keyring`.
 #![cfg(feature = "mock-keyring")]
 
+use crate::passphrase_dialog_test::{Scripted, ScriptedDialog};
 use crate::support;
 
 use std::fs;
@@ -14,6 +15,7 @@ use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops::{self, Unlock};
 use hoplodex_lib::commands::firearms::ops as firearms;
+use hoplodex_lib::db;
 use hoplodex_lib::models::database::{CloseReason, DatabaseStatus};
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
@@ -21,7 +23,9 @@ use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
-use support::{ManualClock, TEST_PASSPHRASE, TestEvents, passphrase, test_session_at};
+use support::{
+    ManualClock, TEST_PASSPHRASE, TestEvents, other_machine, passphrase, test_session_at,
+};
 use tempfile::TempDir;
 
 const SERVICE: &str = "io.github.exodious.HoploDex";
@@ -248,6 +252,51 @@ fn remembering_at_a_typed_open_writes_the_entry() {
     world.open("Main", Unlock::Saved).unwrap();
 }
 
+/// 003 FR-017, FR-018: the recent list's "saved" mark belongs to the database
+/// it was saved for. An entry the page re-located onto another database's
+/// file (`locate_database`) doesn't get that database's passphrase saved at
+/// its open, behind a dialog that never said it would be.
+#[test]
+fn a_relocated_entry_doesnt_save_another_databases_passphrase() {
+    let world = World::new();
+    world.create("Saved");
+    world.save(TEST_PASSPHRASE).unwrap();
+    world.close();
+    world.create("Other");
+    let other_id = world.database_id();
+    world.close();
+    world.machine.locate_recent(&world.path("Saved"), &world.path("Other")).unwrap();
+
+    world.open_typed("Other", TEST_PASSPHRASE).unwrap();
+
+    assert_eq!(stored(&other_id), None);
+    assert!(!world.saved_flag("Other"), "the mark doesn't pass to another database");
+    world.close();
+    world.open_typed("Other", TEST_PASSPHRASE).unwrap();
+    assert_eq!(stored(&other_id), None);
+}
+
+/// 003 FR-017: saving the open database's passphrase marks only its own
+/// entry. Another database's entry the page moved to its path (and later
+/// back) doesn't get the mark, so its next typed open saves nothing.
+#[test]
+fn saving_marks_only_the_open_databases_own_entry() {
+    let world = World::new();
+    world.create("Mine");
+    let mine_id = world.database_id();
+    world.close();
+    world.create("Open");
+    world.machine.locate_recent(&world.path("Mine"), &world.path("Open")).unwrap();
+    world.save(TEST_PASSPHRASE).unwrap();
+    world.machine.locate_recent(&world.path("Open"), &world.path("Mine")).unwrap();
+    world.close();
+
+    world.open_typed("Mine", TEST_PASSPHRASE).unwrap();
+
+    assert_eq!(stored(&mine_id), None);
+    assert!(!world.saved_flag("Mine"));
+}
+
 #[test]
 fn forgetting_removes_the_entry_for_the_open_database_or_a_listed_one() {
     let world = World::new();
@@ -318,6 +367,33 @@ fn a_stale_saved_passphrase_is_reported_then_replaced_by_the_next_typed_one() {
     assert_eq!(stored(&id).as_deref(), Some(TEST_PASSPHRASE));
     world.close();
     world.open("Main", Unlock::Saved).unwrap();
+}
+
+/// 003 FR-032: an open with the saved passphrase that finds the database open
+/// on another computer names that computer in the take-over's dialog.
+#[test]
+fn a_saved_open_found_elsewhere_names_the_other_computer_at_the_take_over() {
+    let world = World::new();
+    world.create("Main");
+    world.save(TEST_PASSPHRASE).unwrap();
+    world.close();
+    drop(db::open_database(&world.path("Main"), &passphrase(), &other_machine(), false).unwrap());
+
+    let err = world.open("Main", Unlock::Saved).unwrap_err();
+    assert_eq!(err.code, "DATABASE_OPEN_ELSEWHERE");
+
+    let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    ops::open_database_typed(
+        &world.session,
+        &world.machine,
+        &ScriptedDialog(Arc::clone(&script)),
+        &world.path_text("Main"),
+        false,
+        true,
+    )
+    .unwrap();
+    let message = &script.asked()[0].message;
+    assert!(message.contains("Only do this if Workshop PC no longer has"), "{message}");
 }
 
 #[test]

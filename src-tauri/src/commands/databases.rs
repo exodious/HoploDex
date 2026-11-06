@@ -1,7 +1,8 @@
 //! Choosing, creating and opening databases, and the open database's own
-//! status (003 contracts/tauri-commands.md). The commands are thin: each
-//! passphrase argument becomes a [`Passphrase`] at once, and is dropped, and
-//! wiped, when the command returns (003 FR-007). The logic is in [`ops`],
+//! status (003 contracts/tauri-commands.md). The commands are thin, and none
+//! takes a passphrase: each one that needs it asks in the native dialog
+//! (`services::passphrase_dialog`), whose answer is dropped, and wiped, when
+//! the command returns (amended 2026-11-04 to 003 FR-007). The logic is in [`ops`],
 //! which takes its paths and `machine.json` from the caller so the tests use
 //! throwaway ones.
 
@@ -22,7 +23,7 @@ use crate::models::database::{
 use crate::models::document_opening::DocumentOpening;
 use crate::services::consent::Consent;
 use crate::services::machine_settings::MachineSettings;
-use crate::services::passphrase::Passphrase;
+use crate::services::passphrase_dialog::PassphraseDialog;
 use crate::services::sandbox::Reach;
 use crate::session::Session;
 use crate::session::scoped::{ScopedSession, Target};
@@ -48,14 +49,18 @@ pub mod ops {
         ExistingBackupsOutcome, IdlePauseReason, LeftBehind, LockSettings, LockSettingsInput,
         NoteKind, OperationKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
         RecentRemoved, SuggestedLocation, UnavailableReason, validate_backup_settings_input,
-        validate_create_database_input, validate_lock_settings_input,
+        validate_create_database_input, validate_create_location, validate_lock_settings_input,
     };
     use crate::models::document_opening::DocumentOpening;
     use crate::services::backups::{self, LocationProblem, MoveJob};
+    use crate::services::consent::display_name;
     use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest};
     use crate::services::disk_space;
     use crate::services::machine_settings::{self, MachineSettings, RecentEntry};
-    use crate::services::passphrase::Passphrase;
+    use crate::services::passphrase::{Passphrase, new_passphrase_problem};
+    use crate::services::passphrase_dialog::{
+        self, Asked, Field, PassphraseDialog, Request, Retry, Shape, Step,
+    };
     use crate::services::sandbox::{Need, Reach};
     use crate::session::operations::Operations;
     use crate::session::scoped::Target;
@@ -179,13 +184,31 @@ pub mod ops {
     ) -> Result<DatabaseStatus, CommandError> {
         let path =
             validate_create_database_input(folder, name, passphrase, acknowledged_unrecoverable)?;
-        let path = reach.check(&path, Need::DatabaseFolder).map_err(|refusal| {
+        let path = reachable_new_database(&path, reach)?;
+        create_at(session, machine, &path, passphrase)
+    }
+
+    /// Refuses a new database's folder out of reach, on the folder field
+    /// (011 FR-004), and gives the path to create it at.
+    fn reachable_new_database(path: &Path, reach: &Reach) -> Result<PathBuf, CommandError> {
+        reach.check(path, Need::DatabaseFolder).map_err(|refusal| {
             let message = refusal.message.clone();
             refusal.on_field("folder", message)
-        })?;
-        let folder = path.parent().unwrap_or(Path::new(folder));
-        fs::create_dir_all(folder).map_err(|err| folder_error(folder, &err))?;
-        lifecycle::create(session, machine, &path, passphrase)?;
+        })
+    }
+
+    /// Makes the new database's folder when it is missing, then creates the
+    /// database at `path` and opens it.
+    fn create_at(
+        session: &Session,
+        machine: &MachineSettings,
+        path: &Path,
+        passphrase: &Passphrase,
+    ) -> Result<DatabaseStatus, CommandError> {
+        if let Some(folder) = path.parent() {
+            fs::create_dir_all(folder).map_err(|err| folder_error(folder, &err))?;
+        }
+        lifecycle::create(session, machine, path, passphrase)?;
         database_status(session, machine)
     }
 
@@ -209,8 +232,8 @@ pub mod ops {
     /// What opens a database.
     pub enum Unlock<'a> {
         /// A passphrase the user typed. `remember` saves it in this
-        /// computer's keyring once it has opened the database; the UI sends
-        /// it only after the 003 FR-017 confirmation.
+        /// computer's keyring once it has opened the database; the native
+        /// dialog it was typed in said so (003 FR-017).
         Typed { passphrase: &'a Passphrase, remember: bool },
         /// The passphrase saved in this computer's keyring (003 FR-017).
         Saved,
@@ -226,7 +249,8 @@ pub mod ops {
     /// Opens the database at `path` (003 FR-005, FR-006), closing any other open
     /// database first as a switch. A refused open changes neither the file
     /// nor the session. `take_over` opens a database marked open on another
-    /// computer (003 FR-032); the UI sends it only after its confirmation. A
+    /// computer (003 FR-032), confirmed by typing the passphrase in the
+    /// take-over dialog (`open_database_typed`). A
     /// database that is damaged, or that the passphrase didn't open (the two
     /// can't be told apart at page 1), says whether it has backups to
     /// restore from (003 FR-028, US3-6).
@@ -265,28 +289,40 @@ pub mod ops {
             }
         };
         // Whether the open saves or refreshes the passphrase in the keyring
-        // once it succeeds (003 FR-017, FR-018), as the recent entry stood
-        // before the open.
-        let save_typed = match unlock {
-            Unlock::Typed { remember, .. } => {
-                remember || machine.recent_entry(path).is_some_and(|entry| entry.passphrase_saved)
-            }
-            Unlock::Saved => false,
+        // once it succeeds (003 FR-017, FR-018): asked to remember, or the
+        // recent entry, as it stood before the open, says this computer saved
+        // it. The entry's flag counts only for the database it was saved for,
+        // so an entry the page re-located onto another file doesn't save
+        // that one's passphrase behind a dialog that never said so.
+        let (remember, saved_for) = match unlock {
+            Unlock::Typed { remember, .. } => (
+                remember,
+                machine
+                    .recent_entry(path)
+                    .filter(|entry| entry.passphrase_saved)
+                    .and_then(|entry| entry.database_id),
+            ),
+            Unlock::Saved => (false, None),
         };
         match lifecycle::open(session, machine, path, passphrase, take_over) {
             Ok(()) => {
-                if let (Unlock::Typed { passphrase, .. }, true) = (unlock, save_typed) {
-                    save_if_listed(machine, path, passphrase);
+                if let Unlock::Typed { passphrase, .. } = unlock
+                    && let Some(opened) = open_database_id(session)
+                    && (remember || saved_for.as_ref() == Some(&opened))
+                {
+                    save_for(machine, path, &opened, passphrase);
                 }
                 database_status(session, machine)
             }
             Err(err) if err.code == "UPGRADE_NEEDED" => {
                 // Saving waits for the upgrade to succeed, so the passphrase
                 // stays with the database that waits, and nowhere else.
-                if let (Unlock::Typed { passphrase, .. }, true) = (unlock, save_typed)
+                if let Unlock::Typed { passphrase, .. } = unlock
+                    && (remember || saved_for.is_some())
                     && let Some(id) = err.awaiting_id()
                 {
-                    session.keep_passphrase_for_upgrade(id, passphrase.clone());
+                    let only_for = if remember { None } else { saved_for.as_deref() };
+                    session.keep_passphrase_for_upgrade(id, passphrase.clone(), only_for);
                 }
                 Err(err)
             }
@@ -306,15 +342,202 @@ pub mod ops {
                 let folder = machine.recent_entry(path).and_then(|entry| entry.backup_folder);
                 Err(CommandError::database_newer_version(folder.as_deref()))
             }
+            Err(err) if err.code == "DATABASE_OPEN_ELSEWHERE" => {
+                if let Some(name) = err.details_str("machineName") {
+                    session.note_open_elsewhere(path, &name);
+                }
+                Err(err)
+            }
             Err(err) => Err(err),
         }
     }
 
-    /// Saves the typed `passphrase` in the keyring for the database just
-    /// opened at `path`, whose recent entry carries its id.
-    fn save_if_listed(machine: &MachineSettings, path: &Path, passphrase: &Passphrase) {
-        if let Some(id) = machine.recent_entry(path).and_then(|entry| entry.database_id) {
-            save_for(machine, path, &id, passphrase);
+    /// The open database's id, as the session has it: what a passphrase is
+    /// saved under, never an id a recent entry the page can move carries.
+    fn open_database_id(session: &Session) -> Option<String> {
+        session.inspect(session.current_id(), |open| Ok(open.database_id.clone())).ok()
+    }
+
+    /// The quoted name a dialog calls the database at `path` by.
+    pub(crate) fn quoted_name(path: &Path) -> String {
+        format!("\u{201C}{}\u{201D}", display_name(&crate::session::database_name(path)))
+    }
+
+    /// Opens the database at `path` with a passphrase typed in the native
+    /// dialog (amended 2026-11-04 to 003 FR-005, FR-007 and 003
+    /// contracts/ui-databases.md §1). The dialog stays up, busy, while each passphrase
+    /// is tried, and asks again under the field when it doesn't open the
+    /// database; any other outcome closes it. Cancel after a wrong
+    /// passphrase returns that refusal, so the chooser can offer a restore
+    /// (003 US3-6); Cancel before any try is `PASSPHRASE_CANCELLED`.
+    /// `take_over` asks for it as the take-over's confirmation (003 FR-032),
+    /// naming the computer the last open found it open on. `remember` says in
+    /// the dialog what saving it gives away (003 FR-017), so the page can't
+    /// have it saved unnoticed (amended 2026-11-04 to 003 contracts/ui-databases.md §8).
+    pub fn open_database_typed(
+        session: &Session,
+        machine: &MachineSettings,
+        dialog: &dyn PassphraseDialog,
+        path: &str,
+        remember: bool,
+        take_over: bool,
+    ) -> Result<DatabaseStatus, CommandError> {
+        let quoted = quoted_name(Path::new(path));
+        let (remembering, and_remember) = if remember {
+            (
+                format!("\n\nThe passphrase will be remembered on this computer. {REMEMBER_FACTS}"),
+                " and remember",
+            )
+        } else {
+            (String::new(), "")
+        };
+        let request = if take_over {
+            let checked = session
+                .reach()
+                .check(Path::new(path), Need::DatabaseFolder)
+                .unwrap_or_else(|_| PathBuf::from(path));
+            let elsewhere = session
+                .open_elsewhere(&checked)
+                .map(|machine| display_name(&machine))
+                .unwrap_or_else(|| "the other computer".to_owned());
+            Request {
+                shape: Shape::Enter,
+                title: format!("Take over {quoted}?"),
+                message: format!(
+                    "Only do this if {elsewhere} no longer has {quoted} open, or if it crashed. \
+                     If it still has it open, or its latest changes haven't synced here yet, \
+                     those changes can be lost.\n\nEnter the passphrase for {quoted} again to \
+                     take it over.{remembering}"
+                ),
+                primary: format!("Take over{and_remember}"),
+                busy: "Opening\u{2026}".to_owned(),
+            }
+        } else {
+            Request {
+                shape: Shape::Enter,
+                title: format!("Open {quoted}"),
+                message: format!("Enter the passphrase for {quoted}.{remembering}"),
+                primary: format!("Open{and_remember}"),
+                busy: "Opening\u{2026}".to_owned(),
+            }
+        };
+        let mut outcome = None;
+        let mut refused = None;
+        let asked = passphrase_dialog::ask(session, dialog, None, &request, |answer| {
+            let unlock = Unlock::Typed { passphrase: &answer.passphrase, remember };
+            match open_database(session, machine, path, unlock, take_over, session.reach()) {
+                Err(err) if err.code == "PASSPHRASE_INCORRECT" => {
+                    refused = Some(err);
+                    Step::Retry(Retry {
+                        field: Field::Passphrase,
+                        message: format!(
+                            "That passphrase didn't open {quoted}. Either it is wrong, or the \
+                             file isn't a HoploDex database or is damaged."
+                        ),
+                    })
+                }
+                result => {
+                    outcome = Some(result);
+                    Step::Done
+                }
+            }
+        });
+        match (asked, outcome) {
+            (Asked::Done, Some(result)) => result,
+            _ => Err(refused.unwrap_or_else(CommandError::passphrase_cancelled)),
+        }
+    }
+
+    /// Creates `<folder>/<name>.hoplodex` with a passphrase chosen in the
+    /// native dialog, and opens it (amended 2026-11-04 to 003 FR-003, FR-004
+    /// and 003 contracts/ui-databases.md §2). The name and folder are checked first,
+    /// so a refusal there costs no typing; the dialog then asks for the
+    /// passphrase twice, checks it as it is typed, and takes the
+    /// acknowledgement.
+    pub fn create_database_typed(
+        session: &Session,
+        machine: &MachineSettings,
+        dialog: &dyn PassphraseDialog,
+        folder: &str,
+        name: &str,
+        reach: &Reach,
+    ) -> Result<DatabaseStatus, CommandError> {
+        let path = reachable_new_database(&validate_create_location(folder, name)?, reach)?;
+        let request = Request {
+            shape: Shape::Choose { current: false, acknowledgement: true },
+            title: "Choose a passphrase".to_owned(),
+            message: format!(
+                "{} opens only with this passphrase. Choose one you will remember: nobody can \
+                 reset it.",
+                quoted_name(&path)
+            ),
+            primary: "Create database".to_owned(),
+            busy: "Creating\u{2026}".to_owned(),
+        };
+        let mut outcome = None;
+        let asked = passphrase_dialog::ask(session, dialog, None, &request, |answer| {
+            if let Some(problem) = new_passphrase_problem(&answer.passphrase) {
+                return Step::Retry(Retry {
+                    field: Field::Passphrase,
+                    message: problem.to_owned(),
+                });
+            }
+            outcome = Some(create_at(session, machine, &path, &answer.passphrase));
+            Step::Done
+        });
+        match (asked, outcome) {
+            (Asked::Done, Some(result)) => result,
+            _ => Err(CommandError::passphrase_cancelled()),
+        }
+    }
+
+    /// What saving the passphrase on this computer gives away (003 FR-017,
+    /// US5-1), as the chooser's confirmation says it.
+    pub const REMEMBER_FACTS: &str = "Anyone who can use this computer account, or its keyring \
+         while it's unlocked, will be able to open the database without knowing the passphrase. \
+         On a shared account this defeats the passphrase. Locking will no longer need the \
+         passphrase on this computer, though it still clears the collection from memory, \
+         deletes opened document copies, and releases the database for other computers.";
+
+    /// Saves the open database's passphrase in this computer's keyring, typed
+    /// in the native dialog, which says what that gives away (003 FR-017;
+    /// amended 2026-11-04 to 003 contracts/ui-databases.md §7). The passphrase is
+    /// checked while the dialog waits, and asked for again when it isn't this
+    /// database's.
+    pub fn save_passphrase_typed(
+        session: &Session,
+        id: SessionId,
+        machine: &MachineSettings,
+        scratch_dir: &Path,
+        dialog: &dyn PassphraseDialog,
+    ) -> Result<PassphraseSaved, CommandError> {
+        if !machine.keyring().is_available() {
+            return Err(CommandError::keyring_unavailable());
+        }
+        session.inspect(id, |_| Ok(()))?;
+        let request = Request {
+            shape: Shape::Enter,
+            title: "Remember this database's passphrase?".to_owned(),
+            message: format!("{REMEMBER_FACTS}\n\nEnter the passphrase to remember it."),
+            primary: "Remember passphrase".to_owned(),
+            busy: "Checking the passphrase\u{2026}".to_owned(),
+        };
+        let mut outcome = None;
+        let asked = passphrase_dialog::ask(session, dialog, Some(id), &request, |answer| {
+            match save_passphrase(session, id, machine, scratch_dir, &answer.passphrase) {
+                Err(err) if err.code == "PASSPHRASE_INCORRECT" => Step::Retry(Retry {
+                    field: Field::Passphrase,
+                    message: "That isn't this database's passphrase.".to_owned(),
+                }),
+                result => {
+                    outcome = Some(result);
+                    Step::Done
+                }
+            }
+        });
+        match (asked, outcome) {
+            (Asked::Done, Some(result)) => result,
+            _ => Err(CommandError::passphrase_cancelled()),
         }
     }
 
@@ -335,11 +558,11 @@ pub mod ops {
             awaiting_id,
             backup_folder.map(Path::new),
         )?;
-        if let Some(passphrase) = &upgraded.save_passphrase {
-            let path = session.open_path();
-            if let Some(path) = path {
-                save_if_listed(machine, &path, passphrase);
-            }
+        if let Some(passphrase) = &upgraded.save_passphrase
+            && let Some(path) = session.open_path()
+            && let Some(id) = open_database_id(session)
+        {
+            save_for(machine, &path, &id, passphrase);
         }
         database_status(session, machine)
     }
@@ -361,7 +584,7 @@ pub mod ops {
         passphrase: &Passphrase,
     ) -> bool {
         let saved = machine.keyring().save(database_id, passphrase).is_ok();
-        machine.set_passphrase_saved(path, saved);
+        machine.set_passphrase_saved(path, database_id, saved);
         saved
     }
 
@@ -375,7 +598,9 @@ pub mod ops {
         database_id: &str,
         passphrase: &Passphrase,
     ) -> bool {
-        let was_saved = machine.recent_entry(path).is_some_and(|entry| entry.passphrase_saved);
+        let was_saved = machine.recent_entry(path).is_some_and(|entry| {
+            entry.passphrase_saved && entry.database_id.as_deref() == Some(database_id)
+        });
         was_saved && save_for(machine, path, database_id, passphrase)
     }
 
@@ -472,8 +697,9 @@ pub mod ops {
 
     /// Saves the open database's passphrase in this computer's keyring
     /// (003 FR-017), once it is proved to be the one the file opens with,
-    /// against its first page (003 research.md §1a). The UI sends it only after
-    /// the 003 FR-017 confirmation. `scratch_dir` takes the page-1 probe.
+    /// against its first page (003 research.md §1a), typed in the native
+    /// dialog that says what that gives away (`save_passphrase_typed`).
+    /// `scratch_dir` takes the page-1 probe.
     pub fn save_passphrase(
         session: &Session,
         id: SessionId,
@@ -496,7 +722,7 @@ pub mod ops {
             }
         })?;
         machine.keyring().save(&database_id, passphrase)?;
-        machine.set_passphrase_saved(&path, true);
+        machine.set_passphrase_saved(&path, &database_id, true);
         Ok(PassphraseSaved { passphrase_saved: true })
     }
 
@@ -508,20 +734,17 @@ pub mod ops {
         machine: &MachineSettings,
         target: Target<'_>,
     ) -> Result<PassphraseSaved, CommandError> {
-        let (path, database_id) = match target {
+        let database_id = match target {
             Target::At(path) => {
-                let path = PathBuf::from(path);
-                let id = machine.recent_entry(&path).and_then(|entry| entry.database_id);
-                (path, id)
+                machine.recent_entry(Path::new(path)).and_then(|entry| entry.database_id)
             }
-            Target::Open(id) => session
-                .inspect(id, |open| Ok((open.path.clone(), Some(open.database_id.clone()))))?,
+            Target::Open(id) => session.inspect(id, |open| Ok(Some(open.database_id.clone())))?,
         };
+        // The mark is cleared under every path the database is listed at.
         if let Some(id) = database_id {
             machine.keyring().forget(&id)?;
             machine.clear_passphrase_saved(&id);
         }
-        machine.set_passphrase_saved(&path, false);
         Ok(PassphraseSaved { passphrase_saved: false })
     }
 
@@ -972,60 +1195,62 @@ pub async fn get_chooser_state(
     ))
 }
 
+/// Asks for the passphrase in the native dialog, which blocks until it is
+/// answered, so not on an async thread (amended 2026-11-04).
 #[tauri::command]
 pub async fn create_database(
     folder: String,
     name: String,
-    passphrase: String,
-    acknowledged_unrecoverable: bool,
-    session: State<'_, Session>,
-    machine: State<'_, MachineSettings>,
-    reach: State<'_, Arc<Reach>>,
+    app: AppHandle,
 ) -> Result<DatabaseStatus, CommandError> {
-    let passphrase = Passphrase::from_input(passphrase);
-    ops::create_database(
-        &session,
-        &machine,
-        &folder,
-        &name,
-        &passphrase,
-        acknowledged_unrecoverable,
-        &reach,
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = app.state::<Session>();
+        let machine = app.state::<MachineSettings>();
+        let reach = app.state::<Arc<Reach>>();
+        let dialog = app.state::<Arc<dyn PassphraseDialog>>();
+        ops::create_database_typed(&session, &machine, &**dialog, &folder, &name, &reach)
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not create it: {e}")))?
 }
 
-/// Exactly one of `passphrase` and `use_saved_passphrase: true` is given.
+/// With `use_saved_passphrase`, opens with the passphrase saved on this
+/// computer; otherwise asks for it in the native dialog (amended
+/// 2026-11-04), which blocks, so not on an async thread.
 #[tauri::command]
 pub async fn open_database(
     path: String,
-    passphrase: Option<String>,
     use_saved_passphrase: Option<bool>,
     remember_passphrase: Option<bool>,
     take_over: Option<bool>,
-    session: State<'_, Session>,
-    machine: State<'_, MachineSettings>,
+    app: AppHandle,
 ) -> Result<DatabaseStatus, CommandError> {
-    let passphrase = passphrase.map(Passphrase::from_input);
-    let unlock = match (&passphrase, use_saved_passphrase.unwrap_or(false)) {
-        (Some(passphrase), false) => {
-            Unlock::Typed { passphrase, remember: remember_passphrase.unwrap_or(false) }
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = app.state::<Session>();
+        let machine = app.state::<MachineSettings>();
+        let take_over = take_over.unwrap_or(false);
+        if use_saved_passphrase.unwrap_or(false) {
+            return ops::open_database(
+                &session,
+                &machine,
+                &path,
+                Unlock::Saved,
+                take_over,
+                session.reach(),
+            );
         }
-        (None, true) => Unlock::Saved,
-        _ => {
-            return Err(CommandError::validation(
-                "Give a passphrase, or use the saved one.",
-                [("passphrase".to_owned(), "Enter the passphrase.".to_owned())].into(),
-            ));
-        }
-    };
-    ops::open_database(
-        &session,
-        &machine,
-        &path,
-        unlock,
-        take_over.unwrap_or(false),
-        session.reach(),
-    )
+        let dialog = app.state::<Arc<dyn PassphraseDialog>>();
+        ops::open_database_typed(
+            &session,
+            &machine,
+            &**dialog,
+            &path,
+            remember_passphrase.unwrap_or(false),
+            take_over,
+        )
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not open it: {e}")))?
 }
 
 /// Upgrades the database `open_database` left waiting (`UPGRADE_NEEDED`):
@@ -1092,25 +1317,25 @@ pub async fn locate_database(
 /// Where the page-1 probe of a passphrase check goes (003 research.md §1a).
 pub(crate) const PROBE_DIR: &str = "passphrase-probes";
 
+/// The dialog blocks until answered, so not on an async thread.
 #[tauri::command]
 pub async fn save_passphrase(
-    passphrase: String,
     app: AppHandle,
     session: ScopedSession,
-    machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseSaved, CommandError> {
-    let passphrase = Passphrase::from_input(passphrase);
     let scratch = app_dirs::cache_dir(&app).map_err(|err| {
         log::error!("no cache directory for the passphrase check: {err}");
         CommandError::new("INTERNAL_ERROR", "The passphrase couldn't be checked.")
     })?;
-    ops::save_passphrase(
-        &session.session,
-        session.id,
-        &machine,
-        &scratch.join(PROBE_DIR),
-        &passphrase,
-    )
+    let id = session.id;
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = app.state::<Session>();
+        let machine = app.state::<MachineSettings>();
+        let dialog = app.state::<Arc<dyn PassphraseDialog>>();
+        ops::save_passphrase_typed(&session, id, &machine, &scratch.join(PROBE_DIR), &**dialog)
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not save it: {e}")))?
 }
 
 /// With a `path`, the passphrase saved for that database, which needs no

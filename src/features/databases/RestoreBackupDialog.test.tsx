@@ -17,7 +17,8 @@ vi.mock("./databasesService");
 const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
 const FOLDER = "/home/sam/Documents/HoploDex/HoploDex backups";
 const DATABASE = "/home/sam/Documents/HoploDex/Main collection.hoplodex";
-const PASSPHRASE = "the passphrase it used to have";
+/** The check the backend keeps the backup's passphrase under. */
+const CHECK = 7;
 
 function backup(madeAt: string, sizeBytes: number): BackupInfo {
   const stamp = madeAt.replace("T", " ").replace(/:/g, "").slice(0, 17);
@@ -62,12 +63,12 @@ function renderDialog(props: Partial<RestoreBackupDialogProps> = {}) {
   return { session, onOpenChange };
 }
 
-/** Chooses `choice`, types the passphrase and confirms the replacement. */
+/** Chooses `choice`, presses Restore… (the native dialog, which the mocked
+ * check answers, asks for the passphrase) and confirms the replacement. */
 async function restore(choice: BackupInfo = older) {
   const user = userEvent.setup();
   await user.click(await screen.findByRole("radio", { name: label(choice) }));
-  await user.type(screen.getByLabelText("Passphrase for this backup"), PASSPHRASE);
-  await user.click(screen.getByRole("button", { name: "Restore" }));
+  await user.click(screen.getByRole("button", { name: "Restore…" }));
   const confirm = await screen.findByRole("alertdialog", {
     name: `Replace “Main collection” with the backup from ${formatDateTime(choice.madeAt)}?`,
   });
@@ -95,7 +96,9 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
         return () => {};
       });
     // 009 contracts/ui.md §6: a backup in the current layout needs no upgrade.
-    vi.mocked(databasesService.checkBackup).mockReset().mockResolvedValue({ upgradeTo: null });
+    vi.mocked(databasesService.checkBackup)
+      .mockReset()
+      .mockResolvedValue({ checkId: CHECK, upgradeTo: null });
   });
 
   it("lists the backups newest first, with date, time and size", async () => {
@@ -191,12 +194,14 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
 
     expect(
       screen.getByText(
-        `Enter the passphrase the database had on ${formatDateTime(older.madeAt)}. After restoring, it opens with that passphrase.`,
+        `You'll be asked for the passphrase the database had on ${formatDateTime(older.madeAt)}.`,
+        { exact: false },
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
         "Before restoring, the database is backed up as it is now, so you can undo this by restoring that backup.",
+        { exact: false },
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/damaged file/)).not.toBeInTheDocument();
@@ -210,24 +215,25 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
       await screen.findByRole("dialog", { name: "Restore “Main collection” from a backup" }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("The damaged file will be kept next to it, renamed."),
+      await screen.findByText(
+        `The damaged file will be kept next to it, renamed. You'll be asked for the passphrase “Main collection” had on ${formatDateTime(newer.madeAt)}.`,
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Passphrase for this backup")).toHaveAccessibleDescription(
-      `Enter the passphrase “Main collection” had on ${formatDateTime(newer.madeAt)}. After restoring, it opens with that passphrase.`,
-    );
+    expect(screen.queryByLabelText(/passphrase/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/is backed up first/)).not.toBeInTheDocument();
     expect(databasesService.listBackups).toHaveBeenCalledWith(null, DATABASE);
     await restore();
 
-    expect(session.restoreBackup).toHaveBeenCalledWith(older.path, PASSPHRASE, DATABASE);
+    expect(session.restoreBackup).toHaveBeenCalledWith(CHECK, DATABASE);
   });
 
-  it("asks before replacing, then restores with the passphrase read from the field", async () => {
+  it("asks before replacing, then restores the checked backup by its check", async () => {
     const { session, onOpenChange } = renderDialog();
 
     await restore();
 
-    expect(session.restoreBackup).toHaveBeenCalledWith(older.path, PASSPHRASE, undefined);
+    expect(session.restoreBackup).toHaveBeenCalledWith(CHECK, undefined);
+    expect(databasesService.dropBackupCheck).not.toHaveBeenCalled();
     // The confirmation's submit doesn't reach the form it sits in (issue #44).
     expect(session.restoreBackup).toHaveBeenCalledTimes(1);
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -263,20 +269,17 @@ describe("RestoreBackupDialog (003 contracts/ui-databases.md §9)", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("puts a wrong backup passphrase on the field", async () => {
+  it("lets go of the kept passphrase when the replacement is cancelled", async () => {
+    const user = userEvent.setup();
     const { session } = renderDialog();
-    vi.mocked(session.restoreBackup).mockRejectedValue(
-      new CommandFailure({ code: "PASSPHRASE_INCORRECT", message: "The passphrase is incorrect." }),
-    );
+    await user.click(await screen.findByRole("radio", { name: label(older) }));
+    await user.click(screen.getByRole("button", { name: "Restore…" }));
+    const confirm = await screen.findByRole("alertdialog");
 
-    await restore();
+    await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
 
-    expect(
-      await screen.findByText(
-        `That passphrase didn't open the backup from ${formatDateTime(older.madeAt)}.`,
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Passphrase for this backup")).toHaveValue("");
+    expect(databasesService.dropBackupCheck).toHaveBeenCalledExactlyOnceWith(CHECK);
+    expect(session.restoreBackup).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -361,20 +364,22 @@ describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)",
         sendProgress = handler;
         return () => {};
       });
-    vi.mocked(databasesService.checkBackup).mockReset().mockResolvedValue({ upgradeTo: null });
+    vi.mocked(databasesService.checkBackup)
+      .mockReset()
+      .mockResolvedValue({ checkId: CHECK, upgradeTo: null });
   });
 
-  /** Chooses `older`, types the passphrase and presses Restore, which checks. */
+  /** Chooses `older` and presses Restore…, which asks for its passphrase in
+   * the native dialog and checks it. */
   async function pressRestore() {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("radio", { name: label(older) }));
-    await user.type(screen.getByLabelText("Passphrase for this backup"), PASSPHRASE);
-    await user.click(screen.getByRole("button", { name: "Restore" }));
+    await user.click(screen.getByRole("button", { name: "Restore…" }));
     return user;
   }
 
   it("checks the backup before it asks, with the button busy meanwhile", async () => {
-    let checked: (answer: { upgradeTo: string | null }) => void = () => {};
+    let checked: (answer: { checkId: number; upgradeTo: string | null }) => void = () => {};
     vi.mocked(databasesService.checkBackup).mockReturnValue(
       new Promise((resolve) => (checked = resolve)),
     );
@@ -385,16 +390,15 @@ describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)",
     expect(databasesService.checkBackup).toHaveBeenCalledExactlyOnceWith(
       SCOPE,
       older.path,
-      PASSPHRASE,
       undefined,
     );
-    const busy = screen.getByRole("button", { name: "Restore" });
+    const busy = screen.getByRole("button", { name: "Restore…" });
     expect(busy).toHaveAttribute("aria-busy", "true");
     expect(busy).toBeDisabled();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(session.restoreBackup).not.toHaveBeenCalled();
 
-    await act(async () => checked({ upgradeTo: null }));
+    await act(async () => checked({ checkId: CHECK, upgradeTo: null }));
 
     const confirm = await screen.findByRole("alertdialog");
     expect(confirm).not.toHaveTextContent("upgraded for HoploDex");
@@ -410,25 +414,22 @@ describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)",
     expect(databasesService.checkBackup).toHaveBeenCalledExactlyOnceWith(
       null,
       older.path,
-      PASSPHRASE,
       DATABASE,
     );
   });
 
-  it("puts a wrong passphrase from the check on the field, with no confirmation", async () => {
+  it("goes back to the choice, saying nothing, when the passphrase dialog is cancelled", async () => {
     vi.mocked(databasesService.checkBackup).mockRejectedValue(
-      new CommandFailure({ code: "PASSPHRASE_INCORRECT", message: "The passphrase is incorrect." }),
+      new CommandFailure({ code: "PASSPHRASE_CANCELLED", message: "No passphrase was entered." }),
     );
     const { session } = renderDialog();
 
     await pressRestore();
 
-    expect(
-      await screen.findByText(`That passphrase didn't open the backup from ${WHEN}.`),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Restore…" })).toBeEnabled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(session.restoreBackup).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();
   });
 
   it("says above the footer that a newer version made the backup, with no confirmation", async () => {
@@ -466,7 +467,10 @@ describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)",
   });
 
   it("adds the upgrade sentence to the confirmation and sends upgrade: true", async () => {
-    vi.mocked(databasesService.checkBackup).mockResolvedValue({ upgradeTo: "0.2.0" });
+    vi.mocked(databasesService.checkBackup).mockResolvedValue({
+      checkId: CHECK,
+      upgradeTo: "0.2.0",
+    });
     const { session, onOpenChange } = renderDialog();
     const user = await pressRestore();
 
@@ -478,17 +482,15 @@ describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)",
     );
     await user.click(within(confirm).getByRole("button", { name: "Restore" }));
 
-    expect(session.restoreBackup).toHaveBeenCalledExactlyOnceWith(
-      older.path,
-      PASSPHRASE,
-      undefined,
-      true,
-    );
+    expect(session.restoreBackup).toHaveBeenCalledExactlyOnceWith(CHECK, undefined, true);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it("sends upgrade: true for a damaged database's restore too", async () => {
-    vi.mocked(databasesService.checkBackup).mockResolvedValue({ upgradeTo: "0.2.0" });
+    vi.mocked(databasesService.checkBackup).mockResolvedValue({
+      checkId: CHECK,
+      upgradeTo: "0.2.0",
+    });
     const { session } = renderDialog({ databasePath: DATABASE });
     const user = await pressRestore();
 
@@ -498,16 +500,14 @@ describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)",
     );
     await user.click(within(confirm).getByRole("button", { name: "Restore" }));
 
-    expect(session.restoreBackup).toHaveBeenCalledExactlyOnceWith(
-      older.path,
-      PASSPHRASE,
-      DATABASE,
-      true,
-    );
+    expect(session.restoreBackup).toHaveBeenCalledExactlyOnceWith(CHECK, DATABASE, true);
   });
 
   it("shows why the upgrade of the restored copy failed and stays open", async () => {
-    vi.mocked(databasesService.checkBackup).mockResolvedValue({ upgradeTo: "0.2.0" });
+    vi.mocked(databasesService.checkBackup).mockResolvedValue({
+      checkId: CHECK,
+      upgradeTo: "0.2.0",
+    });
     const { session, onOpenChange } = renderDialog();
     vi.mocked(session.restoreBackup).mockRejectedValue(
       new CommandFailure({
@@ -525,7 +525,7 @@ describe("RestoreBackupDialog and backups made in an older layout (009 FR-019)",
       "The backup couldn't be upgraded for this version, so nothing was restored. The database is as it was.",
     );
     expect(onOpenChange).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Restore…" })).toBeEnabled();
   });
 
   it("lists a backup made before an upgrade with the version it preceded (009 FR-013)", async () => {

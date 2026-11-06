@@ -5,11 +5,9 @@ import {
   ChoiceCards,
   ConfirmDialog,
   Dialog,
-  PassphraseField,
   ProgressBar,
   useShownOnceLoaded,
 } from "../../components";
-import type { PassphraseFieldHandle } from "../../components";
 import { formatBytes } from "../../lib/bytes";
 import { formatDateTime } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
@@ -119,9 +117,9 @@ function RestoreForm({
   const [upgradeTo, setUpgradeTo] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<RestoreProgress | null>(null);
-  const [fieldError, setFieldError] = useState<string | undefined>();
   const [refusal, setRefusal] = useState<{ text: string; changeLocation: boolean } | null>(null);
-  const passphrase = useRef<PassphraseFieldHandle>(null);
+  /** The check whose passphrase the backend keeps for the restore. */
+  const checkId = useRef<number | null>(null);
 
   // When the list arrives after the dialog opened, the newest is chosen.
   useEffect(() => {
@@ -140,41 +138,37 @@ function RestoreForm({
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!chosen || checking) return;
-    const typed = passphrase.current?.read();
-    if (!typed) {
-      setFieldError("Enter the passphrase of this backup.");
-      passphrase.current?.focus();
-      return;
-    }
-    setFieldError(undefined);
     setRefusal(null);
-    // The backup is opened and read first, so the confirmation can say
-    // whether it will be upgraded (009 contracts/ui.md §6). It is read again
-    // for the restore after the confirmation.
+    // The backup's passphrase is asked for in the native dialog, and the
+    // backup opened and read with it first, so the confirmation can say
+    // whether it will be upgraded (009 contracts/ui.md §6). The backend
+    // keeps that passphrase for the restore after the confirmation.
     setChecking(true);
     try {
-      const check = await databasesService.checkBackup(scope, chosen.path, typed, databasePath);
+      const check = await databasesService.checkBackup(scope, chosen.path, databasePath);
+      checkId.current = check.checkId;
       setUpgradeTo(check.upgradeTo);
       setConfirming(true);
     } catch (error) {
-      showFailure(error);
+      if (!(error instanceof CommandFailure && error.code === "PASSPHRASE_CANCELLED")) {
+        showFailure(error);
+      }
     } finally {
       setChecking(false);
     }
   }
 
   async function restore() {
-    if (!chosen) return;
-    // Read once and emptied at once (003 FR-007).
-    const typed = passphrase.current?.read() ?? "";
-    passphrase.current?.reset();
+    const id = checkId.current;
+    if (!chosen || id === null) return;
+    checkId.current = null;
     setRunning(true);
     onRunningChange(true);
     setProgress(null);
     try {
       await (upgradeTo
-        ? session.restoreBackup(chosen.path, typed, databasePath, true)
-        : session.restoreBackup(chosen.path, typed, databasePath));
+        ? session.restoreBackup(id, databasePath, true)
+        : session.restoreBackup(id, databasePath));
       onRunningChange(false);
       onDone();
     } catch (error) {
@@ -194,10 +188,6 @@ function RestoreForm({
     }
     const details = error.details ?? {};
     switch (error.code) {
-      case "PASSPHRASE_INCORRECT":
-        setFieldError(`That passphrase didn't open the backup from ${when}.`);
-        passphrase.current?.focus();
-        return;
       case "INSUFFICIENT_SPACE":
         setRefusal({
           text: `Restoring needs ${formatBytes(Number(details.bytesNeeded))} free on ${String(details.path)}; ${formatBytes(Number(details.bytesAvailable))} is free. Nothing has been changed.`,
@@ -309,20 +299,13 @@ function RestoreForm({
           />
         )}
         {chosen && (
-          <>
-            <PassphraseField
-              ref={passphrase}
-              label="Passphrase for this backup"
-              autoComplete="current-password"
-              hint={`Enter the passphrase ${databasePath ? quoted : "the database"} had on ${when}. After restoring, it opens with that passphrase.`}
-              error={fieldError}
-            />
-            <p className="hd-restore__statement">
-              {databasePath
-                ? "The damaged file will be kept next to it, renamed."
-                : "Before restoring, the database is backed up as it is now, so you can undo this by restoring that backup."}
-            </p>
-          </>
+          <p className="hd-restore__statement">
+            {databasePath
+              ? "The damaged file will be kept next to it, renamed."
+              : "Before restoring, the database is backed up as it is now, so you can undo this by restoring that backup."}{" "}
+            You'll be asked for the passphrase {databasePath ? quoted : "the database"} had on{" "}
+            {when}.
+          </p>
         )}
         {refusal && (
           <div className="hd-banner hd-banner--error hd-restore__refusal" role="alert">
@@ -340,12 +323,19 @@ function RestoreForm({
           Cancel
         </Button>
         <Button type="submit" variant="danger" disabled={!chosen} pending={checking}>
-          Restore
+          Restore…
         </Button>
       </footer>
       <ConfirmDialog
         open={confirming}
-        onOpenChange={setConfirming}
+        onOpenChange={(open) => {
+          setConfirming(open);
+          // Cancelled: the passphrase kept for the restore goes now.
+          if (!open && checkId.current !== null) {
+            void databasesService.dropBackupCheck(checkId.current);
+            checkId.current = null;
+          }
+        }}
         title={`Replace ${quoted} with the backup from ${when}?`}
         description={
           <>

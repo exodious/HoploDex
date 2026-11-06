@@ -22,8 +22,9 @@ import type {
 } from "./types";
 
 // Typed wrappers for choosing, creating and opening databases (003
-// contracts/tauri-commands.md). Passphrases are passed straight through as
-// command arguments and never kept (003 FR-007).
+// contracts/tauri-commands.md). No passphrase passes through here: the
+// backend asks for each one in the native passphrase dialog, so it never
+// reaches the page (amended 2026-11-04 to 003 FR-007).
 
 export function getChooserState(): Promise<ChooserState> {
   return invoke<ChooserState>("get_chooser_state");
@@ -34,6 +35,8 @@ export function createDatabase(input: CreateDatabaseInput): Promise<DatabaseStat
 }
 
 export interface OpenOptions {
+  /** Open with the passphrase saved on this computer, without asking. */
+  useSavedPassphrase?: boolean;
   /** Save the typed passphrase in this computer's keyring once it opens the
    * database (003 FR-017), sent only after the confirmation. */
   rememberPassphrase?: boolean;
@@ -42,16 +45,14 @@ export interface OpenOptions {
   takeOver?: boolean;
 }
 
-/** Opens the database at `path` with the typed passphrase, or, with `null`,
- * the one saved on this computer. */
-export function openDatabase(
-  path: string,
-  passphrase: string | null,
-  options: OpenOptions = {},
-): Promise<DatabaseStatus> {
+/** Opens the database at `path` with the passphrase saved on this computer,
+ * or with one the backend asks for in the native dialog, which stays up
+ * until it opens the database or is cancelled (`PASSPHRASE_CANCELLED`, or
+ * the last refusal after a wrong one). */
+export function openDatabase(path: string, options: OpenOptions = {}): Promise<DatabaseStatus> {
   return invoke<DatabaseStatus>("open_database", {
     path,
-    ...(passphrase === null ? { useSavedPassphrase: true } : { passphrase }),
+    ...(options.useSavedPassphrase ? { useSavedPassphrase: true } : {}),
     ...(options.rememberPassphrase ? { rememberPassphrase: true } : {}),
     ...(options.takeOver ? { takeOver: true } : {}),
   });
@@ -68,11 +69,11 @@ export function locateDatabase(path: string, newPath: string): Promise<RecentDat
   return invoke<RecentDatabase>("locate_database", { path, newPath });
 }
 
-/** Saves the open database's passphrase in this computer's keyring, once
- * the backend has checked it opens the database (003 FR-017). Sent only after
- * the confirmation. */
-export function savePassphrase(scope: SessionScope, passphrase: string): Promise<PassphraseSaved> {
-  return scope.invoke<PassphraseSaved>("save_passphrase", { passphrase });
+/** Saves the open database's passphrase in this computer's keyring (003
+ * FR-017): the native dialog says what that gives away and asks for it, and
+ * the backend checks it opens the database first. */
+export function savePassphrase(scope: SessionScope): Promise<PassphraseSaved> {
+  return scope.invoke<PassphraseSaved>("save_passphrase");
 }
 
 /** Deletes the passphrase saved for the database at `path`, or for the open
@@ -140,41 +141,42 @@ export function listBackups(
 }
 
 /** Replaces the open database (through `scope`), or the damaged one at
- * `databasePath` (`scope` is `null`), with a backup, which is then open with
- * that backup's passphrase (003 FR-028). A backup in an older layout is
- * refused with `UPGRADE_NEEDED` unless `upgrade` is set, which upgrades the
- * restored copy (009 FR-019). */
+ * `databasePath` (`scope` is `null`), with the backup `checkBackup` checked
+ * under `checkId`, which is then open with that backup's passphrase (003
+ * FR-028). A backup in an older layout is refused with `UPGRADE_NEEDED`
+ * unless `upgrade` is set, which upgrades the restored copy (009 FR-019). */
 export function restoreBackup(
   scope: SessionScope | null,
-  backupPath: string,
-  backupPassphrase: string,
+  checkId: number,
   databasePath?: string,
   upgrade?: boolean,
 ): Promise<DatabaseStatus> {
   return invokeOnOpenOrPath<DatabaseStatus>(
     scope,
     "restore_backup",
-    { backupPath, backupPassphrase, ...(upgrade ? { upgrade: true } : {}) },
+    { checkId, ...(upgrade ? { upgrade: true } : {}) },
     databasePath,
   );
 }
 
-/** Opens a backup read-only and says what restoring it would do, before
- * anything is copied: through `scope` for the open database, or with
- * `databasePath` for a damaged one (`scope` is `null`), as `restoreBackup`
- * (009 FR-019). The passphrase is wiped by the backend before it returns. */
+/** Asks for the backup's passphrase in the native dialog, opens it
+ * read-only and says what restoring it would do, before anything is copied:
+ * through `scope` for the open database, or with `databasePath` for a
+ * damaged one (`scope` is `null`), as `restoreBackup` (009 FR-019). The
+ * passphrase stays in the backend under the returned `checkId` until the
+ * restore or `dropBackupCheck`. */
 export function checkBackup(
   scope: SessionScope | null,
   backupPath: string,
-  passphrase: string,
   databasePath?: string,
 ): Promise<BackupCheck> {
-  return invokeOnOpenOrPath<BackupCheck>(
-    scope,
-    "check_backup",
-    { backupPath, passphrase },
-    databasePath,
-  );
+  return invokeOnOpenOrPath<BackupCheck>(scope, "check_backup", { backupPath }, databasePath);
+}
+
+/** Lets go of a checked backup and the passphrase kept for it: the restore's
+ * confirmation was cancelled. */
+export function dropBackupCheck(checkId: number): Promise<null> {
+  return invoke<null>("drop_backup_check", { checkId });
 }
 
 /** Upgrades the database waiting under `awaitingId` (from `UPGRADE_NEEDED`)
@@ -198,13 +200,9 @@ export function cancelUpgrade(awaitingId: number): Promise<null> {
 }
 
 /** Changes the open database's passphrase by copy, verify and replace
- * (003 FR-015, FR-016). */
-export function changePassphrase(
-  scope: SessionScope,
-  currentPassphrase: string,
-  newPassphrase: string,
-): Promise<PassphraseChanged> {
-  return scope.invoke<PassphraseChanged>("change_passphrase", { currentPassphrase, newPassphrase });
+ * (003 FR-015, FR-016), both passphrases asked for in the native dialog. */
+export function changePassphrase(scope: SessionScope): Promise<PassphraseChanged> {
+  return scope.invoke<PassphraseChanged>("change_passphrase");
 }
 
 /** Securely deletes every backup of the open database (003 FR-029). */

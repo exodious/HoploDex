@@ -6,6 +6,7 @@ import {
   $,
   E2E_PASSPHRASE,
   addFirearm,
+  answerPassphrase,
   browser,
   chooseMenuItem,
   clickButton,
@@ -14,8 +15,9 @@ import {
   expect,
   fill,
   goTo,
-  isButtonDisabled,
   listedNames,
+  passphraseLog,
+  passphraseTitles,
   pressEscape,
   requestQuit,
   scratchDocuments,
@@ -48,9 +50,6 @@ import { HAS_REAL_INPUT, realClick, realKey, skipWithoutRealInput } from "../sup
  * sandbox with no databases (wdio.conf.ts), so the first screen is a first
  * run.
  */
-
-const ACKNOWLEDGEMENT =
-  "I have stored this passphrase somewhere safe. If it is forgotten, nobody, including HoploDex, can open this database or recover the collection.";
 
 /** Ends the app and starts it again against the same sandbox, as quitting
  * and relaunching would. */
@@ -103,106 +102,13 @@ describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databa
     expect(blinks).toEqual([1, 1]);
   });
 
-  it("keeps the acknowledgement and Create in view when a weak passphrase's warning shows (#41)", async () => {
-    await clickButton("Create a new database…");
-    await $('[role="dialog"]').waitForExist();
-    await fill("Name", "Weak");
-    await fill("Folder", folder);
-    const inView = () =>
-      browser.execute((acknowledgement: string) => {
-        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
-        const label = [...dialog.querySelectorAll("label")].find(
-          (l) => l.textContent?.trim() === acknowledgement,
-        );
-        const checkbox = document.getElementById(label?.htmlFor ?? "");
-        const create = [...dialog.querySelectorAll("button")].find(
-          (b) => b.textContent?.trim() === "Create database",
-        );
-        // Visible without scrolling: inside the window, the dialog, and every
-        // scrolling box between the element and the dialog.
-        const visible = (el: Element | null | undefined) => {
-          if (!el) return false;
-          const box = el.getBoundingClientRect();
-          const page = new DOMRect(0, 0, window.innerWidth, window.innerHeight);
-          const within = (outer: DOMRect) =>
-            box.top >= outer.top - 1 &&
-            box.bottom <= outer.bottom + 1 &&
-            box.left >= outer.left - 1 &&
-            box.right <= outer.right + 1;
-          if (!within(page) || !within(dialog.getBoundingClientRect())) return false;
-          for (let up = el.parentElement; up && up !== dialog; up = up.parentElement) {
-            const overflow = getComputedStyle(up).overflowY;
-            if (
-              (overflow === "auto" || overflow === "scroll") &&
-              !within(up.getBoundingClientRect())
-            )
-              return false;
-          }
-          return true;
-        };
-        const scrolled = [dialog, ...dialog.querySelectorAll<HTMLElement>("*")].some(
-          (el) => el.scrollTop > 0,
-        );
-        return {
-          checkbox: visible(checkbox),
-          create: visible(create),
-          scrolled,
-          suggestion:
-            dialog.querySelector('[data-testid="strength-suggestion"]')?.textContent?.trim() ?? "",
-        };
-      }, ACKNOWLEDGEMENT);
-
-    // Where the acknowledgement and Create are, to tell whether the warning
-    // moves them: the dialog is tall enough here that they stay in view
-    // either way, so what shows the bug is that they are pushed down.
-    const tops = () =>
-      browser.execute((acknowledgement: string) => {
-        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
-        const label = [...dialog.querySelectorAll("label")].find(
-          (l) => l.textContent?.trim() === acknowledgement,
-        );
-        const create = [...dialog.querySelectorAll("button")].find(
-          (b) => b.textContent?.trim() === "Create database",
-        );
-        return {
-          checkbox: label?.getBoundingClientRect().top ?? -1,
-          create: create?.getBoundingClientRect().top ?? -1,
-        };
-      }, ACKNOWLEDGEMENT);
-
-    // Before any warning (and before anything is typed, when nothing is shown
-    // under the field), then with a weak (but long enough) passphrase's.
-    const empty = await tops();
-    await fill("Passphrase", "p");
-    await fill("Confirm passphrase", "p");
-    const before = await inView();
-    expect(before.checkbox).toBe(true);
-    expect(before.create).toBe(true);
-
-    await fill("Passphrase", "passwordpassword");
-    await fill("Confirm passphrase", "passwordpassword");
-    await browser.waitUntil(async () => (await inView()).suggestion !== "", {
-      timeout: 10000,
-      timeoutMsg: "the weak passphrase's warning never showed",
-    });
-    expect(await inView()).toEqual({
-      checkbox: true,
-      create: true,
-      scrolled: false,
-      suggestion: expect.stringMatching(/\S/),
-    });
-    // The warning took its place in the layout without moving anything.
-    const after = await tops();
-    expect(Math.abs(after.checkbox - empty.checkbox)).toBeLessThanOrEqual(1);
-    expect(Math.abs(after.create - empty.create)).toBeLessThanOrEqual(1);
-    await clickButton("Cancel");
-    await $('[role="dialog"]').waitForExist({ reverse: true });
-  });
-
   // The create dialog to the collection, M2 (the backend's refusal lands on the
-  // name field) and the relaunch that shows nothing before the passphrase.
-  // The dialog's own rules (Saved as, 12 characters, matching, the
-  // acknowledgement) are in CreateDatabaseDialog.test.tsx.
+  // name field, before any passphrase is asked for) and the relaunch that
+  // shows nothing before the passphrase. The passphrase is typed in the native
+  // dialog (amended 2026-11-04 to 003 FR-007), which the E2E build's stand-in
+  // answers here; its own rules (12 characters, matching, the acknowledgement,
+  // the strength hint) are Rust's `passphrase_dialog::checks` and the real
+  // dialog's, in passphrase-dialog.e2e.ts.
   it("creates a database, keeps a firearm that only the right passphrase shows again (003 FR-003, FR-005, FR-006)", async () => {
     // A file already at the name asked for; the backend refuses the create.
     fs.mkdirSync(folder, { recursive: true });
@@ -212,10 +118,8 @@ describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databa
     await $('[role="dialog"]').waitForExist();
     await fill("Name", "Taken");
     await fill("Folder", folder);
-    await fill("Passphrase", E2E_PASSPHRASE);
-    await fill("Confirm passphrase", E2E_PASSPHRASE);
-    await toggle(ACKNOWLEDGEMENT);
-    await clickButton("Create database");
+    const asked = passphraseTitles().length;
+    await clickButton("Create database…");
     await browser.waitUntil(async () => (await dialogFieldError("Name")) !== null, {
       timeout: 10000,
       timeoutMsg: "the refusal never landed on the Name field",
@@ -227,15 +131,14 @@ describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databa
     // Nothing was created, and the file that was there is untouched.
     expect(fs.readFileSync(`${folder}/Taken.hoplodex`, "utf8")).toBe("");
     expect(await $('nav[aria-label="Sections"]').isExisting()).toBe(false);
+    // The name was refused before the passphrase was asked for.
+    expect(passphraseTitles()).toHaveLength(asked);
 
-    // Another name, and the passphrases typed again (they are cleared on a
-    // refusal), creates it.
+    // Another name creates it, with the passphrase chosen in the dialog.
     await fill("Name", "Test");
     expect(await dialogFieldError("Name")).toBeNull();
-    await fill("Passphrase", E2E_PASSPHRASE);
-    await fill("Confirm passphrase", E2E_PASSPHRASE);
-    expect(await isButtonDisabled("Create database")).toBe(false);
-    await clickButton("Create database");
+    answerPassphrase(E2E_PASSPHRASE);
+    await clickButton("Create database…");
     await waitForCollection();
     expect(fs.existsSync(`${folder}/Test.hoplodex`)).toBe(true);
 
@@ -252,7 +155,20 @@ describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databa
     expect(await $('nav[aria-label="Sections"]').isExisting()).toBe(false);
     expect(await $("body").getText()).not.toContain("LockedE2E");
 
+    // The dialog asks again under its field, and Cancel then brings the
+    // refusal to the row.
+    const mark = passphraseLog().length;
     await submitPassphrase("not the right passphrase");
+    await browser.waitUntil(
+      () =>
+        passphraseLog()
+          .slice(mark)
+          .some((line) => "retry" in line),
+      {
+        timeout: 10000,
+        timeoutMsg: "the dialog never asked again",
+      },
+    );
     await expect(
       $(
         "p=That passphrase didn't open “Test”. Either the passphrase is wrong, or the file isn't a HoploDex database or is damaged.",
@@ -288,10 +204,10 @@ async function showsFirearm(make: string): Promise<boolean> {
   return (await listedNames()).some((name) => name.includes(make));
 }
 
-/** The selected chooser row asks for a passphrase, rather than opening with
- * the saved one. */
+/** The selected chooser row asks for a passphrase (Open…, which shows the
+ * native dialog), rather than opening with the saved one (Open). */
 async function asksForPassphrase(): Promise<boolean> {
-  return $(".hd-db-row--selected input").isExisting();
+  return (await $(".hd-db-row--selected button[type=submit]").getText()).trim() === "Open…";
 }
 
 describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another Computer (was us7-databases)", () => {
@@ -408,21 +324,21 @@ describe("003 US2 - Keep Several Databases, Anywhere, and Take Them to Another C
 describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7-databases)", () => {
   const SAVED_NOTE = "Opens without a passphrase on this computer";
 
-  it("remembers a passphrase at open, after the confirmation (003 FR-017)", async () => {
+  it("remembers a passphrase at open, saying in the native dialog what that gives away (003 FR-017)", async () => {
     await switchDatabase();
     await selectChooserRow("Home");
     expect(await asksForPassphrase()).toBe(true);
 
     await toggle("Remember on this computer");
-    const confirm = '[role="alertdialog"]';
-    await $(confirm).waitForExist();
-    await expect($(confirm)).toHaveText(
-      expect.stringContaining("will be able to open “Home” without knowing the passphrase"),
-    );
-    await clickButton("Remember passphrase");
-    await $(confirm).waitForExist({ reverse: true });
-
     await unlock(home.passphrase);
+
+    const asked = passphraseLog()
+      .filter((line) => "asked" in line)
+      .at(-1)?.asked as { primary: string; message: string };
+    expect(asked.primary).toBe("Open and remember");
+    expect(asked.message).toContain(
+      "will be able to open the database without knowing the passphrase",
+    );
     expect(await showsFirearm("HomeGun")).toBe(true);
   });
 
@@ -485,17 +401,21 @@ describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7
     await toggle("Remember the passphrase on this computer");
     // Ticking asks for nothing: the passphrase is asked for at Save.
     expect(await $('[role="alertdialog"]').isExisting()).toBe(false);
+    // Save asks in the native dialog, which says what remembering gives away;
+    // with nothing queued its stand-in cancels.
+    const asked = passphraseTitles().length;
     await clickButton("Save");
-    await $('[role="alertdialog"]').waitForExist();
-    await clickButton("Cancel");
-    await $('[role="alertdialog"]').waitForExist({ reverse: true });
+    await browser.waitUntil(() => passphraseTitles().length > asked, {
+      timeout: 10000,
+      timeoutMsg: "Save never asked for the passphrase",
+    });
+    expect(passphraseTitles().at(-1)).toBe("Remember this database's passphrase?");
     // Cancelled: back in the form with nothing saved and the choice still staged.
     await expect($('[role="dialog"]')).toExist();
+    await expect($('[role="dialog"] button[type="submit"]')).toBeEnabled();
 
+    answerPassphrase(home.passphrase);
     await clickButton("Save");
-    await $('[role="alertdialog"]').waitForExist();
-    await fill("Passphrase", home.passphrase);
-    await clickButton("Remember passphrase");
     await $('[role="dialog"]').waitForExist({ reverse: true });
 
     await relaunch();

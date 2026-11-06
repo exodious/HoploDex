@@ -12,10 +12,11 @@ use crate::commands::CommandError;
 /// The fewest Unicode scalar values a new passphrase may have.
 pub const MIN_PASSPHRASE_CHARS: usize = 12;
 
-/// A passphrase received from the frontend. It has no `Debug` or `Display`,
-/// so it cannot end up in a log or an error message, and its memory is
-/// zeroed when it is dropped. Build one as soon as the command receives the
-/// string, and drop it when the command returns: the backend never keeps a
+/// A passphrase, typed into the native dialog (`services::passphrase_dialog`)
+/// or read from the keyring, never received from the frontend. It has no
+/// `Debug` or `Display`, so it cannot end up in a log or an error message, and
+/// its memory is zeroed when it is dropped. Build one as soon as its text is
+/// read, and drop it when the command returns: the backend never keeps a
 /// passphrase between commands. The one exception is a typed passphrase an open
 /// will save in the keyring once an upgrade it is waiting for succeeds (009
 /// research.md §4 "The passphrase"): it is cloned into the waiting database and
@@ -33,6 +34,14 @@ impl Passphrase {
         // an unwiped copy in freed memory.
         let mut normalized = Zeroizing::new(String::with_capacity(input.len() * 3));
         normalized.extend(input.nfc());
+        Self(normalized)
+    }
+
+    /// Copies what a native field holds, borrowed from the field or from a
+    /// buffer the caller wipes, normalized to NFC (the passphrase dialog).
+    pub fn from_typed(typed: &str) -> Self {
+        let mut normalized = Zeroizing::new(String::with_capacity(typed.len() * 3));
+        normalized.extend(typed.nfc());
         Self(normalized)
     }
 

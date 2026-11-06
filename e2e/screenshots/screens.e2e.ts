@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   $,
   $$,
-  ACKNOWLEDGEMENT,
+  answerPassphrase,
   back,
   browser,
   choose,
@@ -421,26 +421,11 @@ describe("Screenshots: the chooser", () => {
       await settleChooserPlate();
       await shot(`14-chooser-${suffix}`);
 
+      // The passphrase, its strength hint and the acknowledgement are in the
+      // native dialog Create database… opens (amended 2026-11-04 to 003 FR-007),
+      // which a page screenshot can't take: the walk shows the page's part.
       await openDialog("Create a new database…");
-      await fill("Passphrase", "vivid otter ledger crane");
-      await $('[role="meter"]').waitForExist();
       await shot(`16-create-database-${suffix}`, { fullPage: true });
-
-      // A weak passphrase's warning keeps the acknowledgement and Create in
-      // view (#41).
-      await fill("Passphrase", "passwordpassword");
-      await fill("Confirm passphrase", "passwordpassword");
-      await toggle(ACKNOWLEDGEMENT);
-      await browser.waitUntil(
-        () =>
-          browser.execute(
-            () =>
-              (document.querySelector('[data-testid="strength-suggestion"]')?.textContent ?? "")
-                .length > 0,
-          ),
-        { timeout: 10000, timeoutMsg: "the weak passphrase's warning never showed" },
-      );
-      await shot(`79-create-database-weak-passphrase-${suffix}`, { fullPage: true });
       await closeDialog();
     });
 
@@ -942,11 +927,6 @@ for (const theme of ["Light", "Dark"] as const) {
       await shot(`27-backup-location-change-${suffix}`);
       await clickButton("Cancel");
       await $("h2=Backups at the old location").waitForExist({ reverse: true });
-      await closeDialog();
-
-      await chooseMenuItem("button.hd-db-menu", "Change passphrase…");
-      await $('[role="dialog"] input[autocomplete="current-password"]').waitForExist();
-      await shot(`20-change-passphrase-${suffix}`);
       await closeDialog();
 
       await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
@@ -1564,7 +1544,7 @@ describe("Screenshots: upgrading a database from an earlier version", () => {
     await chooseMenuItem("button.hd-db-menu", "Restore from a backup…");
     await $$('[role="dialog"] input[type="radio"]')[0].waitForExist();
     await settle();
-    await fill("Passphrase for this backup", FIXTURE_PASSPHRASE);
+    answerPassphrase(FIXTURE_PASSPHRASE);
     await clickEl('[role="dialog"] button[type="submit"]');
     await $('[role="alertdialog"]').waitForExist({ timeout: 10000 });
     await waitForDialogText("is upgraded for HoploDex");

@@ -237,6 +237,14 @@ export async function realKey(keys: string) {
   if (seen === "seen") await settleAfterInput();
 }
 
+/** Presses real keys that go to a window the page can't see: the native
+ * passphrase dialog, which has the input focus while it is up (amended
+ * 2026-11-04 to 003 FR-007). Returns once the X server has processed them;
+ * what they did shows in the dialog's log (ui.ts, `passphraseLog`). */
+export async function realKeyOutsidePage(keys: string) {
+  await send("key", keys);
+}
+
 /** Presses and releases a mouse button by its X number, with the pointer
  * where it is: 8 is the back button and 9 the forward button. */
 export async function realMouseButton(button: number) {
