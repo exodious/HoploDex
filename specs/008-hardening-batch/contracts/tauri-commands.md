@@ -24,6 +24,7 @@ gain the session header below.
     `remove_recent_database`, `locate_database`;
   - `get_database_status`;
   - `quit_application`, `note_activity`, `set_idle_paused`;
+    _Amended 2026-11-06: `quit_listener_ready` is unscoped too ([003's contract](../../003-database-protection-management/contracts/tauri-commands.md#quit_application))._
   - `skip_backup`, `cancel_import`;
   - `get_document_opening`, `set_document_opening`;
   - `restore_backup`, which requires the header only when it restores the

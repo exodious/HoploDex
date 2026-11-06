@@ -6,10 +6,11 @@ import * as sessionService from "./sessionService";
 // its session": the commands that act on the open database carry its session;
 // the ones that act on the running operation, the window or the app do not.
 
-const backend = vi.hoisted(() => ({ invoke: vi.fn() }));
+const backend = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("../../services/tauriClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../services/tauriClient")>()),
   invoke: backend.invoke,
+  listen: backend.listen,
 }));
 
 describe("sessionService", () => {
@@ -17,6 +18,7 @@ describe("sessionService", () => {
 
   beforeEach(() => {
     backend.invoke.mockReset().mockResolvedValue(undefined);
+    backend.listen.mockReset().mockReturnValue(vi.fn());
   });
 
   it.each([
@@ -65,5 +67,19 @@ describe("sessionService", () => {
       code: "DATABASE_CLOSED",
     });
     expect(backend.invoke).not.toHaveBeenCalled();
+  });
+
+  it("tells the backend only once the quit listener is in place", () => {
+    sessionService.onQuitRequested(vi.fn());
+    expect(backend.listen).toHaveBeenCalledWith(
+      "app:quit-requested",
+      expect.any(Function),
+      expect.any(Function),
+    );
+    expect(backend.invoke).not.toHaveBeenCalled();
+
+    const onListening = backend.listen.mock.calls[0][2] as () => void;
+    onListening();
+    expect(backend.invoke).toHaveBeenCalledWith("quit_listener_ready");
   });
 });

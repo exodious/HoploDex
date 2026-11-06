@@ -7,6 +7,7 @@
 //! throwaway ones.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::ipc::Request;
 use tauri::{AppHandle, Manager, State};
@@ -1294,6 +1295,16 @@ pub async fn quit_application(
     // An exit with a code is ours, and `main` lets it through.
     app.exit(0);
     Ok(())
+}
+
+/// Whether the page has started listening for `app:quit-requested`. Until it
+/// has, `main`'s request to quit would reach nobody (003 research.md §17).
+pub static PAGE_LISTENS: AtomicBool = AtomicBool::new(false);
+
+/// The page listens for `app:quit-requested` from now on.
+#[tauri::command]
+pub async fn quit_listener_ready() {
+    PAGE_LISTENS.store(true, Ordering::SeqCst);
 }
 
 #[tauri::command]

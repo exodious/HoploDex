@@ -14,6 +14,7 @@
     "allow-cancel-upgrade",
     "allow-close-database",
     "allow-quit-application",
+    "allow-quit-listener-ready",
     "allow-remove-recent-database",
     "allow-locate-database",
     "allow-get-database-status",

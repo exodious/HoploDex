@@ -8,6 +8,7 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
+use hoplodex_lib::commands::databases::PAGE_LISTENS;
 #[cfg(not(app_opener))]
 use hoplodex_lib::commands::documents::E2eOpener;
 #[cfg(app_opener)]
@@ -68,8 +69,16 @@ const MAIN_WINDOW: &str = "main";
 static OS_ENDING: AtomicBool = AtomicBool::new(false);
 
 /// Asks the frontend to quit: the unsaved-changes question first, then
-/// `quit_application` (003 research.md §17).
+/// `quit_application` (003 research.md §17). Before the page listens nothing
+/// would answer, and the app would never exit, so with nothing open, and so
+/// nothing unsaved, it exits at once.
 fn request_quit(app: &AppHandle) {
+    if !PAGE_LISTENS.load(Ordering::SeqCst)
+        && !app.try_state::<Session>().is_some_and(|session| session.is_open())
+    {
+        app.exit(0);
+        return;
+    }
     if let Err(err) = app.emit_to(MAIN_WINDOW, QUIT_REQUESTED, ()) {
         log::warn!("could not emit {QUIT_REQUESTED}: {err}");
     }
@@ -484,6 +493,7 @@ fn main() {
             hoplodex_lib::commands::databases::cancel_upgrade,
             hoplodex_lib::commands::databases::close_database,
             hoplodex_lib::commands::databases::quit_application,
+            hoplodex_lib::commands::databases::quit_listener_ready,
             hoplodex_lib::commands::databases::remove_recent_database,
             hoplodex_lib::commands::databases::locate_database,
             hoplodex_lib::commands::databases::get_database_status,
