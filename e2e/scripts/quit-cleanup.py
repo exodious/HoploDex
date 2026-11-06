@@ -15,8 +15,9 @@ the app must still exit.
 On Linux it also checks #166's two fixes. No process of the app may leave a
 core dump: the app, WebKit's processes and the helpers all run with a core
 limit of 0, soft and hard, although the script starts the app with the
-highest limit it may. And on a quit by signal the app ends its web processes itself before
-it exits, so none of them runs its exit handlers, which crash on WebKitGTK
+highest limit it may, and with a core dump filter of 0, which keeps their
+memory out of a core that apport takes anyway. And on a quit by signal the
+app ends its web processes itself before it exits, so none of them runs its exit handlers, which crash on WebKitGTK
 before 2.54.1: the script stops each web process first (SIGSTOP), so one the
 app leaves alone is still there after the app has gone. A window closed
 can't be checked that way, since the page answers the quit, but it ends
@@ -282,6 +283,15 @@ def core_limits(pid):
     return None
 
 
+def core_filter(pid):
+    """Linux: `pid`'s core dump filter, as /proc writes it."""
+    try:
+        with open(f"/proc/{pid}/coredump_filter") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
 def web_process(pid):
     """Linux: whether `pid` is a WebKit web process, and not a zombie (the
     name is checked again, since an ended process's id can be reused)."""
@@ -328,6 +338,10 @@ def run(desktop, how):
                        if (limits := core_limits(pid)) not in ("0/0", None)]
             if dumping:
                 problems.append("core dumps on for " + ", ".join(dumping))
+            filtering = [f"{name_of(pid)} {pid}: {mask}" for pid in tree
+                         if (mask := core_filter(pid)) not in ("00000000", None)]
+            if filtering:
+                problems.append("memory would go into a core of " + ", ".join(filtering))
             if how in ("term", "hup", "int"):
                 for pid in web:
                     os.kill(pid, signal.SIGSTOP)

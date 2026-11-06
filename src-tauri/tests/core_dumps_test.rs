@@ -68,6 +68,44 @@ fn core_dumps_are_off_soft_and_hard() {
     assert!(line.ends_with("AFTER=0/0"), "core dumps are still on: {line}");
 }
 
+/// The child half of `the_core_dump_filter_is_off_and_children_inherit_it`:
+/// starts from the kernel's default filter, turns core dumps off, and prints
+/// its own filter and that of a program it starts.
+#[cfg(target_os = "linux")]
+#[test]
+fn child_turns_the_core_dump_filter_off() {
+    if std::env::var_os(CHILD_ENV).is_none() {
+        return;
+    }
+    const FILTER: &str = "/proc/self/coredump_filter";
+    std::fs::write(FILTER, "0x33").unwrap();
+    let before = std::fs::read_to_string(FILTER).unwrap();
+    hoplodex_lib::platform::core_dumps::turn_off_core_dumps();
+    let after = std::fs::read_to_string(FILTER).unwrap();
+    let started = Command::new("cat").arg(FILTER).output().unwrap();
+    println!(
+        "BEFORE={} AFTER={} STARTED={}",
+        before.trim(),
+        after.trim(),
+        String::from_utf8_lossy(&started.stdout).trim()
+    );
+}
+
+/// apport reads a core whatever the limit, and on Ubuntu 24.04 WebKit's web
+/// process is outside the sandbox it skips, so the filter is what keeps its
+/// decrypted records out of `/var/crash`: 0 in the app and in what it starts.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_core_dump_filter_is_off_and_children_inherit_it() {
+    let output = run_child("child_turns_the_core_dump_filter_off", "filter");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .find_map(|line| line.find("BEFORE=").map(|at| &line[at..]))
+        .unwrap_or_else(|| panic!("the child reported nothing: {stdout}"));
+    assert_eq!(line, "BEFORE=00000033 AFTER=00000000 STARTED=00000000");
+}
+
 /// The child half of `a_crash_ends_the_process_without_a_core`: handles the
 /// fatal signals, then crashes for real.
 #[cfg(target_os = "linux")]

@@ -3,7 +3,8 @@
 //! records and the passphrase (#166).
 //!
 //! - [`turn_off_core_dumps`]: core limit 0, soft and hard, for the app and
-//!   every process it starts (Linux and macOS).
+//!   every process it starts (Linux and macOS), and on Linux a core dump filter
+//!   of 0, which keeps memory out of a core that apport takes anyway.
 //! - [`exit_on_fatal_signals`]: a crash ends the app at once, so no core
 //!   handler gets a core of it, whatever the limit (Linux). apport, Ubuntu's
 //!   handler on 24.04 and 26.04, reads the core whatever the limit says.
@@ -22,12 +23,24 @@
 /// which this doesn't reach. Inside the Flatpak, WebKit's sandboxed web process
 /// is started by the Flatpak portal, not by the app, so it doesn't inherit
 /// this: [`turn_off_web_process_core_dumps`] lowers it.
+///
+/// On Linux it also sets the core dump filter to 0, which the kernel applies
+/// whichever handler takes the core, and which a process inherits across
+/// `fork` and `exec`. apport reads a core whatever the limit says, and WebKit's
+/// binaries can't go on its ignore list, since every WebKitGTK app shares them.
+/// So on Ubuntu 24.04, where the web process runs outside WebKit's sandbox, its
+/// crash report holds registers and the names of mapped files, not its memory
+/// (#166).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn turn_off_core_dumps() {
     let core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
     // SAFETY: a plain system call with a pointer to a local.
     if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &core) } != 0 {
         log::error!("core dumps could not be turned off: {}", std::io::Error::last_os_error());
+    }
+    #[cfg(target_os = "linux")]
+    if let Err(err) = std::fs::write("/proc/self/coredump_filter", "0") {
+        log::error!("the core dump filter could not be set to 0: {err}");
     }
 }
 
