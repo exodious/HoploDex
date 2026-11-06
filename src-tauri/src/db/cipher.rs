@@ -33,8 +33,9 @@ pub const CIPHER_SETTINGS: &[(&str, &str)] = &[
 
 /// Keys `schema` (`"main"` or an attached schema's name) through SQLCipher's
 /// C API, `sqlite3_key_v2`, so the passphrase never becomes SQL text: a
-/// `PRAGMA key='…'` string, and the blocks it outgrew, would be freed
-/// unwiped (003 FR-007). A failure carries SQLCipher's own code, so
+/// `PRAGMA key='…'` string would be copied by SQLite's parser into blocks
+/// the wipe-on-free allocator can't reach, which SQLite frees unwiped
+/// (003 FR-007). A failure carries SQLCipher's own code, so
 /// `OpenError::classify` reads it as it read the pragma's.
 pub fn key(conn: &Connection, schema: &str, passphrase: &Passphrase) -> rusqlite::Result<()> {
     let name = CString::new(schema).expect("schema names are our own identifiers");
