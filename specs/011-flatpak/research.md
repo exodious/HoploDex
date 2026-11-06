@@ -1131,6 +1131,7 @@ _Amended 2026-10-19 (owner's decision):_
     `import_export.rs` (the reach checks), `documents.rs` and `photos.rs`
     (opening and drops); and `src/features/media/useFileDrop.ts` (drops).
     Ordinary test runs skip it.
+    _Amended 2026-11-05: `src-tauri/src/platform/core_dumps.rs` joined these paths (#166); DEVELOPMENT.md has the current list._
 - **Rationale**: a WebDriver journey is the only way to drive the real app
   in its sandbox. Swapping the two seams the `e2e` build already has keeps
   constitution II's guarantee, and the bus checks cover what the sandbox
