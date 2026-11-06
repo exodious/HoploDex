@@ -17,6 +17,8 @@ use hoplodex_lib::commands::documents::{
 };
 use hoplodex_lib::commands::preview::{AppSurfaces, PreviewEnv};
 use hoplodex_lib::db;
+#[cfg(unix)]
+use hoplodex_lib::platform::core_dumps;
 use hoplodex_lib::platform::{self, SystemEvent};
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::consent::Consent;
@@ -37,6 +39,8 @@ use hoplodex_lib::services::preview::availability::{PdfAvailabilityState, decide
 #[cfg(target_os = "linux")]
 use hoplodex_lib::services::preview::sandbox_probe;
 use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler, surface};
+#[cfg(target_os = "linux")]
+use hoplodex_lib::services::sandbox::FLATPAK_INFO;
 use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
@@ -114,24 +118,6 @@ fn exit_on_termination_signals(app: tauri::AppHandle) {
         // The close waits on other threads, so it runs off the runtime.
         tauri::async_runtime::spawn_blocking(move || end_for_the_os(&app));
     });
-}
-
-/// Turns core dumps off for this process and every process it starts, which
-/// inherit the limit: WebKit's web and network processes, and the helpers. A
-/// core of the app or of a web process holds the open database's decrypted
-/// records (#166). The hard limit too, as the helpers' (`confine.rs`): with
-/// only the soft one lowered, a compromised helper could raise the app's again
-/// with `prlimit`. Inside the Flatpak, WebKit's sandboxed web process is
-/// started by the Flatpak portal, not by the app, so it doesn't inherit this.
-/// Not on macOS, whose default is already 0 and whose WebKit processes are
-/// launchd's.
-#[cfg(target_os = "linux")]
-fn turn_off_core_dumps() {
-    let core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
-    // SAFETY: a plain system call with a pointer to a local.
-    if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &core) } != 0 {
-        log::error!("core dumps could not be turned off: {}", std::io::Error::last_os_error());
-    }
 }
 
 /// Ends each web view's web process with SIGKILL as the app exits, before the
@@ -212,7 +198,7 @@ fn tick_idle_clock(app: AppHandle) {
 /// and Windows always, everything.
 #[cfg(target_os = "linux")]
 fn read_reach(app: &AppHandle) -> Reach {
-    use hoplodex_lib::services::sandbox::{FLATPAK_INFO, PortalHostPaths, UserDirs};
+    use hoplodex_lib::services::sandbox::{PortalHostPaths, UserDirs};
     use std::path::{Path, PathBuf};
 
     let info = Path::new(FLATPAK_INFO);
@@ -244,6 +230,10 @@ fn read_reach(_app: &AppHandle) -> Reach {
 }
 
 fn main() {
+    // A crash ends the process without a core, before anything else, so the
+    // helpers and the sandbox probe below are covered too (#166).
+    #[cfg(target_os = "linux")]
+    core_dumps::exit_on_fatal_signals();
     // The render helper, the import helper and the sandbox probe are this executable started
     // again (007 research.md §9, §11; 008 research.md §8): before any Tauri, keyring, session
     // or logging setup, so they have none of them, and they never return here.
@@ -283,14 +273,22 @@ fn main() {
     // The log goes to standard error from here on (the helpers above have none).
     hoplodex_lib::logging::init();
     // Before this process starts any other.
-    #[cfg(target_os = "linux")]
-    turn_off_core_dumps();
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    core_dumps::turn_off_core_dumps();
     // WebKit's sandbox, on only where a probe shows it works, and decided
     // here because the variable that turns it on must be set before the
     // first web context exists (007 research.md §9).
     #[cfg(target_os = "linux")]
     let webkit_sandbox = sandbox_probe::decide_and_apply();
     let builder = tauri::Builder::default();
+    // Inside the Flatpak, the web process the portal starts doesn't inherit
+    // the app's core limit; each page load of either web view lowers it
+    // (#166).
+    #[cfg(target_os = "linux")]
+    let builder = {
+        let in_flatpak = std::path::Path::new(FLATPAK_INFO).exists();
+        builder.on_page_load(move |_, _| core_dumps::turn_off_web_process_core_dumps(in_flatpak))
+    };
     // The E2E suite's WebDriver server, on 127.0.0.1 at
     // `TAURI_WEBDRIVER_PORT` (#29). It has no authentication and runs any
     // script in the page, so it must never reach a shipped build.

@@ -2,12 +2,15 @@
 //! one stream (003 research.md §14). Each OS backend runs on its own thread and
 //! sends [`SystemEvent`]s; `main.rs` hands each to `session::lifecycle`. A
 //! wake watchdog also notices a sleep the OS gave no usable notice of.
+//! [`core_dumps`] keeps a crash from writing the app's memory to disk (#166).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
+#[cfg(unix)]
+pub mod core_dumps;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]

@@ -976,7 +976,9 @@ What it does, in order:
    file chooser; and that a saved passphrase lands in the app's keyring file,
    which the check reads back with the stand-in portal's key
    (`src-tauri/examples/flatpak_keyring_read.rs`) and which opens the database
-   from the recent list after a restart. One of its tests prints the
+   from the recent list after a restart; and that the web process the Flatpak
+   portal starts for WebKit runs with core dumps off, soft and hard, as the
+   app sets them at each page load (#166). One of its tests prints the
    cold start to the chooser for the Flatpak and for the `e2e` build outside it
    and fails on a difference over a second (`011 SC-006`).
 6. Uninstalls the check variant whatever happened, and fails unless the
@@ -1010,8 +1012,9 @@ runs in a Flatpak and for the two folders.
 Run it before each release and for a pull request that changes any of these
 paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,
 `e2e/specs/flatpak.e2e.ts`, `e2e/support/flatpak.ts`,
-`src-tauri/src/platform/linux.rs`, `src-tauri/src/main.rs`,
-`src-tauri/src/app_dirs.rs`, `src-tauri/src/session/lifecycle.rs`; under
+`src-tauri/src/platform/linux.rs`, `src-tauri/src/platform/core_dumps.rs`,
+`src-tauri/src/main.rs`, `src-tauri/src/app_dirs.rs`,
+`src-tauri/src/session/lifecycle.rs`; under
 `src-tauri/src/services/`: `sandbox.rs`, `keyring.rs`, `file_swap.rs`,
 `backups.rs`, `scratch.rs`, `helper/`, `import_reader/`, `preview/helper.rs`,
 `preview/sandbox_probe.rs`; under `src-tauri/src/commands/`: `databases.rs`,
@@ -2482,7 +2485,7 @@ in it which ran where. The jobs run natively on pinned images (`ubuntu-26.04`,
 | Checks (Linux) | `npm run format:check`, `cargo fmt --check`, `npm run lint`, both clippys ([Linting & formatting](#linting--formatting)), `npm test`, `cargo nextest run --features test-kdf --no-fail-fast`, the doctests, `npm run build` |
 | Checks (Windows, macOS) | both clippys, `npm test`, nextest as above |
 | E2E (Linux, Windows, macOS) | `npm run build`, `npm run test:e2e`, then the quit-cleanup script for that OS |
-| Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary; no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
+| Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary, then `dpkg-deb -c` checks the `.deb` installs `/usr/bin/hoplodex` and apport's ignore entry for it (#166); no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
 | Packages (Windows) | `npm run tauri build -- --bundles msi,nsis`, then `scripts/check-no-webdriver.mjs` on `hoplodex.exe` |
 | Packages (macOS) | `npm run tauri build -- --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary |
 | Flatpak | `npm run bundle:flatpak`, whose manifest runs `scripts/check-no-webdriver.mjs` on the release binary (the check's variant carries the driver on purpose); then, only when the pull request changes one of the paths [The Flatpak check](#the-flatpak-check) lists, the check's stand-ins and `npm run build && npm run test:flatpak` |

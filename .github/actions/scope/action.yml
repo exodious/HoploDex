@@ -25,7 +25,7 @@ runs:
       env:
         EVENT: ${{ github.event_name }}
         SKIPPABLE: '\.md$'
-        FLATPAK_PATHS: '^flatpak/|^scripts/flatpak/|^e2e/specs/flatpak\.e2e\.ts$|^e2e/support/flatpak\.ts$|^src-tauri/src/(platform/linux|main|app_dirs|session/lifecycle)\.rs$|^src-tauri/src/services/(sandbox|keyring|file_swap|backups|scratch)\.rs$|^src-tauri/src/services/(helper|import_reader)/|^src-tauri/src/services/preview/(helper|sandbox_probe)\.rs$|^src-tauri/src/commands/(databases|backups|import_export|documents|photos)\.rs$|^src/features/media/useFileDrop\.ts$'
+        FLATPAK_PATHS: '^flatpak/|^scripts/flatpak/|^e2e/specs/flatpak\.e2e\.ts$|^e2e/support/flatpak\.ts$|^src-tauri/src/(platform/linux|platform/core_dumps|main|app_dirs|session/lifecycle)\.rs$|^src-tauri/src/services/(sandbox|keyring|file_swap|backups|scratch)\.rs$|^src-tauri/src/services/(helper|import_reader)/|^src-tauri/src/services/preview/(helper|sandbox_probe)\.rs$|^src-tauri/src/commands/(databases|backups|import_export|documents|photos)\.rs$|^src/features/media/useFileDrop\.ts$'
       run: |
         if [ "$EVENT" != pull_request ]; then
           echo "run=true" >> "$GITHUB_OUTPUT"
