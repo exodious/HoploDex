@@ -79,6 +79,17 @@ async function openDialogFromChooser(): Promise<number> {
   return mark;
 }
 
+/** Presses Return on a passphrase that opens the database, and waits for the
+ * collection. The dialog closes only once the open has finished, which a
+ * stalled runner can hold up past `waitForCollection`'s own wait; if it never
+ * closes, the failure shows what the dialog last said. */
+async function submitAndWaitForCollection() {
+  const step = logMark();
+  await pressInDialog("Return");
+  await waitForLog(step, (l) => "closed" in l, "the dialog closing", 30000);
+  await waitForCollection();
+}
+
 describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
   before(async () => {
     process.env.HOPLODEX_E2E_PASSPHRASE_DIALOG = "native";
@@ -152,10 +163,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     await tickAcknowledgement();
     await waitForView(step, (v) => v.ready, "the button enabled by the acknowledgement");
 
-    step = logMark();
-    await pressInDialog("Return");
-    await waitForLog(step, (l) => "closed" in l, "the dialog closing", 30000);
-    await waitForCollection();
+    await submitAndWaitForCollection();
   });
 
   it("asks again under its field for a wrong passphrase, then opens with the right one (003 FR-005, FR-006)", async () => {
@@ -178,8 +186,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     await shotScreen("dialog-open-retry");
 
     await typeInDialog(PASSPHRASE);
-    await pressInDialog("Return");
-    await waitForCollection();
+    await submitAndWaitForCollection();
   });
 
   // Amended 2026-11-04 to 003 FR-007: the reason for the native dialog. The
@@ -229,8 +236,7 @@ describe("003 US4 - Change My Passphrase Safely", () => {
   it("changes it in the native dialog's three fields, asking again for a wrong current one (003 FR-015)", async () => {
     await openDialogFromChooser();
     await typeInDialog(PASSPHRASE);
-    await pressInDialog("Return");
-    await waitForCollection();
+    await submitAndWaitForCollection();
 
     const mark = logMark();
     await pressMenuItem("Change passphrase…");
@@ -278,7 +284,6 @@ describe("003 US4 - Change My Passphrase Safely", () => {
     await switchDatabase();
     await openDialogFromChooser();
     await typeInDialog(NEW);
-    await pressInDialog("Return");
-    await waitForCollection();
+    await submitAndWaitForCollection();
   });
 });
