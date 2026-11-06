@@ -69,7 +69,7 @@ would be read as a raw key. That is deterministic on every platform, so it
 does not break portability, and it is too unlikely to be worth a rule that
 would contradict FR-003.
 
-_Amended 2026-11-04: the passphrase no longer becomes SQL text. Every connection and the passphrase change's `rekey` attachment are keyed through SQLCipher's C API, `sqlite3_key_v2` (`db::cipher::key`); the attachment is `ATTACH DATABASE ?1 AS rekey KEY ''`, then keyed the same way. A `PRAGMA key` string, and the blocks it outgrew, were freed unwiped (FR-007). The key itself, the raw-key syntax included, is read as before._
+_Amended 2026-11-04: the passphrase no longer becomes SQL text. Every connection and the passphrase change's `rekey` attachment are keyed through SQLCipher's C API, `sqlite3_key_v2` (`db::cipher::key`); the attachment is `ATTACH DATABASE ?1 AS rekey KEY ''`, then keyed the same way. SQLite's parser copied a `PRAGMA key` string into blocks the wipe-on-free allocator can't reach, which SQLite freed unwiped (FR-007). The key itself, the raw-key syntax included, is read as before._
 
 **Memory (FR-007)**: every passphrase the backend receives is moved at once
 into `zeroize::Zeroizing<String>` (zeroize 1.9 is already in the dependency
