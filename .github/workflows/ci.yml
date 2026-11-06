@@ -252,11 +252,20 @@ jobs:
       - name: Build the frontend
         if: steps.scope.outputs.run == 'true'
         run: npm run build
+      # Experiment: runner.temp is on D:, the system drive's temp folder on C:.
+      # The `runner` context isn't available in a job-level `env`, so this and
+      # Quit cleanup each set it.
       - name: E2E
         if: steps.scope.outputs.run == 'true'
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
         run: npm run test:e2e
       - name: Quit cleanup
         if: steps.scope.outputs.run == 'true'
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
         run: powershell -ExecutionPolicy Bypass -File e2e/scripts/quit-cleanup.ps1
 
   macos-e2e:
