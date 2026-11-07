@@ -79,6 +79,9 @@ mod imp {
     const SYS_OPEN_TREE_ATTR: libc::c_long = 467;
     const SYS_FILE_GETATTR: libc::c_long = 468;
     const SYS_FILE_SETATTR: libc::c_long = 469;
+    const SYS_LISTNS: libc::c_long = 470;
+    /// `fcntl`'s other way to set a file's owner, on both architectures.
+    const F_SETOWN_EX: u32 = 15;
 
     /// What a helper never needs, on every architecture: it reads its pipe,
     /// computes and writes its pipe. A call that isn't listed is allowed, so a
@@ -127,6 +130,7 @@ mod imp {
         libc::SYS_mount_setattr,
         SYS_STATMOUNT,
         SYS_LISTMOUNT,
+        SYS_LISTNS,
         // Kernel interfaces, the kernel keyring and shared memory.
         libc::SYS_io_uring_setup,
         libc::SYS_io_uring_enter,
@@ -374,6 +378,14 @@ mod imp {
             // `clone`, and `EPERM` would fail every new thread.
             jump(libc::BPF_JEQ, libc::SYS_clone3 as u32, 0, 1),
             ret(libc::SECCOMP_RET_ERRNO | libc::ENOSYS as u32),
+            // A file's owner is who the kernel signals when the file has news,
+            // whichever process that is, so no file gets one.
+            jump(libc::BPF_JEQ, libc::SYS_fcntl as u32, 0, 5),
+            load(argument(1)),
+            jump(libc::BPF_JEQ, libc::F_SETOWN as u32, 1, 0),
+            jump(libc::BPF_JEQ, F_SETOWN_EX, 0, 1),
+            refuse,
+            allow,
         ];
         // A signal to this process only (an abort is one), and its own limits
         // only (`getrlimit` is `prlimit64` of pid 0).

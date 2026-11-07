@@ -234,28 +234,43 @@ mod self_check {
         // SAFETY: plain system calls: a signal 0 tests only that it may be
         // sent, and a mapping is at no fixed address; each call is on a pointer
         // to a local or none.
-        let checks: [(&str, c_long, i32); 11] = unsafe {
+        let checks: [(&str, i32, i32); 14] = unsafe {
             let anonymous = (libc::PROT_READ, libc::MAP_ANONYMOUS);
             let mapping = |flags: i32| {
                 syscall(libc::SYS_mmap, 0, 4096, anonymous.0, anonymous.1 | flags, -1, 0)
             };
             [
-                ("kill of itself", syscall(libc::SYS_kill, me, 0), 0),
-                ("kill of its parent", syscall(libc::SYS_kill, parent, 0), EPERM),
-                ("kill of its group", syscall(libc::SYS_kill, 0, 0), EPERM),
-                ("kill of everything", syscall(libc::SYS_kill, -1, 0), EPERM),
-                ("tgkill of itself", syscall(libc::SYS_tgkill, me, me, 0), 0),
-                ("tgkill of its parent", syscall(libc::SYS_tgkill, parent, parent, 0), EPERM),
-                ("its own limit", syscall(libc::SYS_prlimit64, 0, core, 0, limit), 0),
-                ("its parent's limit", syscall(libc::SYS_prlimit64, parent, core, 0, limit), EPERM),
-                ("private memory", mapping(libc::MAP_PRIVATE), 0),
-                ("shared memory", mapping(libc::MAP_SHARED), EPERM),
-                ("a new process", syscall(libc::SYS_clone, libc::SIGCHLD, 0, 0, 0, 0), EPERM),
+                ("kill of itself", answer(syscall(libc::SYS_kill, me, 0)), 0),
+                ("kill of its parent", answer(syscall(libc::SYS_kill, parent, 0)), EPERM),
+                ("kill of its group", answer(syscall(libc::SYS_kill, 0, 0)), EPERM),
+                ("kill of everything", answer(syscall(libc::SYS_kill, -1, 0)), EPERM),
+                ("tgkill of itself", answer(syscall(libc::SYS_tgkill, me, me, 0)), 0),
+                (
+                    "tgkill of its parent",
+                    answer(syscall(libc::SYS_tgkill, parent, parent, 0)),
+                    EPERM,
+                ),
+                ("its own limit", answer(syscall(libc::SYS_prlimit64, 0, core, 0, limit)), 0),
+                (
+                    "its parent's limit",
+                    answer(syscall(libc::SYS_prlimit64, parent, core, 0, limit)),
+                    EPERM,
+                ),
+                ("private memory", answer(mapping(libc::MAP_PRIVATE)), 0),
+                ("shared memory", answer(mapping(libc::MAP_SHARED)), EPERM),
+                (
+                    "a new process",
+                    answer(syscall(libc::SYS_clone, libc::SIGCHLD, 0, 0, 0, 0)),
+                    EPERM,
+                ),
+                ("a file's flags", answer(syscall(libc::SYS_fcntl, 0, libc::F_GETFL)), 0),
+                ("a file's owner", answer(syscall(libc::SYS_fcntl, 0, libc::F_SETOWN, me)), EPERM),
+                ("a file's owner, by thread", answer(syscall(libc::SYS_fcntl, 0, 15, 0)), EPERM),
             ]
         };
         let mut wrong: Vec<String> = checks
             .into_iter()
-            .filter(|&(_, result, wanted)| answer(result) != wanted)
+            .filter(|&(_, got, wanted)| got != wanted)
             .map(|(name, ..)| name.to_owned())
             .collect();
         // SAFETY: an x32 number with zero arguments; on a kernel without x32
