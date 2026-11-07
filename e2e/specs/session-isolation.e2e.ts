@@ -203,7 +203,7 @@ describe("008 US1 - Each Database's Data Stays With Its Own Session (was us14-se
     answerPassphrase(passphrase());
     await clickEl('[role="dialog"] button[type="submit"]');
     await $('[role="alertdialog"]').waitForExist();
-    await clickEl('[role="alertdialog"] .hd-button--danger');
+    await clickEl('[role="alertdialog"] .hd-button--danger', { settles: false });
     await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
     await waitForCollection();
 

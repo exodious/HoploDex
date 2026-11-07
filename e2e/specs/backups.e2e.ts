@@ -142,7 +142,7 @@ describe("003 US3 - Automatic Backups and Restoring From One (was us8-backups)",
       /^That passphrase didn't open the backup from /,
     );
     expect(backupFiles()).toHaveLength(1);
-    await clickEl('[role="alertdialog"] .hd-button--danger');
+    await clickEl('[role="alertdialog"] .hd-button--danger', { settles: false });
     await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
     await waitForCollection();
 
