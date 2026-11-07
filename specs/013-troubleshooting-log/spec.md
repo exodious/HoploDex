@@ -129,6 +129,7 @@ The log never grows without bound, doesn't linger, and doesn't travel with the u
 - **Two copies of the app at once**: each appends whole lines. A rotation by one may cut the other's history short. Acceptable for a diagnostic file.
 - **Lines from before the app's folders are known**: held in memory, within a limit, and written once the file starts, or dropped if the log is off.
 - **The level is raised while the log is off**: not possible. "Detailed until you quit" appears only while the log is on, because a later start with the log off would delete what was gathered.
+- **The app can't finish starting**: the reason goes to standard error, and to the file when `HOPLODEX_LOG` set this run's state, since then the file starts before anything can fail. With no variable the file isn't touched, because only the saved choice, not yet read, can say what happens to it.
 - **A panic while the logger is in use**: the panic line is skipped rather than risking a deadlock.
 - **The user deletes the file while the app runs**: the app carries on writing to what it has open until the next rotation or start. Show log file then reports that there is no file, without an error dialog.
 

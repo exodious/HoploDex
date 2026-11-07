@@ -552,16 +552,6 @@ pub fn portal_open(
     }
 }
 
-/// A D-Bus error's name, whose message can name a file (logging.rs).
-#[cfg(target_os = "linux")]
-fn portal_error_name(err: &zbus::Error) -> String {
-    match err {
-        zbus::Error::MethodError(name, _, _) => name.to_string(),
-        zbus::Error::FDO(fdo) => zbus::DBusError::name(fdo.as_ref()).to_string(),
-        _ => "not a D-Bus reply".to_owned(),
-    }
-}
-
 /// The OpenURI portal's `OpenDirectory` with a read-only descriptor for `file`,
 /// which shows the folder it is in (013 research.md §10): the opener plugin's
 /// own route for this can't reach the portal from inside a Flatpak. A refusal
@@ -587,13 +577,17 @@ pub fn portal_open_directory(
         "/org/freedesktop/portal/desktop",
         "org.freedesktop.portal.OpenURI",
     )
-    .map_err(|_| OpenFailure::NoApp)?;
+    .map_err(|err| {
+        log::debug!("portal: no OpenURI portal: {}", crate::logging::portal_error(&err));
+        OpenFailure::NoApp
+    })?;
     let fd = OwnedFd::from(std::os::fd::OwnedFd::from(opened));
     let options: HashMap<&str, Value<'_>> = HashMap::new();
     portal.call_method("OpenDirectory", &("", fd, options)).map_err(|err| {
-        log::debug!("portal: OpenDirectory refused: {}", portal_error_name(&err));
+        log::debug!("portal: OpenDirectory refused: {}", crate::logging::portal_error(&err));
         OpenFailure::NoApp
     })?;
+    log::debug!("portal: OpenDirectory accepted");
     Ok(())
 }
 

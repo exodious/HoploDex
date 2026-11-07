@@ -46,10 +46,20 @@ fn in_a_child(name: &str, expect_success: bool) -> (TempDir, PathBuf) {
 
 /// [`in_a_child`], and what the child wrote to standard error.
 fn in_a_child_with_stderr(name: &str, expect_success: bool) -> (TempDir, PathBuf, String) {
+    in_a_child_with_env(name, expect_success, &[])
+}
+
+/// [`in_a_child_with_stderr`], with more of the child's environment.
+fn in_a_child_with_env(
+    name: &str,
+    expect_success: bool,
+    env: &[(&str, &str)],
+) -> (TempDir, PathBuf, String) {
     let dir = TempDir::new().unwrap();
     let output = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", name, "--nocapture"])
         .env(CHILD, dir.path())
+        .envs(env.iter().copied())
         .output()
         .unwrap();
     let text = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -150,6 +160,59 @@ fn a_release_builds_panic_prints_only_its_location() {
     logging::init_with(None, Some("on".into()));
     logging::start(Some(PathBuf::from(root).join(file::FOLDER)), None);
     panic!("the serial is PLANTED-PANIC-TEXT");
+}
+
+/// 013 US4-1: a run the variable decides has its file before anything in `setup`
+/// can fail, so what came before and why it failed are both there, and the OS's
+/// text names no folder (013 FR-016).
+#[test]
+fn a_failed_start_under_the_variable_keeps_its_lines_and_why() {
+    let Some(root) = std::env::var_os(CHILD) else {
+        let (_dir, folder, stderr) = in_a_child_with_stderr(
+            "a_failed_start_under_the_variable_keeps_its_lines_and_why",
+            true,
+        );
+        let text = log_text(&folder.join(file::FOLDER));
+        assert!(text.contains("[DEBUG] said before anything failed"), "{text}");
+        assert!(text.contains("[ERROR] the app could not start: "), "{text}");
+        assert_eq!(text.matches("--- HoploDex ").count(), 1, "{text}");
+        assert!(!text.contains("PLANTED"), "{text}");
+        assert!(stderr.contains("[ERROR] the app could not start: "), "{stderr}");
+        assert!(!stderr.contains("PLANTED"), "{stderr}");
+        return;
+    };
+    let root = PathBuf::from(root);
+    logging::init_with(None, Some("debug".into()));
+    log::debug!(target: OURS, "said before anything failed");
+    let decided = logging::start_for_variable(Some(root.join(file::FOLDER))).unwrap();
+    assert_eq!(decided.state, LogState::Detailed);
+    let blocked = root.join("FOLDER-PLANTED");
+    fs::write(&blocked, "").unwrap();
+    let err = MachineSettings::load(&blocked.join("config")).err().expect("the load fails");
+    logging::startup_failed(&err);
+}
+
+/// 013 FR-002, FR-012: with no variable the saved choice decides, and a start that
+/// failed before reading it says why on standard error and leaves the files alone.
+/// Starting on a guess would add to them, and at 1.0.0 delete a saved On's.
+#[test]
+fn a_failed_start_without_the_variable_leaves_the_files_alone() {
+    const EARLIER: &str = "from an earlier run\n";
+    let Some(root) = std::env::var_os(CHILD) else {
+        let (_dir, folder, stderr) = in_a_child_with_stderr(
+            "a_failed_start_without_the_variable_leaves_the_files_alone",
+            true,
+        );
+        assert_eq!(log_text(&folder.join(file::FOLDER)), EARLIER);
+        assert!(stderr.contains("[ERROR] the app could not start: "), "{stderr}");
+        return;
+    };
+    let folder = PathBuf::from(root).join(file::FOLDER);
+    fs::create_dir(&folder).unwrap();
+    fs::write(folder.join(file::CURRENT), EARLIER).unwrap();
+    logging::init_with(None, None);
+    assert_eq!(logging::start_for_variable(Some(folder)), None);
+    logging::startup_failed(&std::io::Error::other("the OS's text"));
 }
 
 /// What the journey plants: a user name in the home folder, and text in the
@@ -348,4 +411,142 @@ fn journey(root: &Path) {
     )
     .unwrap();
     log::logger().flush();
+}
+
+/// 013 FR-025: each portal call and its result, on a private bus that the child
+/// takes as its session bus. A refusal gives the D-Bus error's name, never its
+/// message, and no answer's path reaches the file (013 FR-016).
+#[cfg(target_os = "linux")]
+mod portals {
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use hoplodex_lib::commands::documents::portal_open_directory;
+    use hoplodex_lib::services::keyring::portal::{DesktopPortal, SecretPortal};
+    use hoplodex_lib::services::sandbox::{HostPaths, PortalHostPaths};
+    use zbus::fdo;
+    use zbus::zvariant::{OwnedFd, OwnedObjectPath, OwnedValue};
+
+    use super::*;
+    use crate::support::private_bus::Bus;
+
+    const DESKTOP: &str = "org.freedesktop.portal.Desktop";
+    const DESKTOP_PATH: &str = "/org/freedesktop/portal/desktop";
+    const REFUSAL: &str = "the file is PLANTED";
+    const FAILED: &str = "org.freedesktop.DBus.Error.Failed";
+
+    struct Documents;
+
+    #[zbus::interface(name = "org.freedesktop.portal.Documents")]
+    impl Documents {
+        async fn get_host_paths(&self, ids: Vec<String>) -> fdo::Result<HashMap<String, Vec<u8>>> {
+            if ids.iter().any(|id| id == "refused-PLANTED") {
+                return Err(fdo::Error::Failed(REFUSAL.to_owned()));
+            }
+            Ok(ids
+                .into_iter()
+                .filter(|id| id == "known-PLANTED")
+                .map(|id| (id, b"/HOST-PLANTED\0".to_vec()))
+                .collect())
+        }
+    }
+
+    struct Secret;
+
+    #[zbus::interface(name = "org.freedesktop.portal.Secret")]
+    impl Secret {
+        #[zbus(property, name = "version")]
+        fn version(&self) -> u32 {
+            1
+        }
+
+        async fn retrieve_secret(
+            &self,
+            _fd: OwnedFd,
+            _options: HashMap<String, OwnedValue>,
+        ) -> fdo::Result<OwnedObjectPath> {
+            Err(fdo::Error::Failed(REFUSAL.to_owned()))
+        }
+    }
+
+    /// Accepts the first `OpenDirectory` and refuses the rest.
+    struct OpenUri {
+        accepted: AtomicBool,
+    }
+
+    #[zbus::interface(name = "org.freedesktop.portal.OpenURI")]
+    impl OpenUri {
+        async fn open_directory(
+            &self,
+            _parent_window: String,
+            _fd: OwnedFd,
+            _options: HashMap<String, OwnedValue>,
+        ) -> fdo::Result<OwnedObjectPath> {
+            if self.accepted.swap(true, Ordering::SeqCst) {
+                return Err(fdo::Error::Failed(REFUSAL.to_owned()));
+            }
+            OwnedObjectPath::try_from("/request").map_err(|err| fdo::Error::Failed(err.to_string()))
+        }
+    }
+
+    #[test]
+    fn calls_and_results_reach_the_file_by_name_only() {
+        let Some(root) = std::env::var_os(CHILD) else {
+            let bus = Bus::start();
+            let _documents = bus.serve(
+                "org.freedesktop.portal.Documents",
+                "/org/freedesktop/portal/documents",
+                Documents,
+            );
+            let desktop = bus.serve(DESKTOP, DESKTOP_PATH, Secret);
+            zbus::block_on(
+                desktop
+                    .object_server()
+                    .at(DESKTOP_PATH, OpenUri { accepted: AtomicBool::new(false) }),
+            )
+            .unwrap();
+            let (_dir, folder, _) = in_a_child_with_env(
+                "portals::calls_and_results_reach_the_file_by_name_only",
+                true,
+                &[("DBUS_SESSION_BUS_ADDRESS", bus.address())],
+            );
+            let text = log_text(&folder.join(file::FOLDER));
+            let refused = |call: &str| format!("[DEBUG] portal: {call} refused: {FAILED}\n");
+            for line in [
+                "[DEBUG] portal: GetHostPaths\n".to_owned(),
+                "[DEBUG] portal: GetHostPaths answered with the document's path\n".to_owned(),
+                "[DEBUG] portal: GetHostPaths answered without this document\n".to_owned(),
+                refused("GetHostPaths"),
+                "[DEBUG] portal: RetrieveSecret\n".to_owned(),
+                refused("RetrieveSecret"),
+                "[DEBUG] portal: OpenDirectory\n".to_owned(),
+                "[DEBUG] portal: OpenDirectory accepted\n".to_owned(),
+                refused("OpenDirectory"),
+            ] {
+                assert!(text.contains(&line), "no {line:?} in:\n{text}");
+            }
+            assert!(!text.contains("PLANTED"), "{text}");
+            return;
+        };
+        let root = PathBuf::from(root);
+        logging::init_with(None, Some("debug".into()));
+        logging::start(Some(root.join(file::FOLDER)), None);
+
+        let document = |id: &str| PathBuf::from(format!("/run/user/1000/doc/{id}/FILE-PLANTED"));
+        let paths = PortalHostPaths::new();
+        assert_eq!(
+            paths.host_path(&document("known-PLANTED")),
+            Some(PathBuf::from("/HOST-PLANTED"))
+        );
+        assert_eq!(paths.host_path(&document("absent-PLANTED")), None);
+        assert_eq!(paths.host_path(&document("refused-PLANTED")), None);
+
+        assert!(DesktopPortal.retrieve_secret().is_err());
+
+        let shown = root.join("FILE-PLANTED");
+        fs::write(&shown, "").unwrap();
+        let connection = zbus::block_on(zbus::Connection::session()).unwrap();
+        portal_open_directory(&connection, &shown).unwrap();
+        assert!(portal_open_directory(&connection, &shown).is_err());
+    }
 }
