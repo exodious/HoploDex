@@ -130,6 +130,19 @@ fn spawner() -> &'static Sender<SpawnRequest> {
     })
 }
 
+/// Has the [`spawner`] thread [`start`] the helper, and waits for the result.
+fn start_on_spawner(
+    exe: &Path,
+    mode_argument: &'static str,
+    memory_limit: usize,
+) -> io::Result<Started> {
+    let (reply, answer) = mpsc::channel();
+    spawner()
+        .send((exe.to_owned(), mode_argument, memory_limit, reply))
+        .map_err(|_| io::Error::other("no spawner"))?;
+    answer.recv().map_err(|_| io::Error::other("no spawner"))?
+}
+
 impl HelperProcess {
     /// Starts `exe mode_argument` confined, with `memory_limit` bytes (which
     /// the helper must call `confine::confine` with too).
@@ -139,12 +152,8 @@ impl HelperProcess {
         memory_limit: usize,
     ) -> io::Result<Arc<Self>> {
         confine::log_support_once();
-        let (reply, answer) = mpsc::channel();
-        spawner()
-            .send((exe.to_owned(), mode_argument, memory_limit, reply))
-            .map_err(|_| io::Error::other("no spawner"))?;
-        let (child, stdin, stdout) =
-            answer.recv().map_err(|_| io::Error::other("no spawner"))??;
+        let (child, stdin, stdout) = start_on_spawner(exe, mode_argument, memory_limit)
+            .inspect_err(|err| log::error!("could not start {mode_argument}: {err}"))?;
         // The helper's own stderr is discarded, so its start is the parent's
         // line (011 US2-6); what it is confined with is `log_support_once`'s,
         // once per run.
