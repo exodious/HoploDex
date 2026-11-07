@@ -89,27 +89,27 @@ Bare IDs here mean this feature's. In code, cite them as `013 FR-001`, `013 US1-
 - [X] T030 Update `logging.rs`'s header, docs/architecture/ (the logger, the IPC list), docs/development/ (how to read the log in a test run).
 - [X] T031 README: the log and FR-022's wording, and how to gather a log, with the one-line start on each OS. Flatpak metainfo: the same claim, no wider. Add `_Amended by_` beside 011 research.md §20.
 - [X] T032 Add the notice and About's states to e2e/screenshots/screens.e2e.ts.
-- [ ] T033 Add a note in the release checklist docs only if a step changes: FR-001 means none does. Say so in the PR.
+- [X] T033 Add a note in the release checklist docs only if a step changes: FR-001 means none does. Say so in the PR.
 
 ---
 
 ## Phase 9: Validation on every environment
 
-- [ ] T034 Linux dev container: format, lint, `npm test`, Rust tests, the dependency and license audit, in the background with logs.
-- [ ] T035 Linux dev container: `npm run build`, then E2E (all specs).
-- [ ] T036 Flatpak: `scripts/dev-container.sh --flatpak npm run test:flatpak`.
-- [ ] T037 macOS VM (take the lock): Rust tests and E2E, in the task's folder on the external volume.
-- [ ] T038 macOS VM: launch with `open --env HOPLODEX_LOG=debug` and read the file; window-only screenshots.
-- [ ] T039 Windows VM (take the lock): Rust tests and E2E, in the task's folder.
-- [ ] T040 Windows VM: launch with the variable from a shell and read the file; window-only screenshots.
-- [ ] T041 Linux: window-only screenshots, before and after.
-- [ ] T042 Check SC-006 against the performance test with the level raised (`tests/performance_test.rs`).
-- [ ] T043 Report every test that failed then passed on rerun, and every skip, as they happen.
+- [X] T034 Linux dev container: format, lint, `npm test`, Rust tests, the dependency and license audit, in the background with logs.
+- [X] T035 Linux dev container: `npm run build`, then E2E (all specs).
+- [X] T036 Flatpak: `scripts/dev-container.sh --flatpak npm run test:flatpak`.
+- [X] T037 macOS VM (take the lock): Rust tests and E2E, in the task's folder on the external volume.
+- [X] T038 macOS VM: launch with `open --env HOPLODEX_LOG=debug` and read the file; window-only screenshots.
+- [X] T039 Windows VM (take the lock): Rust tests and E2E, in the task's folder.
+- [X] T040 Windows VM: launch with the variable from a shell and read the file; window-only screenshots.
+- [X] T041 Linux: window-only screenshots, before and after.
+- [X] T042 Check SC-006 against the performance test with the level raised (`tests/performance_test.rs`). That test installs no logger, so it passed 25/25 without the level raised; SC-006 is shown by a line's measured cost (10,000 lines about 33 ms, `troubleshooting_log_test`) and by no debug line in search, per-row or idle code.
+- [X] T043 Report every test that failed then passed on rerun, and every skip, as they happen.
 
 ---
 
 ## Phase 10: Close-out
 
-- [ ] T044 Run `/ai-security-review pr` before the PR; keep its three lines in `## Security review`.
-- [ ] T045 PR description: `Fixes #128.`, screenshots, the persistence and performance notes, what wasn't run. Check `closingIssuesReferences`.
+- [X] T044 Run `/ai-security-review pr` before the PR; keep its three lines in `## Security review`.
+- [X] T045 PR description: `Fixes #128.`, screenshots, the persistence and performance notes, what wasn't run. Check `closingIssuesReferences`.
 - [X] T046 Measure the log's volume per run in the Linux dev container and record it in research.md §8.
