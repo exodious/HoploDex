@@ -30,7 +30,7 @@ Bare IDs here mean this feature's. In code, cite them as `013 FR-001`, `013 US1-
 - [X] T003 Implement `logging::place`, `logging::db_error` and the line backstop; remove `folder_of`.
 - [X] T004 Write the source check, src-tauri/tests/log_lines_test.rs (FR-030): walks `src/**/*.rs`, finds each log macro's whole body, and fails on `.display()`, `to_string_lossy`, a raw path variable or a `{...path...}` capture not going through `place`.
 - [X] T005 Bring every existing log line within the rule (FR-014, FR-016; research.md §6): move the 64 path lines to `place`, `reach.describe()` too, and change `commands/backups.rs` row counts, `db/mod.rs` integrity text, `db/upgrade.rs` row id, `services/sandbox.rs` raw entry, rusqlite errors through `db_error`, and `lifecycle.rs`'s `err.message`. Read each `{err}` for what its type can print.
-- [X] T006 Update `e2e/specs/flatpak.e2e.ts` and `scripts/flatpak/check.sh` for the reach line's shapes.
+- [X] T006 Update `e2e/specs/flatpak.e2e.ts` for the reach line's shapes (`scripts/flatpak/check.sh` matches only the line's start, so it needs no change).
 
 **Checkpoint**: T004 passes, with stderr's lines already within the rule.
 
@@ -41,7 +41,7 @@ Bare IDs here mean this feature's. In code, cite them as `013 FR-001`, `013 US1-
 - [X] T007 [US3] Write failing tests: `logging::decide` for data-model.md's table and FR-001's version cases (unit), and the choice's round trip in machine settings, with an unknown value reading as absent, in src-tauri/tests/machine_settings_test.rs.
 - [X] T008 [US3] Implement `decide`, `LogState`, and `machine_settings`' `troubleshootingLog` and `troubleshootingLogNoticeShown`.
 - [X] T009 [US3] Add `ChooserNotice::TroubleshootingLog`; queue it once from `main.rs` when data-model.md's table says so.
-- [X] T010 [US3] Vitest first, then the chooser: FR-021's text, the Turn off button and its follow-up text, in src/features/databases/DatabaseChooser.tsx, types.ts and databasesService.ts.
+- [X] T010 [US3] Vitest first, then the chooser: FR-021's text, the Turn off button and its follow-up text, in src/features/databases/DatabaseChooser.tsx and types.ts, through src/features/app/troubleshootingLog.ts.
 
 ---
 

@@ -89,7 +89,8 @@ insurance status, valuation, attachment storage, secure delete,
   `check_backup` asks `ReadFile` only. It never writes a probe file);
 - `AppOpener` (007) takes an `OpenerRoute`, `XdgOpen` or, inside a Flatpak,
   `Portal { timeout }`, which asks the OpenURI portal and treats no answer
-  within the timeout as opened;
+  within the timeout as opened; its `reveal` shows the troubleshooting log's file
+  (013 research.md §10);
 - and for 004 `entry_text` (the entry key and 004 FR-015 rules), `cartridges`
   (the embedded catalog and caliber derivation) and `suggestions` (ranking,
   snapping, the import sheet pass);

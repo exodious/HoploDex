@@ -76,11 +76,12 @@ src-tauri/src/commands/troubleshooting_log.rs # the three commands
 src-tauri/src/commands/documents.rs          # Opener::reveal, the portal's OpenDirectory
 src-tauri/src/services/machine_settings.rs   # the choice and the notice flag
 src-tauri/src/models/database.rs             # ChooserNotice::TroubleshootingLog
-src-tauri/src/main.rs, lib.rs, commands_list.rs, capabilities/  # wiring
+src-tauri/src/models/troubleshooting_log.rs  # LogState, LogChoice, what the commands return
+src-tauri/src/main.rs, commands/mod.rs, models/mod.rs, commands_list.rs, capabilities/  # wiring
 src-tauri/src/**                             # every log line within the rule; debug lines
 src-tauri/tests/troubleshooting_log_test.rs, log_contents_test.rs, log_lines_test.rs
-src/features/app/AboutDialog.tsx, TroubleshootingLogSection.tsx, about.css
-src/features/databases/DatabaseChooser.tsx, databasesService.ts, types.ts
+src/features/app/AboutDialog.tsx, TroubleshootingLogSection.tsx, troubleshootingLog.ts, about.css
+src/features/databases/DatabaseChooser.tsx, types.ts
 e2e/support/sandbox.ts, e2e/specs/databases.e2e.ts, e2e/specs/flatpak.e2e.ts, e2e/screenshots/screens.e2e.ts
 README.md, flatpak/*.metainfo.xml, CLAUDE.md, docs/attack-surface.md, docs/architecture/, docs/development/
 ```

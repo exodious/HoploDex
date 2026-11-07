@@ -123,6 +123,8 @@ type ChooserNotice =
   | { kind: "backupFailed"; databasePath: string; reason: "locationUnavailable" | "insufficientSpace" | "interrupted" | "io" | "databaseUnreachable" }
   | { kind: "takenOver"; databasePath: string };
 
+_Amended by [spec 013](../../013-troubleshooting-log/data-model.md): `ChooserNotice` also takes `{ kind: "troubleshootingLog" }`, with no fields._
+
 type CloseReason =
   "closed" | "switched" | "quit" | "lockedByUser" | "idle" | "screenLocked" | "sleep" | "shutdown" | "takenOver";
 

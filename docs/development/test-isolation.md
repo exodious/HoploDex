@@ -36,7 +36,7 @@ of it:
 - The troubleshooting log (`src-tauri/src/logging.rs`, 013) writes under the app's
   cache directory, so an E2E run's file is in its sandbox like the rest. The
   sandbox also sets `HOPLODEX_LOG=off`, so no run gets the log's notice on the
-  chooser or writes the file, unless a journey clears it. Rust tests name their own
+  chooser or writes the file, unless a journey changes it. Rust tests name their own
   folders, and the process-wide logger is only installed in
   `tests/log_contents_test.rs`'s child processes.
 - `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
