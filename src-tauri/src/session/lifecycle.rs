@@ -41,6 +41,7 @@ pub fn create(
     path: &Path,
     passphrase: &Passphrase,
 ) -> Result<(), CommandError> {
+    log::debug!("creating a database at {}", crate::logging::place(path));
     // Whatever waits for an upgrade is let go of first (009 research.md §4).
     session.drop_awaiting_upgrade();
     let conn =
@@ -77,6 +78,7 @@ pub fn open(
     passphrase: &Passphrase,
     take_over: bool,
 ) -> Result<(), CommandError> {
+    log::debug!("opening {} (take over: {take_over})", crate::logging::place(path));
     // The generation is read as the slot is emptied, before the key is
     // derived: a sleep, screen lock or shutdown during the derivation raises
     // it, and the database is not put in the slot (009 research.md §4).
@@ -129,7 +131,7 @@ pub(crate) fn prepare(
     // it. It is part of the open: the 1s of 003 SC-003 includes it, timed in
     // `performance_test.rs`.
     if let Err(err) = suggestions::warm(&conn) {
-        log::warn!("warming the suggestions failed: {err}");
+        log::warn!("warming the suggestions failed: {}", crate::logging::db_error(&err));
     }
     let mut open = OpenDatabase::new(conn, path)?;
     open.notes.opened_backup = opened_backup;
@@ -199,6 +201,7 @@ pub fn close_normal(
     machine: &MachineSettings,
     reason: CloseReason,
 ) -> Result<CloseOutcome, CommandError> {
+    log::debug!("closing the database: {reason:?}");
     // Without the mutex, so a close that is certainly late changes nothing
     // of `closing`; `take` compares again under the mutex.
     if session.current_id() != id {
@@ -272,7 +275,11 @@ pub fn close_normal(
             tx.commit()
         });
         if let Err(err) = finished {
-            log::error!("could not finish closing {}: {err}", open.path.display());
+            log::error!(
+                "could not finish closing {}: {}",
+                crate::logging::place(&open.path),
+                crate::logging::db_error(&err)
+            );
         }
         outcome
     };
@@ -339,6 +346,7 @@ pub fn lock(
     reason: CloseReason,
     draft: Option<Draft>,
 ) -> Result<CloseOutcome, CommandError> {
+    log::debug!("locking the database: {reason:?}");
     if let Some(draft) = draft {
         let saved_at = backups::utc_text(&session.clock().now());
         let kept = session.write_housekeeping(id, |conn| {
@@ -353,7 +361,7 @@ pub fn lock(
             // Not the open session (any more): not this lock's to make.
             Err(err) if err.code == "DATABASE_CLOSED" => return Err(err),
             Err(err) => {
-                log::error!("could not keep the unsaved changes at a lock: {}", err.message);
+                log::error!("could not keep the unsaved changes at a lock: {}", err.code);
                 if let Some(path) = session.open_path() {
                     session.events().notice(ChooserNotice::PendingChangesLost {
                         database_path: path.to_string_lossy().into_owned(),
@@ -407,6 +415,7 @@ pub fn close_immediate(session: &Session, machine: &MachineSettings, reason: Clo
 /// the operation, so a running copy lets go of it. From here on no command
 /// reaches the database. Returns whether there was anything to close.
 pub fn begin_immediate(session: &Session, reason: CloseReason) -> bool {
+    log::debug!("closing at once: {reason:?}");
     let stopped = session.operations().stop();
     let (path, session_id, lock_announced) = {
         let mut closing = session.closing();
@@ -486,8 +495,8 @@ fn finish_immediately(session: &Session, machine: &MachineSettings, mut open: Op
         pending::write_pending(&open.conn, draft.as_ref(), true, &saved_at).map_err(|err| {
             log::error!(
                 "could not keep the unsaved changes of {}: {}",
-                open.path.display(),
-                err.message
+                crate::logging::place(&open.path),
+                err.code
             )
         })
     } else {
@@ -549,6 +558,7 @@ fn stopped_notice(path: &Path, stopped: &StoppedOperation) -> ChooserNotice {
 /// the rest (003 FR-037). A sleep the OS gave no usable notice of is only
 /// noticed now, and locks now if the idle lock is on (003 research.md §14).
 pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
+    log::debug!("the computer woke");
     // However the sleep was noticed, its dialogs go and a passphrase kept for
     // a restore is wiped, as `will_sleep` does (amended 2026-11-04).
     session.prompts().dismiss_all();
@@ -565,6 +575,7 @@ pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
 /// clear whatever else happens; a close under way becomes immediate; and
 /// with the idle lock on, an open database locks at once.
 pub fn will_sleep(session: &Session, machine: &MachineSettings) {
+    log::debug!("the computer is going to sleep");
     session.events().emit("system:clear-passphrase-fields", json!({}));
     // A passphrase dialog is emptied and taken down, and a passphrase kept
     // for a restore's confirmation is wiped (amended 2026-11-04).
@@ -588,6 +599,7 @@ pub fn will_sleep(session: &Session, machine: &MachineSettings) {
 /// The screen locked (003 FR-007, FR-038): passphrase fields clear, and with
 /// the option on, the open database locks as a normal close.
 pub fn screen_locked(session: &Session, machine: &MachineSettings) {
+    log::debug!("the screen locked");
     session.events().emit("system:clear-passphrase-fields", json!({}));
     session.prompts().dismiss_all();
     session.drop_backup_check();
@@ -607,6 +619,7 @@ pub fn screen_locked(session: &Session, machine: &MachineSettings) {
 /// changes are kept before the key is cleared and document copies are
 /// deleted, and no backup is made.
 pub fn will_shut_down(session: &Session, machine: &MachineSettings) {
+    log::debug!("the OS is shutting down or ending the app");
     // An upgrade's backup is stopped by the immediate close below, as any
     // operation is.
     session.drop_awaiting_upgrade();
@@ -635,6 +648,7 @@ fn backup_at_close(
     open: &OpenDatabase,
     now: chrono::DateTime<chrono::FixedOffset>,
 ) -> CloseOutcome {
+    log::debug!("deciding on a backup at close");
     let state = open.conn.query_row(
         "SELECT a.changes_waiting, a.last_backup_at, s.backups_enabled, s.backup_keep_count,
                 s.backup_location
@@ -653,7 +667,11 @@ fn backup_at_close(
     let (changes_waiting, last_backup_at, enabled, keep, location) = match state {
         Ok(state) => state,
         Err(err) => {
-            log::error!("could not read the backup record of {}: {err}", open.path.display());
+            log::error!(
+                "could not read the backup record of {}: {}",
+                crate::logging::place(&open.path),
+                crate::logging::db_error(&err)
+            );
             return backup_failed(session, open, BackupFailureReason::Io);
         }
     };
@@ -670,7 +688,10 @@ fn backup_at_close(
         Due::Yes => {}
     }
     let Ok(operation) = session.operations().begin(OperationKind::Backup, None) else {
-        log::error!("another operation was running at the close of {}", open.path.display());
+        log::error!(
+            "another operation was running at the close of {}",
+            crate::logging::place(&open.path)
+        );
         return backup_failed(session, open, BackupFailureReason::Io);
     };
     let events = session.events();
@@ -735,7 +756,7 @@ fn backup_failed(
 /// view before anything else happens.
 pub(crate) fn close_taken_over(session: &SessionInner, mut open: OpenDatabase) {
     drop(open.end_preview());
-    log::warn!("{} was taken over by another computer", open.path.display());
+    log::warn!("{} was taken over by another computer", crate::logging::place(&open.path));
     let path = open.path.to_string_lossy().into_owned();
     let events = session.events();
     events.notice(ChooserNotice::TakenOver { database_path: path.clone() });

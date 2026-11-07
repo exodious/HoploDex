@@ -6,7 +6,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 import { AboutDialog } from "./AboutDialog";
 
-// 010 SC-005: About calls no command. Every `invoke` goes through this mock.
+// 010 SC-005, amended by 013 FR-003: About calls no command but the troubleshooting
+// log's. Every `invoke` goes through this mock.
 vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
   invoke: vi.fn(),
@@ -695,8 +696,13 @@ describe("010 US1 - AboutDialog while it loads (010 contracts/ui.md §2 items 4 
   );
 });
 
-describe("010 US1 - AboutDialog sends no command (010 SC-005)", () => {
-  it("never calls invoke while rendering, filtering and opening rows", async () => {
+/** The commands About sent that aren't the troubleshooting log's section's own. */
+function otherCommands() {
+  return vi.mocked(invoke).mock.calls.filter(([name]) => !name.includes("troubleshooting_log"));
+}
+
+describe("010 US1 - AboutDialog sends no command but the log's (010 SC-005, 013 FR-003)", () => {
+  it("calls only the log's command while rendering, filtering and opening rows", async () => {
     const user = renderAbout();
     await ready();
 
@@ -706,17 +712,17 @@ describe("010 US1 - AboutDialog sends no command (010 SC-005)", () => {
     await user.clear(filterField());
     await user.click(disclosure("cool-apache"));
 
-    expect(invoke).not.toHaveBeenCalled();
+    expect(otherCommands()).toEqual([]);
     expect(fetchNotices).toHaveBeenCalledTimes(1);
   });
 
-  it("never calls invoke when the notices fail to load", async () => {
+  it("calls only the log's command when the notices fail to load", async () => {
     fetchNotices.mockRejectedValue(new TypeError("Failed to fetch"));
     renderAbout();
 
     await screen.findByText(FAILED);
 
-    expect(invoke).not.toHaveBeenCalled();
+    expect(otherCommands()).toEqual([]);
   });
 });
 
@@ -731,5 +737,100 @@ describe("010 US1 - AboutDialog's narrow layout (010 FR-007)", () => {
     // The base rule is a single column, and no rule makes it a grid or a row.
     expect(css).toMatch(/\.hd-about\s*\{[^}]*flex-direction:\s*column/);
     expect(css).not.toMatch(/grid-template-columns|flex-direction:\s*row/);
+  });
+});
+
+describe("013 US1 - Gather a log for a repeatable issue", () => {
+  const PATH = "/home/someone/.cache/io.github.exodious.HoploDex/logs/hoplodex.log";
+
+  /** The backend's answers: the state after each `set`, and the rest. */
+  function backend(start: "off" | "on" | "detailed", exists = true) {
+    let state = start;
+    vi.mocked(invoke).mockImplementation(async (name: string, args?: unknown) => {
+      if (name === "set_troubleshooting_log") state = (args as { state: typeof state }).state;
+      if (name === "show_troubleshooting_log") return undefined;
+      return { state, path: PATH, exists, failed: false };
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("013 US1-6, US1-5: shows the state and the path, and turns it on from off", async () => {
+    backend("off");
+    const user = renderAbout();
+    await screen.findByText(/^Off\. Turn it on/);
+    expect(screen.queryByText(PATH)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Detailed until you quit" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Turn on" }));
+
+    expect(invoke).toHaveBeenCalledWith("set_troubleshooting_log", { state: "on" });
+    expect(await screen.findByText(PATH)).toBeInTheDocument();
+    expect(screen.getByText("On.")).toBeInTheDocument();
+  });
+
+  it("013 US1-1, FR-004: raises the level until quit, with nothing to press to lower it", async () => {
+    backend("on");
+    const user = renderAbout();
+    await user.click(await screen.findByRole("button", { name: "Detailed until you quit" }));
+
+    expect(await screen.findByText("On, with extra detail until you quit.")).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("set_troubleshooting_log", { state: "detailed" });
+    expect(screen.getByRole("button", { name: "Show log file" })).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "Detailed until you quit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Normal detail" })).toBeNull();
+  });
+
+  it("013 US1-4: shows the file, and says why when it can't", async () => {
+    backend("on");
+    const user = renderAbout();
+    await user.click(await screen.findByRole("button", { name: "Show log file" }));
+    expect(vi.mocked(invoke).mock.calls.map(([name]) => name)).toContain(
+      "show_troubleshooting_log",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    // The spec's edge case: the user deleted the file while the app runs.
+    vi.mocked(invoke).mockRejectedValueOnce({
+      code: "NOT_FOUND",
+      message: "There is no log file.",
+    });
+    await user.click(screen.getByRole("button", { name: "Show log file" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("There is no log file.");
+
+    vi.mocked(invoke).mockRejectedValueOnce("the IPC itself failed");
+    await user.click(screen.getByRole("button", { name: "Show log file" }));
+    await screen.findByText("The log file couldn't be shown.");
+  });
+
+  it("013 US1-4: Show log file is disabled when there is no file", async () => {
+    backend("on", false);
+    renderAbout();
+    expect(await screen.findByRole("button", { name: "Show log file" })).toBeDisabled();
+  });
+
+  it("013 FR-021: says what the log is designed to leave out", async () => {
+    backend("on");
+    renderAbout();
+    expect(
+      await screen.findByText(/^It is designed to leave out your records/),
+    ).toBeInTheDocument();
+  });
+
+  it("013 US3-2: turns it off and shows it off", async () => {
+    backend("on");
+    const user = renderAbout();
+    await user.click(await screen.findByRole("button", { name: "Turn off" }));
+    expect(await screen.findByRole("button", { name: "Turn on" })).toHaveFocus();
+    expect(invoke).toHaveBeenCalledWith("set_troubleshooting_log", { state: "off" });
+    expect(screen.queryByText(PATH)).not.toBeInTheDocument();
+  });
+
+  it("says when the file can't be written", async () => {
+    vi.mocked(invoke).mockResolvedValue({ state: "on", path: PATH, exists: false, failed: true });
+    renderAbout();
+    expect(await screen.findByText("On, but the file can't be written.")).toBeInTheDocument();
   });
 });

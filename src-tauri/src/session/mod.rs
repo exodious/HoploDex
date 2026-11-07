@@ -754,7 +754,7 @@ impl SessionInner {
                 return Err(CommandError::database_taken_over());
             }
             FingerprintCheck::Unreachable => {
-                log::warn!("{} can no longer be reached", open.path.display());
+                log::warn!("{} can no longer be reached", crate::logging::place(&open.path));
                 open.storage_lost = true;
                 return Err(CommandError::database_unavailable(&open.path));
             }
@@ -769,13 +769,16 @@ impl SessionInner {
             && open.conn.total_changes() != changes_before
             && let Err(err) = db::record_saved_version(&open.conn)
         {
-            log::warn!("could not record the saving version: {err}");
+            log::warn!("could not record the saving version: {}", crate::logging::db_error(&err));
         }
         if !open.storage_lost {
             match FileFingerprint::capture(&open.path) {
                 Ok(fingerprint) => open.fingerprint = fingerprint,
                 Err(err) => {
-                    log::warn!("{} can no longer be reached: {err}", open.path.display());
+                    log::warn!(
+                        "{} can no longer be reached: {err}",
+                        crate::logging::place(&open.path)
+                    );
                     open.storage_lost = true;
                 }
             }
@@ -1016,14 +1019,14 @@ impl SessionInner {
         {
             log::warn!(
                 "could not delete a web view crash report in {}",
-                crate::logging::folder_of(&leftover)
+                crate::logging::place(&leftover)
             );
         }
         let Some(dir) = &self.opened_documents_dir else { return };
-        for leftover in crate::commands::documents::ops::clear_opened_documents(dir) {
+        if !crate::commands::documents::ops::clear_opened_documents(dir).is_empty() {
             log::warn!(
-                "could not delete an opened-document copy in {}",
-                crate::logging::folder_of(&leftover)
+                "could not delete all opened-document copies in {}",
+                crate::logging::place(dir)
             );
         }
     }

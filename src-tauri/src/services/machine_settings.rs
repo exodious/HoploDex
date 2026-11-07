@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::{now_utc, random_hex};
 use crate::models::database::ChooserNotice;
 use crate::models::document_opening::DocumentOpening;
+use crate::models::troubleshooting_log::LogChoice;
 use crate::services::keyring::Keyring;
 use crate::services::scratch;
 use crate::services::secure_delete::{secure_delete_dir, secure_delete_file};
@@ -141,6 +142,17 @@ struct MachineFile {
     /// 007 FR-003a. `None` (JSON `null`) unless a hold or a leftover is recorded.
     #[serde(default)]
     pdf_preview_hold: Option<PdfPreviewHold>,
+    /// 013 FR-002. Absent means follow the version's default. A value this
+    /// version doesn't know reads as absent too (009 research.md §15).
+    #[serde(
+        default,
+        deserialize_with = "lenient_troubleshooting_log",
+        skip_serializing_if = "Option::is_none"
+    )]
+    troubleshooting_log: Option<LogChoice>,
+    /// 013 FR-020: the notice has been queued on this computer.
+    #[serde(default)]
+    troubleshooting_log_notice_shown: bool,
 }
 
 /// Reads `notices` one entry at a time (009 research.md §15): a file that a
@@ -180,6 +192,15 @@ where
     }))
 }
 
+/// Reads `troubleshootingLog`, as absent for a value this version doesn't know.
+fn lenient_troubleshooting_log<'de, D>(deserializer: D) -> Result<Option<LogChoice>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
 impl MachineFile {
     fn fresh() -> io::Result<Self> {
         Ok(Self {
@@ -191,6 +212,8 @@ impl MachineFile {
             notices: Vec::new(),
             document_opening: DocumentOpening::default(),
             pdf_preview_hold: None,
+            troubleshooting_log: None,
+            troubleshooting_log_notice_shown: false,
         })
     }
 
@@ -242,7 +265,7 @@ impl MachineSettings {
                         // fields it knows, so it says so.
                         log::info!(
                             "{} is version {}; reading the fields this version knows",
-                            path.display(),
+                            crate::logging::place(&path),
                             file.version
                         );
                         file.version = VERSION;
@@ -261,7 +284,7 @@ impl MachineSettings {
         let file = match file {
             Some(file) => file,
             None => {
-                log::warn!("{} is unreadable; starting a new one", path.display());
+                log::warn!("{} is unreadable; starting a new one", crate::logging::place(&path));
                 fs::rename(&path, config_dir.join(format!("{FILE_NAME}.bad")))?;
                 let fresh = MachineFile::fresh()?;
                 write_atomically(&path, &fresh)?;
@@ -289,7 +312,7 @@ impl MachineSettings {
         let mut file = self.lock();
         change(&mut file);
         if let Err(err) = write_atomically(&self.path, &file) {
-            log::error!("could not write {}: {err}", self.path.display());
+            log::error!("could not write {}: {err}", crate::logging::place(&self.path));
         }
     }
 
@@ -446,6 +469,27 @@ impl MachineSettings {
 
     pub fn set_document_opening(&self, value: DocumentOpening) {
         self.update(|file| file.document_opening = value);
+    }
+
+    /// The user's choice about the troubleshooting log, if they made one
+    /// (013 FR-002).
+    pub fn troubleshooting_log(&self) -> Option<LogChoice> {
+        self.lock().troubleshooting_log
+    }
+
+    pub fn set_troubleshooting_log(&self, choice: LogChoice) {
+        self.update(|file| file.troubleshooting_log = Some(choice));
+    }
+
+    /// Queues the notice about the log on its first call on this computer
+    /// (013 FR-020).
+    pub fn queue_troubleshooting_log_notice(&self) {
+        if !self.lock().troubleshooting_log_notice_shown {
+            self.update(|file| {
+                file.troubleshooting_log_notice_shown = true;
+                file.notices.push(ChooserNotice::TroubleshootingLog);
+            });
+        }
     }
 
     /// The PDF preview hold, or `None` when there is none (007 FR-003a).

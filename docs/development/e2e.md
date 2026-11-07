@@ -108,7 +108,10 @@ points `DISPLAY` at it, so the app never touches your real desktop and
 parallel workers never share a screen, a pointer or a keyboard. WebdriverIO 10's testrunner would otherwise start one
 display shared by the whole run, so `wdio.conf.ts` turns it off
 (`displayServerEnabled: false`), and `run-e2e.mjs` drops `WAYLAND_DISPLAY`,
-which would make the testrunner point GTK at your compositor even then. The harness self-heals after an interrupted prior run,
+which would make the testrunner point GTK at your compositor even then. On Windows and macOS
+the workers do share a desktop, so another worker's window can take the foreground at any moment,
+and Radix closes an open menu or select list when its window loses focus: open them through
+`openMenu` or `selectOption` in `e2e/support/ui.ts`, which keep them open through that. The harness self-heals after an interrupted prior run,
 killing anything left over on a worker's port before launching the app.
 
 ## Quit cleanup

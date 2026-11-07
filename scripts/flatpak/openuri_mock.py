@@ -135,6 +135,22 @@ def OpenFile(self, parent_window, fd, options, sender=None):
     return dbus.ObjectPath(handle_path)
 
 
+@dbus.service.method(MAIN_IFACE, in_signature="sha{sv}", out_signature="o")
+def OpenDirectory(self, parent_window, fd, options):
+    """Show log file (013 research.md §10): recorded like OpenFile, with no answer."""
+    number = fd.take() if hasattr(fd, "take") else int(fd)
+    try:
+        entry = {
+            "method": "OpenDirectory",
+            "path": os.readlink(f"/proc/self/fd/{number}"),
+            "accessMode": fcntl.fcntl(number, fcntl.F_GETFL) & os.O_ACCMODE,
+        }
+    finally:
+        os.close(number)
+    _append("log", json.dumps(entry, sort_keys=True))
+    return dbus.ObjectPath("/org/freedesktop/portal/desktop/request/hoplodex/directory")
+
+
 @dbus.service.method(
     SECRET_IFACE,
     in_signature="ha{sv}",

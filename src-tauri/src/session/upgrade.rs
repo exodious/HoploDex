@@ -272,7 +272,10 @@ pub fn upgrade_database(
             return Err(wait_again(session, waiting, generation, short.into()));
         }
         Err(BackupFailure::Io(err)) => {
-            log::error!("the backup before upgrading {} failed: {err}", waiting.path.display());
+            log::error!(
+                "the backup before upgrading {} failed: {err}",
+                crate::logging::place(&waiting.path)
+            );
             return Err(wait_again(
                 session,
                 waiting,
@@ -316,7 +319,11 @@ pub fn upgrade_database(
     // not keep the column.
     if operation.is_cancelled() || screen_lock_closes(session, &waiting) {
         if let Err(err) = db::clear_open_marker(&waiting.conn) {
-            log::error!("could not clear the open marker of {}: {err}", waiting.path.display());
+            log::error!(
+                "could not clear the open marker of {}: {}",
+                crate::logging::place(&waiting.path),
+                crate::logging::db_error(&err)
+            );
         }
         return Err(CommandError::operation_stopped(OperationKind::Upgrade, None, None));
     }
@@ -366,8 +373,9 @@ fn screen_lock_closes(session: &Session, waiting: &AwaitingUpgrade) -> bool {
             })
             .unwrap_or_else(|err| {
                 log::error!(
-                    "could not read the screen lock setting of {}: {err}",
-                    waiting.path.display()
+                    "could not read the screen lock setting of {}: {}",
+                    crate::logging::place(&waiting.path),
+                    crate::logging::db_error(&err)
                 );
                 true
             })
@@ -399,7 +407,10 @@ fn emit(session: &Session, phase: UpgradePhase, processed: u64, total: u64, show
     let progress = UpgradeProgress { phase, processed, total, show_now };
     match serde_json::to_value(progress) {
         Ok(payload) => session.events().emit(UpgradeProgress::EVENT, payload),
-        Err(err) => log::warn!("could not report the upgrade's progress: {err}"),
+        Err(err) => log::warn!(
+            "could not report the upgrade's progress: {}",
+            crate::logging::json_error(&err)
+        ),
     }
 }
 

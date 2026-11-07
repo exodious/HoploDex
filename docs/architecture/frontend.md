@@ -15,7 +15,9 @@ opened by `session.showAbout()` from the chooser's top bar, the database menu
 and `app:about-requested`; it closes on any phase change except the window's
 start, reads the build's `/notices.json` (the app's own origin, so no command
 and no database access), and shows the program block from the
-`__HOPLODEX_PROGRAM__` constants the Vite plugin defines.
+`__HOPLODEX_PROGRAM__` constants the Vite plugin defines. Its
+`TroubleshootingLogSection` (013) is the one part that calls commands
+(`troubleshootingLog.ts`): it gets the log's state and path, never its contents.
 
 `features/session/sessionScope.ts`'s `SessionScope` is what one open owns: its
 `id`, `invoke` (sends the `HoploDex-Session` header; after `end()` it rejects

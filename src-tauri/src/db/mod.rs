@@ -72,7 +72,33 @@ pub enum OpenError {
     Internal(rusqlite::Error),
 }
 
+impl DbError {
+    /// What a log line may say (013 FR-016): SQLite's code, not its text.
+    pub fn for_log(&self) -> String {
+        match self {
+            Self::Sqlite(err) => crate::logging::db_error(err),
+            Self::Exists(_) => "a file already exists there".to_owned(),
+            Self::Upgrade(err) => err.for_log(),
+            Self::Io(_) | Self::Random(_) => self.to_string(),
+        }
+    }
+}
+
 impl OpenError {
+    /// What a log line may say (013 FR-014, FR-016): the outcome, not the path,
+    /// the other computer's name or SQLite's text its message carries.
+    pub fn for_log(&self) -> String {
+        match self {
+            Self::NotFound { path } => format!("no file at {}", crate::logging::place(path)),
+            Self::Unreadable { path } => {
+                format!("cannot read or write {}", crate::logging::place(path))
+            }
+            Self::OpenElsewhere { .. } => "the database is open on another computer".to_owned(),
+            Self::Internal(err) => crate::logging::db_error(err),
+            other => other.to_string(),
+        }
+    }
+
     /// Sorts an SQLite error met while opening into the outcomes above.
     pub(crate) fn classify(err: rusqlite::Error) -> Self {
         match err.sqlite_error_code() {
@@ -375,7 +401,8 @@ pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, Op
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
         .map_err(OpenError::classify)?;
     if cipher_failed || integrity != "ok" {
-        log::error!("the copy {} failed its checks: {integrity}", path.display());
+        // Not its text: `integrity_check` reports rows and counts (013 FR-016).
+        log::error!("the copy {} failed its checks", crate::logging::place(path));
         return Err(OpenError::Damaged);
     }
     if !is_hoplodex_database(&conn).map_err(OpenError::classify)? {
@@ -488,7 +515,10 @@ pub fn reclaim_deleted_record(conn: &Connection) {
         if let Err(err) =
             conn.execute(&format!("INSERT INTO {index} ({index}) VALUES ('optimize')"), [])
         {
-            log::warn!("could not merge the search index {index} after a delete: {err}");
+            log::warn!(
+                "could not merge the search index {index} after a delete: {}",
+                crate::logging::db_error(&err)
+            );
         }
     }
     reclaim(conn);
@@ -496,7 +526,10 @@ pub fn reclaim_deleted_record(conn: &Connection) {
 
 fn reclaim(conn: &Connection) {
     if let Err(err) = conn.execute_batch("VACUUM") {
-        log::warn!("could not vacuum the database after a delete: {err}");
+        log::warn!(
+            "could not vacuum the database after a delete: {}",
+            crate::logging::db_error(&err)
+        );
     }
 }
 

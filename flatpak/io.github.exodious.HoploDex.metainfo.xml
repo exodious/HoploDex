@@ -20,6 +20,13 @@
       connection, and it can import and export spreadsheets and back up the
       collection.
     </p>
+    <p>
+      While HoploDex is before version 1.0, it keeps a troubleshooting log on
+      this computer, up to 4 MiB and for up to 14 days. It is designed to leave
+      out your records, file names, passphrases and how many items you have.
+      Nothing is sent anywhere, and you can read it before you share it. You
+      can turn it off in About.
+    </p>
   </description>
   <launchable type="desktop-id">io.github.exodious.HoploDex.desktop</launchable>
   <url type="homepage">https://github.com/exodious/HoploDex</url>

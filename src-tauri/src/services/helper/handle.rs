@@ -161,6 +161,7 @@ impl HelperProcess {
     }
 
     pub fn kill(&self) {
+        log::debug!("killing a helper");
         let _ = lock(&self.child).kill();
     }
 
@@ -168,7 +169,10 @@ impl HelperProcess {
     pub fn reap(&self) {
         let mut child = lock(&self.child);
         let _ = child.kill();
-        let _ = child.wait();
+        match child.wait() {
+            Ok(status) => log::debug!("a helper ended: {status}"),
+            Err(err) => log::debug!("a helper could not be waited for: {err}"),
+        }
     }
 
     /// One request and its answer through `exchange`, which writes to the

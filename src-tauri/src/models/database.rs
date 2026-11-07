@@ -272,6 +272,8 @@ pub enum ChooserNotice {
     TakenOver {
         database_path: String,
     },
+    /// The troubleshooting log is on by the version's default (013 FR-020).
+    TroubleshootingLog,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

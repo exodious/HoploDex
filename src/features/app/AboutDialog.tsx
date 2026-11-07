@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Dialog, Disclosure, placeFocus, TextField } from "../../components";
 import { filterComponents, loadNotices } from "./aboutNotices";
+import { TroubleshootingLogSection } from "./TroubleshootingLogSection";
 import type { ComponentNotice, NoticesDocument } from "./aboutNotices";
 import "../app/AppShell.css";
 import "./about.css";
@@ -23,8 +24,8 @@ type Load =
 
 /** About HoploDex (010 contracts/ui.md §2, §3): the program block, the
  * license and the notices of what ships. The document is read when the
- * dialog opens and dropped when it closes; nothing here calls a command
- * (010 SC-005). */
+ * dialog opens and dropped when it closes. Only the troubleshooting log's
+ * section calls a command (010 SC-005, amended by 013 FR-003). */
 export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="About HoploDex" size="lg">
@@ -187,6 +188,8 @@ function AboutContent() {
         permission={notices ? notices.additionalPermission : null}
         development={notices?.development === true}
       />
+
+      <TroubleshootingLogSection />
 
       {load.state === "loading" && late && (
         <p className="hd-about__status">Loading the license notices…</p>

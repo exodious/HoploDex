@@ -154,6 +154,7 @@ What it does, in order:
 3. Starts a private session bus with a scripted desktop portal
    (`scripts/flatpak/openuri_mock.py`, a dbusmock template with two interfaces:
    OpenURI, which records each `OpenFile`'s descriptor and answers `Response`,
+   and records each `OpenDirectory`'s descriptor with no answer,
    and Secret, whose `RetrieveSecret` hands back a fixed key for the run, the
    stand-in for the Secret portal; started without the key it has no Secret
    interface, as a desktop with no Secret portal backend), stand-ins for both
@@ -191,7 +192,7 @@ What it does, in order:
 
 Its logs are in `flatpak/out/check/` (`check.log`, one per stand-in and per app
 start, which holds what the app logged to standard error: whether WebKit's
-sandbox is on and what the helpers are confined with, see `src-tauri/src/logging.rs`;
+sandbox is on and what the helpers are confined with, see `src-tauri/src/logging.rs`, with paths as their shapes;
 and `openuri.log`, one JSON line for each descriptor the scripted portal was handed).
 `lock-times.log` has each lock's time from the signal, in the Flatpak and outside
 the sandbox for a sleep, a screen lock, a shutdown and a SIGTERM, each Flatpak
