@@ -3,7 +3,7 @@
 //! once confined it can open no file and no TCP socket, on Linux a seccomp
 //! filter refuses its listed system calls and it won't serve without the
 //! filter, it holds no inherited descriptor, it exits when its parent dies, its
-//! environment is empty, core dumps are off, the parent kills it past the
+//! environment holds only what the OS needs, core dumps are off, the parent kills it past the
 //! `Load` and `Render` limits, and the parent encodes what it answers only if
 //! the pixels fit the request.
 //!
