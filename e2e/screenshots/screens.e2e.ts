@@ -12,6 +12,7 @@ import {
   clickEl,
   fill,
   goTo,
+  openMenu,
   openPhysicalGroup,
   pressEscape,
   search,
@@ -341,36 +342,9 @@ async function setGroup(title: string, open: boolean) {
   await settle();
 }
 
-/** Opens the "Group by" menu (it opens on pointer down, which a plain click
- * doesn't send) and leaves it open. */
-async function openGroupMenu() {
-  const trigger = await $('button[aria-haspopup="menu"][aria-label^="Group by"]');
-  await trigger.waitForExist();
-  await browser.execute((element: HTMLElement) => {
-    element.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
-    );
-  }, trigger);
-  await $('[role="menu"]').waitForExist({ timeout: 5000 });
-  await settle();
-}
-
-/** Opens a menu whose trigger is the button in `scope` reading `label` (a
- * menu opens on pointer down, which a plain click doesn't send). */
-async function openMenuButton(scope: string, label: string) {
-  await browser.execute(
-    (within: string, wanted: string) => {
-      const trigger = [...document.querySelectorAll<HTMLElement>(`${within} button`)].find(
-        (b) => b.textContent?.trim() === wanted,
-      );
-      trigger?.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
-      );
-    },
-    scope,
-    label,
-  );
-  await $('[role="menu"]').waitForExist({ timeout: 5000 });
+/** Opens a record's Mount menu and leaves it open. */
+async function openMountMenu() {
+  await openMenu(".hd-mounted-section .hd-panel__head button");
   await settle();
 }
 
@@ -393,7 +367,7 @@ async function chooseOpenMenuItem(label: string) {
 /** Opens the "Mount on {name}" dialog from the record page's Mounted section,
  * and searches it for `text`. */
 async function searchMountDialog(text: string) {
-  await openMenuButton(".hd-mounted-section", "Mount");
+  await openMountMenu();
   await chooseOpenMenuItem("Existing accessory or firearm…");
   await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
   await settle();
@@ -663,7 +637,8 @@ for (const theme of ["Light", "Dark"] as const) {
     });
 
     it("grouping by registration, and the suppressor drawing", async () => {
-      await openGroupMenu();
+      await openMenu('button[aria-haspopup="menu"][aria-label^="Group by"]');
+      await settle();
       await shot(`45-grouping-menu-${suffix}`);
       await browser.execute(() => {
         [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')]
@@ -761,7 +736,7 @@ for (const theme of ["Light", "Dark"] as const) {
       await browser.execute(() =>
         document.querySelector(".hd-mounted-section")?.scrollIntoView({ block: "center" }),
       );
-      await openMenuButton(".hd-mounted-section", "Mount");
+      await openMountMenu();
       await shot(`55-mount-menu-${suffix}`);
       await pressEscapeKey();
       await $('[role="menu"]').waitForExist({ reverse: true });
@@ -1587,13 +1562,7 @@ describe("Screenshots: About HoploDex", () => {
 
   /** The database menu open, in both themes, for the before/after pair. */
   async function shotOpenDatabaseMenu() {
-    const trigger = await $("button.hd-db-menu");
-    await browser.execute((element: HTMLElement) => {
-      element.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
-      );
-    }, trigger);
-    await $('[role="menu"]').waitForExist({ timeout: 5000 });
+    await openMenu("button.hd-db-menu");
     await settle();
     await shotBothThemes("103-database-menu");
     await pressEscape();

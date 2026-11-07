@@ -16,6 +16,7 @@ import {
   clickButton,
   expect,
   fill,
+  openMenu,
   passphraseLog,
   scratchDocuments,
   settle,
@@ -56,13 +57,7 @@ async function pressButton(label: string) {
 /** Chooses `item` from the database menu, as `chooseMenuItem` does, without
  * waiting for the command it sends to finish. */
 async function pressMenuItem(item: string) {
-  const trigger = await $("button.hd-db-menu");
-  await trigger.waitForExist();
-  await browser.execute((element: HTMLElement) => {
-    element.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
-    );
-  }, trigger);
+  await openMenu("button.hd-db-menu");
   const found = await $(`[role="menuitem"]*=${item}`);
   await found.waitForExist({ timeout: 5000 });
   await found.click();
