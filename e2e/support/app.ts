@@ -17,7 +17,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 
 /** The Cargo profile E2E builds and drives: `e2e` (release without fat LTO,
  * so a backend change rebuilds in seconds), or `release` with
- * HOPLODEX_E2E_PROFILE=release, as a release check (DEVELOPMENT.md, "Test"). */
+ * HOPLODEX_E2E_PROFILE=release, as a release check (docs/development/e2e.md). */
 export const buildProfile = process.env.HOPLODEX_E2E_PROFILE || "e2e";
 if (buildProfile !== "e2e" && buildProfile !== "release") {
   throw new Error(`HOPLODEX_E2E_PROFILE must be "e2e" or "release", not "${buildProfile}"`);

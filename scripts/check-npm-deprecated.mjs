@@ -1,5 +1,5 @@
-// npm deprecation audit: `npm run audit:deprecated`. See "Dependency audit" in
-// DEVELOPMENT.md.
+// npm deprecation audit: `npm run audit:deprecated`. See
+// docs/development/dependency-audit.md.
 //
 // Reads package-lock.json and reports every package whose lockfile entry
 // carries a `deprecated` message. A deprecated package fails the audit unless
@@ -189,7 +189,7 @@ export function checkDeprecated(lock, exceptionsFile, today) {
     }
     if (matches.length === 0) {
       problems.push(
-        `${id} ${what}. Replace it, or add an exception to ${EXCEPTIONS_FILE} (DEVELOPMENT.md, "Dependency audit").`,
+        `${id} ${what}. Replace it, or add an exception to ${EXCEPTIONS_FILE} (docs/development/dependency-audit.md).`,
       );
       continue;
     }

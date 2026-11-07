@@ -269,7 +269,7 @@ fn seed_10k_firearms(conn: &Connection) -> Vec<i64> {
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn list_firearms_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -288,7 +288,7 @@ fn list_firearms_completes_within_budget_at_10k_records() {
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn list_firearms_search_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -311,7 +311,7 @@ fn list_firearms_search_completes_within_budget_at_10k_records() {
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn list_firearms_finish_search_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -348,7 +348,7 @@ fn list_firearms_finish_search_completes_within_budget_at_10k_records() {
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn list_firearms_grouped_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -427,7 +427,7 @@ fn list_firearms_grouped_completes_within_budget_at_10k_records() {
 /// cartridge within the 1s action budget, and a search by a cartridge
 /// within the 500ms search budget.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -469,7 +469,7 @@ fn list_firearms_by_cartridge_completes_within_budget_at_10k_records() {
 /// the 1s action budget, and a search by an action's name within the 500ms
 /// search budget.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -513,7 +513,7 @@ fn list_firearms_by_action_type_completes_within_budget_at_10k_records() {
 /// timed too, on a database opened as the app opens it: the open warms what
 /// the suggestions read.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models() {
     let _alone = one_at_a_time();
     let opened = OpenedCopy::new();
@@ -544,7 +544,7 @@ fn suggest_entries_completes_within_50ms_at_10k_records_with_10k_distinct_models
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn list_firearms_nickname_search_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -570,7 +570,7 @@ fn list_firearms_nickname_search_completes_within_budget_at_10k_records() {
 /// force totals every unscheduled firearm, a fifth of the collection is
 /// scheduled under a schedule-only policy, and most carry a value.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn get_value_summary_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -609,7 +609,7 @@ fn get_value_summary_completes_within_budget_at_10k_records() {
 /// Browse rows carry each firearm's insurance warning, which needs the
 /// blanket computation too.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn list_firearms_with_blanket_coverage_completes_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -639,7 +639,7 @@ fn list_firearms_with_blanket_coverage_completes_within_budget_at_10k_records() 
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn deleting_a_firearm_completes_within_the_interactive_budget_at_10k_records() {
     let _alone = one_at_a_time();
     // Deleting vacuums the file to return the freed space (Constitution V),
@@ -746,7 +746,7 @@ fn assert_progress_in_time(event: &str, waited: Duration) {
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn opening_a_database_of_10k_firearms_takes_at_most_a_second_including_key_derivation() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();
@@ -796,7 +796,7 @@ fn seed_photos(conn: &Connection) {
 /// printed (`--nocapture`) for the pull request; the upgrade has no budget of
 /// its own (009 FR-016).
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn the_first_upgrade_progress_comes_within_a_second_at_10k_records_and_the_backup_and_rebuild_are_timed()
  {
     let _alone = one_at_a_time();
@@ -869,7 +869,7 @@ fn the_first_upgrade_progress_comes_within_a_second_at_10k_records_and_the_backu
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();
@@ -952,7 +952,7 @@ fn backup_passphrase_change_restore_and_move_each_report_progress_within_100ms()
 }
 
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn the_take_over_check_on_every_save_costs_nothing_measurable_against_the_budgets() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();
@@ -981,7 +981,7 @@ fn the_take_over_check_on_every_save_costs_nothing_measurable_against_the_budget
 /// "Registered to" value within the 500ms search budget, and the form and
 /// "Registered to" suggestions within 50ms.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn registration_grouping_search_and_suggestions_complete_within_budget_at_10k_records() {
     let _alone = one_at_a_time();
     let db = seeded_firearms();
@@ -1160,7 +1160,7 @@ fn seed_10k_accessories(conn: &Connection) -> Vec<i64> {
 
 /// Runs `run`, prints its time for the pull request's performance note
 /// (`--nocapture`), and holds it to `budget_ms`. The budgets are the release
-/// build's (DEVELOPMENT.md, "Test"): an unoptimised build, which a plain
+/// build's (docs/development/testing.md): an unoptimised build, which a plain
 /// `cargo test` is, gets three times the budget so that it still catches a
 /// scan gone quadratic.
 fn within<T>(what: &str, budget_ms: u128, run: impl FnOnce() -> T) -> T {
@@ -1191,7 +1191,7 @@ fn accessory_input(kind: i64, make: &str, model: &str) -> AccessoryInput {
 
 /// The actions of 006 FR-026 (006 research.md §22): each within the 1s budget.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     let scale = MountedScale::new();
@@ -1284,7 +1284,7 @@ fn mount_and_record_actions_complete_within_the_action_budget_at_10k_plus_10k_re
 /// The browse and search operations of 006 FR-026 (006 research.md §22): each within
 /// the 500ms budget.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     let scale = MountedScale::new();
@@ -1407,7 +1407,7 @@ fn accessory_listing_grouping_and_candidates_complete_within_budget_at_10k_plus_
 /// 006 research.md §22: the suggestion lists now read both tables, still within
 /// 004 research.md §5's 50ms.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn suggest_entries_over_both_tables_completes_within_50ms_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     let scale = MountedScale::new();
@@ -1435,7 +1435,7 @@ fn suggest_entries_over_both_tables_completes_within_50ms_at_10k_plus_10k_record
 /// whole vocabulary and dropping it. Printed for the pull request's
 /// performance note; the budget itself is held by the test above.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn suggest_entries_over_both_tables_breakdown() {
     use hoplodex_lib::services::suggestions::{FieldVocabulary, suggest, vocabulary_queries};
 
@@ -1704,7 +1704,7 @@ fn large_text(min_bytes: usize, utf8: bool) -> Vec<u8> {
 /// the TIFF piped to it and its first page rendered, as the viewer asks for
 /// it, within 1 s. The real helper binary and a 300 DPI letter page in LZW.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn open_preview_of_a_10_mb_tiff_shows_page_one_within_a_second_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     let world = document_scale();
@@ -1743,7 +1743,7 @@ fn get(world: &Fixture, url: &str) -> tauri::http::Response<Vec<u8>> {
 /// `hdpreview` handler serving the document to it. The web view's own
 /// creation and first paint are the surface check's and `document-preview.e2e.ts`'s.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn open_preview_of_a_10_mb_pdf_is_served_to_its_surface_within_a_second_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     let world = document_scale();
@@ -1777,7 +1777,7 @@ fn open_preview_of_a_10_mb_pdf_is_served_to_its_surface_within_a_second_at_10k_p
 /// after a failed validation), and `open_preview` of a text of that size,
 /// whose answer is serialised as the viewer receives it.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn a_10_mb_text_is_decoded_and_opened_within_a_second_at_10k_plus_10k_records() {
     let _alone = one_at_a_time();
     for (what, utf8) in [("UTF-8", true), ("Windows-1252", false)] {
@@ -1803,7 +1803,7 @@ fn a_10_mb_text_is_decoded_and_opened_within_a_second_at_10k_plus_10k_records() 
 /// `LIKE` of one or two. Two 10 MB documents sit on the first firearm, so
 /// that reading a name beside a large file's bytes is in the timing too.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn searching_a_document_name_completes_within_budget_at_10k_plus_10k_records_and_30k_documents() {
     let _alone = one_at_a_time();
     let world = document_scale();
@@ -1867,7 +1867,7 @@ fn searching_a_document_name_completes_within_budget_at_10k_plus_10k_records_and
 /// do. The database is made through the session and opened again by the
 /// app's own open (`open_database`), so the warm-up runs as a user gets it.
 #[test]
-#[ignore = "release only: see DEVELOPMENT.md"]
+#[ignore = "release only: see docs/development/testing.md"]
 fn opening_a_database_of_10k_plus_10k_records_and_30k_documents_is_within_a_second_and_warm() {
     let _alone = one_at_a_time();
     let large = LargeDatabase::new();

@@ -4,8 +4,7 @@ Runs a command in the signed-in user's desktop session, follows its output,
 and exits with its status: the Windows counterpart of scripts/tart-vm.sh gui.
 
 .DESCRIPTION
-For a Windows test machine with auto-logon, driven over SSH (DEVELOPMENT.md,
-"Windows"). A command started over Windows' OpenSSH has no desktop, so the
+For a Windows test machine with auto-logon, driven over SSH (docs/development/windows.md). A command started over Windows' OpenSSH has no desktop, so the
 app's window can't open for E2E, screenshots or the native UI checks, and
 sshd ends it when the connection drops. So this runs the command through a
 scheduled task instead: "HoploDex gui", registered for this user (it needs

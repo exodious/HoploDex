@@ -107,7 +107,7 @@ and peer review catch that.
 - **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
   - The parent's memory bound rests on `MAX_CELLS` and the total-text limit together.
   - A collection at every field's maximum in 3- or 4-byte characters passes the 256 MB total-text limit.
-- **Rerun:** `import_largest_test` in release (`DEVELOPMENT.md`, "Test"). Open: #126 (the zip-bomb memory check fails under plain `cargo test`).
+- **Rerun:** `import_largest_test` in release (`docs/development/testing.md`). Open: #126 (the zip-bomb memory check fails under plain `cargo test`).
 - **Since:** 001; helper and limits 008; identifiers 009.
 
 ## key-passphrase: the database key, the passphrase and saved passphrases
@@ -238,7 +238,7 @@ and peer review catch that.
   - The Documents portal remembers copies.
   - The runtime ends with GNOME 51 (#129).
   - The `.flatpak` file is unsigned (#19).
-- **Rerun:** the Flatpak check (`DEVELOPMENT.md`, "The Flatpak check").
+- **Rerun:** the Flatpak check (`docs/development/flatpak.md`, "The Flatpak check").
 - **Since:** 011.
 
 ## logging: what the log carries

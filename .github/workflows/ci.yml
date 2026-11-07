@@ -2,8 +2,7 @@
 # E2E and the packages on Linux, Windows and macOS, and the Flatpak. It is a
 # second net: tests pass in the owner's own Linux, macOS and Windows
 # environments before a pull request opens. What runs, what is optional and
-# how to reproduce a job locally are in DEVELOPMENT.md, "Continuous
-# integration". The release run is #19's.
+# how to reproduce a job locally are in docs/development/ci.md. The release run is #19's.
 #
 # The jobs run natively on pinned runner images, not in the dev container,
 # whose image would have to be built every run. Under CI (`CI=true`, which
@@ -225,7 +224,7 @@ jobs:
 
       # The runner's desktop is 1024x768, too small for the 1200x800 window,
       # and its "Show animations" is off, so WebView2 would report reduced
-      # motion (DEVELOPMENT.md, "E2E on Windows"). SPI_SETCLIENTAREAANIMATION
+      # motion (docs/development/windows.md, "E2E on Windows"). SPI_SETCLIENTAREAANIMATION
       # (0x1043) is the setting setup-system.ps1 turns on for a test machine.
       - name: Set the display and turn animations on
         if: steps.scope.outputs.run == 'true'
@@ -439,7 +438,7 @@ jobs:
       contents: read
     # The runner opts in to the Flatpak scripts' guard (scripts/flatpak/guard.mjs):
     # its own installation and state folder, empty, outside any real one
-    # (DEVELOPMENT.md, "The Flatpak check"). The installation isn't cached:
+    # (docs/development/flatpak.md, "The Flatpak check"). The installation isn't cached:
     # 6.3 GB is most of the 10 GB, and Flathub delivers it in about a minute.
     env:
       HOPLODEX_CI_FLATPAK: "1"
@@ -473,7 +472,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: npm run bundle:flatpak
 
-      # Only for a pull request that changes the paths DEVELOPMENT.md lists
+      # Only for a pull request that changes the paths docs/development/flatpak.md lists
       # (011 FR-021), after the build, which installed the runtime and SDK the
       # check needs. The stand-ins the dev container has: a removable drive,
       # and two folders outside what the Flatpak reaches.

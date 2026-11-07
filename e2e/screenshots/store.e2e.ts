@@ -158,7 +158,9 @@ async function assertRows(shotName: string) {
 describe("011 US4 - Flatpak store shots", () => {
   before(async () => {
     if (!screenshotsEnabled()) {
-      throw new Error("Run this with `npm run screenshots:store` (DEVELOPMENT.md, Screenshots)");
+      throw new Error(
+        "Run this with `npm run screenshots:store` (docs/development/screenshots.md)",
+      );
     }
   });
 

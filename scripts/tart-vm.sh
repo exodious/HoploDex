@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sets up a macOS VM with tart (https://tart.run) for running HoploDex's tests
 # as a standard (non-admin) user, and runs them there. See "macOS in a VM" in
-# DEVELOPMENT.md; the first run's findings are on #28.
+# docs/development/macos.md; the first run's findings are on #28.
 #
 #   scripts/tart-vm.sh setup        clone the VM, create the test user, install
 #                                   the toolchain in its home, log it in

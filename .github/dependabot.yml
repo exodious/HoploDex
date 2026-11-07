@@ -7,7 +7,7 @@
 # link (#25); Dependabot raises no security alerts for vcpkg either, so
 # `npm run audit:openssl` checks that OpenSSL against OpenSSL's advisories.
 # npm and Cargo dependencies get Dependabot's security alerts and are updated
-# by hand (DEVELOPMENT.md, "Dependency audit").
+# by hand (docs/development/dependency-audit.md).
 version: 2
 updates:
   - package-ecosystem: github-actions

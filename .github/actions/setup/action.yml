@@ -1,7 +1,6 @@
 # The toolchains every CI job (ci.yml) needs, then `npm ci`: Node 24 with
 # npm 12 (the lockfile format, and `allowScripts`), Rust, cargo-nextest when
-# asked, and on Windows the OpenSSL the build links (DEVELOPMENT.md,
-# "Continuous integration"). Caches are saved only from main and restored by
+# asked, and on Windows the OpenSSL the build links (docs/development/ci.md). Caches are saved only from main and restored by
 # pull requests, so a pull request never fills the 10 GB with its own.
 name: CI setup
 description: Node, npm, Rust, caches and the Windows OpenSSL for a CI job

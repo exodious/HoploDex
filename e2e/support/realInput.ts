@@ -11,8 +11,8 @@ import { settle } from "./ui";
  * a real key press forces; and for keyboard-only flows, since WebDriver's
  * key presses are synthetic and neither move focus on Tab nor type text.
  * Linux (Xvfb) only: a test that uses it starts with
- * {@link skipWithoutRealInput}, so other platforms skip it. See "Real
- * keyboard and mouse input" in DEVELOPMENT.md.
+ * {@link skipWithoutRealInput}, so other platforms skip it. See
+ * docs/development/real-input.md.
  *
  * Each call returns once the page has seen the input and settled, not after
  * a fixed pause (#77, step 10): see "Waiting for the page to see the input"

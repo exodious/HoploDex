@@ -11,7 +11,7 @@
 //
 // This also checks that each cited ID, story, scenario, task, document and
 // section exists in the spec it names, and that every E2E spec file's
-// `describe()` titles name a story by its spec's own heading (DEVELOPMENT.md,
+// `describe()` titles name a story by its spec's own heading (docs/development/e2e.md,
 // "E2E files").
 //
 // `node scripts/citations.mjs [file …]` lists what's wrong, in every checked

@@ -132,7 +132,7 @@ export function findTexts(folder, chosen, { declared, label }) {
 
   const missing = (id) =>
     failed(
-      `no license text for ${id} in its package. Add an exception (licenses/exceptions.json) with the text from its source repository; see DEVELOPMENT.md, "License notices".`,
+      `no license text for ${id} in its package. Add an exception (licenses/exceptions.json) with the text from its source repository; see docs/development/licenses.md, "License notices".`,
     );
   if (licenseFiles.length === 0) return missing(chosen);
 

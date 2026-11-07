@@ -6,7 +6,7 @@
 #   the Secret Service API, so the app's real (non-mock) keyring works for
 #   `tauri dev` and scripts/human-testing.sh. The keyring lives in the home
 #   volume and is unlocked with a blank password, like the headless-host setup
-#   in DEVELOPMENT.md.
+#   in docs/development/prerequisites.md.
 # - the X pointer size, when HOPLODEX_XCURSOR_SIZE is set (see below).
 # - first-run ownership of the named volumes, and `npm ci` into an empty
 #   node_modules volume.

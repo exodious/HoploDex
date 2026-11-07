@@ -59,7 +59,7 @@ e2e = ["mock-keyring", "dep:tauri-plugin-wdio-webdriver"]
 # and the passphrase dialog `E2eDialog`: no WebDriver can click a native dialog. Never in a shipped build, since `e2e`
 # is refused there (scripts/check-no-webdriver.mjs).
 flatpak-check = ["e2e"]
-# The Rust tests only (#77 step 11; DEVELOPMENT.md "Test"): keys every database
+# The Rust tests only (#77 step 11; docs/development/testing.md): keys every database
 # with 1,000 PBKDF2 iterations instead of the pinned 1,000,000
 # (db/cipher.rs's `test_kdf`), which took three quarters of the tests' CPU. A
 # file made by such a build opens in no other build. db/cipher.rs refuses to
@@ -290,7 +290,7 @@ sha2 = "0.10"
 name = "integration"
 path = "tests/integration.rs"
 
-# Release-only and `#[ignore]`d (DEVELOPMENT.md "Test"), run by name with
+# Release-only and `#[ignore]`d (docs/development/testing.md), run by name with
 # `cargo test --release --test <name>`: each stays a program of its own, so
 # that command doesn't build every other test in release as well.
 [[test]]
@@ -429,7 +429,7 @@ opt-level = 3
 # LTO and its single codegen unit, so a backend change relinks in seconds
 # rather than a minute. Keeps `panic = "abort"`, so a panic behaves as in the
 # shipped app. Set HOPLODEX_E2E_PROFILE=release to drive the shipping profile
-# instead (DEVELOPMENT.md, "Test").
+# instead (docs/development/e2e.md).
 [profile.e2e]
 inherits = "release"
 lto = false

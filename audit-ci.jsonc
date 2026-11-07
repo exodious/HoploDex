@@ -1,5 +1,5 @@
-// npm dependency audit: `npm run audit:npm`. See "Dependency audit" in
-// DEVELOPMENT.md for the policy and for how to add an exception. Deprecated
+// npm dependency audit: `npm run audit:npm`. See
+// docs/development/dependency-audit.md for the policy and for how to add an exception. Deprecated
 // packages are a separate check: `npm run audit:deprecated`, with its
 // exceptions in audit-deprecated.json.
 //

@@ -15,7 +15,7 @@ import { buildProfile } from "./app";
  * the other E2E-only settings). The `e2e` profile is the release one without
  * fat LTO, so a backend change rebuilds in seconds. HOPLODEX_E2E_PROFILE=release
  * builds and drives the shipping profile instead, as a release check
- * (DEVELOPMENT.md, "Test"). The binary embeds whatever is in `dist/`, so
+ * (docs/development/testing.md). The binary embeds whatever is in `dist/`, so
  * `npm run build` comes first.
  */
 

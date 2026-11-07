@@ -116,7 +116,7 @@ import {
  *
  * Its own setup, not another file's: it needs the container's Flatpak
  * installation and buses, so it shares nothing with the other specs
- * (DEVELOPMENT.md, "E2E files").
+ * (docs/development/e2e.md, "E2E files").
  */
 describe("011 US5 - The Flatpak Is Tested in Its Sandbox, Away From Real Data", () => {
   before(async () => {

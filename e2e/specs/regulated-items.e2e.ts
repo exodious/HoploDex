@@ -15,7 +15,7 @@ import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
  * added and registered from the keyboard alone, as real key events through the
  * X server, since the suggestion list's and menu's focus behaviour is
  * WebKitGTK's to get right and WebDriver's own keys don't pass through GTK. See
- * "Real keyboard and mouse input" in DEVELOPMENT.md.
+ * docs/development/real-input.md.
  *
  * Grouping by Registered as, with Unspecified last (005 US2-9), is tested in
  * Rust and Vitest (see the citations in those tests).

@@ -10,7 +10,7 @@
 # Every pull request is analyzed, even one that changes no code, unlike
 # audit.yml's docs-only skip. The `Default` ruleset's code scanning rule blocks
 # the merge of a pull request whose head has no CodeQL analysis, however it
-# was skipped (#142; DEVELOPMENT.md, "Continuous integration").
+# was skipped (#142; docs/development/ci.md).
 name: CodeQL
 
 on:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the Linux bundles (`tauri build`) without the build machine's
 # display-stack libraries inside the AppImage. See "Linux AppImage" in
-# DEVELOPMENT.md.
+# docs/development/build.md.
 #
 #   scripts/build-appimage.sh                     same as `npm run tauri build`
 #   scripts/build-appimage.sh --bundles appimage  only the AppImage

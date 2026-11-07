@@ -86,7 +86,8 @@ test-writing agents said they assumed, one line each; decisions already made tha
 affect these tasks; known gaps to settle>
 
 Ground rules:
-- Read CLAUDE.md, DEVELOPMENT.md and the relevant spec docs first.
+- Read CLAUDE.md, the documents DEVELOPMENT.md's index names for this work and the
+  relevant spec docs first.
 - Running at the same time: <who, which files>. Touch only <your files>. If a shared
   file must be edited (a contract), re-read it right before each edit and change only
   your rows.
@@ -115,13 +116,13 @@ with that OS. The lead, or a subagent it briefs with the steps below, pushes
 the branch and runs them over SSH; no Claude session runs on the other
 machines. The user's local notes name the machines and accounts.
 
-- **Windows:** as DEVELOPMENT.md's "Driving a test machine from Linux, over
+- **Windows:** as `docs/development/windows.md`'s "Driving a test machine from Linux, over
   SSH": pull the branch into the Windows test machine's clone, run builds,
   `cargo nextest`, Vitest and lint over SSH directly, and anything that opens
   the app's window (E2E, screenshots, the surface and window-controls checks,
   `quit-cleanup.ps1`) through `scripts\windows\gui.ps1`. Nobody signs in to
   the machine over Remote Desktop: that takes the desktop session over.
-- **macOS:** as DEVELOPMENT.md's "Driving the Mac from Linux, over SSH": SSH
+- **macOS:** as `docs/development/macos.md`'s "Driving the Mac from Linux, over SSH": SSH
   to the Mac host and run `scripts/tart-vm.sh` in a clone of the task's own
   in the host account's home, never someone's existing checkout. Start each
   command with `export PATH=/opt/homebrew/bin:$PATH` (tart isn't on a

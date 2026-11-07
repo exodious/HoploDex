@@ -1,4 +1,4 @@
 {
-  "//": "Advisories checked by hand against the pinned OpenSSL while its branch is out of support. See \"The pinned OpenSSL\" in DEVELOPMENT.md.",
+  "//": "Advisories checked by hand against the pinned OpenSSL while its branch is out of support. See \"The pinned OpenSSL\" in docs/development/dependency-audit.md.",
   "exceptions": []
 }

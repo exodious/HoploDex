@@ -24,8 +24,8 @@ import { realKey, skipWithoutRealInput } from "../support/realInput";
  * firearm is mounted on it, and that firearm is moved to another from the
  * other's page after the move is confirmed. The suggestion list's, menu's and
  * dialogs' focus behaviour is WebKitGTK's to get right, and WebDriver's own
- * keys don't pass through GTK. See "Real keyboard and mouse input" in
- * DEVELOPMENT.md.
+ * keys don't pass through GTK. See
+ * docs/development/real-input.md.
  *
  * The records are made first, through the Add firearm dialog (not timed); a
  * real click on a page's heading then puts real focus on the page, and from

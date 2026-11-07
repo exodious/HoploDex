@@ -7,8 +7,7 @@
  * in a sandbox (support/sandbox.ts), and passes the port.
  *
  * Don't point `wdio session open` at wdio.conf.ts or at the real binary: this
- * file and the launcher are the way in (DEVELOPMENT.md, "Drive the app with
- * wdio session").
+ * file and the launcher are the way in (docs/development/wdio-session.md).
  */
 export const config: WebdriverIO.Config = {
   runner: "local",

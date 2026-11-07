@@ -33,7 +33,7 @@ if (storeShots) {
     // The shots are the Linux dev container's (Xvfb, 1200 x 800, WebKitGTK),
     // the engine the Flatpak ships.
     console.error(
-      "--store-shots runs on Linux, in the dev container (DEVELOPMENT.md, Screenshots)",
+      "--store-shots runs on Linux, in the dev container (docs/development/screenshots.md)",
     );
     process.exit(2);
   }

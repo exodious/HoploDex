@@ -1,7 +1,8 @@
 # The Ubuntu packages a Linux CI job (ci.yml) installs, every one named here
 # rather than left to what the runner image happens to have. Each set is
-# defined once; a job names the sets it needs. `build` is DEVELOPMENT.md's
-# Debian/Ubuntu list ("Prerequisites"); keep the two in step.
+# defined once; a job names the sets it needs. `build` is the
+# Debian/Ubuntu list in DEVELOPMENT.md and docs/development/prerequisites.md; keep the
+# three in step.
 name: CI apt packages
 description: Install the named sets of Ubuntu packages a Linux CI job needs
 inputs:

@@ -13,7 +13,7 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\windows\window-controls-check.ps1
 #
 # Run it in the signed-in desktop session (the auto-logon session of
-# DEVELOPMENT.md's Windows setup; an SSH session has no desktop to post input
+# docs/development/windows.md's setup; an SSH session has no desktop to post input
 # to or take a screenshot of), at 100% scaling. The app's folders come from the
 # E2E variables (an `e2e` build) and are a fresh scratch folder's, and the main
 # web view's WebView2 user data folder is its own under it. The log and the
