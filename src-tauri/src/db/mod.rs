@@ -72,6 +72,18 @@ pub enum OpenError {
     Internal(rusqlite::Error),
 }
 
+impl DbError {
+    /// What a log line may say (013 FR-016): SQLite's code, not its text.
+    pub fn for_log(&self) -> String {
+        match self {
+            Self::Sqlite(err) => crate::logging::db_error(err),
+            Self::Exists(_) => "a file already exists there".to_owned(),
+            Self::Upgrade(err) => err.for_log(),
+            Self::Io(_) | Self::Random(_) => self.to_string(),
+        }
+    }
+}
+
 impl OpenError {
     /// What a log line may say (013 FR-014, FR-016): the outcome, not the path,
     /// the other computer's name or SQLite's text its message carries.

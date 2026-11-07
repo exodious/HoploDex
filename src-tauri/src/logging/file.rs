@@ -17,7 +17,8 @@ pub const CURRENT: &str = "hoplodex.log";
 pub const ROTATED: &str = "hoplodex.log.1";
 /// A file's cap, so both together never pass 4 MiB (013 FR-007).
 pub const MAX_BYTES: u64 = 2 * 1024 * 1024;
-/// How long a file outlives its last change (013 FR-008).
+/// How long a file lasts from when it was made, so a start's new lines can't
+/// keep older ones past what the user is told (013 FR-008).
 pub const MAX_AGE: Duration = Duration::from_secs(14 * 24 * 60 * 60);
 
 /// The current log file, open for appending.
@@ -115,13 +116,14 @@ pub fn delete_all(folder: &Path) {
     }
 }
 
-/// Deletes each file last changed longer than [`MAX_AGE`] before `now`
+/// Deletes each file made longer than [`MAX_AGE`] before `now`, or last changed
+/// that long ago where the file system doesn't record when it was made
 /// (013 FR-008).
 pub fn delete_if_old(folder: &Path, now: SystemTime) {
     for path in both(folder) {
         let old = fs::metadata(&path)
-            .and_then(|meta| meta.modified())
-            .is_ok_and(|changed| now.duration_since(changed).is_ok_and(|age| age > MAX_AGE));
+            .and_then(|meta| meta.created().or_else(|_| meta.modified()))
+            .is_ok_and(|made| now.duration_since(made).is_ok_and(|age| age > MAX_AGE));
         if old
             && scratch::is_plain_file(&path)
             && let Err(err) = secure_delete::secure_delete_file(&path)

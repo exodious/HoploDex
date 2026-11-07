@@ -1137,7 +1137,7 @@ pub mod ops {
             Ok(false) => Err(CommandError::passphrase_incorrect(None, None)
                 .on_field("currentPassphrase", CURRENT_REFUSED)),
             Err(err) => {
-                log::error!("could not check the current passphrase: {err}");
+                log::error!("could not check the current passphrase: {}", err.for_log());
                 Err(CommandError::new(
                     "INTERNAL_ERROR",
                     "The current passphrase couldn't be checked.",

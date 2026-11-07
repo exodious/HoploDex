@@ -851,13 +851,15 @@ fn write_backup(
 }
 
 /// A SQLite failure while stamping the copy, as the I/O error it stands for:
-/// a full disk stays recognizable as one.
+/// a full disk stays recognizable as one. SQLite's text would name the backup,
+/// so only its code goes on (013 FR-016).
 fn sqlite_as_io(err: rusqlite::Error) -> io::Error {
-    if err.sqlite_error_code() == Some(rusqlite::ErrorCode::DiskFull) {
-        io::Error::new(io::ErrorKind::StorageFull, err)
+    let kind = if err.sqlite_error_code() == Some(rusqlite::ErrorCode::DiskFull) {
+        io::ErrorKind::StorageFull
     } else {
-        io::Error::other(err)
-    }
+        io::ErrorKind::Other
+    };
+    io::Error::new(kind, crate::logging::db_error(&err))
 }
 
 /// Removes a backup that did not finish, with its journal if it has one.
@@ -1270,6 +1272,31 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 013 FR-016: a stamp that can't reach the backup keeps its name out of
+    /// the error every log line prints.
+    #[test]
+    fn a_failed_stamp_does_not_carry_the_backups_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let named = dir.path().join("no such folder").join("Smith family.hoplodex.partial");
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let err = conn
+            .execute("ATTACH DATABASE ?1 AS backup", [named.to_str().unwrap()])
+            .expect_err("nothing is there to attach");
+        assert!(err.to_string().contains("Smith family"), "SQLite names it: {err}");
+        let text = sqlite_as_io(err).to_string();
+        assert!(!text.contains("Smith family"), "{text}");
+    }
+
+    /// 003 FR-026: and a full disk stays recognizable.
+    #[test]
+    fn a_stamp_on_a_full_disk_is_still_a_full_disk() {
+        let full = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
+            Some("database or disk is full".to_owned()),
+        );
+        assert_eq!(sqlite_as_io(full).kind(), io::ErrorKind::StorageFull);
+    }
 
     /// The OS's disk-full codes reach the user as insufficient space
     /// (003 FR-026): `ENOSPC` on Linux and macOS, `ERROR_HANDLE_DISK_FULL` and

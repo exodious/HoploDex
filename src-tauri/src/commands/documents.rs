@@ -577,7 +577,9 @@ pub fn portal_open_directory(
     use zbus::zvariant::{OwnedFd, Value};
 
     log::debug!("portal: OpenDirectory");
-    let opened = std::fs::File::open(file).map_err(|e| OpenFailure::Other(format!("{e}")))?;
+    let opened =
+        crate::services::scratch::open_no_follow(std::fs::OpenOptions::new().read(true), file)
+            .map_err(|e| OpenFailure::Other(format!("{e}")))?;
     let bus = Blocking::from(connection.clone());
     let portal = Proxy::new(
         &bus,

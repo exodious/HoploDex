@@ -12,6 +12,7 @@ use crate::commands::error::CommandError;
 use crate::logging;
 use crate::models::troubleshooting_log::{LogState, TroubleshootingLog};
 use crate::services::machine_settings::MachineSettings;
+use crate::services::scratch;
 
 /// The state changes as the contract's table says; any choice it makes is saved
 /// on this computer (013 FR-003).
@@ -22,9 +23,11 @@ pub fn set_state(machine: &MachineSettings, wanted: LogState) -> Troubleshooting
     logging::status()
 }
 
-/// Shows the file `path` names, if it is there, in the OS's file manager.
+/// Shows the file `path` names in the OS's file manager, if it is a plain file
+/// of ours: a link planted at the name isn't what the log writes to either
+/// (013 FR-010).
 pub fn show(opener: &dyn Opener, path: Option<&Path>) -> Result<(), CommandError> {
-    let Some(path) = path.filter(|path| path.exists()) else {
+    let Some(path) = path.filter(|path| scratch::is_plain_file(path)) else {
         return Err(CommandError::not_found("There is no log file yet."));
     };
     opener.reveal(path).map_err(|failure| {

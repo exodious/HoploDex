@@ -12,11 +12,6 @@ use hoplodex_lib::logging::{self, Output};
 use hoplodex_lib::models::troubleshooting_log::{LogChoice, LogState};
 use tempfile::TempDir;
 
-fn age(path: &Path, by: Duration) {
-    let file = fs::OpenOptions::new().write(true).open(path).unwrap();
-    file.set_modified(SystemTime::now() - by).unwrap();
-}
-
 fn output(variable: Option<LogState>) -> (TempDir, std::path::PathBuf, Output) {
     let dir = TempDir::new().unwrap();
     let folder = dir.path().join("cache").join(file::FOLDER);
@@ -55,18 +50,28 @@ fn a_later_run_appends_within_the_same_cap() {
     assert_eq!(fs::read_to_string(dir.path().join(CURRENT)).unwrap(), "over the cap\n");
 }
 
-/// 013 US5-2.
+/// 013 US5-2, FR-008: the age runs from when the file was made, so each start's
+/// new lines can't keep the older ones past what the user is told.
 #[test]
-fn a_file_older_than_14_days_is_deleted_and_a_newer_one_kept() {
+fn a_file_is_deleted_14_days_after_it_was_made_however_recently_it_changed() {
     let dir = TempDir::new().unwrap();
     let (current, rotated) = (dir.path().join(CURRENT), dir.path().join(ROTATED));
-    fs::write(&current, "recent").unwrap();
-    fs::write(&rotated, "old").unwrap();
-    age(&current, MAX_AGE - Duration::from_secs(3600));
-    age(&rotated, MAX_AGE + Duration::from_secs(3600));
-    file::delete_if_old(dir.path(), SystemTime::now());
+    fs::write(&current, "kept").unwrap();
+    fs::write(&rotated, "kept").unwrap();
+    let hour = Duration::from_secs(3600);
+    let made = SystemTime::now();
+
+    file::delete_if_old(dir.path(), made + MAX_AGE - hour);
     assert!(current.exists());
+    assert!(rotated.exists());
+
+    let later = made + MAX_AGE + hour;
+    fs::OpenOptions::new().write(true).open(&current).unwrap().set_modified(later).unwrap();
+    // Only `current` was touched, so `rotated` goes on either route.
+    let records_when_made = fs::metadata(&current).unwrap().created().is_ok();
+    file::delete_if_old(dir.path(), later);
     assert!(!rotated.exists());
+    assert_eq!(current.exists(), !records_when_made);
 }
 
 /// 013 FR-010: on Unix, only this user can read it.
@@ -104,6 +109,42 @@ fn a_symbolic_link_or_a_hard_link_at_the_name_is_left_alone() {
     fs::hard_link(&target, &link).unwrap();
     assert!(LogFile::open(&folder).is_err());
     assert_eq!(fs::read_to_string(&target).unwrap(), "keep me");
+}
+
+/// 013 FR-010, FR-024: Show log file shows only a plain file of ours, so a link
+/// planted at the name can't send the file manager somewhere else.
+#[cfg(unix)]
+#[test]
+fn only_a_plain_file_at_the_name_is_shown() {
+    use std::sync::Mutex;
+
+    use hoplodex_lib::commands::documents::{OpenFailure, Opener};
+    use hoplodex_lib::commands::troubleshooting_log::show;
+
+    #[derive(Default)]
+    struct Revealed(Mutex<Vec<std::path::PathBuf>>);
+    impl Opener for Revealed {
+        fn open(&self, _path: &Path) -> Result<(), OpenFailure> {
+            unreachable!("showing never opens")
+        }
+        fn reveal(&self, path: &Path) -> Result<(), OpenFailure> {
+            self.0.lock().unwrap().push(path.to_owned());
+            Ok(())
+        }
+    }
+
+    let dir = TempDir::new().unwrap();
+    let target = dir.path().join("somebody else's file");
+    fs::write(&target, "").unwrap();
+    let link = dir.path().join(CURRENT);
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let revealed = Revealed::default();
+
+    assert_eq!(show(&revealed, Some(&link)).unwrap_err().code, "NOT_FOUND");
+    assert!(revealed.0.lock().unwrap().is_empty());
+
+    show(&revealed, Some(&target)).unwrap();
+    assert_eq!(*revealed.0.lock().unwrap(), [target]);
 }
 
 /// 013 FR-011: no file, no failure, and the state says so.
