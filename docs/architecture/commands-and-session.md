@@ -20,6 +20,10 @@ session without writing. Session housekeeping uses
 and `examples/human_seed.rs` call `ops` directly, so they exercise the same code
 paths as the app.
 
+`commands/troubleshooting_log.rs` (013) gets and sets the log's state and shows
+its file: no database and no argument the web view can point elsewhere, since the
+file is `logging.rs`'s.
+
 `commands/databases.rs` (chooser, create, open, close, lock, settings, saved
 passphrase) and `commands/backups.rs` (list, restore, passphrase change) are
 feature 003's.

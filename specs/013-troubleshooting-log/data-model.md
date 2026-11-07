@@ -38,4 +38,4 @@ Plain text, one line per entry:
 +4.310 [DEBUG] opening ~/*/*.hoplodex
 ```
 
-Shown on the page as a path only. The page never receives contents.
+Shown on the page as a path only. The page never receives contents. Paths in this table of lines are shapes (`logging::place`); on Windows the separators are backslashes.

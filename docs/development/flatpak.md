@@ -191,7 +191,7 @@ What it does, in order:
 
 Its logs are in `flatpak/out/check/` (`check.log`, one per stand-in and per app
 start, which holds what the app logged to standard error: whether WebKit's
-sandbox is on and what the helpers are confined with, see `src-tauri/src/logging.rs`;
+sandbox is on and what the helpers are confined with, see `src-tauri/src/logging.rs`, with paths as their shapes;
 and `openuri.log`, one JSON line for each descriptor the scripted portal was handed).
 `lock-times.log` has each lock's time from the signal, in the Flatpak and outside
 the sandbox for a sleep, a screen lock, a shutdown and a SIGTERM, each Flatpak

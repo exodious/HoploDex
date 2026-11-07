@@ -119,6 +119,7 @@ macOS only.
 - **No list of shipped dependencies kept by hand** (FR-008).
 - **No network from the app** (FR-006): no link, no opener, the CSP as it is.
 - **No new command or capability**, and no database touched (FR-001, SC-005).
+  _Amended by [spec 013](../013-troubleshooting-log/contracts/tauri-commands.md): About's troubleshooting log section calls that feature's three commands; About still touches no database._
 - **The build stays offline** once Cargo's sources are fetched, and every
   exception's text is committed.
 - **`LICENSE` is not modified**: the permission sits beside it (research.md
