@@ -31,6 +31,9 @@ detail for that one run:
 | macOS | `open --env HOPLODEX_LOG=debug -a HoploDex` |
 | Windows (PowerShell) | `$env:HOPLODEX_LOG='debug'; & "<the folder HoploDex is installed in>\hoplodex.exe"` |
 
+Attach or copy the log file, whose folder is below, before you start HoploDex again
+without the variable. Unless the log is turned on in About, that start can delete it.
+
 The file is `hoplodex.log` in the `logs` folder of HoploDex's cache:
 
 | Where | The folder |

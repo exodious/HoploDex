@@ -19,6 +19,7 @@ use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::import_export::{ExportRecords, ImportSessionStore};
 use hoplodex_lib::commands::photos::ops as photo_ops;
+use hoplodex_lib::db::upgrade::{self, UpgradeError};
 use hoplodex_lib::logging::{self, file};
 use hoplodex_lib::models::database::{CloseReason, Draft, DraftKind, DraftMode};
 use hoplodex_lib::models::record::RecordRef;
@@ -213,6 +214,34 @@ fn a_failed_start_without_the_variable_leaves_the_files_alone() {
     logging::init_with(None, None);
     assert_eq!(logging::start_for_variable(Some(folder)), None);
     logging::startup_failed(&std::io::Error::other("the OS's text"));
+}
+
+/// 013 FR-016: a broken link is told by its table, once, however many rows have
+/// one, so the log doesn't say how many of a user's records are affected.
+#[test]
+fn an_upgrades_broken_links_are_logged_once_for_each_table() {
+    let Some(root) = std::env::var_os(CHILD) else {
+        let (_dir, folder) =
+            in_a_child("an_upgrades_broken_links_are_logged_once_for_each_table", true);
+        let text = log_text(&folder.join(file::FOLDER));
+        assert_eq!(text.matches("a broken link in photo_like").count(), 1, "{text}");
+        assert_eq!(text.matches("a broken link in document_like").count(), 1, "{text}");
+        return;
+    };
+    let root = PathBuf::from(root);
+    logging::init_with(None, Some("on".into()));
+    logging::start(Some(root.join(file::FOLDER)), None);
+    let conn = rusqlite::Connection::open(root.join("links.db")).unwrap();
+    let step = (
+        "breaks_links",
+        "CREATE TABLE owner (id INTEGER PRIMARY KEY);
+         CREATE TABLE photo_like (id INTEGER PRIMARY KEY, owner INTEGER REFERENCES owner (id));
+         CREATE TABLE document_like (id INTEGER PRIMARY KEY, owner INTEGER REFERENCES owner (id));
+         INSERT INTO photo_like (owner) VALUES (101), (102), (103);
+         INSERT INTO document_like (owner) VALUES (104), (105);",
+    );
+    let result = upgrade::upgrade(&conn, &[step], None, &mut |_, _| {});
+    assert!(matches!(result, Err(UpgradeError::LinkCheck { violations: 5 })), "{result:?}");
 }
 
 /// What the journey plants: a user name in the home folder, and text in the
@@ -422,7 +451,9 @@ mod portals {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use hoplodex_lib::commands::documents::portal_open_directory;
-    use hoplodex_lib::services::keyring::portal::{DesktopPortal, SecretPortal};
+    use hoplodex_lib::services::keyring::portal::{
+        DesktopPortal, SecretPortal, secret_portal_available,
+    };
     use hoplodex_lib::services::sandbox::{HostPaths, PortalHostPaths};
     use zbus::fdo;
     use zbus::zvariant::{OwnedFd, OwnedObjectPath, OwnedValue};
@@ -434,6 +465,11 @@ mod portals {
     const DESKTOP_PATH: &str = "/org/freedesktop/portal/desktop";
     const REFUSAL: &str = "the file is PLANTED";
     const FAILED: &str = "org.freedesktop.DBus.Error.Failed";
+    /// A name the portal's own documentation gives, which ashpd turns into a
+    /// variant of its `PortalError`.
+    const NOT_ALLOWED: &str = "org.freedesktop.portal.Error.NotAllowed";
+    /// A name it doesn't, which ashpd leaves as a D-Bus error.
+    const UNEXPECTED: &str = "org.freedesktop.portal.Error.Unexpected";
 
     struct Documents;
 
@@ -451,7 +487,20 @@ mod portals {
         }
     }
 
-    struct Secret;
+    #[derive(zbus::DBusError, Debug)]
+    #[zbus(prefix = "org.freedesktop.portal.Error")]
+    enum Refusal {
+        #[zbus(error)]
+        ZBus(zbus::Error),
+        NotAllowed(String),
+        Unexpected(String),
+    }
+
+    /// Refuses the first `RetrieveSecret` with a name ashpd doesn't know and the
+    /// rest with one it does.
+    struct Secret {
+        refused: AtomicBool,
+    }
 
     #[zbus::interface(name = "org.freedesktop.portal.Secret")]
     impl Secret {
@@ -464,7 +513,22 @@ mod portals {
             &self,
             _fd: OwnedFd,
             _options: HashMap<String, OwnedValue>,
-        ) -> fdo::Result<OwnedObjectPath> {
+        ) -> Result<OwnedObjectPath, Refusal> {
+            Err(if self.refused.swap(true, Ordering::SeqCst) {
+                Refusal::NotAllowed(REFUSAL.to_owned())
+            } else {
+                Refusal::Unexpected(REFUSAL.to_owned())
+            })
+        }
+    }
+
+    /// A Secret portal that refuses to say its version.
+    struct NoVersion;
+
+    #[zbus::interface(name = "org.freedesktop.portal.Secret")]
+    impl NoVersion {
+        #[zbus(property, name = "version")]
+        fn version(&self) -> fdo::Result<u32> {
             Err(fdo::Error::Failed(REFUSAL.to_owned()))
         }
     }
@@ -498,7 +562,8 @@ mod portals {
                 "/org/freedesktop/portal/documents",
                 Documents,
             );
-            let desktop = bus.serve(DESKTOP, DESKTOP_PATH, Secret);
+            let desktop =
+                bus.serve(DESKTOP, DESKTOP_PATH, Secret { refused: AtomicBool::new(false) });
             zbus::block_on(
                 desktop
                     .object_server()
@@ -518,7 +583,8 @@ mod portals {
                 "[DEBUG] portal: GetHostPaths answered without this document\n".to_owned(),
                 refused("GetHostPaths"),
                 "[DEBUG] portal: RetrieveSecret\n".to_owned(),
-                refused("RetrieveSecret"),
+                format!("[DEBUG] portal: RetrieveSecret refused: {UNEXPECTED}\n"),
+                format!("[DEBUG] portal: RetrieveSecret refused: {NOT_ALLOWED}\n"),
                 "[DEBUG] portal: OpenDirectory\n".to_owned(),
                 "[DEBUG] portal: OpenDirectory accepted\n".to_owned(),
                 refused("OpenDirectory"),
@@ -541,12 +607,37 @@ mod portals {
         assert_eq!(paths.host_path(&document("absent-PLANTED")), None);
         assert_eq!(paths.host_path(&document("refused-PLANTED")), None);
 
-        assert!(DesktopPortal.retrieve_secret().is_err());
+        let reason = |name: &str| format!("the Secret portal gave no secret: {name}");
+        assert_eq!(DesktopPortal.retrieve_secret().unwrap_err(), reason(UNEXPECTED));
+        assert_eq!(DesktopPortal.retrieve_secret().unwrap_err(), reason(NOT_ALLOWED));
 
         let shown = root.join("FILE-PLANTED");
         fs::write(&shown, "").unwrap();
         let connection = zbus::block_on(zbus::Connection::session()).unwrap();
         portal_open_directory(&connection, &shown).unwrap();
         assert!(portal_open_directory(&connection, &shown).is_err());
+    }
+
+    /// 013 FR-016: what the portal says when it won't give its version stays out.
+    #[test]
+    fn a_refused_version_is_logged_by_name_only() {
+        let Some(root) = std::env::var_os(CHILD) else {
+            let bus = Bus::start();
+            let _desktop = bus.serve(DESKTOP, DESKTOP_PATH, NoVersion);
+            let (_dir, folder, _) = in_a_child_with_env(
+                "portals::a_refused_version_is_logged_by_name_only",
+                true,
+                &[("DBUS_SESSION_BUS_ADDRESS", bus.address())],
+            );
+            let text = log_text(&folder.join(file::FOLDER));
+            let line = format!("[WARN] no Secret portal: the Secret portal's version: {FAILED}\n");
+            assert!(text.contains(&line), "no {line:?} in:\n{text}");
+            assert!(!text.contains("PLANTED"), "{text}");
+            return;
+        };
+        logging::init_with(None, Some("on".into()));
+        logging::start(Some(PathBuf::from(root).join(file::FOLDER)), None);
+        let connection = zbus::block_on(zbus::Connection::session()).unwrap();
+        assert!(!secret_portal_available(&connection));
     }
 }

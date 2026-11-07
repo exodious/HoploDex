@@ -35,7 +35,7 @@ The logger only sees formatted text, so two versions of a line would need every 
 
 - 64 calls move to `place`.
 - `reach.describe()` uses `place`, so the Flatpak's reach line reads `[~/*/*, /media, /run/media]`; `flatpak.e2e.ts` and `scripts/flatpak/check.sh` follow.
-- `commands/backups.rs` row counts become "the counts differ"; `db/mod.rs`'s integrity text is dropped; `db/upgrade.rs` drops the row id; `services/sandbox.rs` stops quoting a raw entry.
+- `commands/backups.rs` row counts become "the counts differ"; `db/mod.rs`'s integrity text is dropped; `db/upgrade.rs` logs each table with a broken link once, with no row id or count; opened-document copies that can't be deleted get one line, not one each; `services/sandbox.rs` stops quoting a raw entry.
 - `logging::db_error` gives a `rusqlite::Error`'s kind and SQLite result code without its text. `lifecycle.rs` logs a `CommandError`'s `code`, not its `message`, which can name a file.
 - `clean` replaces the home folder's path in a line and escapes control characters, as a backstop for OS error text. It can't catch everything, which is why the wording says "designed to leave out".
 

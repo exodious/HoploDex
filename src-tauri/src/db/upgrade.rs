@@ -348,16 +348,16 @@ fn run(
 }
 
 /// `PRAGMA foreign_key_check`: a row for every record pointing at one that is
-/// not there. The table is logged, never a row id or the data (013 FR-016).
+/// not there. Each table is logged once, never a row id, the data or how many
+/// (013 FR-016).
 fn check_links(conn: &Connection) -> Result<(), UpgradeError> {
     let mut stmt = conn.prepare("PRAGMA foreign_key_check")?;
-    let broken = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let broken =
+        stmt.query_map([], |row| row.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
     if broken.is_empty() {
         return Ok(());
     }
-    for (table, _row_id) in &broken {
+    for table in broken.iter().collect::<std::collections::BTreeSet<_>>() {
         log::error!("the upgrade left a broken link in {table}");
     }
     Err(UpgradeError::LinkCheck { violations: broken.len() })
