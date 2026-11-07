@@ -192,12 +192,12 @@ and peer review catch that.
 - **Code:** `src-tauri/src/services/helper/**`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/helper_handle.rs`; `src-tauri/src/services/preview/helper_protocol.rs`; `src-tauri/src/services/crash_reports.rs` (`quiet_error_reporting`, `end_process_on_panic`); `src-tauri/src/main.rs` (`--render-helper`, `--import-helper`, `--webkit-sandbox-probe`)
 - **Ask:**
   - Does no database, key or IPC reach a child? Are core dumps off, and on Windows are Windows Error Reporting's box, heap and snapshot off (`quiet_error_reporting`)? On Windows, does a child that hits its job's memory cap end without Windows Error Reporting (`allocator.rs`)?
-  - Linux: Landlock (no files and no starting a program, TCP refused from ABI 4, kernel 6.7, abstract Unix sockets from ABI 6, kernel 6.12, and pathname Unix sockets from ABI 9, kernel 7.1) and `RLIMIT_DATA`. macOS: `sandbox_init` with the profile `(version 1)(deny default)`: no files, no network, no starting a program. Windows: a job object (kill on close, one process, 2 GiB) and process mitigations, which stop a program starting but not files or the network.
+  - Linux: Landlock where the kernel has it (no opening a file to read or write it, no creating or removing one, no starting a program; TCP refused from ABI 4, kernel 6.7; abstract Unix sockets from ABI 6, kernel 6.12; pathname Unix sockets from ABI 9, kernel 7.1) and `RLIMIT_DATA`. macOS: `sandbox_init` with the profile `(version 1)(deny default)`. Windows: a job object (kill on close, one process, 2 GiB) and process mitigations, which stop a program starting but do not confine files or the network.
+  - What can a confined helper still reach on each OS: files, file metadata, TCP and UDP, sockets, credential stores, and on kernels without Landlock?
   - Does each child die with the app (`PR_SET_PDEATHSIG`, the job, `kqueue`)?
   - Are frames bounded both ways?
   - Can anything but the app start a helper mode (for example a desktop file or shell association passing `--import-helper`)? Is the mode harmless if one does?
 - **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)): the macOS helper has no enforced memory cap.
-- **Accepted** ([007 research.md §11](../specs/007-document-preview/research.md)): on Windows a confined helper can still read the user's files and open TCP connections. On Linux below kernel 7.1 it can still reach pathname Unix sockets (the session bus is one), and below 6.12 abstract ones too.
 - **Since:** 007; shared with import 008.
 
 ## untrusted-images: photos

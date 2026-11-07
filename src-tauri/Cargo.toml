@@ -417,8 +417,9 @@ lto = true
 opt-level = "s"
 strip = true
 
-# Every TIFF page preview encodes a PNG. At 3 a full page encodes 10-25% faster
-# than at "s", and these two crates add about 13 KB to the binary.
+# Every TIFF page preview encodes a PNG. At 3 a full page encodes about 10%
+# faster than at "s" (measured on synthetic images), and these two crates add
+# about 13 KB to the binary.
 [profile.release.package.png]
 opt-level = 3
 [profile.release.package.fdeflate]
