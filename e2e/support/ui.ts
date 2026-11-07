@@ -100,11 +100,13 @@ const SCOPE_JS = `
   const scope = dialogs.length ? dialogs[dialogs.length - 1] : document;
 `;
 
-export async function clickEl(selector: string) {
+/** Clicks the element `selector` finds and waits for the app to settle, unless
+ * `settles` is false, as for `clickButton`. */
+export async function clickEl(selector: string, { settles = true }: { settles?: boolean } = {}) {
   const el = await $(selector);
   await el.waitForExist();
   await browser.execute((element: HTMLElement) => element.click(), el);
-  await settle();
+  if (settles) await settle();
 }
 
 /** Clicks the button whose visible text is exactly `text`, inside the
