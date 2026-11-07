@@ -1065,6 +1065,30 @@ async function openAboutOnTheChooser() {
   await $(".hd-about__log").waitForExist();
 }
 
+// First: the journeys after it save a choice, and the notice is for someone with none.
+describe("013 US3 - Told, and able to say no, while it is on by default", () => {
+  after(async () => {
+    process.env.HOPLODEX_LOG = "off";
+    await relaunch();
+  });
+
+  it("tells a user once, turns it off from the notice, and it stays off at the relaunch (013 US3-1, US3-2, US3-5)", async () => {
+    await relaunchWithLog(undefined);
+    const notice = $(".hd-chooser__notice*=troubleshooting log");
+    await notice.waitForExist();
+    await expect(notice).toHaveText(expect.stringContaining("designed to leave out"));
+    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(true);
+
+    await clickButton("Turn off");
+    await $(".hd-chooser__notice*=its files are deleted").waitForExist();
+    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(false);
+
+    await relaunchWithLog(undefined);
+    expect(await $(".hd-chooser__notice*=troubleshooting log").isExisting()).toBe(false);
+    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(false);
+  });
+});
+
 describe("013 US1 - Gather a log for a repeatable issue", () => {
   after(async () => {
     process.env.HOPLODEX_LOG = "off";
@@ -1129,28 +1153,5 @@ describe("013 US2 - The log is designed to hold nothing sensitive", () => {
     // Not vacuous: it says what was done, by the shape of where.
     expect(text).toMatch(/\[DEBUG\] creating a database at \S*\*\.hoplodex/);
     expect(text).toMatch(/\[DEBUG\] closing the database/);
-  });
-});
-
-describe("013 US3 - Told, and able to say no, while it is on by default", () => {
-  after(async () => {
-    process.env.HOPLODEX_LOG = "off";
-    await relaunch();
-  });
-
-  it("tells a user once, turns it off from the notice, and it stays off at the relaunch (013 US3-1, US3-2, US3-5)", async () => {
-    await relaunchWithLog(undefined);
-    const notice = $(".hd-chooser__notice*=troubleshooting log");
-    await notice.waitForExist();
-    await expect(notice).toHaveText(expect.stringContaining("designed to leave out"));
-    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(true);
-
-    await clickButton("Turn off");
-    await $(".hd-chooser__notice*=its files are deleted").waitForExist();
-    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(false);
-
-    await relaunchWithLog(undefined);
-    expect(await $(".hd-chooser__notice*=troubleshooting log").isExisting()).toBe(false);
-    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(false);
   });
 });
