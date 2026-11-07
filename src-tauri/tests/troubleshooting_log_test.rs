@@ -1,6 +1,8 @@
 //! The troubleshooting log's file and state, on real folders (013 US1, US3, US5).
 //! Each test makes its own [`Output`], so it needs no process-wide logger.
 
+use crate::support;
+
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -195,4 +197,21 @@ fn a_run_following_the_default_is_told_and_starts_with_a_header() {
         let text = fs::read_to_string(folder.join(CURRENT)).unwrap();
         assert!(text.starts_with(&format!("--- HoploDex {} on ", env!("CARGO_PKG_VERSION"))));
     }
+}
+
+/// 013 SC-006, research.md §8: a line costs far less than the 1 s an action has,
+/// so the handful an action writes can't matter to its budget. At the cap the
+/// write also rotates, which this crosses.
+#[test]
+fn ten_thousand_lines_take_far_less_than_an_actions_budget() {
+    let dir = TempDir::new().unwrap();
+    let mut log = LogFile::open(dir.path()).unwrap();
+    let line = format!("+12.345 [DEBUG] {}\n", "x".repeat(300));
+    let started = std::time::Instant::now();
+    for _ in 0..10_000 {
+        log.write_line(&line).unwrap();
+    }
+    let took = started.elapsed();
+    support::assert_budget!(took < Duration::from_secs(1), "{took:?}");
+    assert!(dir.path().join(ROTATED).exists(), "the run crossed the cap");
 }
