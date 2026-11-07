@@ -1149,6 +1149,7 @@ const APP_PASSTHROUGH = [
   "GSK_RENDERER",
   "RUST_LOG",
   "RUST_BACKTRACE",
+  "HOPLODEX_LOG",
 ];
 
 /** The `HOPLODEX_E2E_*` variables the `e2e` build reads besides the four

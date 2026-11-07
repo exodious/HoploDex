@@ -1658,6 +1658,10 @@ describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Run
 });
 
 describe("013 US1 - Gather a log for a repeatable issue", () => {
+  after(() => {
+    process.env.HOPLODEX_LOG = "off";
+  });
+
   it("is at the Flatpak's cache path, and Show log file reaches the portal with a read-only descriptor (013 US1-4, 013 research.md §3, §10)", async () => {
     const file = path.join(
       appDataDir(currentRun().home),
@@ -1666,9 +1670,13 @@ describe("013 US1 - Gather a log for a repeatable issue", () => {
       "logs",
       "hoplodex.log",
     );
+    // `flatpak run --env=HOPLODEX_LOG=debug`, the README's one line (013 US4-1), in
+    // place of the sandbox's own HOPLODEX_LOG=off.
+    process.env.HOPLODEX_LOG = "debug";
+    await relaunchApp(flatpakLauncher());
+    await waitForChooser();
     expect(fs.readFileSync(file, "utf8")).toContain("(Flatpak), started ");
 
-    await waitForChooser();
     await clickButton("About HoploDex");
     await $(".hd-about__log").waitForExist();
     await clickButton("Show log file");
