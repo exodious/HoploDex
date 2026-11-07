@@ -567,7 +567,7 @@ describe("009 US3 - A Beta Tester's Database Survives an Upgrade", () => {
     expect(await focusedButton()).toBe("Upgrade");
     // Enter submits the question's form. The embedded WebDriver's key presses
     // are synthetic and submit nothing, so where real input exists it is used
-    // (DEVELOPMENT.md, "Real keyboard and mouse input"); elsewhere the button
+    // (docs/development/real-input.md); elsewhere the button
     // stands in for it.
     if (HAS_REAL_INPUT) await realKey("Return");
     else await clickButton("Upgrade");

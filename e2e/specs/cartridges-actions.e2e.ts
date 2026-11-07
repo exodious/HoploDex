@@ -15,8 +15,8 @@ import { realClick, realKey, skipWithoutRealInput } from "../support/realInput";
  * End-to-end coverage of 004 US2-3 and US2-10: the Cartridge suggestion list
  * is driven with the keyboard alone, as real key events through the X server,
  * since the list's focus and highlight behaviour is WebKitGTK's to get right
- * and WebDriver's own keys don't pass through GTK. See "Real keyboard and
- * mouse input" in DEVELOPMENT.md.
+ * and WebDriver's own keys don't pass through GTK. See
+ * docs/development/real-input.md.
  *
  * The list's contents and markers (004 US2-4) and grouping by Cartridge
  * (004 US1-6) are tested in Rust and Vitest (see the citations in those tests).
