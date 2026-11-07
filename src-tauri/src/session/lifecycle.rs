@@ -619,7 +619,7 @@ pub fn screen_locked(session: &Session, machine: &MachineSettings) {
 /// changes are kept before the key is cleared and document copies are
 /// deleted, and no backup is made.
 pub fn will_shut_down(session: &Session, machine: &MachineSettings) {
-    log::debug!("the computer is shutting down");
+    log::debug!("the OS is shutting down or ending the app");
     // An upgrade's backup is stopped by the immediate close below, as any
     // operation is.
     session.drop_awaiting_upgrade();
