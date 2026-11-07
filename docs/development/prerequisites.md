@@ -81,11 +81,12 @@ sudo pacman -S --needed xorg-server-xvfb     # Arch
 **Headless/SSH sessions only:** HoploDex keeps a saved passphrase in the OS
 credential store (the `keyring` crate), which on Linux talks to the Secret
 Service D-Bus API. A bare SSH login has a D-Bus session bus but usually no
-Secret Service provider registered on it, so `npm run tauri dev` and
-`scripts/human-testing.sh` can't save a passphrase, and log `the keyring is
-not available`. E2E builds keep it in memory and don't need this. Fix by
-installing `gnome-keyring` and starting it against your session's bus before
-starting the app:
+Secret Service provider registered on it, so `scripts/human-testing.sh` can't
+save a passphrase, and logs `the keyring is not available`. E2E builds don't
+use this keyring. Fix by installing `gnome-keyring` and starting it against
+your session's bus before starting the app. Its blank password protects
+nothing at rest, so keep only a throwaway collection's passphrase in it, never
+a real database's:
 
 ```bash
 sudo pacman -S --needed gnome-keyring   # apt install gnome-keyring on Debian/Ubuntu
