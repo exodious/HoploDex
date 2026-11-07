@@ -220,13 +220,13 @@ and peer review catch that.
   - Is the awaiting-upgrade slot unreachable by collection commands, and dropped on any open, lock, sleep, shutdown or quit?
   - Does the before-upgrade backup's folder go through the `paths` checks, with an exclusive create and secure deletion of a partial file?
   - Are test-only steps impossible in a shipped build (`upgrade-test-steps`, the `compile_error!` in `db/upgrade.rs`)? Is `9000_e2e_upgrade_check` E2E-only?
-  - Is `machine.json` (recent paths, `pdfPreviewHold`, the opening setting) read as untrusted?
+  - Is `machine.json` (recent paths, `pdfPreviewHold`, the opening setting, the log's `troubleshootingLog` and `troubleshootingLogNoticeShown`) read as untrusted?
 - **Accepted** ([009 research.md §19](../specs/009-upgrade-readiness/research.md)): an `fsync`-ignoring filesystem; the lock held while the upgrade question is open; the restored-from backup rotating out; case folding only for A to Z; a backup opened directly becoming its own database. These are integrity limits; reassess whether any is a security issue.
 - **Since:** 003; upgrade 009.
 
 ## flatpak: the Flatpak sandbox and its portals
 
-- **Code:** `flatpak/io.github.exodious.HoploDex.yml`; `scripts/flatpak/manifest.test.ts`; `scripts/flatpak/contents.mjs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/keyring/portal.rs`; `src-tauri/src/platform/linux.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/commands/error.rs`
+- **Code:** `flatpak/io.github.exodious.HoploDex.yml`; `scripts/flatpak/manifest.test.ts`; `scripts/flatpak/contents.mjs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/keyring/portal.rs`; `src-tauri/src/platform/linux.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/commands/error.rs`; `src-tauri/src/commands/documents.rs` (`portal_open_directory`)
 - **Ask:**
   - Does the manifest grant no permission beyond 011 research.md §4's table, as `manifest.test.ts` enforces?
   - Does Show log file reach only `OpenURI.OpenDirectory`, with a read-only descriptor of the log file (`commands/documents.rs`, `portal_open_directory`)?
@@ -245,7 +245,7 @@ and peer review catch that.
 
 ## logging: what the log carries
 
-- **Code:** `src-tauri/src/logging.rs` (and every `log::` call in the backend); `src-tauri/src/logging/**`; `src-tauri/src/commands/troubleshooting_log.rs`; `src-tauri/src/models/troubleshooting_log.rs`; `src-tauri/tests/log_contents_test.rs`; `src-tauri/tests/log_lines_test.rs`
+- **Code:** `src-tauri/src/logging.rs` (and every `log::` call in the backend); `src-tauri/src/logging/**`; `src-tauri/src/commands/troubleshooting_log.rs`; `src-tauri/src/models/troubleshooting_log.rs`; `src-tauri/tests/log_contents_test.rs`; `src-tauri/tests/log_lines_test.rs`; `src-tauri/src/commands/documents.rs` (`Opener::reveal`); `README.md` (what it says about the log); `flatpak/io.github.exodious.HoploDex.metainfo.xml` (what it says about the log); `src/features/app/TroubleshootingLogSection.tsx`; `src/features/databases/DatabaseChooser.tsx` (the log's notice)
 - **Ask:**
   - Does each line hold only fixed text, HoploDex's own codes, OS error text and codes, durations and path shapes (013 FR-016)? `tests/log_lines_test.rs` catches a path printed the usual ways and `tests/log_contents_test.rs` covers the journey it walks; for every other line, and every failure path neither reaches, what can each interpolated `{err}` or value print? Could any carry a record's value, a name of a database, backup, folder, photo or document, a user name, a draft's text, a passphrase, a count of records or a row id?
   - Do serde errors go through `logging::json_error`, database errors through `logging::db_error`, `OpenError::for_log` or `UpgradeError::for_log`, and paths through `logging::place`? Can `place`'s shape show a name: a user name under a kept root, a server's or share's name, an extension off its short list?
@@ -254,6 +254,8 @@ and peer review catch that.
   - Are the file's limits kept: at most 2 MiB and one rotated file, deleted after 14 days, deleted when turned off and at a start with the log off? Is it created exclusively and never followed through a planted link? Is it created only readable by this user on Unix?
   - Can the page read the file's contents, or choose what `show_troubleshooting_log` shows? It takes no argument, and the only path is Rust's.
   - Is the file out of every backup and export?
+  - Outside a Flatpak, does Show log file reach only `tauri_plugin_opener::reveal_item_in_dir` (`FileManager1.ShowItems` on Linux, the OS's file manager on macOS and Windows) or, on Linux and macOS where that fails, the log's folder through `xdg-open` or `open`, with only Rust's path? On any route, can a link planted at the log's name make it show or hand over anything else?
+  - `HOPLODEX_LOG` is read from the environment at each start and outranks the saved choice for that run, `off` included (`logging::decide`). Can it save a choice or delete a file? Who else can set it (a launcher, a desktop file, `flatpak override --env`), and what do they gain from a raised level the user turned off and isn't told about?
   - Do the helpers and the sandbox probe log nothing, open no file and not receive `HOPLODEX_LOG` (`env_clear` in `services/helper/handle.rs`)? The parent logs for them (013 FR-031).
   - Does what the app, the README and the store listing say about the log stay no wider than the tests and this review support: what it is designed to leave out, not what it never contains (013 FR-021, FR-022)?
 - **Accepted** ([013 research.md §9](../specs/013-troubleshooting-log/research.md); standard error and the journal since [011 research.md §20](../specs/011-flatpak/research.md)):
