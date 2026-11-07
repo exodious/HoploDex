@@ -31,4 +31,4 @@ interface TroubleshootingLog {
 
 ## `show_troubleshooting_log() -> ()`
 
-Takes no argument. Rust picks the path. Shows the file in the OS's file manager, through `Opener::reveal`. Errors: `NOT_FOUND` when there is no file; `INTERNAL_ERROR` when the OS can't show it, with a message that names no path.
+Takes no argument. Rust picks the path. Shows the file in the OS's file manager, through `Opener::reveal`. Errors: `NOT_FOUND` when no plain file of this user's is there (a link planted at the name counts as none); `INTERNAL_ERROR` when the OS can't show it, with a message that names no path.

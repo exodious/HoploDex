@@ -154,6 +154,7 @@ What it does, in order:
 3. Starts a private session bus with a scripted desktop portal
    (`scripts/flatpak/openuri_mock.py`, a dbusmock template with two interfaces:
    OpenURI, which records each `OpenFile`'s descriptor and answers `Response`,
+   and records each `OpenDirectory`'s descriptor with no answer,
    and Secret, whose `RetrieveSecret` hands back a fixed key for the run, the
    stand-in for the Secret portal; started without the key it has no Secret
    interface, as a desktop with no Secret portal backend), stand-ins for both

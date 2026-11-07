@@ -35,7 +35,7 @@ Plain text, one line per entry:
 ```text
 --- HoploDex 0.1.0 on linux x86_64, started 2026-11-07 ---
 +0.012 [INFO] the helpers are confined with Landlock ABI 6
-+4.310 [DEBUG] opening ~/*/*.hoplodex
++4.310 [DEBUG] opening ~/*/*.hoplodex (take over: false)
 ```
 
 Shown on the page as a path only. The page never receives contents. Paths in this table of lines are shapes (`logging::place`); on Windows the separators are backslashes.

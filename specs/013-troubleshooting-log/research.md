@@ -34,7 +34,7 @@ A run the variable decides needs no saved choice, so its file starts first in `s
 The logger only sees formatted text, so two versions of a line would need every call site to say more. **Decision:** one rule for all outputs. Lines change as follows:
 
 - 64 calls move to `place`.
-- `reach.describe()` uses `place`, so the Flatpak's reach line reads `[~/*/*, /media, /run/media]`; `flatpak.e2e.ts` and `scripts/flatpak/check.sh` follow.
+- `reach.describe()` uses `place`, so the Flatpak's reach line reads `[~/*/*, /media, /run/media]`; `flatpak.e2e.ts` follows, and `scripts/flatpak/check.sh` matches only the line's start.
 - `commands/backups.rs` row counts become "the counts differ"; `db/mod.rs`'s integrity text is dropped; `db/upgrade.rs` logs each table with a broken link once, with no row id or count; opened-document copies that can't be deleted get one line, not one each; `services/sandbox.rs` stops quoting a raw entry.
 - `logging::db_error` gives a `rusqlite::Error`'s kind and SQLite result code without its text. `lifecycle.rs` logs a `CommandError`'s `code`, not its `message`, which can name a file.
 - `clean` replaces the home folder's path in a line and escapes control characters, as a backstop for OS error text. It can't catch everything, which is why the wording says "designed to leave out".
@@ -58,4 +58,4 @@ A line costs one `write` on an unbuffered file behind a mutex. No debug line goe
 
 ## §10 Show log file
 
-`tauri_plugin_opener::reveal_item_in_dir` covers macOS and Windows, and Linux outside the Flatpak through `FileManager1.ShowItems`, with the parent folder through `xdg-open` where no file manager answers. Its Linux fallback to the portal calls `OpenDirectory` with a URI on the wrong interface, so inside the Flatpak the app uses its own: `OpenURI.OpenDirectory` with a read-only descriptor of the log file, on the connection `AppOpener` already holds. `Opener` gains `reveal`; `E2eOpener` records it in the sandbox. The path comes from Rust: the command takes no argument.
+`tauri_plugin_opener::reveal_item_in_dir` covers macOS and Windows, and Linux outside the Flatpak through `FileManager1.ShowItems`. Where it fails on Linux or macOS, the parent folder goes through `xdg-open` or `open`. Its Linux fallback to the portal calls `OpenDirectory` with a URI on the wrong interface, so inside the Flatpak the app uses its own: `OpenURI.OpenDirectory` with a read-only descriptor of the log file, on the connection `AppOpener` already holds. `Opener` gains `reveal`; `E2eOpener` records it in the sandbox. The path comes from Rust: the command takes no argument.
