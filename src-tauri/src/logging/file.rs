@@ -85,7 +85,15 @@ fn open_current(path: &Path) -> io::Result<(File, u64)> {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        return Ok((options.open(path)?, 0));
+        let file = options.open(path)?;
+        // NTFS can give a file made soon after its name was freed the old file's
+        // creation time, which would age it out at every start (013 FR-008).
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::FileTimesExt;
+            let _ = file.set_times(fs::FileTimes::new().set_created(SystemTime::now()));
+        }
+        return Ok((file, 0));
     }
     if !scratch::is_plain_file(path) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a plain file of ours"));

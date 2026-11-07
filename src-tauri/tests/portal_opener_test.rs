@@ -563,5 +563,8 @@ fn showing_the_log_file_gives_the_portal_a_read_only_descriptor() {
     // A link swapped in at the name isn't followed (013 FR-010).
     let link = file.with_file_name("a link");
     std::os::unix::fs::symlink(&file, &link).unwrap();
-    assert!(portal_open_directory(&client, &link).is_err());
+    assert!(matches!(
+        portal_open_directory(&client, &link),
+        Err(hoplodex_lib::commands::documents::OpenFailure::Other(_))
+    ));
 }
