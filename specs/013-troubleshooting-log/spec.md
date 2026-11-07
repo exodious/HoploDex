@@ -148,7 +148,7 @@ The log never grows without bound, doesn't linger, and doesn't travel with the u
 
 - **FR-006**: The file MUST be `<app cache directory>/logs/hoplodex.log`, resolved the way the app's other directories are, so tests and E2E runs stay in their sandbox.
 - **FR-007**: A file MUST NOT exceed 2 MiB; at the cap it becomes `hoplodex.log.1`, replacing any earlier one, so at most 4 MiB exists.
-- **FR-008**: At each start, a log file made over 14 days ago MUST be deleted, however recently it changed; where the file system doesn't record when a file was made, its last change counts.
+- **FR-008**: At each start, unless `HOPLODEX_LOG=off` leaves the files for that run (FR-012), a log file made over 14 days ago MUST be deleted, however recently it changed; where the file system doesn't record when a file was made, its last change counts.
 - **FR-009**: Turning the log off in About or from the notice MUST delete both files at once.
 - **FR-010**: A new file MUST be created exclusively and readable only by this user on Unix. An existing object that isn't a plain file of this user's MUST be left alone and no file log kept for that run.
 - **FR-011**: The app MUST carry on normally if the log can't be written, and About MUST say so.
@@ -214,7 +214,7 @@ Named so the limits are on record:
 
 - **SC-001**: With the log on, a user can go from About to a detailed log and find its file in under a minute, with no terminal.
 - **SC-002**: With text planted in the home folder, database name, record values, document names and passphrase, none of it appears in the output of the tested journeys, on Linux, macOS, Windows and in the Flatpak.
-- **SC-003**: The log's files never take more than 4 MiB, and no file outlives 14 days from when it was made once the app has started again.
+- **SC-003**: The log's files never take more than 4 MiB, and no file outlives 14 days from when it was made (FR-008) once the app has started again without `HOPLODEX_LOG=off`.
 - **SC-004**: A build at 1.0.0 writes no log for a user who never chose one, with no step at release.
 - **SC-005**: Turning the log off leaves no log file behind, at once.
 - **SC-006**: Search stays within 500 ms and actions within 1 s at 10,000 items with the level raised.

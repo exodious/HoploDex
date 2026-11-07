@@ -74,6 +74,31 @@ fn a_file_is_deleted_14_days_after_it_was_made_however_recently_it_changed() {
     assert_eq!(current.exists(), !records_when_made);
 }
 
+/// 013 FR-008: a new file doesn't take on the creation time of the one it follows,
+/// which NTFS can do when a name is reused within seconds.
+#[cfg(windows)]
+#[test]
+fn a_new_file_ages_from_its_own_making() {
+    use std::os::windows::fs::FileTimesExt;
+
+    let dir = TempDir::new().unwrap();
+    let current = dir.path().join(CURRENT);
+    drop(LogFile::open(dir.path()).unwrap());
+    let old = SystemTime::now() - MAX_AGE - Duration::from_secs(3600);
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&current)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_created(old))
+        .unwrap();
+    file::delete_if_old(dir.path(), SystemTime::now());
+    assert!(!current.exists());
+
+    drop(LogFile::open(dir.path()).unwrap());
+    file::delete_if_old(dir.path(), SystemTime::now());
+    assert!(current.exists(), "the new file is not as old as the one before it");
+}
+
 /// 013 FR-010: on Unix, only this user can read it.
 #[cfg(unix)]
 #[test]

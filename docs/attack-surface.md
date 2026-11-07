@@ -263,7 +263,7 @@ and peer review catch that.
   - The file is plain text, readable by the same OS user and anything running as them.
   - OS error text is written as it comes, with only the home folder replaced.
   - A compromised main web view can turn the log on or off and raise the level, without reading it.
-  - A file past 14 days stays until the next start: nothing of the app runs while it is closed.
+  - A file's age is checked only at a start, so one past 14 days stays while the app is closed or a run is left open, and through a run under `HOPLODEX_LOG=off`. Where the file system doesn't record when a file was made, each start's new lines reset its age. The notice's and store listing's "up to 14 days" doesn't say so; the README does.
 - **Since:** 011; the file 013.
 
 ## shipped-build: what only test and E2E builds may contain
