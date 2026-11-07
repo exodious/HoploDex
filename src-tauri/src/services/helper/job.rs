@@ -33,26 +33,28 @@
 //! waits a bounded time and lets the delete finish behind it. If HoploDex ended
 //! first or the delete failed, the next start's [`sweep_profiles`] deletes it.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::mem::size_of;
-use std::os::windows::ffi::OsStrExt;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_INVALID_PARAMETER, FALSE, GetLastError, HANDLE, HANDLE_FLAG_INHERIT,
+    CloseHandle, ERROR_INVALID_PARAMETER, FALSE, GetLastError, HANDLE, HANDLE_FLAG_INHERIT, S_OK,
     SetHandleInformation, TRUE, WAIT_OBJECT_0,
 };
+use windows_sys::Win32::Globalization::lstrlenW;
 use windows_sys::Win32::Security::Isolation::{
     CreateAppContainerProfile, DeleteAppContainerProfile,
 };
 use windows_sys::Win32::Security::{FreeSid, PSID, SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES};
+use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::JobObjects::{
     CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_UILIMIT_DESKTOP,
@@ -71,6 +73,7 @@ use windows_sys::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
     UpdateProcThreadAttribute, WaitForSingleObject,
 };
+use windows_sys::Win32::UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath};
 
 /// The helper's exit code when it is ended with [`JobChild::kill`].
 const KILLED: u32 = 1;
@@ -319,8 +322,26 @@ fn wide(text: &str) -> Vec<u16> {
 /// cut short by an exit. Run once at start-up, off the main thread. A profile
 /// whose process id has been reused by something else waits for a later start.
 pub fn sweep_profiles() {
-    let Some(base) = std::env::var_os("LOCALAPPDATA") else { return };
-    sweep_profiles_in(&Path::new(&base).join("Packages"));
+    let Some(packages) = packages_folder() else { return };
+    sweep_profiles_in(&packages);
+}
+
+/// Where the OS keeps AppContainer profiles: the user's own Local AppData, not
+/// whatever this process's environment names.
+fn packages_folder() -> Option<PathBuf> {
+    let mut path = std::ptr::null_mut();
+    // SAFETY: a pointer to a local; what it sets is NUL-terminated on success,
+    // and is freed once, as it must be even on failure.
+    unsafe {
+        let found =
+            SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, std::ptr::null_mut(), &mut path);
+        let folder = (found == S_OK).then(|| {
+            let wide = std::slice::from_raw_parts(path, lstrlenW(path) as usize);
+            PathBuf::from(OsString::from_wide(wide)).join("Packages")
+        });
+        CoTaskMemFree(path.cast());
+        folder
+    }
 }
 
 fn sweep_profiles_in(packages: &Path) {
@@ -545,7 +566,9 @@ fn quote(arg: &OsStr, out: &mut Vec<u16>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{CONTAINER, delete_profile, environment, sweep_profiles, wait_at_most, wide};
+    use super::{
+        CONTAINER, delete_profile, environment, packages_folder, sweep_profiles, wait_at_most, wide,
+    };
     use std::time::{Duration, Instant};
     use windows_sys::Win32::Security::{FreeSid, Isolation::CreateAppContainerProfile};
 
@@ -570,9 +593,7 @@ mod tests {
             assert_eq!(made, 0, "the profile wasn't made");
             FreeSid(sid);
         }
-        let folder = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap())
-            .join("Packages")
-            .join(name.to_lowercase());
+        let folder = packages_folder().unwrap().join(name.to_lowercase());
         (name, folder)
     }
 
