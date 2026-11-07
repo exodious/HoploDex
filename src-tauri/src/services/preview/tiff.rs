@@ -6,8 +6,9 @@
 //! directory that points back at itself, a page claiming 100,000 pixels
 //! square) can't make it decode anything. [`render_page`] decodes one page
 //! with the `tiff` crate (which also reads CCITT Group 3 and 4 through its
-//! `fax` support, and LZW, Deflate and JPEG), brings it down to the width
-//! asked and encodes a PNG. A page it can't decode fails alone.
+//! `fax` support, and LZW, Deflate and JPEG) and brings it down to the width
+//! asked. A page it can't decode fails alone. The pixels go back to the app,
+//! which encodes the PNG ([`encode_png`], run outside the helper).
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -17,6 +18,7 @@ use tiff::ColorType;
 use tiff::decoder::{Decoder, DecodingResult, Limits};
 
 use super::PageSize;
+use super::helper_protocol::Pixels;
 
 /// The DPI of a page that doesn't say (007 research.md §11).
 const DEFAULT_DPI: f64 = 200.0;
@@ -387,7 +389,13 @@ fn downscale(raster: &Raster<'_>, source: (usize, usize), out: (usize, usize)) -
     result
 }
 
-fn encode_png(samples: &[u8], channels: usize, width: u32, height: u32) -> Result<Vec<u8>, String> {
+/// The PNG of a page's pixels, whose length the caller has checked.
+pub fn encode_png(
+    samples: &[u8],
+    channels: u8,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
     let mut png_bytes = Vec::new();
     let mut encoder = png::Encoder::new(&mut png_bytes, width, height);
     encoder.set_color(if channels == 1 { png::ColorType::Grayscale } else { png::ColorType::Rgb });
@@ -399,10 +407,11 @@ fn encode_png(samples: &[u8], channels: usize, width: u32, height: u32) -> Resul
     Ok(png_bytes)
 }
 
-/// Renders page `page` (0-based) as a PNG, at most `width_px` wide
+/// Renders page `page` (0-based) as pixels, at most `width_px` wide
 /// ([`output_size`]). `Err` is this page failing: an unsupported compression,
-/// photometric or layout, damaged data, or a page too large to decode.
-pub fn render_page(bytes: &[u8], page: u32, width_px: u32) -> Result<Vec<u8>, String> {
+/// photometric or layout, damaged data, or a page too large to decode or, one
+/// pixel wide and still over [`MAX_PIXELS`], to show.
+pub fn render_page(bytes: &[u8], page: u32, width_px: u32) -> Result<Pixels, String> {
     let mut limits = Limits::default();
     limits.decoding_buffer_size = MAX_DECODED_BYTES;
     limits.intermediate_buffer_size = MAX_DECODED_BYTES / 4;
@@ -417,12 +426,15 @@ pub fn render_page(bytes: &[u8], page: u32, width_px: u32) -> Result<Vec<u8>, St
     let data = decoder.read_image().map_err(|e| e.to_string())?;
     let raster = to_raster(&data, color, width as usize, height as usize)?;
     let (out_width, out_height) = output_size((width, height), width_px);
-    let scaled = downscale(
+    if u64::from(out_width) * u64::from(out_height) > MAX_PIXELS {
+        return Err("too many pixels".into());
+    }
+    let samples = downscale(
         &raster,
         (width as usize, height as usize),
         (out_width as usize, out_height as usize),
     );
-    encode_png(&scaled, raster.channels, out_width, out_height)
+    Ok(Pixels { width: out_width, height: out_height, channels: raster.channels as u8, samples })
 }
 
 #[cfg(test)]
@@ -432,20 +444,29 @@ mod tests {
     const ONE_PAGE: &[u8] = include_bytes!("../../../tests/fixtures/documents/one-page.tif");
     const MIXED: &[u8] = include_bytes!("../../../tests/fixtures/documents/four-pages-mixed.tif");
 
-    fn png_dimensions(png: &[u8]) -> (u32, u32) {
-        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
-        (
-            u32::from_be_bytes(png[16..20].try_into().unwrap()),
-            u32::from_be_bytes(png[20..24].try_into().unwrap()),
-        )
-    }
-
-    fn decode(png: &[u8]) -> (png::OutputInfo, Vec<u8>) {
-        let mut reader = png::Decoder::new(Cursor::new(png)).read_info().unwrap();
-        let mut buffer = vec![0; reader.output_buffer_size()];
-        let info = reader.next_frame(&mut buffer).unwrap();
-        buffer.truncate(info.buffer_size());
-        (info, buffer)
+    /// An uncompressed page of 8-bit gray, its data all zero.
+    fn gray_tiff(width: u32, height: u32) -> Vec<u8> {
+        let mut b = b"II*\0\x08\0\0\0".to_vec();
+        let entries: [(u16, u16, u32, u32); 9] = [
+            (256, 4, 1, width),
+            (257, 4, 1, height),
+            (258, 3, 1, 8),
+            (259, 3, 1, 1),
+            (262, 3, 1, 1),
+            (273, 4, 1, 8 + 2 + 9 * 12 + 4),
+            (277, 3, 1, 1),
+            (278, 4, 1, height),
+            (279, 4, 1, width * height),
+        ];
+        b.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        for (tag, kind, count, value) in entries {
+            b.extend_from_slice(&tag.to_le_bytes());
+            b.extend_from_slice(&kind.to_le_bytes());
+            b.extend_from_slice(&count.to_le_bytes());
+            b.extend_from_slice(&value.to_le_bytes());
+        }
+        b.resize(b.len() + 4 + (width * height) as usize, 0);
+        b
     }
 
     #[test]
@@ -480,10 +501,15 @@ mod tests {
     #[test]
     fn every_compression_in_the_mixed_fixture_renders() {
         for page in 0..4 {
-            let png = render_page(MIXED, page, 100).unwrap_or_else(|e| panic!("page {page}: {e}"));
-            let (width, height) = png_dimensions(&png);
-            assert_eq!(width, 100, "page {page}");
-            assert!(height > 0);
+            let pixels =
+                render_page(MIXED, page, 100).unwrap_or_else(|e| panic!("page {page}: {e}"));
+            assert_eq!(pixels.width, 100, "page {page}");
+            assert!(pixels.height > 0);
+            assert_eq!(
+                pixels.samples.len(),
+                100 * pixels.height as usize * usize::from(pixels.channels),
+                "page {page}"
+            );
         }
     }
 
@@ -539,11 +565,17 @@ mod tests {
     }
 
     #[test]
+    fn a_page_still_over_the_pixel_limit_at_one_pixel_wide_fails() {
+        let over = gray_tiff(1, MAX_PIXELS as u32 + 1);
+        assert!(render_page(&over, 0, 100).is_err());
+        let at = gray_tiff(1, MAX_PIXELS as u32);
+        assert_eq!(render_page(&at, 0, 100).unwrap().height, MAX_PIXELS as u32);
+    }
+
+    #[test]
     fn colour_pages_come_out_in_colour_and_one_bit_pages_in_gray() {
-        let (info, _) = decode(&render_page(MIXED, 0, 50).unwrap());
-        assert_eq!(info.color_type, png::ColorType::Rgb);
-        let (info, _) = decode(&render_page(MIXED, 2, 50).unwrap());
-        assert_eq!(info.color_type, png::ColorType::Grayscale);
+        assert_eq!(render_page(MIXED, 0, 50).unwrap().channels, 3);
+        assert_eq!(render_page(MIXED, 2, 50).unwrap().channels, 1);
     }
 
     #[test]
@@ -552,15 +584,15 @@ mod tests {
         // so a JPEG page (YCbCr) must come out with the same average colour
         // as the LZW one (RGB) within JPEG's loss.
         let mean = |page: u32| {
-            let (info, pixels) = decode(&render_page(MIXED, page, 16).unwrap());
-            assert_eq!(info.color_type, png::ColorType::Rgb);
+            let pixels = render_page(MIXED, page, 16).unwrap();
+            assert_eq!(pixels.channels, 3);
             let mut sums = [0u64; 3];
-            for p in pixels.as_chunks::<3>().0 {
+            for p in pixels.samples.as_chunks::<3>().0 {
                 for c in 0..3 {
                     sums[c] += u64::from(p[c]);
                 }
             }
-            let n = (pixels.len() / 3) as u64;
+            let n = (pixels.samples.len() / 3) as u64;
             sums.map(|s| (s / n) as i32)
         };
         let (lzw, jpeg) = (mean(0), mean(3));

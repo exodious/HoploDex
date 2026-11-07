@@ -726,6 +726,7 @@ _Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (c
   2. Then any number of `Render { page, width_px }` → `Page { png }` |
      `PageFailed`. It decodes one page, downsamples it to the requested
      width, and encodes PNG.
+     _Amended 2026-11-07: the helper answers `Page { width, height, channels, samples }`, raw pixels, and the app checks them against the request and encodes the PNG (`helper_handle.rs`), so the bytes reaching the web view are always ones the app produced._
   3. On EOF on stdin, it exits. Its stderr is discarded, never logged,
      since it could hold content.
 
@@ -756,6 +757,8 @@ _Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (c
 
   _Amended 2026-11-06: on macOS `sandbox_init` now takes the profile `(version 1)(deny default)`, since macOS 27 kills a process that enters the named pure-computation profile; what each OS's measures cover is in [docs/attack-surface.md](../../docs/attack-surface.md)._
 
+  _Amended 2026-11-07: on Linux the helper also installs a seccomp filter on top of Landlock, and on macOS it closes inherited descriptors from 3 up before its parent watch (`services/helper/confine.rs`, [docs/attack-surface.md](../../docs/attack-surface.md))._
+
 - **Rationale**:
   - The release profile is `panic = "abort"`. The decoders are memory-safe
     but can panic or try huge allocations on hostile input (a TIFF
@@ -780,6 +783,7 @@ _Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (c
   - libtiff through FFI: C, and a native library.
   - seccomp-bpf on Linux: more brittle across glibc versions for little
     gain over Landlock and the process boundary.
+    _Superseded 2026-11-07: the helper has a seccomp filter now. It allows by default and refuses a list with `EPERM`, so a C library's choice of calls can't end a helper, and it holds where a kernel's Landlock doesn't reach (`services/helper/confine.rs`)._
 - **Amendment (2026-10-07), dies with HoploDex**: if HoploDex exits, every
   process it spawned goes with it at once, whatever the helper is doing. The
   table's macOS cell, "stdin EOF", is not enough (it waits for a page to

@@ -20,6 +20,8 @@ keeps PDF preview off until the app is updated).
 
 A TIFF is decoded in a confined child, `hoplodex --render-helper` (`helper.rs`;
 the confinement and framing are `services/helper/`'s), and text in `text.rs`.
+The child answers a page with raw pixels: `helper_handle.rs` checks them against
+the request and encodes the PNG, so what reaches the web view is the app's own.
 
 On Linux `sandbox_probe.rs` runs the app once with `--webkit-sandbox-probe` and
 turns WebKit's sandbox on only where it works; only a container skips it, and a
