@@ -10,6 +10,8 @@ A raise never saves anything, so a user following the default doesn't become opt
 
 `logging::init()` runs first in `main()`, before Tauri can name a folder or `machine.json` is loaded. **Decision:** it reads `HOPLODEX_LOG` at once, holds up to 256 lines in memory, and `logging::start` either writes them to the file or drops them. **Rejected:** starting the logger later, which would lose the sandbox probe's and core-dump lines from stderr too.
 
+A run the variable decides needs no saved choice, so its file starts first in `setup` (`logging::start_for_variable`), and a run started for a problem at startup keeps its lines if `setup` then fails. Any other run waits for the choice, because a start on a guess could delete a saved On's files at 1.0.0. Tauri panics with a failed `setup`'s error, and a release build's panic gives only its location, so `main()` logs the reason first (`logging::startup_failed`), on standard error if there is no file yet.
+
 ## §3 Location
 
 **Decision:** `app_dirs::cache_dir(app)/logs/hoplodex.log`, so an E2E build is already in its sandbox and no new path logic exists. Backups and exports copy named files, so neither reaches this folder. `Library/Caches` is excluded from Time Machine (checked on a macOS 27 machine: `tmutil isexcluded`).

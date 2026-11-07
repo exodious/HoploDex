@@ -269,6 +269,17 @@ pub fn db_error(err: &rusqlite::Error) -> String {
     }
 }
 
+/// What a line may say about a D-Bus error: its name, not its message, which can
+/// name a file (013 FR-016, FR-025).
+#[cfg(target_os = "linux")]
+pub fn portal_error(err: &zbus::Error) -> String {
+    match err {
+        zbus::Error::MethodError(name, _, _) => name.to_string(),
+        zbus::Error::FDO(fdo) => zbus::DBusError::name(fdo.as_ref()).to_string(),
+        _ => "not a D-Bus reply".to_owned(),
+    }
+}
+
 /// The state behind the log's second output. One instance serves the app; tests
 /// make their own, with throwaway folders.
 pub struct Output {
@@ -347,6 +358,13 @@ impl Output {
             }
         }
         decided
+    }
+
+    /// [`Output::start`], now, if the variable decides this run, which takes no
+    /// saved choice. Without it nothing starts: only the saved choice can say
+    /// what happens to the files (013 FR-002, FR-012).
+    pub fn start_for_variable(&self, folder: Option<PathBuf>) -> Option<Decided> {
+        self.variable.is_some().then(|| self.start(folder, None))
     }
 
     fn open(&self, inner: &mut Inner) {
@@ -550,6 +568,19 @@ pub fn start(folder: Option<PathBuf>, saved: Option<LogChoice>) -> Decided {
     decided
 }
 
+/// [`Output::start_for_variable`], first in `setup`, so that a run started for a
+/// problem at startup keeps its lines if `setup` then fails (013 US4-1).
+pub fn start_for_variable(folder: Option<PathBuf>) -> Option<Decided> {
+    let decided = LOGGER.get()?.0.start_for_variable(folder);
+    apply_level();
+    decided
+}
+
+/// Says why the app can't start. Its panic won't, in a release build (013 FR-027).
+pub fn startup_failed(err: &dyn std::fmt::Display) {
+    log::error!("the app could not start: {err}");
+}
+
 /// Changes the state ([`Output::set`]), returning the choice to save.
 pub fn set_state(wanted: LogState) -> Option<LogChoice> {
     let choice = LOGGER.get().and_then(|logger| logger.0.set(wanted));
@@ -592,6 +623,17 @@ mod tests {
         let line = json_error(&err);
         assert!(!line.contains("ABC123"), "{line}");
         assert_eq!(line, "Data error at line 1, column 15");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_portal_error_is_logged_by_its_name_alone() {
+        let failed = zbus::fdo::Error::Failed("the file is PLANTED".to_owned());
+        assert_eq!(
+            portal_error(&zbus::Error::FDO(Box::new(failed))),
+            "org.freedesktop.DBus.Error.Failed"
+        );
+        assert_eq!(portal_error(&zbus::Error::Unsupported), "not a D-Bus reply");
     }
 
     #[test]
