@@ -152,7 +152,8 @@ fn the_planted_text_of_a_journey_never_reaches_the_log() {
             "[DEBUG] locking the database",
             "[DEBUG] closing the database",
         ] {
-            assert!(text.contains(said), "the log doesn't say {said:?}:\n{text}");
+            let said = said.replace('/', std::path::MAIN_SEPARATOR_STR);
+            assert!(text.contains(&said), "the log doesn't say {said:?}:\n{text}");
         }
         // 013 US2-4: nothing says how many records there are.
         assert!(!text.contains("rows"), "{text}");
@@ -178,7 +179,9 @@ fn journey(root: &Path) {
     let machine = MachineSettings::load(&config).unwrap();
     logging::start(Some(root.join("cache").join(file::FOLDER)), machine.troubleshooting_log());
 
-    let (session, _events) = support::test_session(&root.join("cache/opened-documents"));
+    let clock = support::ManualClock::at("2026-10-25T12:00:00Z");
+    let (session, _events) =
+        support::test_session_at(&root.join("cache/opened-documents"), clock.clone());
     let path = folder.join("DBNAME-PLANTED.hoplodex");
     let passphrase = Passphrase::from_input("PASSPHRASE-PLANTED one".to_owned());
     let new_passphrase = Passphrase::from_input("PASSPHRASE-PLANTED two".to_owned());
@@ -251,7 +254,9 @@ fn journey(root: &Path) {
     backups_ops::change_passphrase(&session, id, &machine, &scratch, &passphrase, &new_passphrase)
         .unwrap();
 
-    // A backup to a location that can't be used, and a restore.
+    // A backup to a location that can't be used, and a restore, a day on so its
+    // own backup of what is there gets a name of its own.
+    clock.advance(chrono::Duration::days(1));
     let blocked = home.join("FOLDER-PLANTED").join("a file");
     fs::write(&blocked, "").unwrap();
     let _ = backups::check_chosen_folder(&blocked.join("below"), &folder, &Reach::Unconfined);
@@ -261,7 +266,7 @@ fn journey(root: &Path) {
         .into_iter()
         .next()
         .expect("the close made a backup");
-    let _ = backups_ops::restore_backup(
+    backups_ops::restore_backup(
         &session,
         &machine,
         &backup.path,
@@ -269,10 +274,8 @@ fn journey(root: &Path) {
         Target::Open(session.current_id()),
         false,
         &Reach::Unconfined,
-    );
-    if !session.is_open() {
-        lifecycle::open(&session, &machine, &path, &new_passphrase, false).unwrap();
-    }
+    )
+    .unwrap();
 
     // A lock with a draft.
     let draft = Draft {

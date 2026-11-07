@@ -45,7 +45,7 @@ A panic's default message on stderr is unchanged, since it isn't a log line and 
 
 ## §8 Volume and cost
 
-A line costs one `write` on an unbuffered file behind a mutex. No debug line goes in search, in a per-row loop or in the 1 s idle tick. At about 200 bytes a line, 2 MiB is about 10,000 lines; volume per run is measured during implementation and recorded here. _Measured figure added in tasks T046._
+A line costs one `write` on an unbuffered file behind a mutex. No debug line goes in search, in a per-row loop or in the 1 s idle tick. Measured: the journey in `tests/log_contents_test.rs` (create, export, import, close with a backup, failed opens, a passphrase change, a restore, a lock) wrote 24 lines and 1.2 KiB at the raised level, about 50 bytes a line. So 2 MiB holds about 40,000 such lines, and a file reaches the cap only over many runs or a failure that repeats.
 
 ## §9 Accepted risks (for `docs/attack-surface.md`)
 
