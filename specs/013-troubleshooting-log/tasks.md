@@ -54,7 +54,7 @@ Bare IDs here mean this feature's. In code, cite them as `013 FR-001`, `013 US1-
 
 ## Phase 5: User Story 1 - Gather a log for a repeatable issue (Priority: P1) 🎯 MVP
 
-- [X] T013 [US1] Write failing tests: `013 US1-1`, `013 US1-2`, `013 US1-3`, the table in contracts/tauri-commands.md (a raise and a return save nothing, `detailed` from off refused) in src-tauri/tests/troubleshooting_log_test.rs; only HoploDex's targets reach the file and debug lines stay out of stderr (FR-019, FR-026), as unit tests.
+- [X] T013 [US1] Write failing tests: `013 US1-1`, `013 US1-2`, `013 US1-3`, the table in contracts/tauri-commands.md (a raise saves nothing and lasts until quit, `detailed` from off refused) in src-tauri/tests/troubleshooting_log_test.rs; only HoploDex's targets reach the file and debug lines stay out of stderr (FR-019, FR-026), as unit tests.
 - [X] T014 [US1] Wire the file into `logging.rs`: `init`, `start`, the early-line buffer, the second output, the header (FR-018), relative time, `set_max_level` at runtime, and call `start` from `main.rs` once `machine.json` is loaded.
 - [X] T015 [US1] Add src-tauri/src/commands/troubleshooting_log.rs with the three commands, and add them to `generate_handler!`, `COMMANDS`, `UNSCOPED_COMMANDS` and the capabilities.
 - [X] T016 [US1] Add `Opener::reveal` (AppOpener on each OS, E2eOpener's record) and the portal's `OpenDirectory` in src-tauri/src/commands/documents.rs (research.md §10), with a test in src-tauri/tests/portal_opener_test.rs.

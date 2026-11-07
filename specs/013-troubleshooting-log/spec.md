@@ -141,7 +141,7 @@ The log never grows without bound, doesn't linger, and doesn't travel with the u
 - **FR-001**: The default MUST be worked out in one place from the app's version: on when the major version is 0, off otherwise. A test MUST pin `0.x` on, and `1.0.0` and `1.0.0-rc.1` off.
 - **FR-002**: A user's saved choice MUST take precedence over the default, at every version. A user who never chose MUST follow the default.
 - **FR-003**: The user MUST be able to turn the log on and off from About, reachable with no database open. The choice MUST be saved on this computer, take effect at once, and be kept outside any database.
-- **FR-004**: "Detailed until you quit" MUST raise the level at once while the log is on, return to normal with a second press, end when the app quits, and never be saved.
+- **FR-004**: "Detailed until you quit" MUST raise the level at once while the log is on, end when the app quits, and never be saved. Nothing lowers it short of that but turning the log off.
 - **FR-005**: `HOPLODEX_LOG` MUST accept `off`, `on` and `debug`, apply to that run only, take precedence over the saved choice for that run, and change nothing that is saved. A choice made in About during the run supersedes it. An unknown value MUST be ignored and reported without being quoted.
 
 **The file**
@@ -179,7 +179,7 @@ The log never grows without bound, doesn't linger, and doesn't travel with the u
 
 - **FR-025**: The app MUST write debug lines for opening, closing and locking a database (with the reason), backups, import phases, helper start and exit status, preview, and portal calls and their results, all within FR-016.
 - **FR-026**: Debug lines MUST go only to the file. Raising the level MUST NOT change what standard error or the journal receive.
-- **FR-027**: A panic MUST write its source location to the file and MUST NOT write its message, which can quote a value. Native crashes are out of scope.
+- **FR-027**: A panic MUST write its source location to the file and MUST NOT write its message, which can quote a value. In a release build the same holds for standard error and the journal; a debug build's standard error MAY keep the message. Native crashes are out of scope.
 
 **Keeping the rule**
 
@@ -197,6 +197,7 @@ Named so the limits are on record:
 
 - **Library warnings aren't in the file (FR-019).** A warning or error from Tauri, wry, tao, the dialog plugin or zbus reaches only standard error and the journal. On Windows, and on a Mac app opened from Finder, it reaches nothing, so a failure inside a library shows in the log only as far as HoploDex's own line around it says. Someone diagnosing such a failure asks the reporter to start the app from a terminal.
 - **Debug lines aren't in standard error (FR-026).** A developer at a terminal follows the file instead.
+- **A release build's panic has no message (FR-027).** A report gives the source location only, and the reporter's steps have to supply the rest.
 - **Shapes lose detail (FR-014).** Two databases at the same depth look alike, and a bug about a particular character in a path can't be seen in the log.
 - **No wall-clock times (FR-018).** Matching a line to a time of day takes the reporter's word.
 - **Not built:** sending from inside the app, Copy log, encrypting the file, configurable sizes or retention, `trace`, per-module filters, capturing native crashes, and capturing WebKit's own output.
@@ -218,7 +219,7 @@ Named so the limits are on record:
 - **SC-004**: A build at 1.0.0 writes no log for a user who never chose one, with no step at release.
 - **SC-005**: Turning the log off leaves no log file behind, at once.
 - **SC-006**: Search stays within 500 ms and actions within 1 s at 10,000 items with the level raised.
-- **SC-007**: A run with no log and no variable set writes exactly what it writes today to standard error, apart from paths becoming shapes and the lines FR-016 changes.
+- **SC-007**: A run with no log and no variable set writes exactly what it writes today to standard error, apart from paths becoming shapes, the lines FR-016 changes and a release build's panic (FR-027).
 
 ## Assumptions
 

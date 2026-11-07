@@ -28,7 +28,7 @@ pub fn set_state(machine: &MachineSettings, wanted: LogState) -> Troubleshooting
 /// (013 FR-010).
 pub fn show(opener: &dyn Opener, path: Option<&Path>) -> Result<(), CommandError> {
     let Some(path) = path.filter(|path| scratch::is_plain_file(path)) else {
-        return Err(CommandError::not_found("There is no log file yet."));
+        return Err(CommandError::not_found("There is no log file."));
     };
     opener.reveal(path).map_err(|failure| {
         // The kind only: a portal's or shell's message can name the file.

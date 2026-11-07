@@ -246,6 +246,11 @@ fn main() {
     // The render helper, the import helper and the sandbox probe are this executable started
     // again (007 research.md §9, §11; 008 research.md §8): before any Tauri, keyring, session
     // or logging setup, so they have none of them, and they never return here.
+    // A release build's panic says where, not what, since its message can quote a value
+    // (013 FR-027). First, so the hooks below call this one rather than Rust's default.
+    if !cfg!(debug_assertions) {
+        hoplodex_lib::logging::panic_location_only();
+    }
     // No Windows Error Reporting box, heap or snapshot, and a panic ends the
     // process at once rather than in abort's fail-fast, which Windows Error
     // Reporting would report to Microsoft (#166). First, so the helpers below

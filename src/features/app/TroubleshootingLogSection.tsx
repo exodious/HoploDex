@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, placeFocus } from "../../components";
+import { CommandFailure } from "../../services/tauriClient";
 import {
   getTroubleshootingLog,
   setTroubleshootingLog,
@@ -9,8 +10,6 @@ import type { LogState, TroubleshootingLog } from "./troubleshootingLog";
 
 const LEAVES_OUT =
   "It is designed to leave out your records, file names, passphrases and how many items you have. Read it before you share it.";
-
-const SHOW_FAILED = "The log file couldn't be shown.";
 
 function stateText(log: TroubleshootingLog): string {
   if (log.state === "off") return "Off. Turn it on to gather details for a problem you can repeat.";
@@ -58,7 +57,9 @@ export function TroubleshootingLogSection() {
 
   function show() {
     setProblem(null);
-    showTroubleshootingLog().catch(() => setProblem(SHOW_FAILED));
+    showTroubleshootingLog().catch((e: unknown) =>
+      setProblem(e instanceof CommandFailure ? e.message : "The log file couldn't be shown."),
+    );
   }
 
   if (!log) return null;
@@ -79,7 +80,6 @@ export function TroubleshootingLogSection() {
         {log.state === "on" && (
           <Button onClick={() => change("detailed")}>Detailed until you quit</Button>
         )}
-        {log.state === "detailed" && <Button onClick={() => change("on")}>Normal detail</Button>}
         {on && (
           <Button disabled={!log.exists} onClick={show}>
             Show log file
