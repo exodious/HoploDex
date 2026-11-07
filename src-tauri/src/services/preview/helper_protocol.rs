@@ -8,6 +8,7 @@
 use std::io::{self, Read, Write};
 
 use super::PageSize;
+use super::tiff::MAX_PAGES;
 use crate::services::helper::frames::{MAX_FRAME, invalid, read_frame, write_frame};
 
 const LOAD: u8 = 1;
@@ -123,7 +124,7 @@ pub fn read_response(r: &mut impl Read) -> io::Result<Option<Response>> {
                 .get(..4)
                 .map(|b| u32::from_be_bytes(b.try_into().expect("4 bytes")) as usize)
                 .ok_or_else(|| invalid("bad loaded frame"))?;
-            if payload.len() != 4 + count.checked_mul(16).ok_or_else(|| invalid("bad count"))? {
+            if count > MAX_PAGES || payload.len() != 4 + count * 16 {
                 return Err(invalid("bad loaded frame"));
             }
             let pages = payload[4..]
@@ -225,6 +226,20 @@ mod tests {
         wire.push(LOADED);
         wire.extend_from_slice(&1000u32.to_be_bytes());
         assert!(read_response(&mut &wire[..]).is_err());
+
+        // A well-formed loaded frame with one page more than the helper's
+        // limit is refused; one at the limit is not.
+        let list = |count| {
+            let mut wire = Vec::new();
+            let pages = vec![PageSize { width: 1.0, height: 1.0 }; count];
+            write_response(&mut wire, &Response::Loaded { pages }).unwrap();
+            wire
+        };
+        assert!(read_response(&mut &list(MAX_PAGES + 1)[..]).is_err());
+        assert!(matches!(
+            read_response(&mut &list(MAX_PAGES)[..]).unwrap(),
+            Some(Response::Loaded { pages }) if pages.len() == MAX_PAGES
+        ));
 
         // A page frame too short to say its size.
         let mut wire = 9u32.to_be_bytes().to_vec();
