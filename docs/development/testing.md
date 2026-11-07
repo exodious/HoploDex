@@ -3,7 +3,7 @@
 _Part of the [development docs](../../DEVELOPMENT.md)._
 
 ```bash
-cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf   # Rust unit + integration tests, real temp SQLCipher DB
+cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf   # Rust unit + integration tests, real temp SQLCipher DB (on Windows, in a desktop session: windows.md)
 cargo test --manifest-path src-tauri/Cargo.toml --doc                        # Rust doctests (nextest doesn't run them; there are none today)
 npm test                                                                     # Vitest frontend unit tests (jsdom)
 npm run build && npm run test:e2e                                            # WebdriverIO E2E, driven against the built app

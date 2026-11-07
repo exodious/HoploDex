@@ -759,6 +759,8 @@ _Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (c
 
   _Amended 2026-11-07: on Linux the helper also installs a seccomp filter on top of Landlock, and on macOS it closes inherited descriptors from 3 up before its parent watch (`services/helper/confine.rs`, [docs/attack-surface.md](../../docs/attack-surface.md))._
 
+  _Amended 2026-11-07: on Windows each helper also runs in an AppContainer of its own with no capabilities, set by `CreateProcessW` with `LOCALAPPDATA` as its only environment variable, with its profile deleted when it ends or at the next start, and its job object also has UI limits (`services/helper/job.rs`); the helper tests need a desktop session ([docs/development/windows.md](../../docs/development/windows.md))._
+
 - **Rationale**:
   - The release profile is `panic = "abort"`. The decoders are memory-safe
     but can panic or try huge allocations on hostile input (a TIFF
@@ -809,6 +811,7 @@ _Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (c
   before it runs any code. The same attribute list carries
   `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` (its three standard handles and
   nothing else), and the environment is empty, as before (`services/helper/job.rs`).
+  _Amended 2026-11-07: the environment now holds `LOCALAPPDATA` alone, which the AppContainer needs (see the note under the Confinement table)._
   Any end of HoploDex, including `TerminateProcess`, closes the handle and
   the kernel kills the helper at once (`tests/tiff_helper_test.rs` kills a
   parent and expects the helper gone within a second). The helper checks that

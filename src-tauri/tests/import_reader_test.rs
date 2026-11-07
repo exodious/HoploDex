@@ -36,6 +36,7 @@ use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::services::import_reader::limits::ImportLimit;
 use hoplodex_lib::services::import_reader::read_files;
+use hoplodex_lib::services::preview::{HelperHandle, HelperLimits};
 use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::{ReadTable, SpreadsheetFormat, TableRows};
 use serde_json::{Value, json};
@@ -755,4 +756,58 @@ fn the_error_of_a_refusal_has_the_contracts_shape() {
         value["message"],
         "rows-100001.csv: more than 100,000 rows. HoploDex imports at most 100,000 rows per table."
     );
+}
+
+// ------------------------------------------------------------- failed starts
+
+/// Set in the child process to a program that isn't there. The logger is the
+/// process's, so the lines are read from a process of their own.
+const MISSING_HELPER_ENV: &str = "HOPLODEX_TEST_MISSING_HELPER";
+
+/// Not a test of its own: in the child process, with the app's logger, it
+/// fails to start the render helper, then the import helper.
+#[test]
+fn child_failing_to_start_helpers() {
+    let Some(missing) = std::env::var_os(MISSING_HELPER_ENV) else { return };
+    let missing = Path::new(&missing);
+    hoplodex_lib::logging::init();
+
+    assert!(HelperHandle::spawn(missing, HelperLimits::default()).is_err());
+
+    let dir = TempDir::new().unwrap();
+    let sheet = dir.path().join("sheet.csv");
+    std::fs::write(&sheet, "a,b\n").unwrap();
+    let outcome =
+        read_files(missing, &[import_file(&sheet)], &|| false, &|| true, &mut |_, _, _| {});
+    assert_eq!(outcome.unwrap_err().code, "INTERNAL_ERROR");
+}
+
+/// With no fallback to run a helper unconfined, a start that fails has to say
+/// why in the log, whichever caller asked; the commands that catch it show only
+/// "couldn't be started". So: one line for each start, naming the helper and
+/// the cause, whether the caller logs nothing of its own or used to log twice.
+#[test]
+fn each_helper_that_fails_to_start_is_logged_once_with_its_cause() {
+    let dir = TempDir::new().unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "import_reader_test::child_failing_to_start_helpers",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(MISSING_HELPER_ENV, dir.path().join("no-such-helper"))
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "the child failed: {stderr}");
+
+    let failures: Vec<(&str, &str)> = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[ERROR] could not start "))
+        .map(|rest| rest.split_once(": ").unwrap_or((rest, "")))
+        .collect();
+    let helpers: Vec<&str> = failures.iter().map(|(helper, _)| *helper).collect();
+    assert_eq!(helpers, ["--render-helper", IMPORT_HELPER], "{stderr}");
+    assert!(failures.iter().all(|(_, cause)| !cause.is_empty()), "{stderr}");
 }

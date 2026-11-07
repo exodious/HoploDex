@@ -103,7 +103,7 @@ insurance status, valuation, attachment storage, secure delete,
   content at attach, preview and open), `consent` (`Consent`, `needs_consent`,
   the native confirmation's text before a document goes to another app) and
   `preview/` ([Document preview](preview.md));
-- and for 008 `helper/` (the confinement, Windows job object, framing and
+- and for 008 `helper/` (the confinement, Windows job object and AppContainer, framing and
   spawn/kill plumbing that `--render-helper` and `--import-helper` share; the
   memory cap is a parameter) and `import_reader/` (the import reads CSV and XLSX
   in `--import-helper`, never in the app: `reader.rs` is the child's side,

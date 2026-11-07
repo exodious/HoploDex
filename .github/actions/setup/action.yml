@@ -68,9 +68,9 @@ runs:
         tool: cargo-nextest@0.9.146
 
     # Every Windows job links OpenSSL statically, from the vcpkg pinned in
-    # scripts/windows/vcpkg/vcpkg.json: the app starts its helpers with an
-    # empty environment, so a DLL build's helpers can't find libcrypto. The
-    # install folder is fixed, since libsqlite3-sys doesn't rebuild SQLCipher
+    # scripts/windows/vcpkg/vcpkg.json: the app starts its helpers with only
+    # LOCALAPPDATA in their environment, so a DLL build's helpers can't find
+    # libcrypto. The install folder is fixed, since libsqlite3-sys doesn't rebuild SQLCipher
     # when OPENSSL_DIR moves; the cache is keyed on the pin.
     - if: runner.os == 'Windows' && github.ref == 'refs/heads/main'
       id: openssl-main

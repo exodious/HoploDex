@@ -70,7 +70,7 @@ What they install, to set it up by hand instead:
   `OPENSSL_STATIC=1`, machine-wide or for the user. The build stops with
   "Missing environment variable OPENSSL_DIR" otherwise. Static matters for
   tests and E2E too, not only releases: the app starts its render and import
-  helpers with an empty environment, so a DLL-linked build's helpers can't
+  helpers with only `LOCALAPPDATA` in their environment, so a DLL-linked build's helpers can't
   find `libcrypto-3-x64.dll` and exit before they serve (the log shows only
   "started --render-helper", a preview never appears, and an import says
   "could not read the file"). After changing `OPENSSL_DIR`,
@@ -150,7 +150,10 @@ PowerShell encoded, as an argument or a heredoc, and end with
 ```bash
 winps() { ssh -n <user>@<windows-host> "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $(printf '$ProgressPreference="SilentlyContinue"\n%s' "${1-$(cat)}" | iconv -t UTF-16LE | base64 -w0)"; }
 winps 'cd C:\HoploDex; git fetch -q; git switch <branch>; git pull --ff-only'   # after pushing <branch>
-winps 'cd C:\HoploDex; cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf; exit $LASTEXITCODE'
+winps <<'PS'
+C:\HoploDex\scripts\windows\gui.ps1 'cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf'
+exit $LASTEXITCODE
+PS
 winps <<'PS'
 C:\HoploDex\scripts\windows\gui.ps1 'npm run build; if ($LASTEXITCODE) { exit $LASTEXITCODE }; npm run test:e2e'
 exit $LASTEXITCODE
@@ -161,13 +164,17 @@ scp -r '<user>@<windows-host>:C:/HoploDex/e2e/screenshots-out' e2e/   # results 
 - **The checkout** is a git clone on the machine's own disk (a network share
   is slow, and changes SQLite's locking and the file-identity check). Code
   goes over through GitHub: push the branch, then pull it there.
-- **Directly over SSH:** builds, `cargo nextest`, Vitest, lint and the audits.
+- **Directly over SSH:** builds, Vitest, lint and the audits. Building the
+  MSI is the exception: its `light.exe` failed over SSH and worked through `gui.ps1`.
   Not with `ssh -t`: an interactive session's console closes when the
   connection drops, and its commands end with it.
-- **Through `scripts\windows\gui.ps1`:** anything that opens the app's
-  window: E2E, screenshots, `quit-cleanup.ps1`, the PDF surface and window
-  controls checks. An SSH session runs in session 0, which has no desktop,
-  so the app gets no window there. `gui.ps1` runs its PowerShell command
+- **Through `scripts\windows\gui.ps1`:** `cargo nextest`, and anything that
+  opens the app's window: E2E, screenshots, `quit-cleanup.ps1`, the PDF surface
+  and window controls checks. An SSH session runs in session 0, which has no
+  desktop, so the app gets no window there, and a helper's AppContainer can't
+  start: the helper dies at start with `0xC0000142`, which fails every test
+  that starts one. GitHub's Windows runners run steps in a desktop session, so
+  CI needs none of this. `gui.ps1` runs its PowerShell command
   (in the checkout, or `-WorkingDirectory`) in the auto-logon user's desktop
   session, through a scheduled task, "HoploDex gui", that it registers for
   that user with an interactive logon, not elevated. It prints the command's

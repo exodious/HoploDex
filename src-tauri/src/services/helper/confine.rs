@@ -1,7 +1,7 @@
 //! A confined helper's confinement (the TIFF render helper's and the import
-//! helper's, 008 research.md §8): a seccomp filter and Landlock on Linux, a job
-//! object (made by HoploDex, checked here) and mitigations on Windows, the
-//! sandbox profile on macOS (007 research.md §11).
+//! helper's, 008 research.md §8): a seccomp filter and Landlock on Linux, an
+//! AppContainer and a job object (both made by HoploDex, the job checked here)
+//! and mitigations on Windows, the sandbox profile on macOS (007 research.md §11).
 //!
 //! [`confine`] is called by the helper before it reads a byte of any document
 //! (`preview::helper::run`). Each branch also makes the helper die with HoploDex at
@@ -629,8 +629,9 @@ mod imp {
 
     pub fn log_support() {
         log::info!(
-            "the helpers are confined with a job object HoploDex owns (memory-limited, no \
-             other process, ended when HoploDex is) and process mitigation policies"
+            "the helpers are confined with an AppContainer with no capabilities, a job object \
+             HoploDex owns (memory-limited, no other process, UI limits, ended when HoploDex \
+             is) and process mitigation policies"
         );
     }
 
