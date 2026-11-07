@@ -1023,10 +1023,10 @@ impl SessionInner {
             );
         }
         let Some(dir) = &self.opened_documents_dir else { return };
-        for leftover in crate::commands::documents::ops::clear_opened_documents(dir) {
+        if !crate::commands::documents::ops::clear_opened_documents(dir).is_empty() {
             log::warn!(
-                "could not delete an opened-document copy in {}",
-                crate::logging::place(&leftover)
+                "could not delete all opened-document copies in {}",
+                crate::logging::place(dir)
             );
         }
     }

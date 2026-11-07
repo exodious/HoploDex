@@ -349,8 +349,12 @@ pub fn clear_opened_documents_cache(app: &AppHandle) {
     {
         log::warn!("could not delete a web view crash report in {}", crate::logging::place(&path));
     }
-    for path in ops::clear_opened_documents(&cache_dir.join(OPENED_DOCUMENTS_DIR)) {
-        log::warn!("could not delete an opened-document copy in {}", crate::logging::place(&path));
+    let opened = cache_dir.join(OPENED_DOCUMENTS_DIR);
+    if !ops::clear_opened_documents(&opened).is_empty() {
+        log::warn!(
+            "could not delete all opened-document copies in {}",
+            crate::logging::place(&opened)
+        );
     }
 }
 
