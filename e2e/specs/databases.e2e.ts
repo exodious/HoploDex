@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { budgetsChecked } from "../support/budgets";
 import {
@@ -7,6 +8,7 @@ import {
   E2E_PASSPHRASE,
   addFirearm,
   answerPassphrase,
+  attachFile,
   browser,
   chooseMenuItem,
   clickButton,
@@ -1094,7 +1096,7 @@ describe("013 US1 - Gather a log for a repeatable issue", () => {
     process.env.HOPLODEX_LOG = "off";
   });
 
-  it("turns the log on from the chooser's About, raises it at once, finds it and goes back (013 US1-1, US1-3, US1-4, US1-5, US1-6)", async () => {
+  it("turns the log on from the chooser's About, raises it at once and finds it (013 US1-1, US1-3, US1-4, US1-5, US1-6)", async () => {
     await relaunchWithLog("off");
     await openAboutOnTheChooser();
     await expect($(".hd-about__log")).toHaveText(expect.stringContaining("Off."));
@@ -1115,8 +1117,6 @@ describe("013 US1 - Gather a log for a repeatable issue", () => {
     await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length > opened);
     expect(logLines("HOPLODEX_E2E_OPENED_LOG").at(-1)).toBe(shown);
 
-    await clickButton("Normal detail");
-    await $(".hd-about__log").waitForExist();
     await pressEscape();
     await $('[role="dialog"]').waitForExist({ reverse: true });
   });
@@ -1135,6 +1135,7 @@ describe("013 US2 - The log is designed to hold nothing sensitive", () => {
       model: "MODEL-PLANTED",
       serial: "SERIAL-PLANTED",
       notes: "NOTES-PLANTED",
+      document: "DOCUMENT-PLANTED",
     };
     await createDatabase({ name: planted.database });
     await addFirearm({
@@ -1145,13 +1146,26 @@ describe("013 US2 - The log is designed to hold nothing sensitive", () => {
       caliber: "9mm",
       type: "Handgun",
     });
+    await attachFile('input[aria-label="Attach documents"]', {
+      name: `${planted.document}.pdf`,
+      type: "application/pdf",
+      base64: Buffer.from("%PDF-1.4 planted").toString("base64"),
+    });
+    await $(`.hd-doc__name=${planted.document}.pdf`).waitForExist();
+    const opened = logLines("HOPLODEX_E2E_OPENED_LOG").length;
+    await clickButton("Open in another app…");
+    await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length > opened);
+    expect(logLines("HOPLODEX_E2E_OPENED_LOG").at(-1)).toContain(planted.document);
     await switchDatabase();
 
     const text = logText();
-    for (const value of Object.values(planted)) expect(text).not.toContain(value);
-    expect(text).not.toContain(E2E_PASSPHRASE);
+    const places = [os.homedir(), process.env.HOPLODEX_E2E_HOME, scratchDocuments()];
+    for (const value of [...Object.values(planted), E2E_PASSPHRASE, ...places]) {
+      if (value) expect(text).not.toContain(value);
+    }
     // Not vacuous: it says what was done, by the shape of where.
     expect(text).toMatch(/\[DEBUG\] creating a database at \S*\*\.hoplodex/);
+    expect(text).toMatch(/\[DEBUG\] opening a document in another app/);
     expect(text).toMatch(/\[DEBUG\] closing the database/);
   });
 });

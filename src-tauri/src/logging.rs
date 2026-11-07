@@ -6,7 +6,8 @@
 //! research.md §9, §10, §16) and what a person sees at a terminal or in the
 //! journal. It stays at `info` for HoploDex and `warn` for other crates whatever
 //! the troubleshooting log does; debug lines go to the file alone (013 FR-026),
-//! and other crates' lines never do (013 FR-019).
+//! and other crates' lines never do (013 FR-019). A panic's message reaches no
+//! output in a release build, only its location (013 FR-027).
 //!
 //! The helpers and the sandbox probe are this executable started again before
 //! this module runs (`main()`), so they log nothing and open no file; the parent
@@ -46,7 +47,7 @@ const EARLY_LINES: usize = 256;
 const KEPT_EXTENSIONS: [&str; 7] = ["hoplodex", "json", "log", "partial", "new", "old", "bad"];
 
 fn ours(target: &str) -> bool {
-    target == "hoplodex" || target.starts_with("hoplodex_")
+    target == "hoplodex" || target.starts_with("hoplodex::") || target.starts_with("hoplodex_")
 }
 
 /// What standard error takes: our own crates at `info` and above, every other
@@ -404,10 +405,10 @@ impl Output {
     }
 
     /// Changes the state as 013 contracts/tauri-commands.md says, and returns
-    /// the choice to save, if any. A raise or a return never saves, so someone
-    /// following the version's default doesn't become opted in (013
-    /// research.md §1). A raise while off is refused here, whatever the page
-    /// shows, because a later start would delete what it gathered.
+    /// the choice to save, if any. A raise never saves, so someone following the
+    /// version's default doesn't become opted in (013 research.md §1), and lasts
+    /// until quit (013 FR-004). A raise while off is refused here, whatever the
+    /// page shows, because a later start would delete what it gathered.
     pub fn set(&self, wanted: LogState) -> Option<LogChoice> {
         let mut inner = self.lock();
         match (inner.state, wanted) {
@@ -416,9 +417,9 @@ impl Output {
                 self.open(&mut inner);
                 Some(LogChoice::On)
             }
-            (LogState::On, LogState::Detailed) | (LogState::Detailed, LogState::On) => {
-                inner.state = wanted;
-                self.detailed.store(wanted == LogState::Detailed, Ordering::Relaxed);
+            (LogState::On, LogState::Detailed) => {
+                inner.state = LogState::Detailed;
+                self.detailed.store(true, Ordering::Relaxed);
                 None
             }
             (LogState::On | LogState::Detailed, LogState::Off) => {
@@ -486,6 +487,26 @@ impl Log for AppLog {
 static HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
 static LOGGER: OnceLock<AppLog> = OnceLock::new();
 
+/// Where a panic happened: all that any output gets of it in a release build,
+/// and all the file gets in any build (013 FR-027).
+fn panic_location(info: &std::panic::PanicHookInfo<'_>) -> Option<String> {
+    let location = info.location()?;
+    let home = HOME.get().and_then(|home| home.as_deref());
+    Some(clean(&format!("at {}:{}", location.file(), location.line()), home))
+}
+
+/// Replaces the default panic hook, whose message can quote a value, with one
+/// that prints only the location to standard error (013 FR-027). A release
+/// build calls it first in `main()`, so the hooks installed after it call it in
+/// their turn.
+pub fn panic_location_only() {
+    std::panic::set_hook(Box::new(|info| {
+        if let Some(location) = panic_location(info) {
+            let _ = std::io::stderr().lock().write_all(format!("[PANIC] {location}\n").as_bytes());
+        }
+    }));
+}
+
 /// Installs the logger with the real home folder and variable. Call it once,
 /// first in `main()` after the helper modes have been dispatched. A second call,
 /// or a logger already installed by something else, changes nothing.
@@ -502,11 +523,8 @@ pub fn init_with(home: Option<PathBuf>, variable: Option<OsString>) {
         apply_level();
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            if let (Some(logger), Some(location)) = (LOGGER.get(), info.location()) {
-                logger.0.panic_line(&clean(
-                    &format!("at {}:{}", location.file(), location.line()),
-                    logger.0.home.as_deref(),
-                ));
+            if let (Some(logger), Some(location)) = (LOGGER.get(), panic_location(info)) {
+                logger.0.panic_line(&location);
             }
             previous(info);
         }));
@@ -560,6 +578,7 @@ mod tests {
     fn our_crates_log_info_and_the_others_only_warnings() {
         assert!(allowed(Level::Info, "hoplodex_lib::services::sandbox"));
         assert!(allowed(Level::Info, "hoplodex"));
+        assert!(allowed(Level::Info, "hoplodex::app_menu"));
         assert!(!allowed(Level::Debug, "hoplodex_lib::session"));
         assert!(!allowed(Level::Info, "tauri::app"));
         assert!(allowed(Level::Warn, "tauri::app"));

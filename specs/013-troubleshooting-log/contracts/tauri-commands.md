@@ -25,7 +25,7 @@ interface TroubleshootingLog {
 | off | `on` | Starts the file. Saves On. |
 | off | `detailed` | Nothing: refused by Rust, whatever the page shows. Returns the current state. |
 | on | `detailed` | Raises the level. Saves nothing. |
-| detailed | `on` | Back to normal. Saves nothing. |
+| detailed | `on` | Nothing: a raise lasts until quit. Returns the current state. |
 | on or detailed | `off` | Stops the file, deletes both files. Saves Off. |
 | same as now | same | Nothing. |
 

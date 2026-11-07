@@ -4,7 +4,7 @@
 
 `logging::decide(version, saved, variable)` returns what applies at start, including whether to delete leftovers. **Decision:** the default is `major == 0`, read from `CARGO_PKG_VERSION`. **Why:** the owner wants the 1.0.0 change impossible to forget, and a value worked out from the version has no step to miss. **Rejected:** a constant plus a failing test, which adds a release step.
 
-A press of "normal detail" or a raise never saves anything, so a user following the default doesn't become opted in by using the button, and at 1.0.0 they still go off.
+A raise never saves anything, so a user following the default doesn't become opted in by using the button, and at 1.0.0 they still go off.
 
 ## §2 The saved choice is read late, so early lines wait
 
@@ -16,14 +16,14 @@ A press of "normal detail" or a raise never saves anything, so a user following 
 
 ## §4 Creating, appending, rotating
 
-- **Create or append:** the file is created with `create_new` and mode 0600, in a 0700 folder on Unix. An existing one must pass `scratch::is_plain_file`, and is opened with `scratch::open_no_follow`. Anything else leaves the file log off for the run and says so in About.
-- **Rotate:** at 2 MiB, `rename` to `.1`, which replaces a symlink rather than following it.
+- **Create or append:** the file is created with `create_new` and mode 0600, in a 0700 folder on Unix. An existing one must pass `scratch::is_plain_file`, and is opened with `scratch::open_no_follow`. Anything else leaves the file log off for the run and says so in About. Either way the handle appends, so two copies of the app add whole lines rather than overwrite each other's.
+- **Rotate:** at 2 MiB by the open file's own length, which counts another copy's lines and is at the cap for a copy whose file was rotated away. `rename` to `.1` replaces a symlink rather than following it. A current file that has gone leaves nothing to rename, and a new one starts.
 - **Delete:** `secure_delete::secure_delete_file`, the way the app deletes other files it no longer wants. It logs, so the logger's lock is never held across it.
 - **Age:** when the file was made, or its last change where the file system does not record that, at start only (013 FR-008). A new file on Windows sets its own creation time, since NTFS can give a reused name the old one.
 
 ## §5 The shape of a path
 
-`logging::place(path)` gives the root and depth, nothing else. Roots kept: `~`, `C:`-style drive letters, `/run/media`, `/media`, `/mnt`, `/Volumes`, `/run/user/*/doc` (the Flatpak's document portal). A UNC prefix becomes `\\*\*`. Every other component is `*`. The last keeps its extension only if it is `hoplodex`, `json`, `log` or `partial`. This replaces `folder_of`, whose job it does more strictly.
+`logging::place(path)` gives the root and depth, nothing else. Roots kept: `~`, `C:`-style drive letters, `/run/media`, `/media`, `/mnt`, `/Volumes`, `/run/user/*/doc` (the Flatpak's document portal). A UNC prefix becomes `\\*\*`. Every other component is `*`. The last keeps its extension only if it is one of the app's own kinds of file: `hoplodex`, `json`, `log`, `partial`, `new`, `old` or `bad`. This replaces `folder_of`, whose job it does more strictly.
 
 **Why:** the owner's "sensitive" is wider than the old rule, and a path can carry a user name and a database's name. What a path usually tells us in a report is local or removable and how deep, which survives. A database called `Guns.hoplodex` under home is `~/*.hoplodex`.
 
@@ -35,13 +35,13 @@ The logger only sees formatted text, so two versions of a line would need every 
 - `reach.describe()` uses `place`, so the Flatpak's reach line reads `[~/*/*, /media, /run/media]`; `flatpak.e2e.ts` and `scripts/flatpak/check.sh` follow.
 - `commands/backups.rs` row counts become "the counts differ"; `db/mod.rs`'s integrity text is dropped; `db/upgrade.rs` drops the row id; `services/sandbox.rs` stops quoting a raw entry.
 - `logging::db_error` gives a `rusqlite::Error`'s kind and SQLite result code without its text. `lifecycle.rs` logs a `CommandError`'s `code`, not its `message`, which can name a file.
-- `sink` replaces the home folder's path in a line and escapes control characters, as a backstop for OS error text. It can't catch everything, which is why the wording says "designed to leave out".
+- `clean` replaces the home folder's path in a line and escapes control characters, as a backstop for OS error text. It can't catch everything, which is why the wording says "designed to leave out".
 
-A panic's default message on stderr is unchanged, since it isn't a log line and removing it would hurt development; only the file is new, and it gets the location alone.
+A panic's message follows the same rule. The file gets the location alone in every build. A release build replaces Rust's default hook first in `main()` (`logging::panic_location_only`), so standard error and the journal get the location alone too, and the hooks installed after it, Windows' `end_process_on_panic` included, still run. A debug build's standard error keeps the message for development.
 
 ## §7 Library lines stay out of the file
 
-`tracing` is built without its `log` feature (`cargo tree -e features -i tracing`), so `zbus`, `oo7` and `wry`'s `tracing` events never reach `log`. Tauri, tao and rfd do use `log`, and some of their lines quote URLs and paths. **Decision (owner):** the file takes HoploDex's targets only (`hoplodex`, `hoplodex_*`). What it loses is in the spec's "What this leaves out".
+`tracing` is built without its `log` feature (`cargo tree -e features -i tracing`), so `zbus`, `oo7` and `wry`'s `tracing` events never reach `log`. Tauri, tao and rfd do use `log`, and some of their lines quote URLs and paths. **Decision (owner):** the file takes HoploDex's targets only (`hoplodex`, `hoplodex::*`, `hoplodex_*`). What it loses is in the spec's "What this leaves out".
 
 ## §8 Volume and cost
 

@@ -40,35 +40,46 @@ const OURS: &str = "hoplodex_lib::session";
 /// Runs the test `name` in a process of its own and returns the folder its file
 /// is in, or what the child's exit status was if `expect_success` isn't met.
 fn in_a_child(name: &str, expect_success: bool) -> (TempDir, PathBuf) {
+    let (dir, folder, _) = in_a_child_with_stderr(name, expect_success);
+    (dir, folder)
+}
+
+/// [`in_a_child`], and what the child wrote to standard error.
+fn in_a_child_with_stderr(name: &str, expect_success: bool) -> (TempDir, PathBuf, String) {
     let dir = TempDir::new().unwrap();
     let output = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", name, "--nocapture"])
         .env(CHILD, dir.path())
         .output()
         .unwrap();
-    let text = String::from_utf8_lossy(&output.stderr);
+    let text = String::from_utf8_lossy(&output.stderr).into_owned();
     assert_eq!(output.status.success(), expect_success, "{text}");
     let folder = dir.path().to_owned();
-    (dir, folder)
+    (dir, folder, text)
 }
 
 fn log_text(folder: &Path) -> String {
     fs::read_to_string(folder.join(file::CURRENT)).unwrap()
 }
 
-/// 013 FR-019, FR-026, US4-1, US1-1, US1-2.
+/// 013 FR-019, FR-026, US4-1. The binary's own modules count as ours: their target
+/// is `hoplodex::app_menu`, say.
 #[test]
-fn only_our_own_lines_reach_the_file_and_debug_only_while_raised() {
+fn only_our_own_lines_reach_the_file_and_debug_lines_only_there() {
     let Some(root) = std::env::var_os(CHILD) else {
-        let (_dir, folder) =
-            in_a_child("only_our_own_lines_reach_the_file_and_debug_only_while_raised", true);
+        let (_dir, folder, stderr) = in_a_child_with_stderr(
+            "only_our_own_lines_reach_the_file_and_debug_lines_only_there",
+            true,
+        );
         let text = log_text(&folder.join(file::FOLDER));
         assert!(text.contains("[DEBUG] said before the folder was known"), "{text}");
         assert!(text.contains("[DEBUG] a debug line of ours"), "{text}");
         assert!(text.contains("[INFO] an info line of ours"), "{text}");
+        assert!(text.contains("[WARN] a warning from the binary"), "{text}");
         assert!(!text.contains("library"), "{text}");
-        assert!(!text.contains("not while normal"), "{text}");
-        assert!(text.contains("still written"), "{text}");
+        assert!(!stderr.contains("[DEBUG]"), "{stderr}");
+        assert!(stderr.contains("[WARN] a warning from the binary"), "{stderr}");
+        assert!(stderr.contains("a library warning"), "{stderr}");
         return;
     };
     logging::init_with(None, Some("debug".into()));
@@ -78,9 +89,30 @@ fn only_our_own_lines_reach_the_file_and_debug_only_while_raised() {
     log::warn!(target: "tauri::app", "a library warning");
     log::error!(target: "zbus", "a library error");
     log::info!(target: OURS, "an info line of ours");
+    log::warn!(target: "hoplodex::app_menu", "a warning from the binary");
+}
+
+/// 013 US1-1, FR-004: debug lines begin at the raise, which then lasts until quit.
+#[test]
+fn debug_lines_begin_at_the_raise_and_it_lasts_until_quit() {
+    let Some(root) = std::env::var_os(CHILD) else {
+        let (_dir, folder) =
+            in_a_child("debug_lines_begin_at_the_raise_and_it_lasts_until_quit", true);
+        let text = log_text(&folder.join(file::FOLDER));
+        assert!(!text.contains("before the raise"), "{text}");
+        assert!(text.contains("[INFO] an info line"), "{text}");
+        assert!(text.contains("[DEBUG] after the raise"), "{text}");
+        assert!(text.contains("[DEBUG] after asking for less"), "{text}");
+        return;
+    };
+    logging::init_with(None, Some("on".into()));
+    logging::start(Some(PathBuf::from(root).join(file::FOLDER)), None);
+    log::debug!(target: OURS, "before the raise");
+    log::info!(target: OURS, "an info line");
+    assert_eq!(logging::set_state(LogState::Detailed), None);
+    log::debug!(target: OURS, "after the raise");
     assert_eq!(logging::set_state(LogState::On), None);
-    log::debug!(target: OURS, "not while normal");
-    log::info!(target: OURS, "still written");
+    log::debug!(target: OURS, "after asking for less");
 }
 
 /// 013 FR-027: a panic's location is written, and its message never is.
@@ -94,6 +126,27 @@ fn a_panic_writes_its_location_and_not_its_message() {
         assert!(!text.contains("PLANTED-PANIC-TEXT"), "{text}");
         return;
     };
+    logging::init_with(None, Some("on".into()));
+    logging::start(Some(PathBuf::from(root).join(file::FOLDER)), None);
+    panic!("the serial is PLANTED-PANIC-TEXT");
+}
+
+/// 013 FR-027: what a release build's `main()` installs first. Standard error, the
+/// journal on a Linux desktop, gets the location and never the message.
+#[test]
+fn a_release_builds_panic_prints_only_its_location() {
+    let Some(root) = std::env::var_os(CHILD) else {
+        let (_dir, folder, stderr) =
+            in_a_child_with_stderr("a_release_builds_panic_prints_only_its_location", false);
+        assert!(stderr.contains("[PANIC] at "), "{stderr}");
+        assert!(stderr.contains("log_contents_test.rs"), "{stderr}");
+        assert!(!stderr.contains("PLANTED-PANIC-TEXT"), "{stderr}");
+        let text = log_text(&folder.join(file::FOLDER));
+        assert!(text.contains("[PANIC] at "), "{text}");
+        assert!(!text.contains("PLANTED-PANIC-TEXT"), "{text}");
+        return;
+    };
+    logging::panic_location_only();
     logging::init_with(None, Some("on".into()));
     logging::start(Some(PathBuf::from(root).join(file::FOLDER)), None);
     panic!("the serial is PLANTED-PANIC-TEXT");

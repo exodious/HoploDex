@@ -50,6 +50,48 @@ fn a_later_run_appends_within_the_same_cap() {
     assert_eq!(fs::read_to_string(dir.path().join(CURRENT)).unwrap(), "over the cap\n");
 }
 
+/// The spec's edge case and 013 FR-007, SC-003: two copies of the app don't
+/// overwrite each other's lines, and neither takes a file past the cap, even
+/// after the other has rotated the file it has open.
+#[test]
+fn two_copies_append_whole_lines_within_the_cap() {
+    let dir = TempDir::new().unwrap();
+    let (current, rotated) = (dir.path().join(CURRENT), dir.path().join(ROTATED));
+    let mut first = LogFile::open(dir.path()).unwrap();
+    let mut second = LogFile::open(dir.path()).unwrap();
+    first.write_line("first\n").unwrap();
+    second.write_line("second\n").unwrap();
+    first.write_line("first again\n").unwrap();
+    assert_eq!(fs::read_to_string(&current).unwrap(), "first\nsecond\nfirst again\n");
+
+    let line = format!("{}\n", "x".repeat(1023));
+    for _ in 0..(MAX_BYTES * 3 / 1024) {
+        first.write_line(&line).unwrap();
+        second.write_line(&line).unwrap();
+        assert!(fs::metadata(&current).unwrap().len() <= MAX_BYTES);
+        assert!(fs::metadata(&rotated).map_or(0, |meta| meta.len()) <= MAX_BYTES);
+    }
+    assert!(rotated.exists(), "the run crossed the cap");
+}
+
+/// The spec's edge case: the user deletes the file while the app runs. The app
+/// carries on, and the rotation that finds it gone starts a new one.
+#[test]
+fn a_file_deleted_during_a_run_is_followed_by_a_new_one_at_the_cap() {
+    let dir = TempDir::new().unwrap();
+    let current = dir.path().join(CURRENT);
+    let mut log = LogFile::open(dir.path()).unwrap();
+    fs::remove_file(&current).unwrap();
+    let line = format!("{}\n", "x".repeat(1023));
+    for _ in 0..(MAX_BYTES / 1024) {
+        log.write_line(&line).unwrap();
+    }
+    assert!(!current.exists(), "still writing to what it has open");
+    log.write_line("after the cap\n").unwrap();
+    assert_eq!(fs::read_to_string(&current).unwrap(), "after the cap\n");
+    assert!(!dir.path().join(ROTATED).exists());
+}
+
 /// 013 US5-2, FR-008: the age runs from when the file was made, so each start's
 /// new lines can't keep the older ones past what the user is told.
 #[test]
@@ -166,6 +208,7 @@ fn only_a_plain_file_at_the_name_is_shown() {
     let revealed = Revealed::default();
 
     assert_eq!(show(&revealed, Some(&link)).unwrap_err().code, "NOT_FOUND");
+    assert_eq!(show(&revealed, Some(&dir.path().join("gone"))).unwrap_err().code, "NOT_FOUND");
     assert!(revealed.0.lock().unwrap().is_empty());
 
     show(&revealed, Some(&target)).unwrap();
@@ -186,7 +229,7 @@ fn a_folder_that_cannot_be_made_leaves_the_app_running_and_says_so() {
     assert!(!status.exists);
 }
 
-/// 013 US1-3, US5-3 and 013 contracts/tauri-commands.md's table.
+/// 013 US1-2, US1-3, US5-3 and 013 contracts/tauri-commands.md's table.
 #[test]
 fn the_state_changes_as_the_contract_says_and_saves_only_a_choice() {
     let (_dir, folder, output) = output(Some(LogState::Off));
@@ -205,8 +248,13 @@ fn the_state_changes_as_the_contract_says_and_saves_only_a_choice() {
 
     assert_eq!(output.set(LogState::Detailed), None, "013 US1-1: a raise saves nothing");
     assert_eq!(output.status().state, LogState::Detailed);
-    assert_eq!(output.set(LogState::On), None, "and neither does coming back");
-    assert_eq!(output.set(LogState::On), None, "nor asking for what it is");
+    assert_eq!(output.set(LogState::On), None, "013 FR-004: it lasts until quit");
+    assert_eq!(output.status().state, LogState::Detailed);
+    assert_eq!(output.set(LogState::Detailed), None, "nor does asking for what it is");
+
+    let restarted = Output::new(None, None);
+    restarted.start(Some(folder.clone()), Some(LogChoice::On));
+    assert_eq!(restarted.status().state, LogState::On, "013 US1-2: back to normal at a start");
 
     fs::write(folder.join(ROTATED), "earlier").unwrap();
     assert_eq!(output.set(LogState::Off), Some(LogChoice::Off), "turned off and saved");

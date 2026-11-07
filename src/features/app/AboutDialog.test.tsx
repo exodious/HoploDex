@@ -771,20 +771,19 @@ describe("013 US1 - Gather a log for a repeatable issue", () => {
     expect(screen.getByText("On.")).toBeInTheDocument();
   });
 
-  it("013 US1-1, US1-2: raises the level until quit and goes back", async () => {
+  it("013 US1-1, FR-004: raises the level until quit, with nothing to press to lower it", async () => {
     backend("on");
     const user = renderAbout();
     await user.click(await screen.findByRole("button", { name: "Detailed until you quit" }));
 
     expect(await screen.findByText("On, with extra detail until you quit.")).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("set_troubleshooting_log", { state: "detailed" });
-    expect(screen.getByRole("button", { name: "Normal detail" })).toHaveFocus();
-
-    await user.click(screen.getByRole("button", { name: "Normal detail" }));
-    expect(await screen.findByText("On.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show log file" })).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "Detailed until you quit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Normal detail" })).toBeNull();
   });
 
-  it("013 US1-4: shows the file, and says so when it can't", async () => {
+  it("013 US1-4: shows the file, and says why when it can't", async () => {
     backend("on");
     const user = renderAbout();
     await user.click(await screen.findByRole("button", { name: "Show log file" }));
@@ -793,9 +792,17 @@ describe("013 US1 - Gather a log for a repeatable issue", () => {
     );
     expect(screen.queryByRole("alert")).toBeNull();
 
-    vi.mocked(invoke).mockRejectedValueOnce({ code: "INTERNAL_ERROR", message: "no" });
+    // The spec's edge case: the user deleted the file while the app runs.
+    vi.mocked(invoke).mockRejectedValueOnce({
+      code: "NOT_FOUND",
+      message: "There is no log file.",
+    });
     await user.click(screen.getByRole("button", { name: "Show log file" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The log file couldn't be shown.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("There is no log file.");
+
+    vi.mocked(invoke).mockRejectedValueOnce("the IPC itself failed");
+    await user.click(screen.getByRole("button", { name: "Show log file" }));
+    await screen.findByText("The log file couldn't be shown.");
   });
 
   it("013 US1-4: Show log file is disabled when there is no file", async () => {
