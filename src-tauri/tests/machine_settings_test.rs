@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use hoplodex_lib::models::database::{BackupFailureReason, ChooserNotice, OperationKind};
 use hoplodex_lib::models::document_opening::DocumentOpening;
+use hoplodex_lib::models::troubleshooting_log::LogChoice;
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::machine_settings::{
     MachineSettings, UnfinishedBackup, UnfinishedBackupMove,
@@ -730,4 +731,43 @@ fn the_launch_sweep_still_gives_an_ordinary_unfinished_backup_its_notice() {
             reason: BackupFailureReason::Interrupted,
         }]
     );
+}
+
+/// 013 FR-002, data-model.md: absent until chosen, kept across loads, and a value
+/// this version doesn't know reads as absent, with the file's other fields kept.
+#[test]
+fn the_troubleshooting_log_choice_is_absent_until_saved_and_survives_a_reload() {
+    let dir = TempDir::new().unwrap();
+    let settings = MachineSettings::load(dir.path()).unwrap();
+    assert_eq!(settings.troubleshooting_log(), None);
+    let written = fs::read_to_string(dir.path().join("machine.json")).unwrap();
+    assert!(!written.contains("troubleshootingLog\""), "{written}");
+
+    settings.set_troubleshooting_log(LogChoice::Off);
+    drop(settings);
+    let settings = MachineSettings::load(dir.path()).unwrap();
+    assert_eq!(settings.troubleshooting_log(), Some(LogChoice::Off));
+    let id = settings.machine_id();
+    drop(settings);
+
+    let path = dir.path().join("machine.json");
+    let text = fs::read_to_string(&path).unwrap().replace("\"off\"", "\"sometimes\"");
+    fs::write(&path, text).unwrap();
+    let settings = MachineSettings::load(dir.path()).unwrap();
+    assert_eq!(settings.troubleshooting_log(), None);
+    assert_eq!(settings.machine_id(), id);
+}
+
+/// 013 US3-1: the notice is queued once on a computer, whatever the starts.
+#[test]
+fn the_troubleshooting_log_notice_is_queued_once() {
+    let dir = TempDir::new().unwrap();
+    let settings = MachineSettings::load(dir.path()).unwrap();
+    settings.queue_troubleshooting_log_notice();
+    settings.queue_troubleshooting_log_notice();
+    assert_eq!(settings.take_notices(), vec![ChooserNotice::TroubleshootingLog]);
+    drop(settings);
+    let settings = MachineSettings::load(dir.path()).unwrap();
+    settings.queue_troubleshooting_log_notice();
+    assert_eq!(settings.take_notices(), vec![]);
 }

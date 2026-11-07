@@ -36,7 +36,10 @@ It handles `--render-helper`, `--import-helper` and `--webkit-sandbox-probe`
 before anything else, then starts `logging.rs`'s logger (the `log` macros to
 standard error: our crates at `info`, the others at `warn`; nothing installed
 one before 011, so the helpers' and probe's lines the docs call "the log" went
-nowhere; the helpers log nothing, the parent logs for them), on Linux and macOS
+nowhere; the helpers log nothing and open no file, the parent logs for them; and
+to the troubleshooting log's file, for HoploDex's own lines only, once `setup` has
+read `machine.json` and can name the folder, with what came before held in memory
+until then: 013 research.md §1, §2), on Linux and macOS
 sets the core limit to 0, soft and hard, which every process it starts inherits,
 WebKit's included on Linux (macOS's WebKit processes are launchd's), since a
 core holds decrypted records and the passphrase (#166); inside the Flatpak,

@@ -9,10 +9,12 @@ import { SessionContext } from "../session/sessionStore";
 import type { SessionState } from "../session/sessionStore";
 import { DatabaseChooser } from "./DatabaseChooser";
 import * as databasesService from "./databasesService";
+import { setTroubleshootingLog } from "../app/troubleshootingLog";
 import type { ChooserState, RecentDatabase, UpgradeProgress } from "./types";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./databasesService");
+vi.mock("../app/troubleshootingLog");
 
 /** The backend's events, sent by the test. */
 const events = vi.hoisted(() => {
@@ -694,6 +696,34 @@ describe("DatabaseChooser (003 US2)", () => {
     expect(await screen.findByText(text)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByText(text)).not.toBeInTheDocument();
+  });
+
+  it("013 US3-1, US3-2, FR-021: tells a user about the log and turns it off", async () => {
+    const user = userEvent.setup();
+    vi.mocked(setTroubleshootingLog).mockResolvedValue({
+      state: "off",
+      path: null,
+      exists: false,
+      failed: false,
+    });
+    vi.mocked(databasesService.getChooserState).mockResolvedValue(
+      chooserState({ notices: [{ kind: "troubleshootingLog" }] }),
+    );
+    renderChooser();
+
+    expect(
+      await screen.findByText(
+        "While HoploDex is before version 1.0, it keeps a troubleshooting log on this computer, up to 4 MiB and for up to 14 days. It is designed to leave out your records, file names, passphrases and how many items you have. Nothing is sent anywhere, and you can read it before you share it. You can turn it off in About.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Turn off" }));
+
+    expect(setTroubleshootingLog).toHaveBeenCalledWith("off");
+    expect(
+      await screen.findByText("The troubleshooting log is off, and its files are deleted."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Turn off" })).toBeNull();
   });
 
   it("says nothing about an ordinary close", async () => {

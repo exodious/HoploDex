@@ -126,7 +126,10 @@ pub mod ops {
                 oldest_made_at: found.last().map(|backup| backup.made_at.clone()),
             }),
             Err(err) => {
-                log::warn!("could not list the backups in {}: {err}", folder.display());
+                log::warn!(
+                    "could not list the backups in {}: {err}",
+                    crate::logging::place(folder)
+                );
                 None
             }
         }
@@ -214,7 +217,7 @@ pub mod ops {
 
     /// The field error for a folder the new database can't be put in.
     pub(crate) fn folder_error(folder: &Path, err: &io::Error) -> CommandError {
-        log::warn!("could not use {} for a new database: {err}", folder.display());
+        log::warn!("could not use {} for a new database: {err}", crate::logging::place(folder));
         if disk_space::is_disk_full(err) {
             return CommandError::disk_full(Some(folder));
         }

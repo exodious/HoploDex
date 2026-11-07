@@ -56,8 +56,9 @@ and peer review catch that.
 - **Ask:**
   - Do the three command lists (`generate_handler!`, `COMMANDS`, the capabilities) agree, and does every `allow-<command>` belong only to the `main` web view, never the PDF surface? Is `core:default` or `dialog:default` broader than the app needs? Does the opener plugin have no permission at all?
   - For every command: is each argument checked in Rust (length, range, enum, an id belonging to the open session) as if the web view were hostile?
-  - Is `UNSCOPED_COMMANDS` minimal? It holds `get_chooser_state`, `create_database`, `open_database`, `upgrade_database`, `cancel_upgrade`, `remove_recent_database`, `locate_database`, `get_database_status`, `quit_application`, `quit_listener_ready`, `note_activity`, `set_idle_paused`, `skip_backup`, `cancel_import`, `get_document_opening`, `set_document_opening`, `restore_backup`, `check_backup`, `drop_backup_check`, `list_backups` and `forget_saved_passphrase`. Does `quit_listener_ready` only ever raise the flag that says the page listens for a quit, which `request_quit` acts on only while no database is open? Does `drop_backup_check` only ever drop a held check, by its id, and does `restore_backup` restore only the backup its `checkId` held, into the target that check was for? Do the ones that can act on the open database (`restore_backup`, `list_backups`, `check_backup`, `forget_saved_passphrase`) check `session::scoped::Target` themselves?
+  - Is `UNSCOPED_COMMANDS` minimal? It holds `get_chooser_state`, `create_database`, `open_database`, `upgrade_database`, `cancel_upgrade`, `remove_recent_database`, `locate_database`, `get_database_status`, `quit_application`, `quit_listener_ready`, `note_activity`, `set_idle_paused`, `skip_backup`, `cancel_import`, `get_document_opening`, `set_document_opening`, `get_troubleshooting_log`, `set_troubleshooting_log`, `show_troubleshooting_log`, `restore_backup`, `check_backup`, `drop_backup_check`, `list_backups` and `forget_saved_passphrase`. Does `quit_listener_ready` only ever raise the flag that says the page listens for a quit, which `request_quit` acts on only while no database is open? Does `drop_backup_check` only ever drop a held check, by its id, and does `restore_backup` restore only the backup its `checkId` held, into the target that check was for? Do the ones that can act on the open database (`restore_backup`, `list_backups`, `check_backup`, `forget_saved_passphrase`) check `session::scoped::Target` themselves?
   - Can `set_document_opening` (unscoped) turn on opening without asking without `services::consent`'s native dialog?
+  - Do the troubleshooting log's three commands (unscoped) touch no database, return a state and a path but never the file's contents, and leave `show_troubleshooting_log` no choice of what it shows? The file itself is `logging`'s.
   - Can `confirmedWarnings` skip a check that protects data? (`LOCATION_OUT_OF_REACH` must never be overridable.)
   - Do errors forward only `CommandError` codes and never a raw database error (`CommandError::from_db`)?
   - Regression: #64 (import conflicts bound to the database that made them).
@@ -230,6 +231,7 @@ and peer review catch that.
 - **Code:** `flatpak/io.github.exodious.HoploDex.yml`; `scripts/flatpak/manifest.test.ts`; `scripts/flatpak/contents.mjs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/keyring/portal.rs`; `src-tauri/src/platform/linux.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/commands/error.rs`
 - **Ask:**
   - Does the manifest grant no permission beyond 011 research.md §4's table, as `manifest.test.ts` enforces?
+  - Does Show log file reach only `OpenURI.OpenDirectory`, with a read-only descriptor of the log file (`commands/documents.rs`, `portal_open_directory`)?
   - Is every write location checked against `Reach` first? Can `HostPaths`' mapping of a Documents-portal path be steered outside the grants?
   - Is the Secret portal used, and never the Secret Service?
   - Does the web process match 011 research.md §9's arguments with the sandbox on?
@@ -245,13 +247,23 @@ and peer review catch that.
 
 ## logging: what the log carries
 
-- **Code:** `src-tauri/src/logging.rs` (and every `log::` call in the backend)
+- **Code:** `src-tauri/src/logging.rs` (and every `log::` call in the backend); `src-tauri/src/logging/**`; `src-tauri/src/commands/troubleshooting_log.rs`; `src-tauri/src/models/troubleshooting_log.rs`; `src-tauri/tests/log_contents_test.rs`; `src-tauri/tests/log_lines_test.rs`
 - **Ask:**
-  - Is no record value, original photo or document file name (or the path it came from), draft text or passphrase logged?
-  - Do serde errors go through `logging::json_error`, and folders through `logging::folder_of`?
-  - Do the helpers log nothing?
-- **Accepted** ([011 research.md §20](../specs/011-flatpak/research.md)): the log reaches standard error or the journal on every OS. #128 (a log file users can send) will widen this when it is built.
-- **Since:** 011.
+  - Does each line hold only fixed text, HoploDex's own codes, OS error text and codes, durations and path shapes (013 FR-016)? `tests/log_lines_test.rs` catches a path printed the usual ways and `tests/log_contents_test.rs` covers the journey it walks; for every other line, and every failure path neither reaches, what can each interpolated `{err}` or value print? Could any carry a record's value, a name of a database, backup, folder, photo or document, a user name, a draft's text, a passphrase, a count of records or a row id?
+  - Do serde errors go through `logging::json_error`, database errors through `logging::db_error`, `OpenError::for_log` or `UpgradeError::for_log`, and paths through `logging::place`? Can `place`'s shape show a name: a user name under a kept root, a server's or share's name, an extension off its short list?
+  - Does the file take only HoploDex's own targets, whatever the level, and do debug lines stay out of standard error and the journal (013 FR-019, FR-026)?
+  - Can the default outlive 0.x (`logging::default_on`), or a raise, or a return from one, save a choice (013 FR-001, contracts/tauri-commands.md)?
+  - Are the file's limits kept: at most 2 MiB and one rotated file, deleted after 14 days, deleted when turned off and at a start with the log off? Is it created exclusively and never followed through a planted link? Is it created only readable by this user on Unix?
+  - Can the page read the file's contents, or choose what `show_troubleshooting_log` shows? It takes no argument, and the only path is Rust's.
+  - Is the file out of every backup and export?
+  - Do the helpers and the sandbox probe log nothing, open no file and not receive `HOPLODEX_LOG` (`env_clear` in `services/helper/handle.rs`)? The parent logs for them (013 FR-031).
+  - Does what the app, the README and the store listing say about the log stay no wider than the tests and this review support: what it is designed to leave out, not what it never contains (013 FR-021, FR-022)?
+- **Accepted** ([013 research.md §9](../specs/013-troubleshooting-log/research.md); standard error and the journal since [011 research.md §20](../specs/011-flatpak/research.md)):
+  - The log reaches standard error or the journal on every OS.
+  - The file is plain text, readable by the same OS user and anything running as them.
+  - OS error text is written as it comes, with only the home folder replaced.
+  - A compromised main web view can turn the log on or off and raise the level, without reading it.
+- **Since:** 011; the file 013.
 
 ## shipped-build: what only test and E2E builds may contain
 

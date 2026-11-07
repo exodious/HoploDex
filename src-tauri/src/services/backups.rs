@@ -106,7 +106,7 @@ pub fn has_backup_made_on(folder: &Path, database_id: &str, date: NaiveDate) -> 
             })
         }
         Err(err) => {
-            log::warn!("could not list the backups in {}: {err}", folder.display());
+            log::warn!("could not list the backups in {}: {err}", crate::logging::place(folder));
             true
         }
     }
@@ -441,7 +441,7 @@ fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
     if !testing::native_rename_fails() {
         match rename_new_natively(from, to) {
             Err(err) if is_unsupported(&err) => {
-                log::info!("renaming {} by linking it: {err}", from.display());
+                log::info!("renaming {} by linking it: {err}", crate::logging::place(from));
             }
             done => return done,
         }
@@ -459,7 +459,10 @@ fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
             }
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => return Err(err),
             Err(err) => {
-                log::info!("renaming {} after checking, not linking: {err}", from.display())
+                log::info!(
+                    "renaming {} after checking, not linking: {err}",
+                    crate::logging::place(from)
+                )
             }
         }
     }
@@ -541,10 +544,11 @@ pub fn rotate(
     keep: usize,
     protected: Option<&Path>,
 ) -> Vec<PathBuf> {
+    log::debug!("rotating the backups in {}", crate::logging::place(folder));
     let listed = match list(folder, database_id) {
         Ok(listed) => listed,
         Err(err) => {
-            log::warn!("could not list the backups in {}: {err}", folder.display());
+            log::warn!("could not list the backups in {}: {err}", crate::logging::place(folder));
             return Vec::new();
         }
     };
@@ -557,7 +561,7 @@ pub fn rotate(
         .filter(|path| protected.is_none_or(|protected| !same_path(path, protected)));
     for path in rotated.skip(keep) {
         if let Err(err) = secure_delete::secure_delete_whole_file(&path, WipeControl::default()) {
-            log::warn!("could not delete the old backup {}: {err}", path.display());
+            log::warn!("could not delete the old backup {}: {err}", crate::logging::place(&path));
             failed.push(path);
         }
     }
@@ -619,7 +623,7 @@ pub fn check_location(
             return Err(LocationProblem::Missing);
         }
         if let Err(err) = fs::create_dir_all(folder) {
-            log::warn!("could not make the backup folder {}: {err}", folder.display());
+            log::warn!("could not make the backup folder {}: {err}", crate::logging::place(folder));
             return Err(LocationProblem::NotWritable);
         }
     }
@@ -630,7 +634,7 @@ pub fn check_location(
             Ok(())
         }
         Err(err) => {
-            log::warn!("can't write backups to {}: {err}", folder.display());
+            log::warn!("can't write backups to {}: {err}", crate::logging::place(folder));
             Err(if disk_space::is_disk_full(&err) {
                 LocationProblem::InsufficientSpace
             } else {
@@ -686,6 +690,19 @@ pub enum BackupFailure {
     /// Skipped, or stopped by a sleep (003 FR-027, FR-037).
     Stopped,
     Io(io::Error),
+}
+
+impl BackupFailure {
+    /// What a log line may say (013 FR-014, FR-016): the kind, not a path or
+    /// how big the collection is.
+    pub fn for_log(&self) -> String {
+        match self {
+            Self::Location(_) => "the backup location is not usable".to_owned(),
+            Self::InsufficientSpace(_) => "there is not enough space".to_owned(),
+            Self::Stopped => "it was stopped".to_owned(),
+            Self::Io(err) => err.to_string(),
+        }
+    }
 }
 
 #[cfg(feature = "upgrade-test-steps")]
@@ -757,6 +774,7 @@ pub fn make_backup(
     machine: &MachineSettings,
     mut job: BackupJob,
 ) -> Result<PathBuf, BackupFailure> {
+    log::debug!("backing up {}", crate::logging::place(job.database_path));
     if let Some(version) = job.kind.before_upgrade_to()
         && !is_backup_version(version)
     {
@@ -786,7 +804,7 @@ pub fn make_backup(
     // Created exclusively and before it is recorded: a file already at that
     // name is not ours, so it stays, and nothing is swept or removed for it.
     let out = scratch::create(&partial).map_err(|err| {
-        log::error!("could not create {}: {err}", partial.display());
+        log::error!("could not create {}: {err}", crate::logging::place(&partial));
         BackupFailure::Io(err)
     })?;
     machine.set_unfinished_backup(UnfinishedBackup {
@@ -805,7 +823,7 @@ pub fn make_backup(
         Ok(()) => Ok(final_path),
         Err(CopyError::Stopped) => Err(BackupFailure::Stopped),
         Err(CopyError::Io(err)) => {
-            log::error!("the backup of {} failed: {err}", job.database_path.display());
+            log::error!("the backup of {} failed: {err}", crate::logging::place(job.database_path));
             Err(BackupFailure::Io(err))
         }
     }
@@ -847,7 +865,7 @@ fn remove_partial(partial: &Path) {
     if let Err(err) = secure_delete::secure_delete_file(partial)
         && err.kind() != io::ErrorKind::NotFound
     {
-        log::warn!("could not remove {}: {err}", partial.display());
+        log::warn!("could not remove {}: {err}", crate::logging::place(partial));
     }
     remove_journal(partial);
 }
@@ -859,8 +877,12 @@ fn remove_partial(partial: &Path) {
 /// short the same way (003 research.md §22) has its partial copy removed, and
 /// the chooser says how many backups are still at the old location.
 pub fn sweep_unfinished(machine: &MachineSettings) {
+    log::debug!("looking for an unfinished backup or move");
     if let Some(record) = machine.unfinished_backup() {
-        log::warn!("the last backup of {} did not finish", record.database_path.display());
+        log::warn!(
+            "the last backup of {} did not finish",
+            crate::logging::place(&record.database_path)
+        );
         remove_partial(&record.partial_path);
         // An interrupted backup before an upgrade is not reported: the
         // upgrade didn't start, and the next open asks again (009 FR-015).
@@ -874,7 +896,10 @@ pub fn sweep_unfinished(machine: &MachineSettings) {
         machine.clear_unfinished_backup();
     }
     if let Some(record) = machine.unfinished_backup_move() {
-        log::warn!("the move of the backups of {} did not finish", record.database_path.display());
+        log::warn!(
+            "the move of the backups of {} did not finish",
+            crate::logging::place(&record.database_path)
+        );
         if let Some(partial) = &record.partial_path {
             remove_partial(partial);
         }
@@ -982,6 +1007,7 @@ impl From<CopyError> for MoveFailure {
 /// left behind. The move ends at the first failure, and never rotates.
 /// While it runs, `machine.json` records it, for the sweep after a crash.
 pub fn move_backups(job: MoveJob) -> Moved {
+    log::debug!("moving backups to {}", crate::logging::place(job.to));
     let total = job.plan.bytes() * 2;
     let mut processed = 0;
     (job.progress)(0, total);
@@ -1023,7 +1049,7 @@ pub fn move_backups(job: MoveJob) -> Moved {
     let (reason, stopped) = match ended {
         Some(MoveFailure::Stopped) => (None, true),
         Some(MoveFailure::Io(err)) => {
-            log::error!("the move of backups to {} failed: {err}", job.to.display());
+            log::error!("the move of backups to {} failed: {err}", crate::logging::place(job.to));
             (Some(failure_reason(job.to, &err)), false)
         }
         Some(MoveFailure::NameTaken) | None => {
@@ -1072,7 +1098,9 @@ fn move_one(
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
                 return Err(MoveFailure::NameTaken);
             }
-            Err(err) => log::info!("copying {} instead of linking it: {err}", src.display()),
+            Err(err) => {
+                log::info!("copying {} instead of linking it: {err}", crate::logging::place(src))
+            }
         }
     }
     // The original must be deletable once copied, or the move stops here

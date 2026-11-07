@@ -83,7 +83,9 @@ export type ChooserNotice =
         /** The custom backup location is out of this copy's reach (011 FR-004). */
         | "outOfReach";
     }
-  | { kind: "takenOver"; databasePath: string };
+  | { kind: "takenOver"; databasePath: string }
+  /** The troubleshooting log is on by the version's default (013 FR-020). */
+  | { kind: "troubleshootingLog" };
 
 /** Where backups go, resolved on this computer. */
 export interface BackupLocation {

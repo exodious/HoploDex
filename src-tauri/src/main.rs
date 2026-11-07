@@ -279,7 +279,8 @@ fn main() {
         );
         std::process::exit(1);
     }
-    // The log goes to standard error from here on (the helpers above have none).
+    // The log goes to standard error from here on, and to its file once
+    // `setup` can name the folder (the helpers above have neither: 013 FR-031).
     hoplodex_lib::logging::init();
     // Before this process starts any other.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -351,6 +352,15 @@ fn main() {
             // about when the chooser needs to know whether it is there.
             let machine = MachineSettings::load(&app_dirs::config_dir(app.handle())?)?
                 .with_keyring(Keyring::for_reach(&reach));
+            // The troubleshooting log's file, now that its folder and the
+            // saved choice are known; earlier lines were held for it. A user
+            // of a build where it is on by default is told, once (013 FR-020).
+            let log_folder = app_dirs::cache_dir(app.handle())
+                .ok()
+                .map(|cache| cache.join(hoplodex_lib::logging::file::FOLDER));
+            if hoplodex_lib::logging::start(log_folder, machine.troubleshooting_log()).notice {
+                machine.queue_troubleshooting_log_notice();
+            }
             // A backup a crash or forced quit cut short (003 research.md §7).
             backups::sweep_unfinished(&machine);
             // Copies the macOS PDF viewer left behind in a run that couldn't
@@ -510,6 +520,9 @@ fn main() {
             hoplodex_lib::commands::databases::lock_database,
             hoplodex_lib::commands::databases::get_document_opening,
             hoplodex_lib::commands::databases::set_document_opening,
+            hoplodex_lib::commands::troubleshooting_log::get_troubleshooting_log,
+            hoplodex_lib::commands::troubleshooting_log::set_troubleshooting_log,
+            hoplodex_lib::commands::troubleshooting_log::show_troubleshooting_log,
             hoplodex_lib::commands::databases::stage_pending_changes,
             hoplodex_lib::commands::databases::resolve_pending_changes,
             hoplodex_lib::commands::databases::note_activity,

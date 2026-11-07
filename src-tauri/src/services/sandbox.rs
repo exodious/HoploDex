@@ -296,7 +296,7 @@ impl Reach {
             Err(err) => {
                 log::warn!(
                     "{} can't be read, so nothing is within reach: {err}",
-                    info_path.display()
+                    crate::logging::place(info_path)
                 );
                 Self::flatpak(Vec::new(), Vec::new(), host_paths)
                     .with_documents(user_dirs.documents().map(Path::to_owned))
@@ -325,7 +325,7 @@ impl Reach {
                 Entry::Skipped => {}
                 Entry::Unknown => {
                     log::warn!(
-                        "filesystem entry {raw:?} in {FLATPAK_INFO} is not understood, so it is not counted"
+                        "a filesystem entry in {FLATPAK_INFO} is not understood, so it is not counted"
                     );
                 }
             }
@@ -356,11 +356,11 @@ impl Reach {
                 let granted = list(&mut grants.iter().map(|grant| {
                     format!(
                         "{}{}",
-                        grant.root.display(),
+                        crate::logging::place(&grant.root),
                         if grant.writable { "" } else { " (read-only)" }
                     )
                 }));
-                let taken = list(&mut removed.iter().map(|root| root.display().to_string()));
+                let taken = list(&mut removed.iter().map(|root| crate::logging::place(root)));
                 format!(
                     "running in a Flatpak; reach: [{granted}]{}",
                     if taken.is_empty() { String::new() } else { format!(", removed: [{taken}]") }
@@ -737,6 +737,7 @@ impl PortalHostPaths {
             "org.freedesktop.portal.Documents",
         )
         .ok()?;
+        log::debug!("portal: GetHostPaths");
         let paths: HashMap<String, Vec<u8>> =
             portal.call("GetHostPaths", &(vec![document_id.to_owned()],)).ok()?;
         let bytes = paths.get(document_id)?;

@@ -124,6 +124,20 @@ pub enum UpgradeError {
 }
 
 impl UpgradeError {
+    /// What a log line may say (013 FR-016): the step, not SQLite's text or a
+    /// count of records.
+    pub fn for_log(&self) -> String {
+        match self {
+            Self::Step { name, source } => {
+                format!("upgrade step {name} failed: {}", crate::logging::db_error(source))
+            }
+            Self::LinkCheck { .. } => "the upgrade left broken links".to_owned(),
+            Self::Database(err) => format!("upgrade failed: {}", crate::logging::db_error(err)),
+            #[cfg(feature = "upgrade-test-steps")]
+            Self::Injected(err) => err.to_string(),
+        }
+    }
+
     /// The SQLite error underneath, when there is one, so a caller can map it
     /// as it maps any other (`CommandError::from_db`: a full disk, a damaged
     /// file). A link failure or a forced one has none.
@@ -255,7 +269,7 @@ pub fn upgrade(
         && !conn.is_autocommit()
         && let Err(err) = conn.execute_batch("ROLLBACK")
     {
-        log::error!("could not roll back a failed upgrade: {err}");
+        log::error!("could not roll back a failed upgrade: {}", crate::logging::db_error(&err));
     }
     // On every path, so a failure never leaves the link checks off.
     let restored = conn.execute_batch("PRAGMA foreign_keys = ON");
@@ -334,7 +348,7 @@ fn run(
 }
 
 /// `PRAGMA foreign_key_check`: a row for every record pointing at one that is
-/// not there. The table and row id are logged, never the data.
+/// not there. The table is logged, never a row id or the data (013 FR-016).
 fn check_links(conn: &Connection) -> Result<(), UpgradeError> {
     let mut stmt = conn.prepare("PRAGMA foreign_key_check")?;
     let broken = stmt
@@ -343,11 +357,8 @@ fn check_links(conn: &Connection) -> Result<(), UpgradeError> {
     if broken.is_empty() {
         return Ok(());
     }
-    for (table, row_id) in &broken {
-        match row_id {
-            Some(id) => log::error!("the upgrade left a broken link in {table}, row {id}"),
-            None => log::error!("the upgrade left a broken link in {table}"),
-        }
+    for (table, _row_id) in &broken {
+        log::error!("the upgrade left a broken link in {table}");
     }
     Err(UpgradeError::LinkCheck { violations: broken.len() })
 }

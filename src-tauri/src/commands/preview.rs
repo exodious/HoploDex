@@ -328,6 +328,7 @@ pub mod ops {
         env: &PreviewEnv,
         document_id: i64,
     ) -> Result<PreviewInfo, CommandError> {
+        log::debug!("opening a preview");
         let (id, ticket, bytes) =
             match session.inspect_mut(session_id, |open| begin(open, env, document_id))? {
                 Begun::Done(info) => {
@@ -418,6 +419,7 @@ pub mod ops {
         session_id: SessionId,
         id: u64,
     ) -> Result<(), CommandError> {
+        log::debug!("closing a preview");
         let ended = session.inspect_mut(session_id, |open| {
             let loading_is_it = open.preview_loading.as_ref().is_some_and(|l| l.id == id);
             let shown_is_it = open.preview.as_ref().is_some_and(|p| p.id == id);
@@ -541,6 +543,7 @@ pub mod ops {
     /// a Windows interface was missing): closes the PDF shown, in whatever
     /// session is open (the surface belongs to its preview), and says why.
     pub fn surface_ended(session: &Session, reason: PdfEndReason) {
+        log::debug!("the PDF surface ended: {reason:?}");
         end_pdf(session, session.current_id(), |_| true, reason);
     }
 
@@ -622,6 +625,7 @@ pub mod ops {
     /// is closed rather than shown with a PDF's scripting on. A no-op if the
     /// preview has ended, been replaced or been hooked since.
     pub fn hook_timed_out(session: &Session, session_id: SessionId, preview_id: u64) {
+        log::debug!("the PDF hook timed out");
         end_pdf(
             session,
             session_id,

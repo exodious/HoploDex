@@ -25,6 +25,7 @@ import type {
 } from "./types";
 import { UpgradeFolderDialog, UpgradeProgressDialog, UpgradeQuestion } from "./UpgradeDialogs";
 import { BACKUP_OUT_OF_REACH_REASON } from "./outOfReach";
+import { setTroubleshootingLog } from "../app/troubleshootingLog";
 import "../app/AppShell.css";
 import "./databases.css";
 
@@ -152,9 +153,14 @@ function stoppedText(notice: Extract<ChooserNotice, { kind: "operationStopped" }
   return `${stopped} ${name} is as it was before it started.`;
 }
 
+/** 013 FR-021: what the log is designed to leave out, and no wider a claim. */
+const TROUBLESHOOTING_LOG_NOTICE =
+  "While HoploDex is before version 1.0, it keeps a troubleshooting log on this computer, up to 4 MiB and for up to 14 days. It is designed to leave out your records, file names, passphrases and how many items you have. Nothing is sent anywhere, and you can read it before you share it. You can turn it off in About.";
+
 /** A notice's sentence (003 contracts/ui-databases.md §1 "Notices"), or `null`
  * for one with nothing to say, such as an ordinary close. */
 function noticeText(notice: ChooserNotice): string | null {
+  if (notice.kind === "troubleshootingLog") return TROUBLESHOOTING_LOG_NOTICE;
   const name = `“${databaseNameOf(notice.databasePath)}”`;
   switch (notice.kind) {
     case "closed":
@@ -181,6 +187,8 @@ interface ShownNotice {
   text: string;
   name: string;
   changeLocation: boolean;
+  /** 013 FR-020: the notice about the log offers to turn it off. */
+  turnOffLog: boolean;
 }
 
 /** The notices worth a line, numbered from `firstId`. */
@@ -194,8 +202,9 @@ function shownNotices(notices: ChooserNotice[], firstId: number): ShownNotice[] 
       (notice.reason === "locationUnavailable" ||
         notice.reason === "insufficientSpace" ||
         notice.reason === "outOfReach");
-    const name = databaseNameOf(notice.databasePath);
-    return text ? [{ id: firstId + index, text, name, changeLocation }] : [];
+    const turnOffLog = notice.kind === "troubleshootingLog";
+    const name = turnOffLog ? "" : databaseNameOf(notice.databasePath);
+    return text ? [{ id: firstId + index, text, name, changeLocation, turnOffLog }] : [];
   });
 }
 
@@ -595,6 +604,28 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                       }}
                     >
                       Change backup location…
+                    </Button>
+                  )}
+                  {notice.turnOffLog && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        void setTroubleshootingLog("off").then(() =>
+                          setNotices((current) =>
+                            current.map((n) =>
+                              n.id === notice.id
+                                ? {
+                                    ...n,
+                                    text: "The troubleshooting log is off, and its files are deleted.",
+                                    turnOffLog: false,
+                                  }
+                                : n,
+                            ),
+                          ),
+                        );
+                      }}
+                    >
+                      Turn off
                     </Button>
                   )}
                   <Button

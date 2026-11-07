@@ -34,6 +34,7 @@ import {
 } from "../support/ui";
 import { appPid, killApp, launchApp, relaunchApp, waitForAppToQuit } from "../support/app";
 import { repoRoot } from "../support/build";
+import { logLines } from "../support/documentPreview";
 import { copyReleaseFixture, sha256Of } from "../support/sandbox";
 import {
   chooseMenuBarItem,
@@ -1037,5 +1038,119 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     expect((await browser.getWindowHandles()).length).toBe(1);
     await pressEscape();
     await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+});
+
+/** The troubleshooting log's folder in this run's sandbox (013 FR-006). */
+function logFolder() {
+  const config = fs.readFileSync(path.join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8");
+  const { identifier } = JSON.parse(config) as { identifier: string };
+  return path.join(process.env.HOPLODEX_E2E_CACHE_HOME!, identifier, "logs");
+}
+
+function logText() {
+  return fs.readFileSync(path.join(logFolder(), "hoplodex.log"), "utf8");
+}
+
+/** Starts the app again with `HOPLODEX_LOG` set to `value`, or unset. */
+async function relaunchWithLog(value: "off" | "debug" | undefined) {
+  if (value === undefined) delete process.env.HOPLODEX_LOG;
+  else process.env.HOPLODEX_LOG = value;
+  await relaunch();
+  await waitForChooser();
+}
+
+async function openAboutOnTheChooser() {
+  await clickButton("About HoploDex");
+  await $(".hd-about__log").waitForExist();
+}
+
+describe("013 US1 - Gather a log for a repeatable issue", () => {
+  after(async () => {
+    process.env.HOPLODEX_LOG = "off";
+  });
+
+  it("turns the log on from the chooser's About, raises it at once, finds it and goes back (013 US1-1, US1-3, US1-4, US1-5, US1-6)", async () => {
+    await relaunchWithLog("off");
+    await openAboutOnTheChooser();
+    await expect($(".hd-about__log")).toHaveText(expect.stringContaining("Off."));
+
+    await clickButton("Turn on");
+    await $(".hd-about__log-path").waitForExist();
+    const shown = await $(".hd-about__log-path").getText();
+    expect(shown).toBe(path.join(logFolder(), "hoplodex.log"));
+    expect(logText()).toMatch(/^--- HoploDex .* started \d{4}-\d{2}-\d{2} ---$/m);
+
+    await clickButton("Detailed until you quit");
+    await browser.waitUntil(async () =>
+      (await $(".hd-about__log").getText()).includes("extra detail"),
+    );
+
+    const opened = logLines("HOPLODEX_E2E_OPENED_LOG").length;
+    await clickButton("Show log file");
+    await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length > opened);
+    expect(logLines("HOPLODEX_E2E_OPENED_LOG").at(-1)).toBe(shown);
+
+    await clickButton("Normal detail");
+    await $(".hd-about__log").waitForExist();
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+});
+
+describe("013 US2 - The log is designed to hold nothing sensitive", () => {
+  after(async () => {
+    process.env.HOPLODEX_LOG = "off";
+  });
+
+  it("holds none of a journey's planted text, in the real file of the real app (013 FR-029, SC-002, 013 US4-1)", async () => {
+    await relaunchWithLog("debug");
+    const planted = {
+      database: "DBNAME-PLANTED",
+      make: "MAKE-PLANTED",
+      model: "MODEL-PLANTED",
+      serial: "SERIAL-PLANTED",
+      notes: "NOTES-PLANTED",
+    };
+    await createDatabase({ name: planted.database });
+    await addFirearm({
+      make: planted.make,
+      model: planted.model,
+      serial: planted.serial,
+      notes: planted.notes,
+      caliber: "9mm",
+      type: "Handgun",
+    });
+    await switchDatabase();
+
+    const text = logText();
+    for (const value of Object.values(planted)) expect(text).not.toContain(value);
+    expect(text).not.toContain(E2E_PASSPHRASE);
+    // Not vacuous: it says what was done, by the shape of where.
+    expect(text).toMatch(/\[DEBUG\] creating a database at \S*\*\.hoplodex/);
+    expect(text).toMatch(/\[DEBUG\] closing the database/);
+  });
+});
+
+describe("013 US3 - Told, and able to say no, while it is on by default", () => {
+  after(async () => {
+    process.env.HOPLODEX_LOG = "off";
+    await relaunch();
+  });
+
+  it("tells a user once, turns it off from the notice, and it stays off at the relaunch (013 US3-1, US3-2, US3-5)", async () => {
+    await relaunchWithLog(undefined);
+    const notice = $(".hd-chooser__notice*=troubleshooting log");
+    await notice.waitForExist();
+    await expect(notice).toHaveText(expect.stringContaining("designed to leave out"));
+    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(true);
+
+    await clickButton("Turn off");
+    await $(".hd-chooser__notice*=its files are deleted").waitForExist();
+    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(false);
+
+    await relaunchWithLog(undefined);
+    expect(await $(".hd-chooser__notice*=troubleshooting log").isExisting()).toBe(false);
+    expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(false);
   });
 });
