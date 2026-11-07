@@ -28,7 +28,6 @@ use crate::services::passphrase_dialog::PassphraseDialog;
 use crate::services::sandbox::Reach;
 use crate::session::Session;
 use crate::session::scoped::{ScopedSession, Target};
-use ops::Unlock;
 
 pub mod ops {
     use std::fs;
@@ -447,6 +446,25 @@ pub mod ops {
             (Asked::Done, Some(result)) => result,
             _ => Err(refused.unwrap_or_else(CommandError::passphrase_cancelled)),
         }
+    }
+
+    /// What the `open_database` command does with what the page sent. The saved
+    /// passphrase opens without asking, except for a take-over, whose
+    /// confirmation is typing it in the native dialog (003 FR-032): the page
+    /// can't skip that by sending `use_saved` along with `take_over`.
+    pub fn open_database_requested(
+        session: &Session,
+        machine: &MachineSettings,
+        dialog: &dyn PassphraseDialog,
+        path: &str,
+        use_saved: bool,
+        remember: bool,
+        take_over: bool,
+    ) -> Result<DatabaseStatus, CommandError> {
+        if use_saved && !take_over {
+            return open_database(session, machine, path, Unlock::Saved, false, session.reach());
+        }
+        open_database_typed(session, machine, dialog, path, remember, take_over)
     }
 
     /// Creates `<folder>/<name>.hoplodex` with a passphrase chosen in the
@@ -1215,8 +1233,8 @@ pub async fn create_database(
     .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not create it: {e}")))?
 }
 
-/// With `use_saved_passphrase`, opens with the passphrase saved on this
-/// computer; otherwise asks for it in the native dialog (amended
+/// With `use_saved_passphrase`, and not `take_over`, opens with the passphrase
+/// saved on this computer; otherwise asks for it in the native dialog (amended
 /// 2026-11-04), which blocks, so not on an async thread.
 #[tauri::command]
 pub async fn open_database(
@@ -1229,25 +1247,15 @@ pub async fn open_database(
     tauri::async_runtime::spawn_blocking(move || {
         let session = app.state::<Session>();
         let machine = app.state::<MachineSettings>();
-        let take_over = take_over.unwrap_or(false);
-        if use_saved_passphrase.unwrap_or(false) {
-            return ops::open_database(
-                &session,
-                &machine,
-                &path,
-                Unlock::Saved,
-                take_over,
-                session.reach(),
-            );
-        }
         let dialog = app.state::<Arc<dyn PassphraseDialog>>();
-        ops::open_database_typed(
+        ops::open_database_requested(
             &session,
             &machine,
             &**dialog,
             &path,
+            use_saved_passphrase.unwrap_or(false),
             remember_passphrase.unwrap_or(false),
-            take_over,
+            take_over.unwrap_or(false),
         )
     })
     .await

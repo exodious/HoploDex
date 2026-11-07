@@ -271,6 +271,9 @@ impl CommandError {
 
     /// 003 FR-032. `since` is ISO-8601 UTC.
     pub fn database_open_elsewhere(machine_name: &str, since: &str) -> Self {
+        // The marker is the file's to say, so it can name nothing at all.
+        let machine_name =
+            if machine_name.trim().is_empty() { "another computer" } else { machine_name };
         Self::new(
             "DATABASE_OPEN_ELSEWHERE",
             format!("This database is open on {machine_name}, or was when it last closed there."),

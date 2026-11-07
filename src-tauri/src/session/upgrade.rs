@@ -191,13 +191,14 @@ pub fn upgrade_database(
     let seen_now = SeenMarker::read(&waiting.conn)
         .map_err(|err| CommandError::from_db(err).located_at(&waiting.path))?;
     if seen_now != waiting.marker_seen && seen_now.is_another_computers(&machine.identity()) {
-        if let Some(name) = &seen_now.machine_name {
-            session.note_open_elsewhere(&waiting.path, name);
-        }
-        return Err(CommandError::database_open_elsewhere(
+        let err = CommandError::database_open_elsewhere(
             seen_now.machine_name.as_deref().unwrap_or_default(),
             seen_now.since.as_deref().unwrap_or_default(),
-        ));
+        );
+        if let Some(name) = err.details_str("machineName") {
+            session.note_open_elsewhere(&waiting.path, &name);
+        }
+        return Err(err);
     }
 
     // 3 and 4. The folder, its room, and the backup.

@@ -224,6 +224,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-04: **Input**: `{ path: string; useSavedPassphrase?: boolean; rememberPassphrase?: boolean; takeOver?: boolean }`, with no `passphrase`. Without `useSavedPassphrase`, the native passphrase dialog asks for it ("Open <name>", or "Take over <name>?" naming the computer the last open found it open on when `takeOver` is set), stays up while each passphrase is tried, and asks again under its field for a wrong one. Cancel before any try is `PASSPHRASE_CANCELLED`; after a wrong passphrase it is that `PASSPHRASE_INCORRECT`, with `backupsAvailable` as before._
 
+  _Amended 2026-11-06: `takeOver` always asks in the native dialog, even with `useSavedPassphrase`, which it then ignores: typing the passphrase is the take-over's confirmation (FR-032), so the page can't skip it. A marker with a blank machine name reads as "another computer", in the message and in `machineName`._
+
 ### `remove_recent_database`
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
 - Also deletes the saved keyring passphrase for it (FR-018). Never touches the file.
