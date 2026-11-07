@@ -19,7 +19,7 @@ A press of "normal detail" or a raise never saves anything, so a user following 
 - **Create or append:** the file is created with `create_new` and mode 0600, in a 0700 folder on Unix. An existing one must pass `scratch::is_plain_file`, and is opened with `scratch::open_no_follow`. Anything else leaves the file log off for the run and says so in About.
 - **Rotate:** at 2 MiB, `rename` to `.1`, which replaces a symlink rather than following it.
 - **Delete:** `secure_delete::secure_delete_file`, the way the app deletes other files it no longer wants. It logs, so the logger's lock is never held across it.
-- **Age:** the file's modification time, at start only.
+- **Age:** when the file was made, or its last change where the file system does not record that, at start only (013 FR-008). A new file on Windows sets its own creation time, since NTFS can give a reused name the old one.
 
 ## §5 The shape of a path
 
