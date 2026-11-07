@@ -161,7 +161,7 @@ mod imp {
     /// network, no Mach service, no process creation (`fork` and `exec`), no
     /// IPC. Files and pipes already open stay usable, which is how the helper
     /// reads and writes its frames. Not the built-in `pure-computation` it
-    /// replaced: macOS 27 kills a process that enters a named profile.
+    /// replaced: macOS 27 kills a process that enters that one.
     const DENY_EVERYTHING: &CStr = c"(version 1)(deny default)";
 
     // `sandbox_init` is deprecated, and still what a plain command-line

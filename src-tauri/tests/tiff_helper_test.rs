@@ -16,11 +16,11 @@
 //!   has a `Default` of 20 s and 10 s. A load or render that passes its limit
 //!   returns an error, and the helper has been killed by then.
 //! - A self-check mode, `hoplodex --render-helper --self-check <port>
-//!   <file>`: it tries to open `<file>` and to connect to 127.0.0.1:<port>,
-//!   confines itself exactly as it does before serving frames, tries both
-//!   again, and prints one JSON line then exits 0:
+//!   <file>`: it tries to open `<file>`, to connect to 127.0.0.1:<port> and to
+//!   start a program, confines itself exactly as it does before serving
+//!   frames, tries all three again, and prints one JSON line then exits 0:
 //!   `{ "file_before": bool, "tcp_before": bool,   // could, before confining
-//!      "exec_before": bool,                       // could start the OS's `true`
+//!      "exec_before": bool,                       // could start a program
 //!      "file_after": bool, "tcp_after": bool,     // could, once confined
 //!      "exec_after": bool,                        // could start it, once confined
 //!      "env_vars": number,                        // variables in its environment
