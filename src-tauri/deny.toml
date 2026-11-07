@@ -1,9 +1,9 @@
 # Rust dependency audit, two checks:
 # - `npm run audit:cargo` (cargo deny check advisories, against the RustSec
-#   advisory database). See "Dependency audit" in DEVELOPMENT.md for the
+#   advisory database). See docs/development/dependency-audit.md for the
 #   policy and for how to add an exception.
 # - `npm run audit:licenses` (cargo deny check licenses, alongside the npm
-#   check). See "License audit" in DEVELOPMENT.md.
+#   check). See docs/development/licenses.md.
 #
 # The bans and sources checks aren't used.
 #
@@ -20,7 +20,7 @@
 # 3. Yanked crates always fail, shipped or build-only, and are never excepted:
 #    update the crate. This is not a kind of deprecation (012 FR-014).
 #    cargo-deny reads yank state from cargo's index cache without refreshing
-#    it, so audit:cargo refreshes it first (DEVELOPMENT.md, "Yanked crates").
+#    it, so audit:cargo refreshes it first (docs/development/dependency-audit.md, "Yanked crates").
 #
 # Every ignore entry needs a `reason`. For a vulnerability, write the analysis
 # in a comment above the entry: why it can't be fixed yet, how it does or

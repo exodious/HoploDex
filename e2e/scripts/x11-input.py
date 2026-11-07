@@ -6,7 +6,7 @@ WebDriver's own clicks and keys don't pass through GTK the way a person's do,
 so WebKitGTK behaviour that depends on real input (whether a focus shows its
 ring, `:focus-visible`, a relayout a key press forces) doesn't reproduce with
 them. This does. `e2e/support/realInput.ts` drives it from a spec; see
-"Real keyboard and mouse input" in DEVELOPMENT.md.
+docs/development/real-input.md.
 
 Needs libX11 and libXtst (both in the dev container) and python3 only.
 

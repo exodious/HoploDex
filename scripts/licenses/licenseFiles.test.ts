@@ -190,7 +190,7 @@ describe("010 FR-010 - fail closed: no text, no guess, no generic fallback", () 
     );
     expect(found.texts).toEqual([]);
     expect(found.failure).toBe(
-      'crate no-license 1.0.0 (x86_64-unknown-linux-gnu): no license text for MIT in its package. Add an exception (licenses/exceptions.json) with the text from its source repository; see DEVELOPMENT.md, "License notices".',
+      'crate no-license 1.0.0 (x86_64-unknown-linux-gnu): no license text for MIT in its package. Add an exception (licenses/exceptions.json) with the text from its source repository; see docs/development/licenses.md, "License notices".',
     );
   });
 
@@ -198,7 +198,7 @@ describe("010 FR-010 - fail closed: no text, no guess, no generic fallback", () 
     const found = find(pkg("no-license-file"), "MIT", "MIT", "npm no-license-file 1.0.0");
     expect(found.texts).toEqual([]);
     expect(found.failure).toBe(
-      'npm no-license-file 1.0.0: no license text for MIT in its package. Add an exception (licenses/exceptions.json) with the text from its source repository; see DEVELOPMENT.md, "License notices".',
+      'npm no-license-file 1.0.0: no license text for MIT in its package. Add an exception (licenses/exceptions.json) with the text from its source repository; see docs/development/licenses.md, "License notices".',
     );
   });
 
@@ -216,7 +216,7 @@ describe("010 FR-010 - fail closed: no text, no guess, no generic fallback", () 
       "crate foo 1.2.0",
     );
     expect(found.failure).toBe(
-      'crate foo 1.2.0: no license text for Apache-2.0 in its package. Add an exception (licenses/exceptions.json) with the text from its source repository; see DEVELOPMENT.md, "License notices".',
+      'crate foo 1.2.0: no license text for Apache-2.0 in its package. Add an exception (licenses/exceptions.json) with the text from its source repository; see docs/development/licenses.md, "License notices".',
     );
   });
 

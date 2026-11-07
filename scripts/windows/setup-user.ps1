@@ -3,8 +3,7 @@
 Installs HoploDex's per-user Windows development tools.
 
 .DESCRIPTION
-The per-user half of a Windows development setup (DEVELOPMENT.md,
-"Windows"). Run setup-system.ps1 first, then run this as the account that
+The per-user half of a Windows development setup (docs/development/windows.md). Run setup-system.ps1 first, then run this as the account that
 will build, in a new PowerShell that is not elevated:
 
   powershell -ExecutionPolicy Bypass -File setup-user.ps1
@@ -150,4 +149,4 @@ if ($ClaudeCode) {
 
 Write-Host ''
 Write-Host 'Done. Open a new terminal so PATH and OPENSSL_DIR apply, then in the' -ForegroundColor Green
-Write-Host 'checkout run "npm install" and the build and test commands in DEVELOPMENT.md.' -ForegroundColor Green
+Write-Host 'checkout run "npm install" and the build and test commands in docs/development/.' -ForegroundColor Green

@@ -2,11 +2,11 @@
 # docs/src/content/docs/reference/repo-config.md). The daemon reads `commands`
 # from the default branch only, so a change here applies once it is merged.
 #
-# The commands are DEVELOPMENT.md's "Linting & formatting" and "Test" lists,
+# The commands are the lists in docs/development/lint.md and docs/development/testing.md,
 # run in the dev container (CLAUDE.md, "Run tests in the dev container").
 # Each run gets its own worktree, so the wrapper keys its node_modules and
 # target volumes by the run's branch rather than the path: a PR's reruns reuse
-# a warm build (DEVELOPMENT.md, "Development container").
+# a warm build (docs/development/dev-container.md).
 
 commands:
   lint: >-

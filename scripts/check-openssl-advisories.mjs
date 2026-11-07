@@ -1,5 +1,5 @@
-// OpenSSL advisory audit: `npm run audit:openssl`. See "Dependency audit" in
-// DEVELOPMENT.md.
+// OpenSSL advisory audit: `npm run audit:openssl`. See
+// docs/development/dependency-audit.md.
 //
 // The Windows build links OpenSSL statically from vcpkg, pinned by the
 // `builtin-baseline` (a microsoft/vcpkg commit) in

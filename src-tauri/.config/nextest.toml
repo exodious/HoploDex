@@ -1,4 +1,4 @@
-# cargo-nextest settings; see DEVELOPMENT.md "Test". Nextest runs every test
+# cargo-nextest settings; see docs/development/testing.md. Nextest runs every test
 # in its own process, so the `static Mutex`es that keep `portability_test.rs`
 # and `performance_test.rs` one-at-a-time under `cargo test` no longer
 # serialize anything here. They stay for anyone still running `cargo test`.

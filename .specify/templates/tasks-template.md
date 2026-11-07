@@ -18,7 +18,7 @@ description: "Task list template for feature implementation"
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
-- In this file, bare IDs (FR-001, US1, T012) mean this feature's. In code, comments and test names, cite them with the feature's number, `[###] FR-001`, `[###] US1-2`, `[###] T012`, `[###] research.md §3` (DEVELOPMENT.md, "Spec citations"); `npm test` fails on a bare one
+- In this file, bare IDs (FR-001, US1, T012) mean this feature's. In code, comments and test names, cite them with the feature's number, `[###] FR-001`, `[###] US1-2`, `[###] T012`, `[###] research.md §3` (docs/development/citations-and-attack-surface.md); `npm test` fails on a bare one
 - Work that must be built, tested or run on a specific platform gets one task per platform
 
 ## Path Conventions

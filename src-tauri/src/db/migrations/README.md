@@ -5,8 +5,7 @@ lists them in order, and `../upgrade.rs` applies the ones a database lacks, all
 in one transaction, with the foreign keys off and a link check at the end. This
 file is the author's guide; the reasons are in 009 research.md §7, §11 and §13
 (`specs/009-upgrade-readiness/research.md`), and the workflow around it (testing
-a step, the stored release databases) is in `DEVELOPMENT.md`, "Changing the
-data layout".
+a step, the stored release databases) is in `docs/development/data-layout.md`.
 
 Until 0.1.0 is tagged these files are edited in place. **From the tag on, a
 released step never changes** (`released.txt` holds its hash and

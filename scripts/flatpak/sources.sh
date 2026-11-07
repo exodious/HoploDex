@@ -4,7 +4,7 @@
 #
 # Runs in the dev container (`scripts/dev-container.sh --flatpak npm run
 # flatpak:sources`), or wherever else the guard accepts (a host with a throwaway
-# installation, or an opted-in GitHub-hosted runner; DEVELOPMENT.md, "Flatpak"): it
+# installation, or an opted-in GitHub-hosted runner; docs/development/flatpak.md): it
 # sources the host guard's container check (guard.mjs), not
 # env.sh, because it needs no Flatpak installation, only the two generators the
 # image pins at /opt/flatpak-builder-tools. Each list is written to a temporary

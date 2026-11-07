@@ -24,8 +24,7 @@ import {
  * closes the session, kills the app, stops the display and removes the sandbox.
  *
  * Never `wdio session open tauri <app>`: that starts the app itself, outside
- * the sandbox, on the developer's real databases. DEVELOPMENT.md, "Drive the
- * app with wdio session".
+ * the sandbox, on the developer's real databases. docs/development/wdio-session.md.
  */
 
 /** The app's WebDriver port. Clear of the E2E workers', which take 4445 and

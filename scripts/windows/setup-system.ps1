@@ -3,8 +3,7 @@
 Installs HoploDex's machine-wide Windows build prerequisites.
 
 .DESCRIPTION
-The machine-wide half of a Windows development setup (DEVELOPMENT.md,
-"Windows"). Run it once per computer, from an elevated PowerShell, then run
+The machine-wide half of a Windows development setup (docs/development/windows.md). Run it once per computer, from an elevated PowerShell, then run
 setup-user.ps1 as each account that builds:
 
   powershell -ExecutionPolicy Bypass -File setup-system.ps1 -User alice [-AutoLogon]

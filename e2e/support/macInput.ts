@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
  * presses, the menu bar they use and the quit event the Dock sends, for the
  * app's quit routes (#107), which
  * WebDriver can't reach and which differ on each OS. Needs Accessibility for
- * whatever runs the suite, as the macOS checks in DEVELOPMENT.md do. A test
+ * whatever runs the suite, as the macOS checks in docs/development/ do. A test
  * that uses it starts with {@link skipWithoutMacInput}.
  *
  * Every function here is addressed to the process `pid` (a key by

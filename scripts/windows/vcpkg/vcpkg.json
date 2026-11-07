@@ -1,5 +1,5 @@
 {
-  "$comment": "The OpenSSL every Windows CI job links statically (x64-windows-static-md), pinned by builtin-baseline, a commit of microsoft/vcpkg (here its 2026.10.16 release). Dependabot moves the pin (.github/dependabot.yml); npm run audit:openssl checks the OpenSSL version it resolves to against OpenSSL's advisories. Nothing uses it unless asked to: DEVELOPMENT.md, Windows.",
+  "$comment": "The OpenSSL every Windows CI job links statically (x64-windows-static-md), pinned by builtin-baseline, a commit of microsoft/vcpkg (here its 2026.10.16 release). Dependabot moves the pin (.github/dependabot.yml); npm run audit:openssl checks the OpenSSL version it resolves to against OpenSSL's advisories. Nothing uses it unless asked to: docs/development/windows.md.",
   "dependencies": ["openssl"],
   "builtin-baseline": "9eec002df1cd109f8f104cd966a763daf9751489"
 }

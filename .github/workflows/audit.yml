@@ -5,8 +5,8 @@
 # includes the third-party notices for all three operating systems
 # (`notices.mjs --check --all-targets`), which needs nothing beyond
 # `npm ci --ignore-scripts` and the Rust toolchain; `cargo fetch` reaches the
-# registry as `cargo deny` does. See "Dependency audit" and "License notices"
-# in DEVELOPMENT.md. It runs on every pull request to main, Dependabot's
+# registry as `cargo deny` does. See docs/development/dependency-audit.md
+# and docs/development/licenses.md. It runs on every pull request to main, Dependabot's
 # included, and daily on main, since new advisories can fail it on code that
 # hasn't changed.
 #

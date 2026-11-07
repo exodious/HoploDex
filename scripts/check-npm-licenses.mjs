@@ -1,5 +1,5 @@
 // npm license audit: `npm run audit:licenses` (with cargo-deny's license
-// check for the Rust side). See "License audit" in DEVELOPMENT.md.
+// check for the Rust side). See docs/development/licenses.md.
 //
 // Reads package-lock.json and checks every package that isn't dev-only (`dev`
 // or `devOptional`), since those are what Vite bundles into the shipped app.

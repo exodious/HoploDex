@@ -44,7 +44,7 @@ pub fn other_machine() -> MachineIdentity {
 /// Whether timing budgets are checked: everywhere but under CI (`CI=true`,
 /// which GitHub Actions sets), where shared runners' speed varies too much for
 /// a budget to mean anything (#25). The same rule as `budgetsChecked()` in
-/// `e2e/support/budgets.ts`; DEVELOPMENT.md, "Continuous integration".
+/// `e2e/support/budgets.ts`; docs/development/ci.md.
 #[allow(dead_code)]
 pub fn budgets_checked() -> bool {
     std::env::var_os("CI").is_none_or(|ci| ci != "true")

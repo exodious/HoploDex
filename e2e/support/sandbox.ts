@@ -10,7 +10,7 @@ import { repoRoot, seedBinary } from "./build";
  * (wdio.conf.ts, one sandbox per spec file) and the `wdio session` launcher
  * (e2e/session.ts), so the two isolate identically (constitution 1.2.0,
  * 003 research.md §21). Nothing here reads or writes the developer's real
- * databases, config directory or keyring; DEVELOPMENT.md, "Test isolation",
+ * databases, config directory or keyring; docs/development/test-isolation.md
  * says what that covers.
  *
  * The functions set variables on this process's environment, which the app,

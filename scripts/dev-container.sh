@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs a command (default: an interactive shell) in the HoploDex development
-# container, built from the repo's Dockerfile. See "Development container" in
-# DEVELOPMENT.md.
+# container, built from the repo's Dockerfile. See
+# docs/development/dev-container.md.
 #
 #   scripts/dev-container.sh                      interactive shell in /workspace
 #   scripts/dev-container.sh npm run test:e2e     run one command and exit
@@ -22,7 +22,7 @@
 #                        (logins, caches, history). Bind mounts are untouched.
 #   --gui                forward your Wayland/X11 display and /dev/dri. On
 #                        macOS the engine runs in a VM, so this reaches
-#                        XQuartz over TCP instead; see DEVELOPMENT.md.
+#                        XQuartz over TCP instead; see docs/development/dev-container.md.
 #   --flatpak            for the Flatpak build and check (011 research.md §15):
 #                        unmasks /proc (bwrap needs it under rootless podman),
 #                        mounts a per-checkout volume for flatpak-builder's

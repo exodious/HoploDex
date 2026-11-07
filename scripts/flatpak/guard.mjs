@@ -91,7 +91,7 @@ export function decide({ env, hostname, argv, home, fs: reader }) {
   if (onCiRunner && (!env.FLATPAK_USER_DIR || !env.HOPLODEX_FLATPAK_STATE)) {
     return refuse(
       "On a GitHub-hosted runner, set both FLATPAK_USER_DIR and HOPLODEX_FLATPAK_STATE " +
-        'to empty folders outside any real Flatpak installation (DEVELOPMENT.md, "The Flatpak check").',
+        'to empty folders outside any real Flatpak installation (docs/development/flatpak.md, "The Flatpak check").',
     );
   }
 
