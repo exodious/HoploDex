@@ -397,19 +397,45 @@ export async function choose(text: string) {
   await settle();
 }
 
-/** Regroups the collection through the "Group by" menu (005
- * contracts/ui-registration.md §6): opens it (it opens on pointer down, which a
- * plain click doesn't send) and picks the radio item named `label`, such as
- * "Cartridge", "Registered as" or "None". */
-export async function groupBy(label: string) {
-  const trigger = await $('button[aria-haspopup="menu"][aria-label^="Group by"]');
+/** Radix closes an open menu or select list when the window loses focus, and
+ * on Windows and macOS the workers share one desktop: another worker's app
+ * starting, or its native dialog, can take the foreground at any moment and
+ * close this worker's menu under the test. No test here is about that, so while
+ * one is open the window's blur doesn't reach it. Radix adds its listener when
+ * the menu opens, after this one. */
+async function keepOpenWhenWindowBlurs() {
+  await browser.execute(() => {
+    const page = window as unknown as { __hoplodexKeepsOpen?: boolean };
+    if (page.__hoplodexKeepsOpen) return;
+    page.__hoplodexKeepsOpen = true;
+    window.addEventListener("blur", (event) => {
+      if (document.querySelector('[role="menu"], [role="listbox"]')) {
+        event.stopImmediatePropagation();
+      }
+    });
+  });
+}
+
+/** Opens the Radix menu behind `triggerSelector` (it opens on pointer down,
+ * which a plain click doesn't send) and leaves it open. */
+export async function openMenu(triggerSelector: string) {
+  const trigger = await $(triggerSelector);
   await trigger.waitForExist();
+  await keepOpenWhenWindowBlurs();
   await browser.execute((element: HTMLElement) => {
     element.dispatchEvent(
       new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
     );
   }, trigger);
   await $('[role="menu"]').waitForExist({ timeout: 5000 });
+}
+
+/** Regroups the collection through the "Group by" menu (005
+ * contracts/ui-registration.md §6): opens it (it opens on pointer down, which a
+ * plain click doesn't send) and picks the radio item named `label`, such as
+ * "Cartridge", "Registered as" or "None". */
+export async function groupBy(label: string) {
+  await openMenu('button[aria-haspopup="menu"][aria-label^="Group by"]');
   await browser.waitUntil(
     () =>
       browser.execute((text: string) => {
@@ -443,6 +469,7 @@ export async function toggle(label: string) {
 
 /** Opens a labelled dropdown (e.g. "Policy") and picks an option by name. */
 export async function selectOption(label: string, option: string) {
+  await keepOpenWhenWindowBlurs();
   const opened = await browser.execute(
     new Function(
       "label",
@@ -909,14 +936,7 @@ export async function unlock(passphrase: string) {
  * down, which a plain click doesn't send) and picks the item whose label
  * starts with `item`. */
 export async function chooseMenuItem(triggerSelector: string, item: string) {
-  const trigger = await $(triggerSelector);
-  await trigger.waitForExist();
-  await browser.execute((element: HTMLElement) => {
-    element.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
-    );
-  }, trigger);
-  await $('[role="menu"]').waitForExist({ timeout: 5000 });
+  await openMenu(triggerSelector);
   await browser.waitUntil(
     () =>
       browser.execute((label: string) => {
