@@ -66,8 +66,8 @@ pub fn command(exe: &Path, mode_argument: &str) -> Command {
 }
 
 /// Starts the helper the app's way (007 research.md §11). On Windows that
-/// is into its own job object of `memory_limit` bytes, by `CreateProcessW`,
-/// before it runs any code; elsewhere the helper sets its own limit
+/// is into its own job object of `memory_limit` bytes and an AppContainer, by
+/// `CreateProcessW`, before it runs any code; elsewhere the helper sets its own limit
 /// (`confine::confine`).
 fn start(exe: &Path, mode_argument: &str, memory_limit: usize) -> io::Result<Started> {
     #[cfg(windows)]

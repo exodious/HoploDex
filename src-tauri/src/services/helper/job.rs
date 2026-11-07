@@ -14,7 +14,24 @@
 //! had started it. The same attribute list carries
 //! `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`, so the helper inherits its three
 //! standard handles (stdin and stdout pipes, stderr to `NUL`) and nothing
-//! else. The environment is empty, and there is no console window.
+//! else. There is no console window.
+//!
+//! It also carries `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`: the helper
+//! runs in an AppContainer with no capabilities, so from its first instruction
+//! it has no network, none of the user's files, no other process of the user's
+//! and none of their credentials. The only environment variable given is
+//! `LOCALAPPDATA`, which `CreateProcessW` needs to start an AppContainer (it
+//! points it and `TEMP` and `TMP` at the container's own folder). There
+//! is no fallback: if the container can't start, the helper doesn't run and no
+//! document is read. That includes a session with no desktop, such as SSH's
+//! session 0, where the helper dies at start with `0xC0000142`.
+//!
+//! Each helper has a container of its own, so one helper can't open another,
+//! which may hold another document or another database's. Its profile (a
+//! per-user folder and registry key) is the one place it can write, nothing the
+//! helpers run writes there. It is deleted when the [`JobChild`] is dropped, which
+//! waits a bounded time and lets the delete finish behind it. If HoploDex ended
+//! first or the delete failed, the next start's [`sweep_profiles`] deletes it.
 
 use std::ffi::OsStr;
 use std::fs::{File, OpenOptions};
@@ -23,27 +40,45 @@ use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
-    FALSE, HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation, TRUE, WAIT_OBJECT_0,
+    CloseHandle, ERROR_INVALID_PARAMETER, FALSE, GetLastError, HANDLE, HANDLE_FLAG_INHERIT,
+    SetHandleInformation, TRUE, WAIT_OBJECT_0,
 };
-use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+use windows_sys::Win32::Security::Isolation::{
+    CreateAppContainerProfile, DeleteAppContainerProfile,
+};
+use windows_sys::Win32::Security::{FreeSid, PSID, SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES};
 use windows_sys::Win32::System::JobObjects::{
     CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JobObjectExtendedLimitInformation, SetInformationJobObject,
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_UILIMIT_DESKTOP,
+    JOB_OBJECT_UILIMIT_DISPLAYSETTINGS, JOB_OBJECT_UILIMIT_EXITWINDOWS,
+    JOB_OBJECT_UILIMIT_GLOBALATOMS, JOB_OBJECT_UILIMIT_HANDLES, JOB_OBJECT_UILIMIT_READCLIPBOARD,
+    JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS, JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
+    JOBOBJECT_BASIC_UI_RESTRICTIONS, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JobObjectBasicUIRestrictions, JobObjectExtendedLimitInformation, SetInformationJobObject,
 };
 use windows_sys::Win32::System::Pipes::CreatePipe;
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
     EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, INFINITE, InitializeProcThreadAttributeList,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
-    STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
-    WaitForSingleObject,
+    OpenProcess, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, PROCESS_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
+    UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
 /// The helper's exit code when it is ended with [`JobChild::kill`].
 const KILLED: u32 = 1;
+
+/// What the name of each helper's AppContainer starts with.
+const CONTAINER: &str = "HoploDex.Helper";
+/// The longest a drop waits for a profile's delete, which then goes on behind it.
+const DELETE_WAIT: Duration = Duration::from_millis(500);
 
 /// A started helper: its process and the job object it is in. Dropping it
 /// closes both handles, which ends the helper if it still runs (the job's
@@ -54,12 +89,20 @@ pub struct JobChild {
     /// kills the helper. Declared after `process` so the process handle is
     /// closed first.
     _job: OwnedHandle,
+    /// Declared after `_job` so the profile goes after the helper.
+    container: Container,
     id: u32,
 }
 
 impl JobChild {
     pub fn id(&self) -> u32 {
         self.id
+    }
+
+    /// The name of its AppContainer, which is its profile folder's in
+    /// `%LOCALAPPDATA%\Packages`.
+    pub fn container(&self) -> &str {
+        &self.container.name
     }
 
     /// Ends the helper at once. Already gone is not an error here, as in
@@ -129,14 +172,20 @@ pub fn spawn(
     }
     command_line.push(0);
     let application: Vec<u16> = exe.as_os_str().encode_wide().chain([0]).collect();
-    // An empty environment block is two NULs.
-    let environment = [0u16; 2];
+    let environment = environment(std::env::var_os("LOCALAPPDATA"))?;
+    let (container, sid) = container()?;
+    let capabilities = SECURITY_CAPABILITIES {
+        AppContainerSid: sid.0,
+        Capabilities: std::ptr::null_mut(),
+        CapabilityCount: 0,
+        Reserved: 0,
+    };
 
     let child_ends: [HANDLE; 3] =
         [stdin_read.as_raw_handle(), stdout_write.as_raw_handle(), null.as_raw_handle()];
     let job_handle: HANDLE = job.as_raw_handle();
 
-    let mut attributes = AttributeList::new(2)?;
+    let mut attributes = AttributeList::new(3)?;
     attributes.set(
         PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
         child_ends.as_ptr().cast(),
@@ -146,6 +195,11 @@ pub fn spawn(
         PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
         std::ptr::from_ref(&job_handle).cast(),
         size_of::<HANDLE>(),
+    )?;
+    attributes.set(
+        PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
+        std::ptr::from_ref(&capabilities).cast(),
+        size_of::<SECURITY_CAPABILITIES>(),
     )?;
 
     // SAFETY: a zeroed structure of plain data, then the fields that matter.
@@ -190,10 +244,141 @@ pub fn spawn(
     drop(attributes);
 
     Ok((
-        JobChild { process, _job: job, id: info.dwProcessId },
+        JobChild { process, _job: job, container, id: info.dwProcessId },
         File::from(stdin_write),
         File::from(stdout_read),
     ))
+}
+
+/// The helper's environment block: `LOCALAPPDATA` alone, which `CreateProcessW`
+/// needs for an AppContainer (error 203 without it). A parent without it can't
+/// start a helper.
+fn environment(local_app_data: Option<std::ffi::OsString>) -> io::Result<Vec<u16>> {
+    let value = local_app_data
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "LOCALAPPDATA is not set"))?;
+    let mut block: Vec<u16> = OsStr::new("LOCALAPPDATA=").encode_wide().collect();
+    block.extend(value.encode_wide());
+    block.extend([0, 0]);
+    Ok(block)
+}
+
+/// A SID from `CreateAppContainerProfile`, freed when dropped.
+struct ContainerSid(PSID);
+
+impl Drop for ContainerSid {
+    fn drop(&mut self) {
+        // SAFETY: the SID came from that call, and is freed once.
+        unsafe { FreeSid(self.0) };
+    }
+}
+
+/// One helper's AppContainer. Dropped, it deletes the profile, waiting
+/// [`DELETE_WAIT`] at most: this runs while a database closes or locks, and how
+/// long the delete takes depends on what the helper left there.
+struct Container {
+    name: String,
+}
+
+impl Drop for Container {
+    fn drop(&mut self) {
+        let name = std::mem::take(&mut self.name);
+        wait_at_most(DELETE_WAIT, move || delete_profile(&name));
+    }
+}
+
+/// Runs `work` on a thread of its own and waits for it, up to `limit`. If no
+/// thread can start, it doesn't run (the next start's sweep has a profile to find).
+fn wait_at_most(limit: Duration, work: impl FnOnce() + Send + 'static) {
+    let (done, finished) = mpsc::channel::<()>();
+    let started = thread::Builder::new().name("helper-profile".into()).spawn(move || {
+        work();
+        let _ = done.send(());
+    });
+    match started {
+        Ok(_) => {
+            let _ = finished.recv_timeout(limit);
+        }
+        Err(err) => log::warn!("could not start deleting a helper's profile: {err}"),
+    }
+}
+
+fn delete_profile(name: &str) {
+    // SAFETY: the name is NUL-terminated and outlives the call.
+    let deleted = unsafe { DeleteAppContainerProfile(wide(name).as_ptr()) };
+    if deleted != 0 {
+        log::warn!("could not delete a helper's AppContainer profile: {deleted:#x}");
+    }
+}
+
+fn wide(text: &str) -> Vec<u16> {
+    OsStr::new(text).encode_wide().chain([0]).collect()
+}
+
+/// Deletes the profiles of helpers whose HoploDex has gone: one that crashed or
+/// was killed never reached its [`Container`]'s drop, and a delete can fail or be
+/// cut short by an exit. Run once at start-up, off the main thread. A profile
+/// whose process id has been reused by something else waits for a later start.
+pub fn sweep_profiles() {
+    let Some(base) = std::env::var_os("LOCALAPPDATA") else { return };
+    sweep_profiles_in(&Path::new(&base).join("Packages"));
+}
+
+fn sweep_profiles_in(packages: &Path) {
+    let Ok(entries) = std::fs::read_dir(packages) else { return };
+    let prefix = format!("{}.", CONTAINER.to_lowercase());
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some((process, counter)) =
+            name.strip_prefix(&prefix).and_then(|rest| rest.split_once('.'))
+        else {
+            continue;
+        };
+        if counter.parse::<u32>().is_ok() && process.parse().is_ok_and(|id| !process_is_running(id))
+        {
+            delete_profile(name);
+        }
+    }
+}
+
+fn process_is_running(id: u32) -> bool {
+    // SAFETY: plain system calls; a handle it returns is closed once.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, id);
+        if process.is_null() {
+            // Access denied is someone's running process. Only no such process isn't.
+            return GetLastError() != ERROR_INVALID_PARAMETER;
+        }
+        CloseHandle(process);
+        true
+    }
+}
+
+/// A new AppContainer with no capabilities for one helper.
+fn container() -> io::Result<(Container, ContainerSid)> {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let name =
+        format!("{CONTAINER}.{}.{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed));
+    let wide_name = wide(&name);
+    let mut sid: PSID = std::ptr::null_mut();
+    // SAFETY: NUL-terminated strings that outlive the calls, no capabilities,
+    // and a pointer to a local. Deleting first clears one left by a killed
+    // HoploDex that had this process id.
+    let answer = unsafe {
+        DeleteAppContainerProfile(wide_name.as_ptr());
+        CreateAppContainerProfile(
+            wide_name.as_ptr(),
+            wide_name.as_ptr(),
+            wide_name.as_ptr(),
+            std::ptr::null(),
+            0,
+            &mut sid,
+        )
+    };
+    if answer != 0 {
+        return Err(io::Error::from_raw_os_error(answer));
+    }
+    Ok((Container { name }, ContainerSid(sid)))
 }
 
 /// A job object holding the limits, and no inheritable handle to itself.
@@ -217,6 +402,25 @@ fn job(memory_limit: usize) -> io::Result<OwnedHandle> {
             JobObjectExtendedLimitInformation,
             std::ptr::from_ref(&limits).cast(),
             size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        ) == FALSE
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let ui = JOBOBJECT_BASIC_UI_RESTRICTIONS {
+            UIRestrictionsClass: JOB_OBJECT_UILIMIT_DESKTOP
+                | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS
+                | JOB_OBJECT_UILIMIT_EXITWINDOWS
+                | JOB_OBJECT_UILIMIT_GLOBALATOMS
+                | JOB_OBJECT_UILIMIT_HANDLES
+                | JOB_OBJECT_UILIMIT_READCLIPBOARD
+                | JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS
+                | JOB_OBJECT_UILIMIT_WRITECLIPBOARD,
+        };
+        if SetInformationJobObject(
+            job.as_raw_handle(),
+            JobObjectBasicUIRestrictions,
+            std::ptr::from_ref(&ui).cast(),
+            size_of::<JOBOBJECT_BASIC_UI_RESTRICTIONS>() as u32,
         ) == FALSE
         {
             return Err(io::Error::last_os_error());
@@ -337,4 +541,75 @@ fn quote(arg: &OsStr, out: &mut Vec<u16>) {
     }
     out.extend(std::iter::repeat_n(u16::from(b'\\'), backslashes * 2));
     out.push(u16::from(b'"'));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CONTAINER, delete_profile, environment, sweep_profiles, wait_at_most, wide};
+    use std::time::{Duration, Instant};
+    use windows_sys::Win32::Security::{FreeSid, Isolation::CreateAppContainerProfile};
+
+    /// A real profile named as a helper's of process `id`, and its folder.
+    fn profile(id: u32) -> (String, std::path::PathBuf) {
+        let name = format!("{CONTAINER}.{id}.999");
+        // One an interrupted run left.
+        delete_profile(&name);
+        let mut sid = std::ptr::null_mut();
+        let wide = wide(&name);
+        // SAFETY: NUL-terminated strings that outlive the call, no capabilities,
+        // and a pointer to a local; the SID it returns is freed once.
+        unsafe {
+            let made = CreateAppContainerProfile(
+                wide.as_ptr(),
+                wide.as_ptr(),
+                wide.as_ptr(),
+                std::ptr::null(),
+                0,
+                &mut sid,
+            );
+            assert_eq!(made, 0, "the profile wasn't made");
+            FreeSid(sid);
+        }
+        let folder = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap())
+            .join("Packages")
+            .join(name.to_lowercase());
+        (name, folder)
+    }
+
+    /// A delete that takes long, as a hostile helper can make it, doesn't hold up
+    /// the close or lock it runs in, and still finishes.
+    #[test]
+    fn a_slow_delete_is_not_waited_for_past_the_limit() {
+        let (done, finished) = std::sync::mpsc::channel();
+        let start = Instant::now();
+        wait_at_most(Duration::from_millis(50), move || {
+            std::thread::sleep(Duration::from_secs(3));
+            done.send(()).unwrap();
+        });
+        assert!(start.elapsed() < Duration::from_secs(2), "waited {:?}", start.elapsed());
+        finished.recv_timeout(Duration::from_secs(30)).expect("the work didn't finish");
+    }
+
+    /// A crashed HoploDex's profile goes at the next start; a running one's stays.
+    #[test]
+    fn the_sweep_deletes_only_the_profiles_of_processes_that_have_gone() {
+        // Process ids are multiples of 4, so no process has this one.
+        let (_, gone) = profile(4_294_967_291);
+        let (running_name, running) = profile(std::process::id());
+
+        sweep_profiles();
+
+        let (gone_there, running_there) = (gone.exists(), running.exists());
+        delete_profile(&running_name);
+        assert!(!gone_there, "{} is still there", gone.display());
+        assert!(running_there, "the sweep deleted a running HoploDex's profile");
+    }
+
+    /// Without `LOCALAPPDATA` no AppContainer can start, so no helper is tried.
+    #[test]
+    fn the_environment_block_is_local_app_data_alone_or_nothing() {
+        assert!(environment(None).is_err());
+        let block = environment(Some(r"C:\x".into())).unwrap();
+        assert_eq!(String::from_utf16(&block).unwrap(), "LOCALAPPDATA=C:\\x\0\0");
+    }
 }

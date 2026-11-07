@@ -488,6 +488,7 @@ third-party code, not just for the paths found so far.
     kqueue parent watch on macOS, the parent-owned job object on Windows;
     _Amended 2026-11-07: on Linux a seccomp filter too, on top of Landlock, and on macOS inherited descriptors are closed first ([007 research.md §11](../007-document-preview/research.md))._
   - `job.rs` (was `helper_job.rs`): spawning into the job object;
+    _Amended 2026-11-07: and an AppContainer with no capabilities ([007 research.md §11](../007-document-preview/research.md))._
   - `frames.rs` (was the framing half of `helper_protocol.rs`);
   - `handle.rs` (was the generic half of `helper_handle.rs`): start, time
     limits, kill on drop.

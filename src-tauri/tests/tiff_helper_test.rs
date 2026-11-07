@@ -19,13 +19,15 @@
 //!   has a `Default` of 20 s and 10 s. A load or render that passes its limit
 //!   returns an error, and the helper has been killed by then.
 //! - A self-check mode, `hoplodex --render-helper --self-check <port>
-//!   <file>`: it tries to open `<file>`, to connect to 127.0.0.1:<port> and to
+//!   <file> [<process id>]`: it tries to open `<file>`, to connect to 127.0.0.1:<port> and to
 //!   start a program, confines itself exactly as it does before serving
 //!   frames, tries all three again, and prints one JSON line then exits 0:
 //!   `{ "file_before": bool, "tcp_before": bool,   // could, before confining
 //!      "exec_before": bool,                       // could start a program
 //!      "file_after": bool, "tcp_after": bool,     // could, once confined
 //!      "exec_after": bool,                        // could start it, once confined
+//!      "process_after": bool | null,              // Windows, given <process id>: could open it
+//!      "windows_after": number | null,            // Windows: top-level windows it sees
 //!      "env_vars": number,                        // variables in its environment
 //!      "rlimit_core": [soft, max] | null,         // unix
 //!      "dumpable": bool | null,                   // Linux
@@ -39,9 +41,10 @@
 //!   release binary has no such mode, so the tests that use it are skipped
 //!   under `--release`.
 //!
-//! On Windows (007 research.md §11, amended 2026-10-07) HoploDex owns the helper's
-//! job object and starts the helper into it with `CreateProcessW`
-//! (`services::helper::job::spawn`). The helper refuses to serve
+//! On Windows (007 research.md §11, amended 2026-11-07) HoploDex owns the helper's
+//! job object and starts the helper into it, in an AppContainer, with `CreateProcessW`
+//! (`services::helper::job::spawn`). That needs a desktop session, so these tests
+//! go through `gui.ps1` over SSH (docs/development/windows.md). The helper refuses to serve
 //! outside such a job, so the self-check is run through `helper::job::spawn`,
 //! `HelperHandle::command` is what a helper outside a job is started with,
 //! and a parent that is terminated takes the helper with it.
@@ -300,14 +303,23 @@ fn it_holds_no_descriptor_it_inherited() {
     assert!(!held("descriptors_after").contains(&i64::from(INHERITED)), "{json}");
 }
 
-/// Windows' measures (007 research.md §11): the job object's one-process limit and
-/// the child-process policy stop the helper from starting a program. The
-/// mitigations don't confine files or the network, which the table doesn't ask.
+/// Windows' measures (007 research.md §11, amended 2026-11-07): the
+/// AppContainer has no capability, so the helper has no user file, no network
+/// and no reach into HoploDex from its first instruction, and the job object's
+/// one-process limit and child-process policy stop it starting a program. The
+/// probes mean something because this test, outside the container, can do each.
 #[cfg(all(debug_assertions, windows))]
 #[test]
-fn once_confined_it_cannot_start_a_program() {
-    let Report { json, .. } = self_check();
-
+fn once_confined_it_can_reach_no_file_network_program_or_parent() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("secret.txt");
+    std::fs::write(&file, b"not for the helper").unwrap();
+    std::fs::File::open(&file).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let ours = listener.accept().unwrap();
+    listener.set_nonblocking(true).unwrap();
     assert!(
         std::process::Command::new(r"C:\Windows\System32\whoami.exe")
             .stdout(std::process::Stdio::null())
@@ -315,7 +327,84 @@ fn once_confined_it_cannot_start_a_program() {
             .is_ok_and(|status| status.success()),
         "the probe program does not run here, so the check means nothing"
     );
+
+    let parent = std::process::id().to_string();
+    let (success, stdout) =
+        run_self_check(&["--self-check", &port.to_string(), file.to_str().unwrap(), &parent]);
+    assert!(success, "the self-check failed");
+    let json: Value =
+        serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{e}: {stdout}"));
+    drop(ours);
+
+    // Before confining too: the container is there from the first instruction.
+    assert_eq!(json["file_before"], false, "a helper opened a user's file: {json}");
+    assert_eq!(json["tcp_before"], false, "a helper connected: {json}");
+    assert_eq!(json["file_after"], false, "a confined helper opened a user's file: {json}");
+    assert_eq!(json["tcp_after"], false, "a confined helper connected: {json}");
     assert_eq!(json["exec_after"], false, "a confined helper started a program: {json}");
+    assert_eq!(json["process_after"], false, "a confined helper opened HoploDex: {json}");
+    assert!(listener.accept().is_err(), "a connection reached the listener: {json}");
+}
+
+/// Each helper has a container of its own (007 research.md §11, amended
+/// 2026-11-07), so one can't open another, which may hold another document.
+#[cfg(all(debug_assertions, windows))]
+#[test]
+fn once_confined_it_cannot_open_another_helper() {
+    let (sibling, _stdin, _stdout) = job::spawn(&exe(), ARGUMENT, MEMORY_LIMIT, &[]).unwrap();
+
+    let id = sibling.id().to_string();
+    let (success, stdout) = run_self_check(&["--self-check", "9", r"C:\nothing", &id]);
+
+    assert!(success, "the self-check failed");
+    let json: Value =
+        serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{e}: {stdout}"));
+    assert_eq!(json["process_after"], false, "a confined helper opened another: {json}");
+}
+
+/// Its container's profile, the one place it can write, goes with it (007
+/// research.md §11, amended 2026-11-07), so nothing stays for a later helper.
+#[cfg(windows)]
+#[test]
+fn its_containers_profile_is_deleted_when_it_ends() {
+    let (mut helper, stdin, stdout) = job::spawn(&exe(), ARGUMENT, MEMORY_LIMIT, &[]).unwrap();
+    let profile = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap())
+        .join("Packages")
+        .join(helper.container().to_lowercase());
+    assert!(profile.is_dir(), "no profile at {}", profile.display());
+
+    helper.kill().unwrap();
+    helper.wait().unwrap();
+    drop((helper, stdin, stdout));
+
+    // Its drop waits a moment for the delete, which on a slow machine goes on behind it.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while profile.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!profile.exists(), "{} is still there", profile.display());
+}
+
+/// The job's UI limits (007 research.md §11, amended 2026-11-07): a helper sees
+/// no other window, though this test, in the same desktop, sees several.
+#[cfg(all(debug_assertions, windows))]
+#[test]
+fn once_confined_it_cannot_see_other_windows() {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, TRUE};
+    use windows_sys::Win32::UI::WindowsAndMessaging::EnumWindows;
+
+    unsafe extern "system" fn count(_: HWND, seen: LPARAM) -> i32 {
+        // SAFETY: `seen` is the pointer to the local below.
+        unsafe { *(seen as *mut u32) += 1 };
+        TRUE
+    }
+    let mut ours = 0u32;
+    // SAFETY: the callback only writes the local, which outlives the call.
+    unsafe { EnumWindows(Some(count), std::ptr::from_mut(&mut ours) as LPARAM) };
+    assert!(ours > 1, "this test sees {ours} windows, so the check means nothing");
+
+    let json = self_check().json;
+    assert!(json["windows_after"].as_u64().unwrap() <= 1, "a helper saw other windows: {json}");
 }
 
 /// On Windows the job object is HoploDex's, so a helper that was not put in
@@ -344,12 +433,19 @@ fn started_outside_hoplodexs_job_it_refuses_to_serve() {
 
 #[cfg(debug_assertions)]
 #[test]
-fn its_environment_is_empty() {
+fn its_environment_holds_only_what_the_os_needs() {
     let json = self_check().json;
 
     // macOS's libSystem adds `__CF_USER_TEXT_ENCODING` to a process started
-    // with none, whatever the parent passes: it holds no more than that.
-    let allowed = if cfg!(target_os = "macos") { 1 } else { 0 };
+    // with none, whatever the parent passes. Windows has the `LOCALAPPDATA` an
+    // AppContainer needs, and `TEMP` and `TMP`, which starting one adds.
+    let allowed = if cfg!(target_os = "macos") {
+        1
+    } else if cfg!(windows) {
+        3
+    } else {
+        0
+    };
     assert!(json["env_vars"].as_u64().unwrap() <= allowed, "{json}");
 }
 
@@ -487,6 +583,10 @@ fn the_helper_dies_with_hoplodex_even_if_it_is_killed() {
     let took = killed.elapsed();
     // SAFETY: the handle is open and not used again.
     unsafe { CloseHandle(handle) };
+    // A killed parent can't delete its helper's profile, so this does.
+    let profile: Vec<u16> = format!("HoploDex.Helper.{}.0\0", parent.id()).encode_utf16().collect();
+    // SAFETY: a NUL-terminated name that outlives the call.
+    unsafe { windows_sys::Win32::Security::Isolation::DeleteAppContainerProfile(profile.as_ptr()) };
     parent.wait().unwrap();
 
     assert_eq!(waited, WAIT_OBJECT_0, "the helper outlived its parent by more than a second");
