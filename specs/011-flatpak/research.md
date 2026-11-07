@@ -1281,6 +1281,8 @@ _Amended 2026-10-19 (011 T078): checked against what was built._
 
 ## §20 Residual risks for the release security review (#21)
 
+_Amended by [spec 013](../013-troubleshooting-log/research.md): the log also reaches a file while the troubleshooting log is on, and no line names a path, only its shape._
+
 - **A compromised web process, with WebKit's sandbox off** (§9): reaches the
   home folder, removable drives, the unlocked keyring and the logind and
   screen-saver interfaces. With it on: only what WebKit's sub-sandbox shares

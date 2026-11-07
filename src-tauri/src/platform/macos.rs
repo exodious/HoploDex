@@ -435,9 +435,9 @@ pub fn ask_before_terminate(
     };
     let added = add_terminate_hook(class, decide);
     if !added {
+        let name = class.name().to_str().unwrap_or("A class");
         log::warn!(
-            "{} already answers applicationShouldTerminate:: Quit will not ask about unsaved changes",
-            class.name().to_string_lossy()
+            "{name} already answers applicationShouldTerminate:: Quit will not ask about unsaved changes"
         );
     }
     added

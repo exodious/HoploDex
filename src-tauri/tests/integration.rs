@@ -7,8 +7,9 @@
 //! `tiff_preview_test` (they change environment variables, which is sound only while
 //! no other test's thread reads the environment, so under `cargo test` they mustn't
 //! share a process with the rest), and `release_upgrade_test` (it keys with the
-//! pinned KDF, which a `test-kdf` build can choose only for a whole process) stay
-//! programs of their own.
+//! pinned KDF, which a `test-kdf` build can choose only for a whole process) and
+//! `log_contents_test` (it installs the process-wide logger) stay programs of their
+//! own.
 
 #[path = "support/preview_support.rs"]
 mod preview_support;
@@ -58,6 +59,7 @@ mod list_accessories_test;
 mod list_firearms_test;
 mod lock_held_test;
 mod lock_test;
+mod log_lines_test;
 mod machine_settings_test;
 mod mount_lifecycle_test;
 mod mount_test;
@@ -93,6 +95,7 @@ mod test_files_test;
 mod test_kdf_startup_test;
 mod text_limits_test;
 mod tiff_helper_test;
+mod troubleshooting_log_test;
 mod upgrade_steps_test;
 mod upgrade_test;
 mod valuation_test;

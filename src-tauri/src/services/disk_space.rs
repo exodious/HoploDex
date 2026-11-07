@@ -94,7 +94,10 @@ pub fn check_room(copies: &[(&Path, u64)]) -> Result<(), InsufficientSpace> {
                 });
             }
             Ok(_) => {}
-            Err(err) => log::warn!("could not measure the free space in {}: {err}", dir.display()),
+            Err(err) => log::warn!(
+                "could not measure the free space in {}: {err}",
+                crate::logging::place(dir)
+            ),
         }
     }
     Ok(())

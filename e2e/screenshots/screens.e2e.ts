@@ -1600,6 +1600,36 @@ describe("Screenshots: About HoploDex", () => {
     await $('[role="menu"]').waitForExist({ reverse: true });
   }
 
+  // 013 contracts/ui.md: the notice on the chooser, and About's section off, on
+  // and detailed.
+  it("the troubleshooting log: the notice and About's section", async () => {
+    delete process.env.HOPLODEX_LOG;
+    await relaunchApp();
+    await waitForChooser();
+    await chooseTheme("Light");
+    await settleChooserPlate();
+    await $(".hd-chooser__notice").waitForExist();
+    await shotBothThemes("95-log-notice");
+
+    await clickButton("About HoploDex");
+    await $(".hd-about__log-path").waitForExist();
+    await settle();
+    await shotBothThemes("96-about-log-on");
+
+    await clickButton("Detailed until you quit");
+    await settle();
+    await shotBothThemes("96-about-log-detailed");
+
+    await clickButton("Turn off");
+    await settle();
+    await shotBothThemes("96-about-log-off");
+    await closeDialog();
+
+    process.env.HOPLODEX_LOG = "off";
+    await relaunchApp();
+    await waitForChooser();
+  });
+
   it("the chooser's About, its license, a component and no match", async () => {
     await waitForChooser();
     await chooseTheme("Light");

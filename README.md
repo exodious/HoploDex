@@ -6,6 +6,42 @@ built with Tauri 2: a Rust backend (`src-tauri/`) owns persistence,
 encryption, and business logic; a React + TypeScript frontend (`src/`)
 owns the UI.
 
+## The troubleshooting log
+
+While HoploDex is before version 1.0, it keeps a troubleshooting log on this
+computer, up to 4 MiB and for up to 14 days. It is designed to leave out your
+records, file names, passphrases and how many items you have. Nothing is sent
+anywhere, and you can read it before you share it. You can turn it off in About.
+From version 1.0 it is off unless you turn it on.
+
+To gather a log for a problem you can repeat:
+
+1. Open **About HoploDex**, and turn the log on if it is off.
+2. Choose **Detailed until you quit**, and repeat the problem.
+3. Choose **Show log file**, read it, and attach it to your report.
+
+If the problem happens before you can reach About, start HoploDex with extra
+detail for that one run:
+
+| Where | The one line |
+|---|---|
+| Linux | `HOPLODEX_LOG=debug hoplodex` |
+| Flatpak | `flatpak run --env=HOPLODEX_LOG=debug io.github.exodious.HoploDex` |
+| macOS | `open --env HOPLODEX_LOG=debug -a HoploDex` |
+| Windows (PowerShell) | `$env:HOPLODEX_LOG='debug'; & "<the folder HoploDex is installed in>\hoplodex.exe"` |
+
+The file is `hoplodex.log` in the `logs` folder of HoploDex's cache:
+
+| Where | The folder |
+|---|---|
+| Linux | `~/.cache/io.github.exodious.HoploDex/logs` |
+| Flatpak | `~/.var/app/io.github.exodious.HoploDex/cache/io.github.exodious.HoploDex/logs` |
+| macOS | `~/Library/Caches/io.github.exodious.HoploDex/logs` |
+| Windows | `%LOCALAPPDATA%\io.github.exodious.HoploDex\logs` |
+
+`HOPLODEX_LOG=off` writes nothing for that run, and `HOPLODEX_LOG=on` writes at the
+usual level.
+
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the development container,

@@ -52,6 +52,7 @@ pub mod photo;
 pub mod record;
 pub mod registration;
 pub(crate) mod rules;
+pub mod troubleshooting_log;
 
 pub use document_attachment::DocumentAttachment;
 pub use document_opening::DocumentOpening;

@@ -50,6 +50,11 @@ pub trait Opener: Send + Sync {
     }
 
     fn open(&self, path: &Path) -> Result<(), OpenFailure>;
+
+    /// Shows `path` in the OS's file manager (013 FR-024).
+    fn reveal(&self, _path: &Path) -> Result<(), OpenFailure> {
+        Err(OpenFailure::Other("this opener can't show a file".into()))
+    }
 }
 
 /// What `open_document` answers: `opened` is false when the user cancelled
@@ -223,6 +228,7 @@ pub mod ops {
         opened_documents_dir: &Path,
         id: i64,
     ) -> Result<OpenedDocument, CommandError> {
+        log::debug!("opening a document in another app");
         // 1. The document, and the open it was read from.
         let (document, stamp) = session.read_stamped(session_id, |conn| get_document(conn, id))?;
         // 2. Refused by the attach rules before any dialog (007 FR-017).
@@ -308,7 +314,7 @@ pub mod ops {
         if let Err(err) = secure_delete_file(path) {
             log::warn!(
                 "could not delete the opened-document copy in {}: {err}",
-                crate::logging::folder_of(path)
+                crate::logging::place(path)
             );
         }
         if let Some(folder) = path.parent() {
@@ -341,16 +347,10 @@ pub fn clear_opened_documents_cache(app: &AppHandle) {
     for path in
         crate::services::crash_reports::sweep_web_view_reports(&app_dirs::web_view_dirs(&cache_dir))
     {
-        log::warn!(
-            "could not delete a web view crash report in {}",
-            crate::logging::folder_of(&path)
-        );
+        log::warn!("could not delete a web view crash report in {}", crate::logging::place(&path));
     }
     for path in ops::clear_opened_documents(&cache_dir.join(OPENED_DOCUMENTS_DIR)) {
-        log::warn!(
-            "could not delete an opened-document copy in {}",
-            crate::logging::folder_of(&path)
-        );
+        log::warn!("could not delete an opened-document copy in {}", crate::logging::place(&path));
     }
 }
 
@@ -544,10 +544,55 @@ pub fn portal_open(
     })?;
 
     // 3. The answer.
-    match answer.recv_timeout(timeout) {
+    let answered = answer.recv_timeout(timeout);
+    log::debug!("portal: OpenFile answered {:?}", answered.as_ref().ok());
+    match answered {
         Ok(2) => Err(OpenFailure::NoApp),
         Ok(_) | Err(_) => Ok(()),
     }
+}
+
+/// A D-Bus error's name, whose message can name a file (logging.rs).
+#[cfg(target_os = "linux")]
+fn portal_error_name(err: &zbus::Error) -> String {
+    match err {
+        zbus::Error::MethodError(name, _, _) => name.to_string(),
+        zbus::Error::FDO(fdo) => zbus::DBusError::name(fdo.as_ref()).to_string(),
+        _ => "not a D-Bus reply".to_owned(),
+    }
+}
+
+/// The OpenURI portal's `OpenDirectory` with a read-only descriptor for `file`,
+/// which shows the folder it is in (013 research.md §10): the opener plugin's
+/// own route for this can't reach the portal from inside a Flatpak. A refusal
+/// is reported by the error's name only, since its message can name the file.
+#[cfg(target_os = "linux")]
+pub fn portal_open_directory(
+    connection: &zbus::Connection,
+    file: &Path,
+) -> Result<(), OpenFailure> {
+    use std::collections::HashMap;
+
+    use zbus::blocking::{Connection as Blocking, Proxy};
+    use zbus::zvariant::{OwnedFd, Value};
+
+    log::debug!("portal: OpenDirectory");
+    let opened = std::fs::File::open(file).map_err(|e| OpenFailure::Other(format!("{e}")))?;
+    let bus = Blocking::from(connection.clone());
+    let portal = Proxy::new(
+        &bus,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.OpenURI",
+    )
+    .map_err(|_| OpenFailure::NoApp)?;
+    let fd = OwnedFd::from(std::os::fd::OwnedFd::from(opened));
+    let options: HashMap<&str, Value<'_>> = HashMap::new();
+    portal.call_method("OpenDirectory", &("", fd, options)).map_err(|err| {
+        log::debug!("portal: OpenDirectory refused: {}", portal_error_name(&err));
+        OpenFailure::NoApp
+    })?;
+    Ok(())
 }
 
 #[cfg(all(target_os = "linux", app_opener))]
@@ -571,6 +616,20 @@ impl<R: tauri::Runtime> AppOpener<R> {
 /// suffers reaches it, and a thread reaps it.
 #[cfg(all(unix, app_opener))]
 impl<R: tauri::Runtime> Opener for AppOpener<R> {
+    /// The file manager, or the folder through the launcher where none answers
+    /// (013 research.md §10); inside a Flatpak, the portal.
+    fn reveal(&self, path: &Path) -> Result<(), OpenFailure> {
+        #[cfg(target_os = "linux")]
+        if let OpenerRoute::Portal { .. } = self.route {
+            let Some(connection) = self.portal() else { return Err(OpenFailure::NoApp) };
+            return portal_open_directory(&connection, path);
+        }
+        if tauri_plugin_opener::reveal_item_in_dir(path).is_ok() {
+            return Ok(());
+        }
+        self.open(path.parent().unwrap_or(path))
+    }
+
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
         #[cfg(target_os = "linux")]
         if let OpenerRoute::Portal { timeout } = self.route {
@@ -665,6 +724,10 @@ impl<R: tauri::Runtime> Opener for AppOpener<R> {
         windows_has_app(extension)
     }
 
+    fn reveal(&self, path: &Path) -> Result<(), OpenFailure> {
+        tauri_plugin_opener::reveal_item_in_dir(path).map_err(|e| OpenFailure::Other(e.to_string()))
+    }
+
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
         use tauri_plugin_opener::OpenerExt;
 
@@ -687,6 +750,11 @@ pub struct E2eOpener;
 
 #[cfg(feature = "e2e")]
 impl Opener for E2eOpener {
+    /// Recorded like an opened copy: nothing to start on the test machine.
+    fn reveal(&self, path: &Path) -> Result<(), OpenFailure> {
+        self.open(path)
+    }
+
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
         use std::io::Write;
 
