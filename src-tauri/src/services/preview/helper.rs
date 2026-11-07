@@ -88,7 +88,7 @@ fn serve() -> io::Result<()> {
 mod self_check {
     use std::fs::File;
     use std::net::TcpStream;
-    use std::process::{Command, Stdio};
+    use std::process::Command;
 
     use serde_json::json;
 
@@ -111,14 +111,7 @@ mod self_check {
         };
         let can_open = || File::open(file).is_ok();
         let can_connect = || TcpStream::connect(("127.0.0.1", port)).is_ok();
-        let can_start = || {
-            Command::new(PROGRAM)
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .is_ok()
-        };
+        let can_start = || Command::new(PROGRAM).status().is_ok();
         let file_before = can_open();
         let tcp_before = can_connect();
         let exec_before = can_start();
