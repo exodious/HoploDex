@@ -142,8 +142,8 @@ impl JobChild {
 }
 
 /// Starts `exe <mode> <args>` (`mode` being the helper's argument, such as
-/// `--render-helper`) into a new job object of its own with `memory_limit`
-/// bytes (as Linux's `RLIMIT_DATA`), and a pipe for its stdin and one for its
+/// `--render-helper`) in a new AppContainer, and into a new job object of its own
+/// with `memory_limit` bytes (as Linux's `RLIMIT_DATA`), and a pipe for its stdin and one for its
 /// stdout. `args` are for tests (the self-check); the app passes none. The pipe ends are plain `File`s, which
 /// read and write synchronously: `ChildStdin` and `ChildStdout` wait on
 /// overlapped I/O, which a `CreatePipe` handle does not do (a read would
