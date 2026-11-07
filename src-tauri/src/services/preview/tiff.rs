@@ -24,8 +24,9 @@ use super::helper_protocol::Pixels;
 const DEFAULT_DPI: f64 = 200.0;
 
 /// The most directories one file may have. A scan of more pages than this is
-/// reported as damaged rather than shown partly.
-const MAX_PAGES: usize = 10_000;
+/// reported as damaged rather than shown partly. The app applies it too, to
+/// the list a helper sends (`helper_protocol::read_response`).
+pub(super) const MAX_PAGES: usize = 10_000;
 
 /// The widest page the helper makes, and the most pixels in it
 /// (007 research.md §14).
