@@ -12,7 +12,8 @@ unlocked, logged-in session: while the screen is locked, WKWebView reports
 every page as hidden and gives it no animation frames, so every step times
 out with "The app never settled". The tests that use real input
 (`e2e/support/realInput.ts`, X11 only: `databases`' owl beak, `backups`' restore-dialog
-regressions, all of `cartridges-actions`, `regulated-items` and the
+regressions, one test each in `browse-search`, `browser-controls`,
+`document-preview` and `locking`, all of `cartridges-actions`, `regulated-items` and the
 `accessories-*` files) are skipped, and reported as
 pending. `quit-cleanup.py` runs there too (see [Quit cleanup](e2e.md#quit-cleanup)), and so does the
 screenshot walk, but macOS keeps a window within the screen, so the
@@ -75,7 +76,7 @@ never gets a window: the app starts, logs, and waits forever. Run the E2E
 suite from a Terminal in the VM, or from SSH start the app through Terminal
 (`open -a Terminal run.command`) and drive it from SSH, as
 `scripts/macos/pdf-surface-check.sh` does. Whatever posts mouse input or
-takes screenshots (`sshd-session` over SSH, or Terminal) needs Accessibility
+takes screenshots (`sshd-keygen-wrapper` over SSH, or Terminal) needs Accessibility
 and Screen Recording in the VM's Privacy & Security settings. Until someone
 answers it, the first request's prompt sits over the middle of the screen
 and catches the clicks. The tart VM and podman's VM together can need more

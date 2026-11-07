@@ -14,9 +14,8 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\setup-system.ps1 -User 
 powershell -ExecutionPolicy Bypass -File scripts\windows\setup-user.ps1
 ```
 
-The repository is private, so on a new computer copy the two scripts over
-first; the system script installs Git, and `-GitHubCli` adds `gh` to clone
-with. Run the user script as the account that builds: rustup, npm 12 and
+On a new computer without Git, copy the two scripts over first; the system
+script installs Git, and `-GitHubCli` adds `gh`. Run the user script as the account that builds: rustup, npm 12 and
 the cargo tools install into that account's profile, so an elevated shell
 signed in as another administrator sets up the wrong account.
 

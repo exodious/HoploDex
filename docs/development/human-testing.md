@@ -48,7 +48,7 @@ data lives in `.human-testing/` (git-ignored): two databases in `HoploDex/`,
 by "Workshop PC", with pending changes), both opened with the passphrase the
 script prints; two backups of "Main collection" in `Backups/`, its custom
 backup folder; the `machine.json` listing both databases; and a set of
-spreadsheets in `import-samples/` to try File > Import with: clean,
+spreadsheets in `import-samples/` to try the top bar's Import with: clean,
 conflicting and invalid rows, sheets exported before a column existed, mounts,
 accessories and registrations, and one the import refuses as a whole,
 `import-refused-too-many-sheets.xlsx` (20 sheets, where an import takes at

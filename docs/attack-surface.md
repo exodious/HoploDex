@@ -154,7 +154,7 @@ and peer review catch that.
 
 ## document-copies: decrypted copies for another app (001 FR-035)
 
-- **Code:** `src-tauri/src/commands/documents.rs`; `src-tauri/src/services/consent.rs`; `src-tauri/src/services/document_types.rs`; `src-tauri/src/services/machine_settings.rs`; `src-tauri/src/services/sandbox.rs` (`OpenerRoute::Portal`); `src-tauri/src/app_dirs.rs`
+- **Code:** `src-tauri/src/commands/documents.rs` (`OpenerRoute::Portal`); `src-tauri/src/services/consent.rs`; `src-tauri/src/services/document_types.rs`; `src-tauri/src/services/machine_settings.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/app_dirs.rs`
 - **Ask:**
   - Is each copy written under the session lock, into the session that asked (#65)?
   - Is it `0700`/`0600` from creation, following no link and entering no other owner's folder, with a protected DACL on Windows (#71)? Does it get the canonical extension and a `Zone.Identifier` or `com.apple.quarantine` mark?
@@ -193,7 +193,7 @@ and peer review catch that.
 - **Code:** `src-tauri/src/services/helper/**`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/helper_handle.rs`; `src-tauri/src/services/preview/helper_protocol.rs`; `src-tauri/src/services/crash_reports.rs` (`quiet_error_reporting`, `end_process_on_panic`); `src-tauri/src/main.rs` (`--render-helper`, `--import-helper`, `--webkit-sandbox-probe`)
 - **Ask:**
   - Does no database, key or IPC reach a child? Are core dumps off, and on Windows are Windows Error Reporting's box, heap and snapshot off (`quiet_error_reporting`)? On Windows, does a child that hits its job's memory cap end without Windows Error Reporting (`allocator.rs`)?
-  - Linux: Landlock where the kernel has it (no opening a file to read or write it, no creating or removing one, no starting a program; TCP refused from ABI 4, kernel 6.7; abstract Unix sockets from ABI 6, kernel 6.12; pathname Unix sockets from ABI 9, kernel 7.1) and `RLIMIT_DATA`. macOS: `sandbox_init` with the profile `(version 1)(deny default)`. Windows: a job object (kill on close, one process, 2 GiB) and process mitigations.
+  - Linux: Landlock where the kernel has it (no opening a file to read or write it, no creating or removing one, no starting a program; TCP refused from ABI 4, kernel 6.7; abstract Unix sockets from ABI 6, kernel 6.12; pathname Unix sockets from ABI 9, kernel 7.1) and `RLIMIT_DATA`. macOS: `sandbox_init` with the profile `(version 1)(deny default)`. Windows: a job object (kill on close, one process, 2 GiB for the render helper and 512 MiB for the import helper) and process mitigations.
   - What can a confined helper still reach on each OS: files, file metadata, TCP and UDP, sockets, credential stores, and on kernels without Landlock?
   - Does each child die with the app (`PR_SET_PDEATHSIG`, the job, `kqueue`)?
   - Are frames bounded both ways?
