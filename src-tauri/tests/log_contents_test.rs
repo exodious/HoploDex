@@ -278,13 +278,21 @@ fn all_text_below(folder: &Path, found: &mut Vec<PathBuf>) {
 #[test]
 fn the_planted_text_of_a_journey_never_reaches_the_log() {
     let Some(root) = std::env::var_os(CHILD) else {
-        let (_dir, root) = in_a_child("the_planted_text_of_a_journey_never_reaches_the_log", true);
+        let (_dir, root, stderr) =
+            in_a_child_with_stderr("the_planted_text_of_a_journey_never_reaches_the_log", true);
         let logs = root.join("cache").join(file::FOLDER);
         let text = log_text(&logs);
-        for planted in PLANTED {
-            assert!(!text.contains(planted), "{planted} reached the log:\n{text}");
-            assert!(!text.contains(&planted.to_lowercase()), "{planted}:\n{text}");
+        // Both outputs: the rule is one (013 FR-015), and a library's line reaches
+        // only standard error (013 FR-019).
+        for output in [&text, &stderr] {
+            for planted in PLANTED {
+                assert!(!output.contains(planted), "{planted} reached the log:\n{output}");
+                assert!(!output.contains(&planted.to_lowercase()), "{planted}:\n{output}");
+            }
         }
+        assert!(!stderr.contains("[DEBUG]"), "013 FR-026:\n{stderr}");
+        // Not vacuous: standard error holds the journey's normal lines.
+        assert!(stderr.contains("[INFO] started --import-helper"), "{stderr}");
         // Not vacuous: the file holds what the journey did, and shapes.
         for said in [
             "[DEBUG] creating a database at ~/*/*.hoplodex",
@@ -570,7 +578,7 @@ mod portals {
                     .at(DESKTOP_PATH, OpenUri { accepted: AtomicBool::new(false) }),
             )
             .unwrap();
-            let (_dir, folder, _) = in_a_child_with_env(
+            let (_dir, folder, stderr) = in_a_child_with_env(
                 "portals::calls_and_results_reach_the_file_by_name_only",
                 true,
                 &[("DBUS_SESSION_BUS_ADDRESS", bus.address())],
@@ -592,6 +600,8 @@ mod portals {
                 assert!(text.contains(&line), "no {line:?} in:\n{text}");
             }
             assert!(!text.contains("PLANTED"), "{text}");
+            assert!(!stderr.contains("PLANTED"), "{stderr}");
+            assert!(!stderr.contains("[DEBUG]"), "013 FR-026:\n{stderr}");
             return;
         };
         let root = PathBuf::from(root);
@@ -624,7 +634,7 @@ mod portals {
         let Some(root) = std::env::var_os(CHILD) else {
             let bus = Bus::start();
             let _desktop = bus.serve(DESKTOP, DESKTOP_PATH, NoVersion);
-            let (_dir, folder, _) = in_a_child_with_env(
+            let (_dir, folder, stderr) = in_a_child_with_env(
                 "portals::a_refused_version_is_logged_by_name_only",
                 true,
                 &[("DBUS_SESSION_BUS_ADDRESS", bus.address())],
@@ -633,6 +643,8 @@ mod portals {
             let line = format!("[WARN] no Secret portal: the Secret portal's version: {FAILED}\n");
             assert!(text.contains(&line), "no {line:?} in:\n{text}");
             assert!(!text.contains("PLANTED"), "{text}");
+            assert!(stderr.contains("[WARN] no Secret portal: "), "{stderr}");
+            assert!(!stderr.contains("PLANTED"), "{stderr}");
             return;
         };
         logging::init_with(None, Some("on".into()));
