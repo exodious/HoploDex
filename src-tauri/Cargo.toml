@@ -417,6 +417,14 @@ lto = true
 opt-level = "s"
 strip = true
 
+# Every TIFF page preview encodes a PNG. At 3 a full page encodes about 10%
+# faster than at "s" (measured on synthetic images), and these two crates add
+# about 13 KB to the binary.
+[profile.release.package.png]
+opt-level = 3
+[profile.release.package.fdeflate]
+opt-level = 3
+
 # E2E builds (`cargo build --profile e2e`): the release profile without fat
 # LTO and its single codegen unit, so a backend change relinks in seconds
 # rather than a minute. Keeps `panic = "abort"`, so a panic behaves as in the

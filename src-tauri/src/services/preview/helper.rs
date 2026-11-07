@@ -88,7 +88,7 @@ fn serve() -> io::Result<()> {
 mod self_check {
     use std::fs::File;
     use std::net::TcpStream;
-    use std::process::{Command, Stdio};
+    use std::process::Command;
 
     use serde_json::json;
 
@@ -96,8 +96,10 @@ mod self_check {
 
     /// A program that exists on the OS and exits at once: whether the
     /// confined helper can start it is the probe.
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     const PROGRAM: &str = "/bin/true";
+    #[cfg(target_os = "macos")]
+    const PROGRAM: &str = "/usr/bin/true";
     #[cfg(windows)]
     const PROGRAM: &str = r"C:\Windows\System32\whoami.exe";
 
@@ -109,15 +111,12 @@ mod self_check {
         };
         let can_open = || File::open(file).is_ok();
         let can_connect = || TcpStream::connect(("127.0.0.1", port)).is_ok();
+        let can_start = || Command::new(PROGRAM).status().is_ok();
         let file_before = can_open();
         let tcp_before = can_connect();
+        let exec_before = can_start();
         let Ok(confinement) = confine::confine(MEMORY_LIMIT) else { return 3 };
-        let exec_after = Command::new(PROGRAM)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok();
+        let exec_after = can_start();
         #[cfg(unix)]
         let rlimit_core = {
             let mut limit = libc::rlimit { rlim_cur: 1, rlim_max: 1 };
@@ -137,6 +136,7 @@ mod self_check {
             json!({
                 "file_before": file_before,
                 "tcp_before": tcp_before,
+                "exec_before": exec_before,
                 "file_after": can_open(),
                 "tcp_after": can_connect(),
                 "exec_after": exec_after,

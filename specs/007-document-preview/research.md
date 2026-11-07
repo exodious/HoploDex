@@ -754,6 +754,8 @@ _Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (c
   | No core dump of document content | `RLIMIT_CORE = 0`, `PR_SET_DUMPABLE 0` | `RLIMIT_CORE = 0` | `SEM_NOGPFAULTERRORBOX`, WER excluded |
   | Time limit | 20 s for `Load`, 10 s per `Render`, enforced by the parent killing it | same | same |
 
+  _Amended 2026-11-06: on macOS `sandbox_init` now takes the profile `(version 1)(deny default)`, since macOS 27 kills a process that enters the named pure-computation profile; what each OS's measures cover is in [docs/attack-surface.md](../../docs/attack-surface.md)._
+
 - **Rationale**:
   - The release profile is `panic = "abort"`. The decoders are memory-safe
     but can panic or try huge allocations on hostile input (a TIFF
