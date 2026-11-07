@@ -443,7 +443,7 @@ impl Output {
         let path = inner.folder.as_ref().map(|folder| folder.join(file::CURRENT));
         TroubleshootingLog {
             state: inner.state,
-            exists: path.as_deref().is_some_and(|path| std::fs::symlink_metadata(path).is_ok()),
+            exists: path.as_deref().is_some_and(crate::services::scratch::is_plain_file),
             path: path.map(|path| path.to_string_lossy().into_owned()),
             failed: inner.failed,
         }

@@ -559,4 +559,9 @@ fn showing_the_log_file_gives_the_portal_a_read_only_descriptor() {
     let _portal = Portal::serve(&bus, Answer::Refuse);
     let client = bus.connect();
     assert_no_app(&portal_open_directory(&client, &file));
+
+    // A link swapped in at the name isn't followed (013 FR-010).
+    let link = file.with_file_name("a link");
+    std::os::unix::fs::symlink(&file, &link).unwrap();
+    assert!(portal_open_directory(&client, &link).is_err());
 }

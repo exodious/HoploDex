@@ -738,7 +738,7 @@ pub mod ops {
                 Ok(false) => Err(CommandError::passphrase_incorrect(None, None)
                     .on_field("passphrase", "That isn't this database's passphrase.".to_owned())),
                 Err(err) => {
-                    log::error!("could not check the passphrase to save: {err}");
+                    log::error!("could not check the passphrase to save: {}", err.for_log());
                     Err(CommandError::new("INTERNAL_ERROR", "The passphrase couldn't be checked."))
                 }
             }

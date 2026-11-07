@@ -253,7 +253,7 @@ and peer review catch that.
   - Do serde errors go through `logging::json_error`, database errors through `logging::db_error`, `OpenError::for_log` or `UpgradeError::for_log`, and paths through `logging::place`? Can `place`'s shape show a name: a user name under a kept root, a server's or share's name, an extension off its short list?
   - Does the file take only HoploDex's own targets, whatever the level, and do debug lines stay out of standard error and the journal (013 FR-019, FR-026)?
   - Can the default outlive 0.x (`logging::default_on`), or a raise, or a return from one, save a choice (013 FR-001, contracts/tauri-commands.md)?
-  - Are the file's limits kept: at most 2 MiB and one rotated file, deleted after 14 days, deleted when turned off and at a start with the log off? Is it created exclusively and never followed through a planted link? Is it created only readable by this user on Unix?
+  - Are the file's limits kept: at most 2 MiB and one rotated file, deleted 14 days after it was made, deleted when turned off and at a start with the log off? Is it created exclusively and never followed through a planted link? Is it created only readable by this user on Unix?
   - Can the page read the file's contents, or choose what `show_troubleshooting_log` shows? It takes no argument, and the only path is Rust's.
   - Is the file out of every backup and export?
   - Outside a Flatpak, does Show log file reach only `tauri_plugin_opener::reveal_item_in_dir` (`FileManager1.ShowItems` on Linux, the OS's file manager on macOS and Windows) or, on Linux and macOS where that fails, the log's folder through `xdg-open` or `open`, with only Rust's path? On any route, can a link planted at the log's name make it show or hand over anything else?
@@ -265,6 +265,7 @@ and peer review catch that.
   - The file is plain text, readable by the same OS user and anything running as them.
   - OS error text is written as it comes, with only the home folder replaced.
   - A compromised main web view can turn the log on or off and raise the level, without reading it.
+  - A file past 14 days stays until the next start: nothing of the app runs while it is closed.
 - **Since:** 011; the file 013.
 
 ## shipped-build: what only test and E2E builds may contain

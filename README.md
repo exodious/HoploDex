@@ -12,7 +12,8 @@ While HoploDex is before version 1.0, it keeps a troubleshooting log on this
 computer, up to 4 MiB and for up to 14 days. It is designed to leave out your
 records, file names, passphrases and how many items you have. Nothing is sent
 anywhere, and you can read it before you share it. You can turn it off in About.
-From version 1.0 it is off unless you turn it on.
+From version 1.0 it is off unless you turn it on. A file over 14 days old is
+deleted the next time HoploDex starts.
 
 To gather a log for a problem you can repeat:
 
