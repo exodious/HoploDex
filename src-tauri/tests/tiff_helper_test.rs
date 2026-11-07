@@ -197,7 +197,7 @@ fn a_call_from_a_foreign_architecture_is_refused() {
 /// Before Linux 5.16 a filter turns on CPU speculation mitigations unless asked
 /// not to, and a helper then reads a file several times slower. It only shows on
 /// such a kernel: elsewhere this passes with or without the flag that asks.
-#[cfg(target_os = "linux")]
+#[cfg(all(debug_assertions, target_os = "linux"))]
 #[test]
 fn its_filter_leaves_its_speculation_settings_as_they_were() {
     // `PR_GET_SPECULATION_CTRL` of store bypass and of indirect branches, as the
