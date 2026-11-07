@@ -473,6 +473,8 @@ before/after pairs on one platform.
 With Windows' "Show animations in Windows" off (Settings › Accessibility ›
 Visual effects), WebView2 reports reduced motion and `databases`' catalogue-plate
 test fails; `setup-system.ps1 -AutoLogon` turns it on.
+Windows CI runs the E2E sandboxes on the runner's temp drive (`D:`), so
+`scanRoots` in `document-preview.e2e.ts` no longer scans the `C:` temp folder there.
 A WebDriver screenshot leaves out the PDF surface (a child web view), so where
 Linux takes the X display with `import -window root`, `document-preview`'s pixel checks and
 the walk's viewer shots (`shotDisplay`) run `e2e/scripts/window-shot.ps1` on

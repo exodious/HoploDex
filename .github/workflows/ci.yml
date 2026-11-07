@@ -252,9 +252,9 @@ jobs:
       - name: Build the frontend
         if: steps.scope.outputs.run == 'true'
         run: npm run build
-      # Experiment: runner.temp is on D:, the system drive's temp folder on C:.
-      # The `runner` context isn't available in a job-level `env`, so this and
-      # Quit cleanup each set it.
+      # Sandboxes run on runner.temp (D:), not the system drive's temp folder
+      # (C:), where seeds took about 3.5x longer (#179). The `runner` context
+      # isn't available in a job-level `env`, so this and Quit cleanup each set it.
       - name: E2E
         if: steps.scope.outputs.run == 'true'
         env:
