@@ -1,7 +1,7 @@
 //! A confined helper's confinement (the TIFF render helper's and the import
-//! helper's, 008 research.md §8): Landlock on Linux, a job object (made by
-//! HoploDex, checked here) and mitigations on Windows, the sandbox profile on
-//! macOS (007 research.md §11).
+//! helper's, 008 research.md §8): a seccomp filter and Landlock on Linux, a job
+//! object (made by HoploDex, checked here) and mitigations on Windows, the
+//! sandbox profile on macOS (007 research.md §11).
 //!
 //! [`confine`] is called by the helper before it reads a byte of any document
 //! (`preview::helper::run`). Each branch also makes the helper die with HoploDex at
@@ -25,8 +25,9 @@ pub struct Confinement {
 /// HoploDex made for it may have on Windows (`job::spawn` is given the same
 /// number); macOS has no enforced limit. A measure that can
 /// fail without making the helper unsafe to run is best effort (Landlock on
-/// an older kernel); one that can't (no new privileges, the core dump limit)
-/// is an error, and the helper exits without reading a document.
+/// an older kernel); one that can't (no new privileges, the core dump limit,
+/// the seccomp filter) is an error, and the helper exits without reading a
+/// document.
 pub fn confine(memory_limit: usize) -> Result<Confinement, String> {
     imp::confine(memory_limit)
 }
@@ -39,6 +40,12 @@ pub fn log_support_once() {
     ONCE.call_once(imp::log_support);
 }
 
+/// The system calls the filter refuses outright: the self-check tries each.
+#[cfg(all(target_os = "linux", debug_assertions))]
+pub fn refused_calls() -> impl Iterator<Item = libc::c_long> {
+    imp::REFUSED.iter().chain(imp::REFUSED_ON_THIS_ARCH).copied()
+}
+
 #[cfg(target_os = "linux")]
 mod imp {
     use landlock::{
@@ -47,6 +54,190 @@ mod imp {
     };
 
     use super::Confinement;
+
+    /// The architecture a system call must come from for the filter's numbers
+    /// to mean what they say.
+    #[cfg(target_arch = "x86_64")]
+    const AUDIT_ARCH: u32 = 0xC000_003E; // AUDIT_ARCH_X86_64
+    #[cfg(target_arch = "aarch64")]
+    const AUDIT_ARCH: u32 = 0xC000_00B7; // AUDIT_ARCH_AARCH64
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    compile_error!("the helpers' seccomp filter needs this architecture's guard and call numbers");
+
+    /// x32's system calls are x86_64's numbers with this bit set.
+    const X32_SYSCALL_BIT: u32 = 0x4000_0000;
+
+    // Newer than the `libc` crate's lists; every architecture since 5.1 shares
+    // these numbers.
+    const SYS_FCHMODAT2: libc::c_long = 452;
+    const SYS_STATMOUNT: libc::c_long = 457;
+    const SYS_LISTMOUNT: libc::c_long = 458;
+    const SYS_SETXATTRAT: libc::c_long = 463;
+    const SYS_GETXATTRAT: libc::c_long = 464;
+    const SYS_LISTXATTRAT: libc::c_long = 465;
+    const SYS_REMOVEXATTRAT: libc::c_long = 466;
+    const SYS_OPEN_TREE_ATTR: libc::c_long = 467;
+    const SYS_FILE_GETATTR: libc::c_long = 468;
+    const SYS_FILE_SETATTR: libc::c_long = 469;
+
+    /// What a helper never needs, on every architecture: it reads its pipe,
+    /// computes and writes its pipe. A call that isn't listed is allowed, so a
+    /// C library's choice of calls can't end a helper (007 research.md §11).
+    pub const REFUSED: &[libc::c_long] = &[
+        // Sockets.
+        libc::SYS_socket,
+        libc::SYS_socketpair,
+        // Other processes and their memory, and starting a program.
+        libc::SYS_ptrace,
+        libc::SYS_process_vm_readv,
+        libc::SYS_process_vm_writev,
+        libc::SYS_process_madvise,
+        libc::SYS_process_mrelease,
+        libc::SYS_pidfd_open,
+        libc::SYS_pidfd_getfd,
+        libc::SYS_pidfd_send_signal,
+        libc::SYS_kcmp,
+        libc::SYS_tkill,
+        libc::SYS_rt_sigqueueinfo,
+        libc::SYS_rt_tgsigqueueinfo,
+        libc::SYS_migrate_pages,
+        libc::SYS_move_pages,
+        libc::SYS_sched_setaffinity,
+        libc::SYS_sched_setparam,
+        libc::SYS_sched_setscheduler,
+        libc::SYS_sched_setattr,
+        libc::SYS_setpriority,
+        libc::SYS_ioprio_set,
+        libc::SYS_execve,
+        libc::SYS_execveat,
+        // Namespaces and mounts.
+        libc::SYS_unshare,
+        libc::SYS_setns,
+        libc::SYS_mount,
+        libc::SYS_umount2,
+        libc::SYS_pivot_root,
+        libc::SYS_chroot,
+        libc::SYS_open_tree,
+        SYS_OPEN_TREE_ATTR,
+        libc::SYS_move_mount,
+        libc::SYS_fsopen,
+        libc::SYS_fspick,
+        libc::SYS_fsconfig,
+        libc::SYS_fsmount,
+        libc::SYS_mount_setattr,
+        SYS_STATMOUNT,
+        SYS_LISTMOUNT,
+        // Kernel interfaces, the kernel keyring and shared memory.
+        libc::SYS_io_uring_setup,
+        libc::SYS_io_uring_enter,
+        libc::SYS_io_uring_register,
+        libc::SYS_bpf,
+        libc::SYS_perf_event_open,
+        libc::SYS_userfaultfd,
+        libc::SYS_syslog,
+        libc::SYS_fanotify_init,
+        libc::SYS_keyctl,
+        libc::SYS_add_key,
+        libc::SYS_request_key,
+        libc::SYS_shmget,
+        libc::SYS_shmat,
+        libc::SYS_shmctl,
+        libc::SYS_msgget,
+        libc::SYS_msgsnd,
+        libc::SYS_msgrcv,
+        libc::SYS_msgctl,
+        libc::SYS_semget,
+        libc::SYS_semop,
+        libc::SYS_semtimedop,
+        libc::SYS_semctl,
+        libc::SYS_mq_open,
+        libc::SYS_mq_unlink,
+        libc::SYS_memfd_create,
+        libc::SYS_memfd_secret,
+        // Changing a file's metadata.
+        libc::SYS_fchmod,
+        libc::SYS_fchmodat,
+        SYS_FCHMODAT2,
+        libc::SYS_fchown,
+        libc::SYS_fchownat,
+        libc::SYS_utimensat,
+        libc::SYS_setxattr,
+        libc::SYS_lsetxattr,
+        libc::SYS_fsetxattr,
+        SYS_SETXATTRAT,
+        libc::SYS_removexattr,
+        libc::SYS_lremovexattr,
+        libc::SYS_fremovexattr,
+        SYS_REMOVEXATTRAT,
+        SYS_FILE_SETATTR,
+        libc::SYS_truncate,
+        libc::SYS_ftruncate,
+        libc::SYS_mknodat,
+        // Opening a file, and every lookup of a path.
+        libc::SYS_openat,
+        libc::SYS_openat2,
+        libc::SYS_newfstatat,
+        libc::SYS_statx,
+        libc::SYS_faccessat,
+        libc::SYS_faccessat2,
+        libc::SYS_readlinkat,
+        libc::SYS_getdents64,
+        libc::SYS_name_to_handle_at,
+        libc::SYS_open_by_handle_at,
+        libc::SYS_statfs,
+        libc::SYS_getxattr,
+        libc::SYS_lgetxattr,
+        SYS_GETXATTRAT,
+        libc::SYS_listxattr,
+        libc::SYS_llistxattr,
+        SYS_LISTXATTRAT,
+        SYS_FILE_GETATTR,
+        libc::SYS_linkat,
+        libc::SYS_symlinkat,
+        libc::SYS_unlinkat,
+        libc::SYS_renameat2,
+        libc::SYS_mkdirat,
+        libc::SYS_chdir,
+        libc::SYS_fchdir,
+        libc::SYS_inotify_add_watch,
+        libc::SYS_fanotify_mark,
+        libc::SYS_quotactl,
+        libc::SYS_acct,
+    ];
+
+    /// The same kinds of call under the names only this architecture has.
+    #[cfg(target_arch = "x86_64")]
+    pub const REFUSED_ON_THIS_ARCH: &[libc::c_long] = &[
+        libc::SYS_fork,
+        libc::SYS_vfork,
+        libc::SYS_chmod,
+        libc::SYS_chown,
+        libc::SYS_lchown,
+        libc::SYS_utime,
+        libc::SYS_utimes,
+        libc::SYS_futimesat,
+        libc::SYS_mknod,
+        libc::SYS_open,
+        libc::SYS_creat,
+        libc::SYS_stat,
+        libc::SYS_lstat,
+        libc::SYS_access,
+        libc::SYS_readlink,
+        libc::SYS_getdents,
+        libc::SYS_link,
+        libc::SYS_symlink,
+        libc::SYS_unlink,
+        libc::SYS_rename,
+        libc::SYS_renameat,
+        libc::SYS_mkdir,
+        libc::SYS_rmdir,
+        libc::SYS_uselib,
+        libc::SYS_sysfs,
+        libc::SYS_ustat,
+    ];
+    /// `renameat`, which aarch64 has and the `libc` crate doesn't name there.
+    #[cfg(target_arch = "aarch64")]
+    pub const REFUSED_ON_THIS_ARCH: &[libc::c_long] = &[38];
 
     pub fn log_support() {
         // SAFETY: the version query takes no pointer and no flags but its own.
@@ -59,14 +250,12 @@ mod imp {
             )
         };
         match abi {
-            n if n >= 4 => log::info!("the helpers are confined with Landlock ABI {n}"),
-            n if n >= 1 => log::warn!(
-                "the helpers' file access is confined with Landlock ABI {n}, but their \
-                 network access is not: this kernel is older than 6.7"
-            ),
-            _ => log::warn!(
-                "this kernel has no Landlock, so the helpers are kept from files and the \
-                 network by their pipes and limits only"
+            n if n >= 1 => {
+                log::info!("the helpers are confined with Landlock ABI {n} and a seccomp filter")
+            }
+            _ => log::info!(
+                "this kernel has no Landlock, so the helpers are confined with a seccomp \
+                 filter alone"
             ),
         }
     }
@@ -111,7 +300,109 @@ mod imp {
                 0 as libc::c_uint,
             );
         }
-        Ok(landlock())
+        let confinement = landlock();
+        refuse_system_calls().map_err(|e| format!("the seccomp filter: {e}"))?;
+        Ok(confinement)
+    }
+
+    fn statement(code: u32, k: u32) -> libc::sock_filter {
+        libc::sock_filter { code: code as u16, jt: 0, jf: 0, k }
+    }
+
+    fn jump(condition: u32, k: u32, jt: u8, jf: u8) -> libc::sock_filter {
+        libc::sock_filter { code: (libc::BPF_JMP | condition | libc::BPF_K) as u16, jt, jf, k }
+    }
+
+    /// Loads the 32-bit word at `offset` of the kernel's `seccomp_data`.
+    fn load(offset: u32) -> libc::sock_filter {
+        statement(libc::BPF_LD | libc::BPF_W | libc::BPF_ABS, offset)
+    }
+
+    /// The filter, on top of Landlock and whatever the kernel's version of
+    /// Landlock leaves open: it allows by default and answers a listed call
+    /// with `EPERM`, a normal error, and never kills. It holds for this thread
+    /// and the threads it starts, and a helper has no other at this point.
+    fn refuse_system_calls() -> Result<(), std::io::Error> {
+        // Offsets in `seccomp_data`; an argument's low half on a little-endian
+        // machine, and each argument checked here is a 32-bit `int` or flags.
+        const NR: u32 = 0;
+        const ARCH: u32 = 4;
+        const fn argument(n: u32) -> u32 {
+            16 + 8 * n
+        }
+
+        let ret = |action: u32| statement(libc::BPF_RET | libc::BPF_K, action);
+        let allow = ret(libc::SECCOMP_RET_ALLOW);
+        let refuse = ret(libc::SECCOMP_RET_ERRNO | libc::EPERM as u32);
+        // `nr` passes only with argument `n` equal to `value`.
+        let only_with = |nr: libc::c_long, n: u32, value: u32| {
+            [
+                jump(libc::BPF_JEQ, nr as u32, 0, 4),
+                load(argument(n)),
+                jump(libc::BPF_JEQ, value, 0, 1),
+                allow,
+                refuse,
+            ]
+        };
+        // SAFETY: a plain system call.
+        let me = unsafe { libc::getpid() } as u32;
+
+        let mut filter = vec![
+            // A foreign architecture's numbers mean other calls (the 32-bit
+            // `int 0x80` on x86_64), and so do x32's.
+            load(ARCH),
+            jump(libc::BPF_JEQ, AUDIT_ARCH, 1, 0),
+            refuse,
+            load(NR),
+            jump(libc::BPF_JGE, X32_SYSCALL_BIT, 0, 1),
+            refuse,
+            // A new thread passes, and a new process doesn't.
+            jump(libc::BPF_JEQ, libc::SYS_clone as u32, 0, 4),
+            load(argument(0)),
+            jump(libc::BPF_JSET, libc::CLONE_THREAD as u32, 0, 1),
+            allow,
+            refuse,
+            // No memory shared with anything: `MAP_SHARED_VALIDATE` has this
+            // bit too.
+            jump(libc::BPF_JEQ, libc::SYS_mmap as u32, 0, 4),
+            load(argument(3)),
+            jump(libc::BPF_JSET, libc::MAP_SHARED as u32, 0, 1),
+            refuse,
+            allow,
+            // `clone3`'s flags are behind a pointer the filter can't read.
+            // "Not implemented" is what makes the C library fall back to
+            // `clone`, and `EPERM` would fail every new thread.
+            jump(libc::BPF_JEQ, libc::SYS_clone3 as u32, 0, 1),
+            ret(libc::SECCOMP_RET_ERRNO | libc::ENOSYS as u32),
+        ];
+        // A signal to this process only (an abort is one), and its own limits
+        // only (`getrlimit` is `prlimit64` of pid 0).
+        filter.extend(only_with(libc::SYS_kill, 0, me));
+        filter.extend(only_with(libc::SYS_tgkill, 0, me));
+        filter.extend(only_with(libc::SYS_prlimit64, 0, 0));
+        for &call in REFUSED.iter().chain(REFUSED_ON_THIS_ARCH) {
+            filter.extend([jump(libc::BPF_JEQ, call as u32, 0, 1), refuse]);
+        }
+        filter.push(allow);
+
+        let program = libc::sock_fprog { len: filter.len() as u16, filter: filter.as_mut_ptr() };
+        // Before Linux 5.16 a filter also turns on CPU speculation mitigations
+        // unless this flag says not to, which made reading a file over three
+        // times slower. The helper stays as it would be with no filter.
+        // SAFETY: the kernel copies the program, which is alive for the call;
+        // `PR_SET_NO_NEW_PRIVS` is already set.
+        let installed = unsafe {
+            libc::syscall(
+                libc::SYS_seccomp,
+                libc::SECCOMP_SET_MODE_FILTER,
+                libc::SECCOMP_FILTER_FLAG_SPEC_ALLOW,
+                &raw const program,
+            )
+        };
+        if installed != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
     }
 
     /// Denies every filesystem right (which blocks `execve` too), and on ABI
@@ -182,13 +473,22 @@ mod imp {
         format!("{what}: {}", std::io::Error::last_os_error())
     }
 
-    /// Order: the parent watch first, since it needs `kqueue` and `kevent`
+    /// Order: whatever was inherited closed first, since macOS has no way to
+    /// start a process with only its three pipes, then the parent watch, since
+    /// it needs `kqueue` and `kevent`
     /// (which the profile would deny a new queue) and so that the helper
     /// never reads a document with no one to end it, then the core limit,
     /// then the profile, which nothing may follow that needs a file, a
     /// process or a service. Every step fails closed: the helper exits
     /// without reading a document.
     pub fn confine(_memory_limit: usize) -> Result<Confinement, String> {
+        // SAFETY: plain system calls; nothing in this process holds a
+        // descriptor from 3 up yet, so only an inherited one is closed.
+        unsafe {
+            for descriptor in 3..libc::getdtablesize() {
+                libc::close(descriptor);
+            }
+        }
         die_with_parent()?;
         let core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
         // SAFETY: a plain system call with a pointer to a local.

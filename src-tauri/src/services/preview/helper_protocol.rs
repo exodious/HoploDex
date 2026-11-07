@@ -17,13 +17,28 @@ const FAILED: u8 = 12;
 const PAGE: u8 = 13;
 const PAGE_FAILED: u8 = 14;
 
+/// A `Page` frame's width, height and channels, before its samples.
+const PAGE_HEADER: usize = 9;
+
 /// Parent to helper.
 #[derive(Debug, PartialEq)]
 pub enum Request {
     /// The document's bytes; the helper answers with the pages' sizes.
     Load(Vec<u8>),
-    /// One page (0-based) as a PNG about `width_px` wide.
+    /// One page (0-based) as pixels about `width_px` wide.
     Render { page: u32, width_px: u32 },
+}
+
+/// A page's pixels, row after row of 8-bit samples: never a file format, so
+/// what reaches the web view is what the app itself encoded
+/// (`helper_handle`, which trusts none of these fields).
+#[derive(Debug, PartialEq)]
+pub struct Pixels {
+    pub width: u32,
+    pub height: u32,
+    /// 1 for gray, 3 for RGB.
+    pub channels: u8,
+    pub samples: Vec<u8>,
 }
 
 /// Helper to parent.
@@ -37,9 +52,7 @@ pub enum Response {
     Failed {
         reason: String,
     },
-    Page {
-        png: Vec<u8>,
-    },
+    Page(Pixels),
     /// This page couldn't be rendered; the others may.
     PageFailed,
 }
@@ -89,14 +102,21 @@ pub fn write_response(w: &mut impl Write, response: &Response) -> io::Result<()>
             write_frame(w, LOADED, &payload, MAX_FRAME)
         }
         Response::Failed { reason } => write_frame(w, FAILED, reason.as_bytes(), MAX_FRAME),
-        Response::Page { png } => write_frame(w, PAGE, png, MAX_FRAME),
+        Response::Page(pixels) => {
+            let mut payload = Vec::with_capacity(PAGE_HEADER + pixels.samples.len());
+            payload.extend_from_slice(&pixels.width.to_be_bytes());
+            payload.extend_from_slice(&pixels.height.to_be_bytes());
+            payload.push(pixels.channels);
+            payload.extend_from_slice(&pixels.samples);
+            write_frame(w, PAGE, &payload, MAX_FRAME)
+        }
         Response::PageFailed => write_frame(w, PAGE_FAILED, &[], MAX_FRAME),
     }
 }
 
 /// The next response, or `None` when the helper has closed the pipe.
 pub fn read_response(r: &mut impl Read) -> io::Result<Option<Response>> {
-    let Some((tag, payload)) = read_frame(r, MAX_FRAME)? else { return Ok(None) };
+    let Some((tag, mut payload)) = read_frame(r, MAX_FRAME)? else { return Ok(None) };
     match tag {
         LOADED => {
             let count = payload
@@ -118,7 +138,16 @@ pub fn read_response(r: &mut impl Read) -> io::Result<Option<Response>> {
             Ok(Some(Response::Loaded { pages }))
         }
         FAILED => Ok(Some(Response::Failed { reason: String::from_utf8_lossy(&payload).into() })),
-        PAGE => Ok(Some(Response::Page { png: payload })),
+        PAGE => {
+            if payload.len() < PAGE_HEADER {
+                return Err(invalid("bad page frame"));
+            }
+            let width = u32::from_be_bytes(payload[..4].try_into().expect("4 bytes"));
+            let height = u32::from_be_bytes(payload[4..8].try_into().expect("4 bytes"));
+            let channels = payload[8];
+            payload.drain(..PAGE_HEADER);
+            Ok(Some(Response::Page(Pixels { width, height, channels, samples: payload })))
+        }
         PAGE_FAILED if payload.is_empty() => Ok(Some(Response::PageFailed)),
         _ => Err(invalid("unknown response")),
     }
@@ -157,7 +186,12 @@ mod tests {
         });
         round_trip_response(Response::Loaded { pages: Vec::new() });
         round_trip_response(Response::Failed { reason: "no first IFD".into() });
-        round_trip_response(Response::Page { png: vec![0x89, b'P', b'N', b'G'] });
+        round_trip_response(Response::Page(Pixels {
+            width: 2,
+            height: 1,
+            channels: 3,
+            samples: vec![1, 2, 3, 4, 5, 6],
+        }));
         round_trip_response(Response::PageFailed);
     }
 
@@ -190,6 +224,11 @@ mod tests {
         let mut wire = 5u32.to_be_bytes().to_vec();
         wire.push(LOADED);
         wire.extend_from_slice(&1000u32.to_be_bytes());
+        assert!(read_response(&mut &wire[..]).is_err());
+
+        // A page frame too short to say its size.
+        let mut wire = 9u32.to_be_bytes().to_vec();
+        wire.extend_from_slice(&[PAGE, 0, 0, 0, 1, 0, 0, 0, 1]);
         assert!(read_response(&mut &wire[..]).is_err());
     }
 }

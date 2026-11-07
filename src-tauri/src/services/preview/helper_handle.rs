@@ -3,6 +3,8 @@
 //! it, asks it for pages, restarts it when it dies (at most twice per
 //! preview), and kills and waits for it when dropped. Starting, the time
 //! limits and the kill are the shared core's (`services::helper::handle`).
+//! The helper answers with pixels, which are checked and encoded here: the
+//! main web view only ever gets a PNG the app made (007 research.md §11).
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -15,7 +17,8 @@ use zeroize::Zeroizing;
 
 use super::PageSize;
 use super::helper::{ARGUMENT, MEMORY_LIMIT};
-use super::helper_protocol::{Request, Response, read_response, write_load, write_request};
+use super::helper_protocol::{Pixels, Request, Response, read_response, write_load, write_request};
+use super::tiff::{MAX_PIXELS, MAX_WIDTH_PX, encode_png};
 use crate::services::helper::handle::{HelperProcess, lock};
 
 /// How often a preview's helper is started again after it dies.
@@ -77,6 +80,19 @@ fn load(
     }
 }
 
+/// Whether a page's pixels are what was asked for: no wider than the width
+/// requested and the page limits (`tiff::output_size`), and exactly as many
+/// samples as they say. The helper may be hostile, and this is all the app
+/// reads of them before encoding them.
+fn fits_the_request(pixels: &Pixels, width_px: u32) -> bool {
+    let area = u64::from(pixels.width) * u64::from(pixels.height);
+    (1..=width_px.clamp(1, MAX_WIDTH_PX)).contains(&pixels.width)
+        && pixels.height >= 1
+        && area <= MAX_PIXELS
+        && matches!(pixels.channels, 1 | 3)
+        && pixels.samples.len() as u64 == area * u64::from(pixels.channels)
+}
+
 fn render(
     process: &Arc<HelperProcess>,
     page: u32,
@@ -90,7 +106,10 @@ fn render(
         })
         .ok_or(HelperError::Lost)?;
     match response {
-        Response::Page { png } => Ok(png),
+        Response::Page(pixels) if fits_the_request(&pixels, width_px) => {
+            encode_png(&pixels.samples, pixels.channels, pixels.width, pixels.height)
+                .map_err(|_| HelperError::PageFailed)
+        }
         Response::PageFailed => Err(HelperError::PageFailed),
         _ => {
             process.kill();
@@ -294,5 +313,38 @@ impl Drop for HelperHandle {
         self.shared.shutdown();
         // Wait for it, so the process is gone when the preview is.
         self.shared.current().reap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pixels(width: u32, height: u32, channels: u8, samples: usize) -> Pixels {
+        Pixels { width, height, channels, samples: vec![0; samples] }
+    }
+
+    #[test]
+    fn pixels_of_the_size_asked_for_fit() {
+        assert!(fits_the_request(&pixels(100, 50, 1, 5000), 100));
+        assert!(fits_the_request(&pixels(100, 50, 3, 15_000), 100));
+        assert!(fits_the_request(&pixels(50, 50, 1, 2500), 100), "a page narrower than asked");
+        assert!(fits_the_request(&pixels(4096, 1, 1, 4096), 10_000), "the widest page");
+    }
+
+    #[test]
+    fn pixels_of_any_other_shape_do_not() {
+        assert!(!fits_the_request(&pixels(101, 50, 1, 5050), 100), "wider than asked");
+        assert!(!fits_the_request(&pixels(4097, 1, 1, 4097), 10_000), "wider than any page");
+        assert!(!fits_the_request(&pixels(0, 50, 1, 0), 100), "no width");
+        assert!(!fits_the_request(&pixels(100, 0, 1, 0), 100), "no height");
+        assert!(!fits_the_request(&pixels(100, 50, 2, 10_000), 100), "two channels");
+        assert!(!fits_the_request(&pixels(100, 50, 4, 20_000), 100), "four channels");
+        assert!(!fits_the_request(&pixels(100, 50, 0, 0), 100), "no channels");
+        assert!(!fits_the_request(&pixels(100, 50, 1, 4999), 100), "a sample short");
+        assert!(!fits_the_request(&pixels(100, 50, 1, 5001), 100), "a sample over");
+        let tall = (MAX_PIXELS + 1) as u32;
+        assert!(!fits_the_request(&pixels(1, tall, 1, 0), 100), "over the pixel limit");
+        assert!(!fits_the_request(&pixels(u32::MAX, u32::MAX, 3, 0), u32::MAX), "no overflow");
     }
 }

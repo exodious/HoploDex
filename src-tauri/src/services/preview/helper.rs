@@ -67,7 +67,7 @@ fn serve() -> io::Result<()> {
             }
             Request::Render { page, width_px } => match &document {
                 Some(bytes) => match tiff::render_page(bytes, page, width_px) {
-                    Ok(png) => Response::Page { png },
+                    Ok(pixels) => Response::Page(pixels),
                     Err(_) => Response::PageFailed,
                 },
                 None => Response::PageFailed,
@@ -80,7 +80,9 @@ fn serve() -> io::Result<()> {
 }
 
 /// `hoplodex --render-helper --self-check <port> <file>`: what the helper
-/// could do before and after confining itself, as one JSON line. It is the
+/// could do before and after confining itself, as one JSON line. With
+/// `--foreign-arch` after them it only tries a call from another architecture,
+/// which a kernel without that compatibility mode ends the process for. It is the
 /// only way to look inside a confined process from outside
 /// (tests/tiff_helper_test.rs), so it is compiled into debug and test builds
 /// only: a release binary has no such mode.
@@ -112,10 +114,20 @@ mod self_check {
         let can_open = || File::open(file).is_ok();
         let can_connect = || TcpStream::connect(("127.0.0.1", port)).is_ok();
         let can_start = || Command::new(PROGRAM).status().is_ok();
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        if args.get(2).map(String::as_str) == Some("--foreign-arch") {
+            if confine::confine(MEMORY_LIMIT).is_err() {
+                return 3;
+            }
+            println!("{}", json!({ "answer": i386_getpid() }));
+            return 0;
+        }
+        let descriptors_before = open_descriptors();
         let file_before = can_open();
         let tcp_before = can_connect();
         let exec_before = can_start();
         let Ok(confinement) = confine::confine(MEMORY_LIMIT) else { return 3 };
+        let descriptors_after = open_descriptors();
         let exec_after = can_start();
         #[cfg(unix)]
         let rlimit_core = {
@@ -131,6 +143,10 @@ mod self_check {
         let dumpable = Some(unsafe { libc::prctl(libc::PR_GET_DUMPABLE, 0, 0, 0, 0) } != 0);
         #[cfg(not(target_os = "linux"))]
         let dumpable: Option<bool> = None;
+        #[cfg(target_os = "linux")]
+        let filter = filter_report(file);
+        #[cfg(not(target_os = "linux"))]
+        let filter: Option<serde_json::Value> = None;
         println!(
             "{}",
             json!({
@@ -145,8 +161,129 @@ mod self_check {
                 "dumpable": dumpable,
                 "landlock_abi": confinement.landlock_abi,
                 "landlock_enforced": confinement.landlock_enforced,
+                "descriptors_before": descriptors_before,
+                "descriptors_after": descriptors_after,
+                "filter": filter,
             })
         );
         0
+    }
+
+    /// The descriptors from 3 up that are open, up to any a test would use.
+    fn open_descriptors() -> Vec<i32> {
+        #[cfg(unix)]
+        // SAFETY: a plain system call that only asks about the number.
+        return (3..1024).filter(|&fd| unsafe { libc::fcntl(fd, libc::F_GETFD) } != -1).collect();
+        #[cfg(not(unix))]
+        Vec::new()
+    }
+
+    /// The 32-bit `getpid`, through the entry a 32-bit program uses: `-1`
+    /// (`EPERM`) when the filter refuses a foreign architecture's call.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn i386_getpid() -> i32 {
+        let mut answer: i32 = 20;
+        // SAFETY: a system call that takes nothing; `int 0x80` clobbers only
+        // its result register.
+        unsafe { std::arch::asm!("int 0x80", inout("eax") answer, options(nostack)) };
+        answer
+    }
+
+    /// What the seccomp filter answers, tried from inside it. `refused_wrongly`
+    /// holds every listed call that got anything but `EPERM`, with what it got
+    /// (the arguments are all zero, so one the filter let through is harmless).
+    /// `wrong` names each call whose answer depends on its arguments and came
+    /// out otherwise than the filter's rules say. The errors of the real
+    /// library calls show that it is the filter refusing and not Landlock.
+    #[cfg(target_os = "linux")]
+    fn filter_report(file: &str) -> serde_json::Value {
+        use std::net::UdpSocket;
+        use std::os::unix::net::UnixStream;
+
+        use libc::{c_long, syscall};
+
+        const EPERM: i32 = libc::EPERM;
+        let errno = || std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+        // SAFETY: plain system calls.
+        let (me, parent) = unsafe { (libc::getpid() as c_long, libc::getppid() as c_long) };
+        // The child of a `fork` or `clone` the filter let through goes no further.
+        let answer = |result: c_long| {
+            // SAFETY: plain system calls.
+            if result == 0 && unsafe { libc::getpid() } as c_long != me {
+                unsafe { libc::_exit(0) };
+            }
+            if result == -1 { errno() } else { 0 }
+        };
+
+        let mut refused_wrongly = Vec::new();
+        for call in confine::refused_calls() {
+            // A zero request to `ptrace` would have its parent trace it, and the
+            // test would wait forever on a helper stopped by its next signal.
+            let first: c_long = if call == libc::SYS_ptrace { -1 } else { 0 };
+            // SAFETY: these arguments are refused or do nothing a test minds,
+            // whichever answers.
+            let got = answer(unsafe { syscall(call, first, 0, 0, 0, 0, 0) });
+            if got != EPERM {
+                refused_wrongly.push(json!([call, got]));
+            }
+        }
+
+        let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        let limit = &raw mut limit;
+        let core = libc::RLIMIT_CORE as c_long;
+        // SAFETY: plain system calls: a signal 0 tests only that it may be
+        // sent, and a mapping is at no fixed address; each call is on a pointer
+        // to a local or none.
+        let checks: [(&str, c_long, i32); 11] = unsafe {
+            let anonymous = (libc::PROT_READ, libc::MAP_ANONYMOUS);
+            let mapping = |flags: i32| {
+                syscall(libc::SYS_mmap, 0, 4096, anonymous.0, anonymous.1 | flags, -1, 0)
+            };
+            [
+                ("kill of itself", syscall(libc::SYS_kill, me, 0), 0),
+                ("kill of its parent", syscall(libc::SYS_kill, parent, 0), EPERM),
+                ("kill of its group", syscall(libc::SYS_kill, 0, 0), EPERM),
+                ("kill of everything", syscall(libc::SYS_kill, -1, 0), EPERM),
+                ("tgkill of itself", syscall(libc::SYS_tgkill, me, me, 0), 0),
+                ("tgkill of its parent", syscall(libc::SYS_tgkill, parent, parent, 0), EPERM),
+                ("its own limit", syscall(libc::SYS_prlimit64, 0, core, 0, limit), 0),
+                ("its parent's limit", syscall(libc::SYS_prlimit64, parent, core, 0, limit), EPERM),
+                ("private memory", mapping(libc::MAP_PRIVATE), 0),
+                ("shared memory", mapping(libc::MAP_SHARED), EPERM),
+                ("a new process", syscall(libc::SYS_clone, libc::SIGCHLD, 0, 0, 0, 0), EPERM),
+            ]
+        };
+        let mut wrong: Vec<String> = checks
+            .into_iter()
+            .filter(|&(_, result, wanted)| answer(result) != wanted)
+            .map(|(name, ..)| name.to_owned())
+            .collect();
+        // SAFETY: an x32 number with zero arguments; on a kernel without x32
+        // it would answer `ENOSYS`, and with it, x32's `socket`.
+        if answer(unsafe { syscall(libc::SYS_socket | 0x4000_0000, 0, 0, 0) }) != EPERM {
+            wrong.push("x32's socket".to_owned());
+        }
+        // SAFETY: as for any call the C library makes: `clone3` is refused in a
+        // way it takes as "not implemented", and a thread is what is left.
+        if answer(unsafe { syscall(libc::SYS_clone3, 0, 0) }) != libc::ENOSYS {
+            wrong.push("clone3".to_owned());
+        }
+        if std::thread::spawn(|| ()).join().is_err() {
+            wrong.push("a new thread".to_owned());
+        }
+
+        let code = |error: std::io::Error| error.raw_os_error();
+        json!({
+            "refused_wrongly": refused_wrongly,
+            "wrong": wrong,
+            "open": File::open(file).err().map(code),
+            "udp": UdpSocket::bind("127.0.0.1:0").err().map(code),
+            "unix": UnixStream::pair().err().map(code),
+            "start": Command::new(PROGRAM).status().err().map(code),
+            // `PR_GET_SPECULATION_CTRL` of store bypass and of indirect branches,
+            // which `libc` names only on x86_64.
+            // SAFETY: plain system calls that only read a setting.
+            "speculation": unsafe { [0, 1].map(|what| libc::prctl(52, what, 0, 0, 0)) },
+        })
     }
 }

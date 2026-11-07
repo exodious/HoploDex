@@ -1,8 +1,11 @@
 //! The TIFF render helper itself, run as `CARGO_BIN_EXE_hoplodex
 //! --render-helper` (007 T033; 007 research.md §11's confinement table):
-//! once confined it can open no file and no TCP socket, it exits when its
-//! parent dies, its environment is empty, core dumps are off, and the parent
-//! kills it past the `Load` and `Render` limits.
+//! once confined it can open no file and no TCP socket, on Linux a seccomp
+//! filter refuses its listed system calls and it won't serve without the
+//! filter, it holds no inherited descriptor, it exits when its parent dies, its
+//! environment is empty, core dumps are off, the parent kills it past the
+//! `Load` and `Render` limits, and the parent encodes what it answers only if
+//! the pixels fit the request.
 //!
 //! Assumed API (007 T050-T053):
 //! - `services::preview::HelperHandle::command(exe: &Path) -> std::process::Command`:
@@ -27,7 +30,10 @@
 //!      "rlimit_core": [soft, max] | null,         // unix
 //!      "dumpable": bool | null,                   // Linux
 //!      "landlock_abi": number | null,             // Linux: the ABI enforced
-//!      "landlock_enforced": bool }`               // Linux: any rule in force
+//!      "landlock_enforced": bool,                 // Linux: any rule in force
+//!      "descriptors_before": [number],            // open from 3 up, before and
+//!      "descriptors_after": [number],             // once confined
+//!      "filter": object | null }`                 // Linux: `filter_report`'s
 //!   It is the only way to look inside a confined process from outside, and it
 //!   is compiled into debug and test builds only (`cfg(debug_assertions)`): a
 //!   release binary has no such mode, so the tests that use it are skipped
@@ -136,35 +142,162 @@ fn once_confined_it_can_open_no_file_and_no_tcp_socket() {
     assert_eq!(json["tcp_before"], true, "{json}");
     assert_eq!(json["exec_before"], true, "{json}");
 
+    // Whatever Landlock this kernel has: the filter holds without it.
     #[cfg(target_os = "linux")]
-    {
-        let abi = json["landlock_abi"].as_u64();
-        println!("Landlock ABI enforced by the helper: {abi:?}");
-        eprintln!("Landlock ABI enforced by the helper: {abi:?}");
-        let Some(abi) = abi.filter(|_| json["landlock_enforced"] == true) else {
-            eprintln!(
-                "Landlock is not available here (best effort, 007 research.md §11): \
-                 the file and network confinement can't be checked"
-            );
-            return;
-        };
-        assert!(abi >= 1);
-        assert_eq!(json["file_after"], false, "a confined helper opened a file: {json}");
-        assert_eq!(json["exec_after"], false, "a confined helper started a program: {json}");
-        if abi >= 4 {
-            assert_eq!(json["tcp_after"], false, "a confined helper connected: {json}");
-            assert_eq!(connections, 1, "only the connection made before confining arrived");
-        } else {
-            eprintln!("ABI {abi} < 4: TCP is not restricted, so it can't be checked");
-        }
+    eprintln!(
+        "Landlock ABI of the helper: {:?}, enforced: {}",
+        json["landlock_abi"], json["landlock_enforced"]
+    );
+    assert_eq!(json["file_after"], false, "a confined helper opened a file: {json}");
+    assert_eq!(json["tcp_after"], false, "a confined helper connected: {json}");
+    assert_eq!(json["exec_after"], false, "a confined helper started a program: {json}");
+    assert_eq!(connections, 1, "only the connection made before confining arrived");
+}
+
+/// Every listed call gets `EPERM`, the filter's answer and not Landlock's
+/// `EACCES`, so this holds on a kernel with no Landlock too. What depends on a
+/// call's arguments passes only as the filter's rules say, and a new thread
+/// still starts.
+#[cfg(all(debug_assertions, target_os = "linux"))]
+#[test]
+fn the_filter_refuses_every_listed_call_and_nothing_a_helper_needs() {
+    let json = self_check().json;
+    let filter = &json["filter"];
+
+    assert_eq!(filter["refused_wrongly"], serde_json::json!([]), "[call, errno]: {json}");
+    assert_eq!(filter["wrong"], serde_json::json!([]), "{json}");
+    let eperm = serde_json::json!(libc::EPERM);
+    assert_eq!(filter["open"], eperm, "opening a file: {json}");
+    assert_eq!(filter["udp"], eperm, "a UDP socket: {json}");
+    assert_eq!(filter["unix"], eperm, "a pair of Unix sockets: {json}");
+    assert_eq!(filter["start"], eperm, "starting a program: {json}");
+}
+
+/// The numbers in the filter mean other calls on another architecture, so a
+/// call from one is refused rather than judged by them.
+#[cfg(all(debug_assertions, target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn a_call_from_a_foreign_architecture_is_refused() {
+    let output = HelperHandle::command(&exe())
+        .args(["--self-check", "9", "unused", "--foreign-arch"])
+        .output()
+        .unwrap();
+
+    // 128 + SIGSEGV from `exit_on_fatal_signals`: this kernel has no 32-bit
+    // entry at all, so no such call can reach the filter.
+    if output.status.code() == Some(128 + libc::SIGSEGV) {
+        eprintln!("this kernel has no 32-bit entry: nothing to check");
+        return;
     }
-    #[cfg(target_os = "macos")]
-    {
-        assert_eq!(json["file_after"], false, "{json}");
-        assert_eq!(json["tcp_after"], false, "{json}");
-        assert_eq!(json["exec_after"], false, "{json}");
-        assert_eq!(connections, 1);
+    assert!(output.status.success(), "{:?}", output.status);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["answer"], -libc::EPERM, "{json}");
+}
+
+/// Before Linux 5.16 a filter turns on CPU speculation mitigations unless asked
+/// not to, and a helper then reads a file several times slower. It only shows on
+/// such a kernel: elsewhere this passes with or without the flag that asks.
+#[cfg(target_os = "linux")]
+#[test]
+fn its_filter_leaves_its_speculation_settings_as_they_were() {
+    // `PR_GET_SPECULATION_CTRL` of store bypass and of indirect branches, as the
+    // helper's self-check reads them.
+    // SAFETY: plain system calls that only read a setting.
+    let own = unsafe { [0, 1].map(|what| libc::prctl(52, what, 0, 0, 0)) };
+    assert_eq!(self_check().json["filter"]["speculation"], serde_json::json!(own));
+}
+
+/// The filter fails closed. A filter in the helper's parent (stacked, so the
+/// helper can't remove it) refuses to install any other, and all else in
+/// `confine` still works: a helper that can't filter itself reads no document.
+#[cfg(target_os = "linux")]
+#[test]
+fn without_its_filter_it_refuses_to_serve() {
+    use std::os::unix::process::CommandExt;
+
+    fn statement(code: u32, k: u32) -> libc::sock_filter {
+        libc::sock_filter { code: code as u16, jt: 0, jf: 0, k }
     }
+    fn when_equal(k: u32, jf: u8) -> libc::sock_filter {
+        let code = libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K;
+        libc::sock_filter { code: code as u16, jt: 0, jf, k }
+    }
+    let load = libc::BPF_LD | libc::BPF_W | libc::BPF_ABS;
+    let ret = libc::BPF_RET | libc::BPF_K;
+    let filter = [
+        statement(load, 0),
+        when_equal(libc::SYS_seccomp as u32, 1),
+        statement(ret, libc::SECCOMP_RET_ERRNO | libc::EPERM as u32),
+        statement(ret, libc::SECCOMP_RET_ALLOW),
+    ];
+
+    let mut command = HelperHandle::command(&exe());
+    // SAFETY: between fork and exec, only two system calls and a program on
+    // the stack, which the kernel copies.
+    unsafe {
+        command.pre_exec(move || {
+            let program =
+                libc::sock_fprog { len: filter.len() as u16, filter: filter.as_ptr().cast_mut() };
+            let program = &raw const program;
+            if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1 as libc::c_ulong, 0, 0, 0) != 0
+                || libc::prctl(
+                    libc::PR_SET_SECCOMP,
+                    libc::SECCOMP_MODE_FILTER as libc::c_ulong,
+                    program,
+                ) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let output = command.output().unwrap();
+
+    assert_eq!(output.status.code(), Some(3), "a helper without its filter served");
+    assert!(output.stdout.is_empty());
+}
+
+/// Whatever a parent leaves inheritable is closed before the helper reads a
+/// document, on macOS too, which has no way to start a process with only its
+/// three pipes. What's left is the macOS parent watch's own queue.
+#[cfg(all(debug_assertions, unix))]
+#[test]
+fn it_holds_no_descriptor_it_inherited() {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::process::CommandExt;
+
+    const INHERITED: i32 = 57;
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("secret.txt");
+    std::fs::write(&file, b"not for the helper").unwrap();
+    let open = std::fs::File::open(&file).unwrap();
+    let source = open.as_raw_fd();
+
+    let mut command = HelperHandle::command(&exe());
+    command.args(["--self-check", "9", file.to_str().unwrap()]);
+    // SAFETY: between fork and exec, one system call on numbers.
+    unsafe {
+        command.pre_exec(move || {
+            if libc::dup2(source, INHERITED) < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let output = command.output().unwrap();
+    assert!(output.status.success(), "{:?}", output.status);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    let held = |key: &str| {
+        json[key].as_array().unwrap().iter().map(|fd| fd.as_i64().unwrap()).collect::<Vec<_>>()
+    };
+    assert!(
+        held("descriptors_before").contains(&i64::from(INHERITED)),
+        "the probe means nothing unless it was inherited: {json}"
+    );
+    let allowed = usize::from(cfg!(target_os = "macos"));
+    assert!(held("descriptors_after").len() <= allowed, "{json}");
+    assert!(!held("descriptors_after").contains(&i64::from(INHERITED)), "{json}");
 }
 
 /// Windows' measures (007 research.md §11): the job object's one-process limit and
@@ -387,6 +520,101 @@ fn a_healthy_helper_loads_and_renders_and_is_killed_when_dropped() {
     assert_eq!(png_size(&png).0, 100);
     drop(helper);
     assert_gone(pid, "after its handle was dropped");
+}
+
+// --- A helper that lies about its page -----------------------------------------
+
+/// A stand-in for a hostile helper: a program, where `HelperHandle::spawn` is
+/// told the helper is, that answers with `frames` whatever it is asked.
+#[cfg(unix)]
+struct LyingHelper {
+    _dir: tempfile::TempDir,
+    exe: PathBuf,
+}
+
+#[cfg(unix)]
+fn lying_helper(page: &[u8]) -> LyingHelper {
+    use std::os::unix::fs::PermissionsExt;
+
+    use hoplodex_lib::services::preview::PageSize;
+    use hoplodex_lib::services::preview::helper_protocol::{Response, write_response};
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let mut frames = Vec::new();
+    let pages = vec![PageSize { width: 100.0, height: 100.0 }];
+    write_response(&mut frames, &Response::Loaded { pages }).unwrap();
+    frames.extend_from_slice(page);
+    std::fs::write(dir.path().join("frames"), frames).unwrap();
+    let exe = dir.path().join("helper");
+    std::fs::write(&exe, "#!/bin/sh\n/bin/cat \"${0%/*}/frames\"\nexec /bin/sleep 60\n").unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    LyingHelper { _dir: dir, exe }
+}
+
+#[cfg(unix)]
+fn page_frame(width: u32, height: u32, channels: u8, samples: Vec<u8>) -> Vec<u8> {
+    use hoplodex_lib::services::preview::helper_protocol::{Pixels, Response, write_response};
+
+    let mut frame = Vec::new();
+    let page = Response::Page(Pixels { width, height, channels, samples });
+    write_response(&mut frame, &page).unwrap();
+    frame
+}
+
+/// What reaches the web view is a PNG the app made of the pixels the helper
+/// sent, not anything the helper wrote.
+#[cfg(unix)]
+#[test]
+fn the_app_encodes_the_pixels_it_is_sent() {
+    let samples = vec![10, 20, 30, 40, 50, 60];
+    let helper = lying_helper(&page_frame(2, 1, 3, samples.clone()));
+    let mut handle = HelperHandle::spawn(&helper.exe, HelperLimits::default()).unwrap();
+    handle.load(b"a document").unwrap();
+
+    let png = handle.render(0, 100).unwrap();
+
+    let mut reader = png::Decoder::new(std::io::Cursor::new(&png)).read_info().unwrap();
+    let mut decoded = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut decoded).unwrap();
+    assert_eq!((info.width, info.height, info.color_type), (2, 1, png::ColorType::Rgb));
+    assert_eq!(&decoded[..info.buffer_size()], samples);
+    assert_eq!(handle.restarts(), 0);
+}
+
+/// Pixels that don't fit the request, or a frame that is not pixels at all
+/// (here a whole PNG, which is what a helper once sent), are never encoded: the
+/// helper is treated as any that breaks the protocol, killed and replaced, and
+/// the page fails alone.
+#[cfg(unix)]
+#[test]
+fn a_page_that_does_not_fit_the_request_kills_the_helper_and_fails_alone() {
+    use hoplodex_lib::services::helper::frames::{MAX_FRAME, write_frame};
+    use hoplodex_lib::services::preview::HelperError;
+
+    const PAGE: u8 = 13;
+    let mut a_png = Vec::new();
+    write_frame(&mut a_png, PAGE, b"\x89PNG\r\n\x1a\n and the rest of a file", MAX_FRAME).unwrap();
+    let lies = [
+        ("wider than asked", page_frame(101, 1, 1, vec![0; 101])),
+        ("samples short of its size", page_frame(10, 10, 1, vec![0; 99])),
+        ("samples over its size", page_frame(10, 10, 1, vec![0; 101])),
+        ("a channel count no page has", page_frame(10, 10, 4, vec![0; 400])),
+        ("no pixels at all", page_frame(0, 0, 1, Vec::new())),
+        ("a file and not pixels", a_png),
+    ];
+    for (lie, frame) in lies {
+        let helper = lying_helper(&frame);
+        let mut handle = HelperHandle::spawn(&helper.exe, HelperLimits::default()).unwrap();
+        handle.load(b"a document").unwrap();
+        let liar = handle.pid();
+
+        let result = handle.render(0, 100);
+
+        assert!(matches!(result, Err(HelperError::PageFailed)), "{lie}: {result:?}");
+        assert_gone(liar, lie);
+        assert_eq!(handle.restarts(), 1, "{lie}");
+        assert_ne!(handle.pid(), liar, "{lie}");
+    }
 }
 
 #[test]
