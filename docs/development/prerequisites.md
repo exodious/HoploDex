@@ -32,6 +32,7 @@ your platform's package manager.
   sudo apt update
   sudo apt install -y \
     build-essential \
+    file \
     pkg-config \
     perl \
     libwebkit2gtk-4.1-dev \
@@ -77,13 +78,14 @@ sudo apt install -y xvfb xauth               # Debian/Ubuntu
 sudo pacman -S --needed xorg-server-xvfb     # Arch
 ```
 
-**Headless/SSH sessions only:** HoploDex reads/writes its SQLCipher database
-key via the OS credential store (the `keyring` crate), which on Linux talks
-to the Secret Service D-Bus API. A bare SSH login has a D-Bus session bus
-but usually no Secret Service provider registered on it, so `test:e2e` fails
-with `keyring error: ... org.freedesktop.DBus.Error.ServiceUnknown: The name
-is not activatable`. Fix by installing `gnome-keyring` and starting it
-against your session's bus before running tests:
+**Headless/SSH sessions only:** HoploDex keeps a saved passphrase in the OS
+credential store (the `keyring` crate), which on Linux talks to the Secret
+Service D-Bus API. A bare SSH login has a D-Bus session bus but usually no
+Secret Service provider registered on it, so `npm run tauri dev` and
+`scripts/human-testing.sh` can't save a passphrase, and log `the keyring is
+not available`. E2E builds keep it in memory and don't need this. Fix by
+installing `gnome-keyring` and starting it against your session's bus before
+starting the app:
 
 ```bash
 sudo pacman -S --needed gnome-keyring   # apt install gnome-keyring on Debian/Ubuntu
@@ -98,5 +100,5 @@ finishes the session like a desktop login. Without it the `--login` daemon
 exits after 120 seconds, and the next keyring call D-Bus-activates a fresh
 daemon that has no login keyring, which fails with `SS error: result not
 returned from SS API`. Verify it registered correctly
-with `busctl --user list | grep org.freedesktop.secrets` before re-running
-`npm run test:e2e`.
+with `busctl --user list | grep org.freedesktop.secrets` before starting the
+app.

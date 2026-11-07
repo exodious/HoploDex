@@ -167,7 +167,7 @@ audit and the notices both use it:
   target's OS.
 
 The components are the shipped packages and crates plus the hand-recorded
-entries (Linux 348, Windows 272, macOS 265 today). Each is listed under one
+entries (Linux 361, Windows 275, macOS 269 today). Each is listed under one
 license. For a choice (`MIT OR Apache-2.0`) it is the first allowed
 alternative, in the order of `PREFERENCE` in `policy.mjs`, that the package
 (or an exception's committed texts) has a text for. So `dunce`

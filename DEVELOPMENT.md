@@ -23,7 +23,7 @@ scripts/dev-container.sh npm run bundle:linux      # build the Linux bundles
    - **Debian/Ubuntu:**
 
      ```bash
-     sudo apt install build-essential pkg-config perl libwebkit2gtk-4.1-dev \
+     sudo apt install build-essential file pkg-config perl libwebkit2gtk-4.1-dev \
        libjavascriptcoregtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev \
        libayatana-appindicator3-dev librsvg2-dev xdg-utils
      ```

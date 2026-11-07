@@ -120,6 +120,6 @@ nothing.
 This command stays on `cargo test` on purpose: nextest runs each test in its
 own process, so it would repeat the 10,000-record seeding that
 `performance_test.rs` does once per process under `cargo test`. If you do run
-it with `cargo nextest run --release --run-ignored all`, `.config/nextest.toml`
+it with `cargo nextest run --release --run-ignored all`, `src-tauri/.config/nextest.toml`
 puts `performance_test` in a one-at-a-time group that also holds every CPU
 slot, so no other test runs beside it.
