@@ -22,3 +22,7 @@ commands:
     npm test &&
     npm run build &&
     npm run test:e2e'
+
+pr:
+  # Keep the generated Intent section out of PR bodies; the intent still guides review.
+  publish_intent: false
