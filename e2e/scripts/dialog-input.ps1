@@ -1,7 +1,7 @@
 # Keys for the native passphrase dialog of one app process, on Windows
-# (e2e/support/dialogInput.ts). The suite's workers run apps side by side and a
-# new one takes the foreground, so keys sent to the foreground window (SendKeys)
-# can reach another worker's app. These are posted to the dialog itself, as
+# (e2e/support/dialogInput.ts). Another app can take the foreground (another
+# worker's, with HOPLODEX_E2E_WORKERS above 1), so keys sent to the foreground
+# window (SendKeys) can reach it. These are posted to the dialog itself, as
 # macOS's real_input.swift posts to one process (#122): to the control that has
 # the focus on the dialog's thread, where its message loop's IsDialogMessageW
 # handles Tab, Enter and Escape as it does for a key pressed on the keyboard.
