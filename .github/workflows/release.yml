@@ -167,6 +167,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Set the display
+        shell: pwsh
+        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
       - uses: ./.github/actions/setup
       - name: PDF surface check
         run: powershell -ExecutionPolicy Bypass -File scripts\windows\pdf-surface-check.ps1
@@ -194,6 +197,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Set the display
+        run: |
+          brew install displayplacer
+          id=$(displayplacer list | sed -n 's/^Persistent screen id: //p' | head -n 1)
+          [ -n "$id" ] || { echo "::error::displayplacer found no screen"; exit 1; }
+          displayplacer "id:$id res:1920x1080 hz:60 color_depth:7 enabled:true scaling:off origin:(0,0) degree:0"
       - uses: ./.github/actions/setup
       - name: PDF surface check
         run: scripts/macos/pdf-surface-check.sh

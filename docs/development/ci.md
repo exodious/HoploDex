@@ -83,7 +83,9 @@ here; [Test](testing.md) says when to run them.
   `flatpak-check` add what those steps run); on Windows, `TEMP` on the D: disk with a Defender call for the
   tests, which makes nextest three times faster there, and the desktop at
   1920×1080 with animations on for E2E; on macOS, Reduce Motion off and the
-  screen at 1920×1080 (`displayplacer`) for E2E.
+  screen at 1920×1080 (`displayplacer`) for E2E. The release workflow's surface
+  checks set the same screen size on both, since the default 1024×768 is shorter
+  than their window.
 
 **Timing budgets under CI.** Shared runners' speed varies too much for a
 timing budget to mean anything, so under CI, when the `CI` variable is `true`
