@@ -84,7 +84,7 @@ export function versionProblems(root, version) {
 
 /** The step names in `MIGRATIONS`' order. */
 export function migrationSteps(root) {
-  return [...read(root, MIGRATIONS).matchAll(/\("(\d{4}_[a-z0-9_]+)", include_str!/g)].map(
+  return [...read(root, MIGRATIONS).matchAll(/\(\s*"(\d{4}_[a-z0-9_]+)",\s*include_str!/g)].map(
     (m) => m[1],
   );
 }

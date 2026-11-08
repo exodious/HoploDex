@@ -112,17 +112,23 @@ describe("release script", () => {
         `("0001_old", include_str!("migrations/0001_old.sql")),`,
         `("0003_later", include_str!("migrations/0003_later.sql")),`,
         `("0002_new", include_str!("migrations/0002_new.sql")),`,
+        `(`,
+        `    "0004_a_step_name_long_enough_to_wrap",`,
+        `    include_str!("migrations/0004_a_step_name_long_enough_to_wrap.sql"),`,
+        `),`,
       ].join("\n"),
       [RELEASED]: `# <name> <sha256> <release>\n0001_old ${EMPTY} 0.1.0\n`,
       "src-tauri/src/db/migrations/0001_old.sql": "not read",
       "src-tauri/src/db/migrations/0002_new.sql": "abc",
       "src-tauri/src/db/migrations/0003_later.sql": "",
+      "src-tauri/src/db/migrations/0004_a_step_name_long_enough_to_wrap.sql": "abc",
       "src-tauri/tests/fixtures/releases/0.2.0.hoplodex": "abc",
     });
     const lines = recordLines(dir, "0.2.0");
     expect(lines).toEqual([
       `0003_later ${EMPTY} 0.2.0`,
       `0002_new ${ABC} 0.2.0`,
+      `0004_a_step_name_long_enough_to_wrap ${ABC} 0.2.0`,
       `tests/fixtures/releases/0.2.0.hoplodex ${ABC} 0.2.0`,
     ]);
     fs.appendFileSync(path.join(dir, RELEASED), `${lines.join("\n")}\n`);
