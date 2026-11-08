@@ -366,7 +366,10 @@ fn check_links(conn: &Connection) -> Result<(), UpgradeError> {
     };
     let tables: std::collections::BTreeSet<&str> = broken
         .iter()
-        .map(|table| if ours(table) { table.as_str() } else { "a table outside HoploDex's schema" })
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(|table| if ours(table) { table } else { "a table outside HoploDex's schema" })
         .collect();
     for table in tables {
         log::error!("the upgrade left a broken link in {table}");

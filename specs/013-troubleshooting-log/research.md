@@ -19,7 +19,7 @@ A run the variable decides needs no saved choice, so its file starts first in `s
 ## §4 Creating, appending, rotating
 
 - **Create or append:** the file is created with `create_new` and mode 0600, in a 0700 folder on Unix. An existing one must pass `scratch::is_plain_file`, and is opened with `scratch::open_no_follow`. Anything else leaves the file log off for the run and says so in About. Either way the handle appends, so two copies of the app add whole lines rather than overwrite each other's.
-- **Rotate:** at 2 MiB by the open file's own length, which counts another copy's lines and is at the cap for a copy whose file was rotated away. `rename` to `.1` replaces a symlink rather than following it. A current file that has gone leaves nothing to rename, and a new one starts. A line longer than 4 KiB is cut to 4 KiB first, so no one write takes a file past the cap.
+- **Rotate:** at 2 MiB by the open file's own length, which counts another copy's lines and is at the cap for a copy whose file was rotated away. `rename` to `.1` replaces a symlink rather than following it. A current file that has gone leaves nothing to rename, and a new one starts. A line longer than 4 KiB is cut to 4 KiB first, so one line can't take a file past the cap; two copies writing at once can each still add a line past it.
 - **Delete:** `secure_delete::secure_delete_file`, the way the app deletes other files it no longer wants. It logs, so the logger's lock is never held across it.
 - **Age:** when the file was made, or its last change where the file system does not record that, at start only (013 FR-008). A new file on Windows sets its own creation time, since NTFS can give a reused name the old one.
 

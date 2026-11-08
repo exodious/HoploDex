@@ -17,8 +17,9 @@ pub const CURRENT: &str = "hoplodex.log";
 pub const ROTATED: &str = "hoplodex.log.1";
 /// A file's cap, so both together never pass 4 MiB (013 FR-007).
 pub const MAX_BYTES: u64 = 2 * 1024 * 1024;
-/// The longest line written, so no one write can take a file past
-/// [`MAX_BYTES`] (013 FR-007). Our own lines are far shorter.
+/// The longest line written, so one line can't take a file past [`MAX_BYTES`]
+/// (013 FR-007); two copies writing at once can each still add a line past it.
+/// Our own lines are far shorter.
 pub const MAX_LINE: usize = 4096;
 /// How long a file lasts from when it was made, so a start's new lines can't
 /// keep older ones past what the user is told (013 FR-008).
