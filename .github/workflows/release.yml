@@ -4,8 +4,8 @@
 # person publishes the draft. RELEASING.md is the written process around it.
 #
 # - The tag's commit must have had the release's AI security review: its
-#   upload to code scanning for exactly that commit, on a branch whose head
-#   the commit still is, with no critical or high code scanning alert open
+#   upload to code scanning for exactly that commit, on main, whose head the
+#   commit still is, with no critical or high code scanning alert open
 #   there (constitution, Development Workflow & Quality Gates;
 #   scripts/ai-security-review.mjs `reviewed`), and no critical or high
 #   Dependabot alert open.

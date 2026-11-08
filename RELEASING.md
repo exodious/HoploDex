@@ -130,8 +130,8 @@ way is a pull request like any other; then start again from the new commit.
 
    **How it is enforced:** the release workflow's first job refuses the tag
    unless code scanning holds the review's upload for exactly the tagged
-   commit, on a branch, as the newest review there; the commit is still that
-   branch's head, so every tool's alerts there are its own; and no critical or
+   commit, on `main`, as the newest review there; the commit is still `main`'s
+   head, so every tool's alerts there are its own; and no critical or
    high code scanning or Dependabot alert is open (`ai-security-review.mjs
    reviewed`). So tag `main`'s head, with nothing merged after the review. So a tag on any other
    commit, or one whose review left a blocking alert open, drafts no release.

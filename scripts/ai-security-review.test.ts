@@ -509,9 +509,12 @@ describe("the release workflow's review check", () => {
     expect(calls[0].endpoint).toContain(`tool_name=${encodeURIComponent(TOOL)}`);
   });
 
-  it("fails without a review of that commit, or with only a pull request's", () => {
+  it("fails without a review of that commit on main, such as a pull request's or another branch's", () => {
     expect(reviewed(reviewGh([analysis({ commit_sha: other })]).gh, sha).pass).toBe(false);
     expect(reviewed(reviewGh([analysis({ ref: "refs/pull/7/head" })]).gh, sha).pass).toBe(false);
+    expect(reviewed(reviewGh([analysis({ ref: "refs/heads/release/x" })]).gh, sha).pass).toBe(
+      false,
+    );
     expect(reviewed(reviewGh([analysis({ category: "other" })]).gh, sha).pass).toBe(false);
   });
 
