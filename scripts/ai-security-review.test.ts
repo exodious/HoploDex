@@ -498,7 +498,10 @@ describe("the release workflow's review check", () => {
     ]);
 
   it("passes on the tagged commit's release review with nothing critical or high open", () => {
-    const { gh, calls } = reviewGh([analysis({ commit_sha: other }), analysis()]);
+    const { gh, calls } = reviewGh([
+      analysis({ commit_sha: other, created_at: "2026-11-07T00:00:00Z" }),
+      analysis(),
+    ]);
     const r = reviewed(gh, sha);
     expect(r.pass).toBe(true);
     expect(r.analysis).toMatchObject({ id: 9, ref: "refs/heads/main" });
@@ -509,6 +512,15 @@ describe("the release workflow's review check", () => {
     expect(reviewed(reviewGh([analysis({ commit_sha: other })]).gh, sha).pass).toBe(false);
     expect(reviewed(reviewGh([analysis({ ref: "refs/pull/7/head" })]).gh, sha).pass).toBe(false);
     expect(reviewed(reviewGh([analysis({ category: "other" })]).gh, sha).pass).toBe(false);
+  });
+
+  it("fails when a later review on the branch moved its alerts on from that commit", () => {
+    const later = analysis({ id: 10, commit_sha: other, created_at: "2026-11-09T00:00:00Z" });
+    const r = reviewed(reviewGh([later, analysis()]).gh, sha);
+    expect(r).toMatchObject({ pass: false, newer: other });
+    // A later review on another branch doesn't count.
+    const elsewhere = { ...later, ref: "refs/heads/release/x" };
+    expect(reviewed(reviewGh([elsewhere, analysis()]).gh, sha).pass).toBe(true);
   });
 
   it("fails on an open high alert, or a Dependabot one, and refuses a short sha", () => {

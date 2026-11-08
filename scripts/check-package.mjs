@@ -13,7 +13,8 @@
 //                                              signature (codesign --verify), and
 //                                              no WebDriver in its binary (#29)
 //
-// Node, so it runs the same on every OS. No dependencies of its own.
+// Each takes one or more files. Node, so it runs the same on every OS. No
+// dependencies of its own.
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -104,16 +105,19 @@ function checkDmg(file) {
   }
 }
 
-function main([kind, file]) {
-  if (!(kind in REQUIRED) || !file) {
-    throw new Error("usage: check-package.mjs deb|rpm|nsis|dmg FILE");
+function main([kind, ...files]) {
+  if (!(kind in REQUIRED) || !files.length) {
+    throw new Error("usage: check-package.mjs deb|rpm|nsis|dmg FILE...");
   }
-  const problems = kind === "dmg" ? checkDmg(file) : missing(kind, listing(kind, LIST[kind](file)));
-  if (problems.length) {
-    console.error(`${file} has no:\n${problems.map((p) => `  ${p}`).join("\n")}`);
-    process.exitCode = 1;
-  } else {
-    console.log(`Checked ${file}: ${REQUIRED[kind].join(", ")}`);
+  for (const file of files) {
+    const problems =
+      kind === "dmg" ? checkDmg(file) : missing(kind, listing(kind, LIST[kind](file)));
+    if (problems.length) {
+      console.error(`${file} has no:\n${problems.map((p) => `  ${p}`).join("\n")}`);
+      process.exitCode = 1;
+    } else {
+      console.log(`Checked ${file}: ${REQUIRED[kind].join(", ")}`);
+    }
   }
 }
 

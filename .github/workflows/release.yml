@@ -59,13 +59,17 @@ jobs:
         with:
           node-version: 24
 
-      # The tag names the version the app carries; only a final release's tag
-      # adds the migration records (RELEASING.md, src-tauri/src/db/migrations/README.md).
+      # The tag is v<version>[-<suffix>], as scripts/release.mjs makes it, and
+      # names the version the app carries; only a final release's tag adds the
+      # migration records (RELEASING.md, src-tauri/src/db/migrations/README.md).
+      # The later jobs rely on the tag having that form.
       - name: Check the tag against the version and the migration records
         if: github.event_name == 'push'
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || {
+            echo "::error::$TAG isn't v<version> or v<version>-<suffix>"; exit 1; }
           version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
           [[ "$TAG" == "v$version" || "$TAG" == "v$version-"* ]] || {
             echo "::error::$TAG doesn't name the app's version, $version"; exit 1; }
@@ -76,13 +80,13 @@ jobs:
               echo "::error::released.txt has no line for $fixture"; exit 1; }
           fi
 
-      # A dry run reports whether the commit could be released without
-      # failing on the commit it ran on.
+      # The commit checked out, the tag's own. A dry run reports whether the
+      # commit could be released without failing on the commit it ran on.
       - name: Check the release's AI security review
         continue-on-error: ${{ github.event_name != 'push' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/ai-security-review.mjs reviewed --commit "$GITHUB_SHA"
+        run: node scripts/ai-security-review.mjs reviewed --commit "$(git rev-parse 'HEAD^{commit}')"
 
   ci:
     name: CI
@@ -237,7 +241,8 @@ jobs:
           if-no-files-found: error
 
       # The notes are .github/release-notes.md with the version and tag filled
-      # in, and for a pre-release the release-candidate note first.
+      # in as data, never as part of a program, and for a pre-release the
+      # release-candidate note first.
       - name: Open the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -249,7 +254,9 @@ jobs:
               echo "**This is a release candidate, for testing.** It doesn't count as a release for the database's upgrades: a database it opened isn't guaranteed to open in the final release, so try it on a copy of your collection."
               echo
             fi
-            sed -e "s/{{version}}/$version/g" -e "s/{{tag}}/$TAG/g" .github/release-notes.md
+            VERSION="$version" node -e 'const fs = require("node:fs");
+              process.stdout.write(fs.readFileSync(".github/release-notes.md", "utf8")
+                .replaceAll("{{version}}", process.env.VERSION).replaceAll("{{tag}}", process.env.TAG));'
           } > "$RUNNER_TEMP/notes.md"
           prerelease=()
           [[ "$TAG" == *-* ]] && prerelease=(--prerelease)

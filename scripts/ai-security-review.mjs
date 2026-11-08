@@ -432,23 +432,28 @@ export function gate(gh, { ref = null } = {}) {
 /**
  * What the release workflow (release.yml, #19) can check with its own token
  * before it drafts a release: a release review's upload for exactly the tagged
- * commit, on a branch (a pull request's upload is no release review), no
- * open critical or high code scanning alert from any tool on that branch, and
+ * commit, on a branch (a pull request's upload is no release review) and the
+ * newest of this tool's there, so the branch's alerts are that commit's; no
+ * open critical or high code scanning alert from any tool on that branch; and
  * no open critical or high Dependabot alert. The token can't read the rest of
  * the gate (secret scanning, advisories), so the operator runs `gate` before
  * tagging (RELEASING.md).
  */
 export function reviewed(gh, commit) {
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`not a full commit sha: ${commit}`);
-  const analysis = paged(
+  const analyses = paged(
     gh,
     `repos/${REPO}/code-scanning/analyses?tool_name=${enc(TOOL)}&per_page=100`,
-  )
-    .filter(
-      (a) => a.commit_sha === commit && a.category === CATEGORY && /^refs\/heads\//.test(a.ref),
-    )
-    .at(0);
+  ).filter((a) => a.category === CATEGORY && /^refs\/heads\//.test(a.ref));
+  const analysis = analyses.find((a) => a.commit_sha === commit);
   if (!analysis) return { commit, analysis: null, pass: false };
+  // A later review on the branch would have moved its alerts on from this commit's.
+  const newest = analyses
+    .filter((a) => a.ref === analysis.ref)
+    .reduce((n, a) => (a.created_at > n.created_at ? a : n));
+  if (newest.commit_sha !== commit) {
+    return { commit, analysis: null, newer: newest.commit_sha, pass: false };
+  }
   const [critical, high] = ["critical", "high"].map(
     (s) =>
       paged(
@@ -698,7 +703,9 @@ function main(argv) {
       if (!opts.commit) throw new Error("reviewed --commit <sha>");
       const r = reviewed(realGh, opts.commit);
       console.log(JSON.stringify(r, null, 1));
-      if (!r.analysis) console.log(`FAIL: no release review of ${opts.commit} on a branch`);
+      if (r.newer)
+        console.log(`FAIL: ${r.newer} was reviewed after ${opts.commit} on the same branch`);
+      else if (!r.analysis) console.log(`FAIL: no release review of ${opts.commit} on a branch`);
       else console.log(r.pass ? "PASS" : "FAIL: open critical or high alerts");
       if (!r.pass) process.exitCode = 1;
       break;
