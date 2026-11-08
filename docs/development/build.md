@@ -27,8 +27,8 @@ adds: `npm run bundle:linux` passes it, and elsewhere add
 `--config src-tauri/tauri.bundle.conf.json` to `tauri build`, after
 `npm run build` has written `dist/`. It isn't in `tauri.conf.json` because
 `tauri-build` copies a bundle's files on every Cargo build, which would then
-fail without `dist/`. On macOS, Tauri signs the `.app` ad-hoc
-(`signingIdentity: "-"`, RELEASING.md's "Signing"); in the macOS VM, build the
+fail without `dist/`. On macOS, Tauri signs the `.app` ad-hoc, with the
+hardened runtime on (`signingIdentity: "-"`, RELEASING.md's "Signing"); in the macOS VM, build the
 `.dmg` with `CI=true`, which skips `bundle_dmg.sh`'s Finder layout step: it
 needs Automation access that the VM's session doesn't have, and fails
 ("failed to run bundle_dmg.sh") without it. `node scripts/check-package.mjs deb|rpm|nsis|dmg <file>`

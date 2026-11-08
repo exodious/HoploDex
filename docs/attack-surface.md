@@ -124,7 +124,7 @@ and peer review catch that.
   - Does a screen lock, a sleep or the close of the database a dialog is for take the dialog down (`Prompts`)? Does the idle lock wait while one is up?
   - Is the E2E stand-in (`passphrase_dialog/e2e.rs`, which reads a queue file and logs what it shows) built only with `e2e`?
   - Are keyring entries only `passphrase:<database id>`? In the Flatpak, is the Secret portal's store used, and never the Secret Service or `oo7::Keyring::new()`?
-  - The macOS `.app` is signed ad-hoc without the hardened runtime (`signingIdentity: "-"`, `hardenedRuntime: false`, #19): its designated requirement is its cdhash, and dyld honours `DYLD_*` variables and loads libraries nobody validated. Can a same-user process run code inside the genuine HoploDex that way (or with a debugger) and so read a saved passphrase from the keychain without a prompt? Should the hardened runtime be on?
+  - The macOS `.app` is signed ad-hoc with the hardened runtime on and no entitlements (`signingIdentity: "-"`, `hardenedRuntime: true`, #19), and its designated requirement is its cdhash. Can a same-user process still run code inside the genuine HoploDex and so read a saved passphrase from the keychain without a prompt?
   - Can `test-kdf` (1,000 iterations) never reach a shipped or E2E build (the `compile_error!` in `db/cipher.rs`)?
 - **Accepted:**
   - [011 research.md §20](../specs/011-flatpak/research.md): a compromised Flatpak process can read HoploDex's own saved passphrases.
@@ -182,7 +182,7 @@ and peer review catch that.
   - Is `tripwire.rs` intact?
   - Does `sandbox_probe.rs` fail closed and resist steering by the environment? (It skips only containers, and runs in Flatpak since 011.)
   - Does the main web view receive only PNGs HoploDex encoded? A helper answers a page with raw pixels: does the app check them against the request (`helper_handle.rs`'s `fits_the_request`) before it encodes them, and is that all it reads of them?
-  - The app reads and encodes a helper's page outside the helper's memory cap, and encodes it after `exchange`'s time limit: what can a hostile helper make it spend, from `read_frame_by_tag` up to `MAX_FRAME` for a `Page` frame (every other response is held to `max_response`'s smaller limit before its payload is read) before `fits_the_request` looks, through `encode_png`?
+  - The app reads and encodes a helper's page outside the helper's memory cap, and encodes it after `exchange`'s time limit: what can a hostile helper make it spend, from `read_frame_by_tag`, which holds each response to `max_response`'s limit before its payload is read, through `fits_the_request` and `encode_png`?
 - **Accepted:**
   - [007 research.md §1](../specs/007-document-preview/research.md), macOS: WebKit's PDF code runs where Tauri injects IPC, and the ACL manifest is the guard.
   - [007 research.md §1](../specs/007-document-preview/research.md), Linux without WebKit's sandbox (a container, or where the system forbids it): a PDF exploit runs with the user's access.
@@ -277,7 +277,7 @@ and peer review catch that.
 - **Code:** `src-tauri/Cargo.toml` (`[features]`, `[patch.crates-io]`); `src-tauri/build.rs`; `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/upgrade.rs`; `src-tauri/src/app_dirs.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/services/keyring.rs`; `src-tauri/vendor/**`; `scripts/check-no-webdriver.mjs`; `scripts/check-package.mjs`; `scripts/build-appimage.sh`
 - **Ask:**
   - Is `e2e` still the only thing that brings `tauri-plugin-wdio-webdriver` (`cargo tree`)? `flatpak-check` implies it.
-  - Is every marker absent from every shipped binary and installer, on each OS? The package jobs check the release binary they built on each OS, and `check-package.mjs` the binary inside the `.dmg` (#19). Is every published package built by a job that runs one of these checks?
+  - Is every marker absent from every shipped binary and installer, on each OS? The package jobs check the release binary they built on each OS (#19). Is every published package built by a job that runs one of these checks?
   - Should the markers in `check-no-webdriver.mjs` cover every E2E-only `HOPLODEX_E2E_*` name in the backend?
   - Does anything stop a shipped build with `mock-keyring` alone, beside `custom-protocol`?
   - Do `test-kdf` and `upgrade-test-steps` still refuse `custom-protocol` and `e2e` at compile time?
@@ -298,14 +298,14 @@ and peer review catch that.
 - **Ask:**
   - Do workflows take least privilege, avoid `pull_request_target`, receive untrusted input only through `env`, pin actions (#72), set `persist-credentials: false`, and expose no secrets on pull request events?
   - Can no code change skip the audit (`audit.yml`'s skip rule, #142), or `ci.yml`'s jobs (`.github/actions/scope`'s Markdown-only rule), including the packages jobs' `check-no-webdriver.mjs`? Does `FLATPAK_PATHS` still cover what the Flatpak check protects?
-  - Are caches saved only from `main` (`.github/actions/setup`)? Do the runs that only restore them (a pull request, the release workflow's tag run and its `workflow_dispatch` dry run) restore only what `main` saved, so no pull request or other branch can plant a dependency, toolchain or OpenSSL build that `main` or a release uses? Is the Windows OpenSSL that `main` cached all a published package takes from a cache? Is vcpkg fetched and built only at the commit `builtin-baseline` pins (`scripts/windows/vcpkg/vcpkg.json`)?
+  - Are caches saved only by pushes to `main` (`.github/actions/setup`)? Do the runs that only restore them (a pull request, the release workflow's tag run and its `workflow_dispatch` dry run) restore only what `main` saved, so no pull request or other branch can plant a dependency, toolchain or OpenSSL build that `main` or a release uses? Is the Windows OpenSSL that `main` cached all a published package takes from a cache? Is vcpkg fetched and built only at the commit `builtin-baseline` pins (`scripts/windows/vcpkg/vcpkg.json`)?
   - CodeQL doesn't scan workflows (no `actions` language), `vite.config.ts`, `vitePlugin.mjs` or `scripts/` (`.github/codeql/codeql-config.yml`). Does this review cover them?
   - Does every dev server that can write to the tree need a per-run token and bind to `localhost` (#70)?
   - Is the vendored crate built only under `e2e`?
   - Is the Flatpak built offline from the committed source lists?
   - Does `scripts/ai-security-review.mjs` change code scanning only as the skill says: uploads only to a branch or `refs/pull/<n>/head`, under the fixed `TOOL` and `CATEGORY`, with only introduced findings on a pull request (its annotations are public); dismissals only through `carry-dismissal`, from an alert already dismissed? Does `upload` report an open alert an upload left out (which closes it)? Does `gate` count every tool's open critical and high alerts, Dependabot, secret scanning and draft or triage advisories?
   - The release workflow (`release.yml`, #19): does it draft a release only on a `v*` tag, which only the repository's admins can create (a `workflow_dispatch` run is a dry run that drafts nothing), and never publish it? Does only its draft job hold `contents: write`, and only after every other job passed? Does it refuse to draft unless `ai-security-review.mjs reviewed` finds the release review's upload for exactly the tagged commit, on `main` (the one branch CodeQL analyzes), as the newest review there, with the commit still `main`'s head and no critical or high code scanning or Dependabot alert open? Does `ci.yml`'s `release` input change only what `docs/development/ci.md` says (the E2E profile, macOS E2E counting, both Flatpak checks, keeping the packages)? Does every published file come from a package job of this run, never a cache?
-  - Does `scripts/release.mjs` tag only in its last step, after every earlier step passed and `reviewed` accepted the commit, and make no GitHub release?
+  - Does `scripts/release.mjs` tag only in its last step, after every earlier step passed on a clean tree at that commit, the commit itself passed the workflow's tag check and `reviewed` accepted it, and make no GitHub release?
   - Regression: #70, #72.
 - **Since:** the baseline review (#70, #72); CodeQL #82; audit #85; pr-body #134; code scanning uploads and the release gate, #21's review skill; the per-pull-request CI and its pinned OpenSSL #25; the release workflow and the package checks #19.
 

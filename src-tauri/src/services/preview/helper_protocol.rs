@@ -8,7 +8,7 @@
 use std::io::{self, Read, Write};
 
 use super::PageSize;
-use super::tiff::MAX_PAGES;
+use super::tiff::{MAX_PAGES, MAX_PIXELS};
 use crate::services::helper::frames::{
     MAX_FRAME, invalid, read_frame, read_frame_by_tag, write_frame,
 };
@@ -27,13 +27,13 @@ const PAGE_HEADER: usize = 9;
 const MAX_REASON: usize = 4096;
 
 /// The largest response of each kind (its tag and payload), which the app
-/// checks before it reads one: a page's pixels may take up to [`MAX_FRAME`],
-/// a page list only what [`MAX_PAGES`] pages need.
+/// checks before it reads one: a page holds at most [`MAX_PIXELS`] pixels of
+/// three samples each, a page list only what [`MAX_PAGES`] pages need.
 fn max_response(tag: u8) -> usize {
     match tag {
         LOADED => 1 + 4 + MAX_PAGES * 16,
         FAILED => 1 + MAX_REASON,
-        PAGE => MAX_FRAME,
+        PAGE => 1 + PAGE_HEADER + MAX_PIXELS as usize * 3,
         PAGE_FAILED => 1,
         _ => 0,
     }
@@ -268,9 +268,13 @@ mod tests {
 
         // A frame longer than its kind's largest is refused from its length
         // and tag alone, before its payload arrives.
-        for (tag, max) in
-            [(LOADED, 1 + 4 + MAX_PAGES * 16), (FAILED, 1 + MAX_REASON), (PAGE_FAILED, 1)]
-        {
+        let page_limit = 1 + 9 + 3 * 24 * 1024 * 1024;
+        for (tag, max) in [
+            (LOADED, 1 + 4 + MAX_PAGES * 16),
+            (FAILED, 1 + MAX_REASON),
+            (PAGE, page_limit),
+            (PAGE_FAILED, 1),
+        ] {
             let mut wire = (max as u32 + 1).to_be_bytes().to_vec();
             wire.push(tag);
             let err = read_response(&mut &wire[..]).unwrap_err();
@@ -279,8 +283,8 @@ mod tests {
         let mut wire = (MAX_FRAME as u32).to_be_bytes().to_vec();
         wire.push(99);
         assert_eq!(read_response(&mut &wire[..]).unwrap_err().kind(), io::ErrorKind::InvalidData);
-        // A page's pixels may still take the whole frame: this one is only cut short.
-        let mut wire = (MAX_FRAME as u32).to_be_bytes().to_vec();
+        // The largest page passes that check: this frame is only cut short.
+        let mut wire = (page_limit as u32).to_be_bytes().to_vec();
         wire.push(PAGE);
         assert_eq!(read_response(&mut &wire[..]).unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
 

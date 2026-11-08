@@ -26,10 +26,11 @@ notarization) and no Windows code-signing certificate, for now. The macOS build
 keeps its own ad-hoc signature, without which Apple silicon runs nothing:
 `signingIdentity: "-"` in `src-tauri/tauri.conf.json` has Tauri sign the whole
 `.app` ad-hoc (the linker's signature covers only the binary, which
-`codesign --verify --deep --strict` refuses), without the hardened runtime,
-which matters only for notarization. The macOS package job checks the `.app`
-in the `.dmg` carries a valid one (`codesign --verify`). The Windows and Linux packages and the `.flatpak` are
-unsigned. The release notes say how to open an unsigned build.
+`codesign --verify --deep --strict` refuses), with the hardened runtime on
+(`hardenedRuntime: true`) and no entitlements. The macOS package job checks the
+`.app` in the `.dmg` carries a valid one (`codesign --verify`). The Windows and
+Linux packages and the `.flatpak` are unsigned. The release notes say how to
+open an unsigned build.
 
 **Release candidates.** A tag with a pre-release suffix, such as
 `v0.1.0-rc.1`, makes a GitHub pre-release. A release candidate doesn't count
@@ -42,19 +43,26 @@ review included.
 ## The release script
 
 `scripts/release.mjs` runs the steps below that a command can do, in order, on
-your own machine, and last creates and pushes the tag. Fetch first, so
-`origin/main` is the commit you mean:
+your own machine, and last creates and pushes the tag. Check out the commit
+you will tag first:
 
 ```bash
 git fetch origin
+git switch --detach origin/main
 node scripts/release.mjs all 0.1.0-rc.1 --dry-run   # print every command, the tag's included
 node scripts/release.mjs all 0.1.0-rc.1             # run them, stopping at the first failure
 node scripts/release.mjs checks 0.1.0               # or one step
 ```
 
 Its steps are `version`, `records` (a final release only), `checks`,
-`flatpak`, `review`, `gate` and `tag`; `--commit <sha>` names another commit
-than `origin/main`'s head, and `--after <reviewed commit>` goes to the review.
+`flatpak`, `review`, `gate` and `tag`. `all` runs them in that order, all but
+`records`, whose lines must already be on the commit (step 2). `--commit <sha>`
+names another commit than `origin/main`'s head, and `--after <reviewed commit>`
+goes to the review. `version`, `checks`, `flatpak` and `all` refuse unless the
+working tree is clean and `HEAD` is that commit, so what they test is what gets
+tagged. `tag`, and `all` before anything else, read the commit itself and refuse
+what the workflow would: a tag that doesn't name its version, or a final
+release's tag whose commit has no stored database or `released.txt` line for it.
 The tests and the Flatpak run in the dev container when podman is there. It
 tags only when every step before passed; it never makes a GitHub release. The
 version, its `<release>` entry and the checks a person makes (steps 1, 3 to 5)
@@ -80,7 +88,8 @@ way is a pull request like any other; then start again from the new commit.
      (`cargo run --example release_fixture` writes it). 0.1.0's is stored already;
    - run `release_upgrade_test.rs` and `released_migrations_test.rs`.
 
-   `release.mjs records` writes the lines and `checks` runs the tests; commit
+   `release.mjs records` writes the lines into the working tree; commit them,
+   run the tests with `release.mjs checks <version> --commit HEAD`, and merge
    them through a pull request. The workflow refuses a final release's tag
    whose commit has no `released.txt` line for its stored database.
 3. **The manual license checks** ([Licenses](docs/development/licenses.md), "License
@@ -142,7 +151,8 @@ way is a pull request like any other; then start again from the new commit.
 
 The `version tags` ruleset lets only the repository's admins create `v*`
 tags. `release.mjs tag` (the last step of `all`) checks the workflow will
-accept the commit, then tags it and pushes the tag. By hand, that is:
+accept the commit, then tags it and pushes the tag. By hand, once the commit
+carries the version and any records, that is:
 
 ```bash
 node scripts/ai-security-review.mjs reviewed --commit <commit>
@@ -165,8 +175,7 @@ On the tag, `release.yml` runs:
   (`HOPLODEX_E2E_PROFILE=release`) on all three, macOS's counting too; the
   packages, each checked by `scripts/check-package.mjs` (`NOTICES.txt` beside
   the program; in the `.deb`, apport's ignore entry; in the `.dmg`, the `.app`'s
-  signature and a binary without the E2E-only WebDriver server) and kept as
-  the run's artifacts; and the Flatpak, with `test:flatpak` and then
+  signature) and kept as the run's artifacts; and the Flatpak, with `test:flatpak` and then
   `test:flatpak -- --fresh-install` against the `.flatpak` the run built.
 - **Release checks:** `npm run audit` and `import_largest_test`.
 - **Surface checks** on each OS: the PDF surface check (on macOS also with

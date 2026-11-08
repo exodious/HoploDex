@@ -47,7 +47,7 @@ in it which ran where. The jobs run natively on pinned images (`ubuntu-26.04`,
 | E2E (Linux, Windows, macOS) | `npm run build`, `npm run test:e2e`, then the quit-cleanup script for that OS |
 | Packages (Linux) | On `ubuntu-24.04`, which sets the packages' glibc floor: `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary, then `scripts/check-package.mjs` checks the `.deb` installs `/usr/bin/hoplodex`, `NOTICES.txt` and apport's ignore entry for it (#166), and the `.rpm` the first two; no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
 | Packages (Windows) | `npm run tauri build -- --config src-tauri/tauri.bundle.conf.json --bundles nsis` (no MSI, #19), then `scripts/check-no-webdriver.mjs` on `hoplodex.exe` and `scripts/check-package.mjs` on the installer (7-Zip lists `hoplodex.exe` and `NOTICES.txt`) |
-| Packages (macOS) | `npm run tauri build -- --config src-tauri/tauri.bundle.conf.json --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary and `scripts/check-package.mjs` on the `.dmg`: the `.app` in it has `NOTICES.txt`, a valid ad-hoc signature (`codesign --verify`) and no WebDriver |
+| Packages (macOS) | `npm run tauri build -- --config src-tauri/tauri.bundle.conf.json --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary and `scripts/check-package.mjs` on the `.dmg`: the `.app` in it has `NOTICES.txt` and a valid ad-hoc signature (`codesign --verify`) |
 | Flatpak | `npm run bundle:flatpak`, whose manifest runs `scripts/check-no-webdriver.mjs` on the release binary (the check's variant carries the driver on purpose); then, only when the pull request changes one of the paths [The Flatpak check](flatpak.md#the-flatpak-check) lists, the check's stand-ins and `npm run build && npm run test:flatpak` |
 
 The packages are those a release publishes, built the same way, but a pull
@@ -72,7 +72,7 @@ here; [Test](testing.md) says when to run them.
   `README.md`), so a docs-only change that breaks it shows on the next pull
   request that runs it.
 - **Caches** (npm, one Rust cache per OS and profile, and the Windows
-  OpenSSL) are saved only from `main` and restored by pull requests
+  OpenSSL) are saved only by pushes to `main` and restored by every other run
   (`.github/actions/setup`), about 3 GB of the repository's 10 GB. The release
   builds and the Flatpak installation (6.3 GB, fetched in about a minute) have
   none.

@@ -452,21 +452,18 @@ export function reviewed(gh, commit) {
   const analysis = analyses.find((a) => a.commit_sha === commit);
   if (!analysis) return { commit, analysis: null, pass: false };
   // A later review on the branch would have moved its alerts on from this commit's.
-  const newest = analyses
-    .filter((a) => a.ref === analysis.ref)
-    .reduce((n, a) => (a.created_at > n.created_at ? a : n));
+  const newest = analyses.reduce((n, a) => (a.created_at > n.created_at ? a : n));
   if (newest.commit_sha !== commit) {
     return { commit, analysis: null, newer: newest.commit_sha, pass: false };
   }
-  const branch = analysis.ref.replace(/^refs\/heads\//, "");
-  if (gh([`repos/${REPO}/compare/${commit}...${enc(branch)}`]).status !== "identical") {
-    return { commit, analysis: null, behind: analysis.ref, pass: false };
+  if (gh([`repos/${REPO}/compare/${commit}...main`]).status !== "identical") {
+    return { commit, analysis: null, behind: RELEASE_REF, pass: false };
   }
   const [critical, high] = ["critical", "high"].map(
     (s) =>
       paged(
         gh,
-        `repos/${REPO}/code-scanning/alerts?state=open&severity=${s}&ref=${enc(analysis.ref)}&per_page=100`,
+        `repos/${REPO}/code-scanning/alerts?state=open&severity=${s}&ref=${enc(RELEASE_REF)}&per_page=100`,
       ).length,
   );
   const dependabot = paged(

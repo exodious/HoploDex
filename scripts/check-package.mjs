@@ -9,9 +9,8 @@
 //   node scripts/check-package.mjs rpm  FILE   rpm -qlp: the program and the notices
 //   node scripts/check-package.mjs nsis FILE   7z l: the program and the notices
 //   node scripts/check-package.mjs dmg  FILE   (macOS) mounts it read-only: the
-//                                              .app's notices, its own (ad-hoc)
-//                                              signature (codesign --verify), and
-//                                              no WebDriver in its binary (#29)
+//                                              .app's notices and its own (ad-hoc)
+//                                              signature (codesign --verify)
 //
 // Each takes one or more files. Node, so it runs the same on every OS. No
 // dependencies of its own.
@@ -88,16 +87,6 @@ function checkDmg(file) {
       encoding: "utf8",
     });
     if (sig.status !== 0) problems.push(`a valid signature (codesign: ${sig.stderr.trim()})`);
-    const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-    const wd = spawnSync(
-      process.execPath,
-      [
-        path.join(repo, "scripts/check-no-webdriver.mjs"),
-        path.join(app, "Contents/MacOS/hoplodex"),
-      ],
-      { stdio: "inherit" },
-    );
-    if (wd.status !== 0) problems.push("a binary without the E2E-only WebDriver server");
     return problems;
   } finally {
     run("hdiutil", ["detach", mount]);

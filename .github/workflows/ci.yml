@@ -38,7 +38,8 @@ on:
         default: false
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A release run has its own group, so a dry run from main holds up no push there.
+  group: ci-${{ inputs.release && 'release-' || '' }}${{ github.ref }}
   # A newer push to a pull request replaces its run; every push to main runs
   # to the end, so each commit there has a result and saves the caches.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -396,14 +397,21 @@ jobs:
         run: |
           node scripts/check-package.mjs deb src-tauri/target/release/bundle/deb/*.deb
           node scripts/check-package.mjs rpm src-tauri/target/release/bundle/rpm/*.rpm
-      - name: Keep the packages
+      # Two artifacts: from one with both paths, the release workflow's draft
+      # job would get the deb/ and rpm/ folders instead of a flat list of files.
+      - name: Keep the .deb
         if: inputs.release
         uses: actions/upload-artifact@v7
         with:
-          name: packages-linux
-          path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
+          name: packages-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+      - name: Keep the .rpm
+        if: inputs.release
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-rpm
+          path: src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
 
   windows-packages:
@@ -468,8 +476,8 @@ jobs:
       - name: Check the shipped binary
         if: steps.scope.outputs.run == 'true'
         run: node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
-      # The .app in the .dmg: its notices, its own ad-hoc signature (no
-      # Developer ID, #19) and its binary.
+      # The .app in the .dmg: its notices and its own ad-hoc signature (no
+      # Developer ID, #19).
       - name: Check the .dmg
         if: steps.scope.outputs.run == 'true'
         run: node scripts/check-package.mjs dmg src-tauri/target/release/bundle/dmg/*.dmg
