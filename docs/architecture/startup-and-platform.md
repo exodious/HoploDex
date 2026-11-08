@@ -56,8 +56,9 @@ at startup, at every close and at exit, #166) rather than from
 `tauri.conf.json`.
 
 No database is open at startup: it manages `Session` and `MachineSettings` (with
-the system keyring), sweeps unfinished backups, and starts the system-event
-listener and the idle clock's 1 s tick.
+the system keyring), sweeps unfinished backups and, on Windows, the AppContainer
+profiles of helpers that have gone (`helper::job::sweep_profiles`), and starts
+the system-event listener and the idle clock's 1 s tick.
 
 Closing the window or quitting emits `app:quit-requested` so the frontend can
 ask about unsaved changes, except that `request_quit` exits at once while no

@@ -79,7 +79,7 @@ fn serve() -> io::Result<()> {
     Ok(())
 }
 
-/// `hoplodex --render-helper --self-check <port> <file>`: what the helper
+/// `hoplodex --render-helper --self-check <port> <file> [<process id>]`: what the helper
 /// could do before and after confining itself, as one JSON line. With
 /// `--foreign-arch` after them it only tries a call from another architecture,
 /// which a kernel without that compatibility mode ends the process for. It is the
@@ -129,6 +129,11 @@ mod self_check {
         let Ok(confinement) = confine::confine(MEMORY_LIMIT) else { return 3 };
         let descriptors_after = open_descriptors();
         let exec_after = can_start();
+        #[cfg(windows)]
+        let (process_after, windows_after) =
+            (args.get(2).and_then(|id| id.parse().ok()).map(can_touch), Some(windows()));
+        #[cfg(not(windows))]
+        let (process_after, windows_after): (Option<bool>, Option<u32>) = (None, None);
         #[cfg(unix)]
         let rlimit_core = {
             let mut limit = libc::rlimit { rlim_cur: 1, rlim_max: 1 };
@@ -156,6 +161,8 @@ mod self_check {
                 "file_after": can_open(),
                 "tcp_after": can_connect(),
                 "exec_after": exec_after,
+                "process_after": process_after,
+                "windows_after": windows_after,
                 "env_vars": std::env::vars_os().count(),
                 "rlimit_core": rlimit_core,
                 "dumpable": dumpable,
@@ -300,5 +307,40 @@ mod self_check {
             // SAFETY: plain system calls that only read a setting.
             "speculation": unsafe { [0, 1].map(|what| libc::prctl(52, what, 0, 0, 0)) },
         })
+    }
+
+    /// Whether a handle that can read, write or run code in process `id` opens.
+    #[cfg(windows)]
+    fn can_touch(id: u32) -> bool {
+        use windows_sys::Win32::Foundation::{CloseHandle, FALSE};
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_CREATE_THREAD, PROCESS_VM_READ, PROCESS_VM_WRITE,
+        };
+        let access = PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_CREATE_THREAD;
+        // SAFETY: a plain system call; a handle it returns is closed once.
+        unsafe {
+            let handle = OpenProcess(access, FALSE, id);
+            if handle.is_null() {
+                return false;
+            }
+            CloseHandle(handle);
+            true
+        }
+    }
+
+    /// How many top-level windows this process can see.
+    #[cfg(windows)]
+    fn windows() -> u32 {
+        use windows_sys::Win32::Foundation::{HWND, LPARAM, TRUE};
+        use windows_sys::Win32::UI::WindowsAndMessaging::EnumWindows;
+        unsafe extern "system" fn count(_: HWND, seen: LPARAM) -> i32 {
+            // SAFETY: `seen` is the pointer to the local below.
+            unsafe { *(seen as *mut u32) += 1 };
+            TRUE
+        }
+        let mut seen = 0u32;
+        // SAFETY: the callback only writes the local, which outlives the call.
+        unsafe { EnumWindows(Some(count), std::ptr::from_mut(&mut seen) as LPARAM) };
+        seen
     }
 }

@@ -28,6 +28,11 @@ of it:
   stays empty). One filter runs them all; a test that gains
   `#[cfg(feature = "mock-keyring")]` joins it, here and in `scripts/tart-vm.sh`:
   `cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf,mock-keyring -E 'test(/^keyring_test::/) | test(/^passphrase_protection_test::.*::create_and_open_write_nothing_to_the_keyring$/) | test(/^upgrade_test::remembering::/) | binary(portability_test)'`.
+- On Windows, each helper a test or E2E run starts has an AppContainer profile
+  in the user's own profile, named for its process (`services/helper/job.rs`). It
+  holds no database, key or setting, and is deleted when the helper ends. The
+  app's start-up deletes any left by processes that have gone, its own or a real
+  one's, and leaves those of running ones.
 - `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
   own) a throwaway sandbox (`e2e/support/sandbox.ts`, which `npm run session`
   uses too). An E2E build takes its config and cache

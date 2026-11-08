@@ -259,6 +259,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_SystemServices",
     "Win32_Security",
     "Win32_Security_Authorization",
+    # The helpers' AppContainer (007 research.md §11, amended 2026-11-07).
+    "Win32_Security_Isolation",
     "Win32_System_SystemInformation",
     # Opening the external copy's folder for its DACL without following a
     # reparse point (007 research.md §18).

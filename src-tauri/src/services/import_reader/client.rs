@@ -272,8 +272,7 @@ fn read_one(
         return Err(failure(end, &name));
     }
     let process =
-        HelperProcess::spawn(helper_exe, ARGUMENT, HELPER_MEMORY_BYTES).map_err(|err| {
-            log::error!("could not start the import reader: {err}");
+        HelperProcess::spawn(helper_exe, ARGUMENT, HELPER_MEMORY_BYTES).map_err(|_| {
             CommandError::new("INTERNAL_ERROR", "The import reader could not be started.")
         })?;
     let mut sheets = Sheets { format: file.format, sheets: Vec::new(), rows: 0 };

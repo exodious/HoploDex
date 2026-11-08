@@ -118,7 +118,7 @@ machines. The user's local notes name the machines and accounts.
 
 - **Windows:** as `docs/development/windows.md`'s "Driving a test machine from Linux, over
   SSH": pull the branch into the Windows test machine's clone, run builds,
-  `cargo nextest`, Vitest and lint over SSH directly, and anything that opens
+  Vitest and lint over SSH directly, and `cargo nextest` and anything that opens
   the app's window (E2E, screenshots, the surface and window-controls checks,
   `quit-cleanup.ps1`) through `scripts\windows\gui.ps1`. Nobody signs in to
   the machine over Remote Desktop: that takes the desktop session over.

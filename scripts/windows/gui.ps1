@@ -10,8 +10,8 @@ sshd ends it when the connection drops. So this runs the command through a
 scheduled task instead: "HoploDex gui", registered for this user (it needs
 no administrator) with an interactive logon, not elevated, which Task
 Scheduler starts in the user's signed-in desktop session, outside the SSH
-connection. Builds, cargo nextest and Vitest don't need it: run them over
-SSH directly.
+connection. cargo nextest needs it too, since a helper's AppContainer can't
+start without a desktop. Builds and Vitest don't: run them over SSH directly.
 
 The command is PowerShell, run in a new powershell.exe in -WorkingDirectory,
 in a minimized console window. Its output and errors go to a log in

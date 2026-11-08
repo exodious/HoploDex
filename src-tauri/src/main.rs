@@ -357,6 +357,12 @@ fn main() {
             // delete them (007 FR-003a, research.md §17). A hold for another
             // version is cleared in `decide_at_startup` below.
             machine.sweep_hold_leftovers();
+            // Helper profiles a crash or forced quit left, off this thread since
+            // what's in them is a hostile helper's to choose (007 research.md §11).
+            #[cfg(windows)]
+            let _ = std::thread::Builder::new()
+                .name("helper-profile-sweep".into())
+                .spawn(hoplodex_lib::services::helper::job::sweep_profiles);
             // Whether PDFs are previewed on this computer in this run: this
             // version's hold, then the web view's check, before anything is
             // shown (007 research.md §7). The surface's browser data folder from
