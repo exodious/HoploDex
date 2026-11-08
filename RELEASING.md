@@ -54,18 +54,18 @@ node scripts/release.mjs all 0.1.0-rc.1             # run them, stopping at the 
 node scripts/release.mjs checks 0.1.0               # or one step
 ```
 
-Its steps are `version`, `records` (a final release only), `checks`,
-`flatpak`, `review`, `gate` and `tag`. `all` runs them in that order, all but
-`records`, whose lines must already be on the commit (step 2). `--commit <sha>`
-names another commit than `origin/main`'s head, and `--after <reviewed commit>`
-goes to the review. `version`, `checks`, `flatpak` and `all` refuse unless the
-working tree is clean and `HEAD` is that commit, so what they test is what gets
-tagged. `tag`, and `all` before anything else, read the commit itself and refuse
+Its steps are `version`, `records` (a final release only), `checks`, `review`,
+`gate` and `tag`. `all` runs them in that order, all but `records`, whose lines
+must already be on the commit (step 2). `--commit <sha>` names another commit
+than `origin/main`'s head, and `--after <reviewed commit>` goes to the review.
+`version`, `checks` and `all` refuse unless the working tree is clean and `HEAD`
+is that commit, so what they test is what gets tagged. `tag`, and `all` before anything else, read the commit itself and refuse
 what the workflow would: a tag that doesn't name its version, or a final
 release's tag whose commit has no stored database or `released.txt` line for it.
-The tests and the Flatpak run in the dev container when podman is there. It
-tags only when every step before passed; it never makes a GitHub release. The
-version, its `<release>` entry and the checks a person makes (steps 1, 3 to 5)
+The tests run in the dev container when podman is there. It tags only when
+every step before passed; it never makes a GitHub release. It leaves what the
+release workflow runs to the workflow: the [dry run](#the-release-workflow) is
+the check before a tag, on every OS. The version, its `<release>` entry and the checks a person makes (steps 1, 3 to 5)
 are still yours.
 
 ## Before the tag
@@ -123,8 +123,9 @@ way is a pull request like any other; then start again from the new commit.
 6. **The local release-only tests.** `performance_test.rs` doesn't run in CI
    (its budgets need your machine): run it as [Test](docs/development/testing.md),
    "Release-only tests", says, or with `release.mjs checks`, which also runs
-   the migration tests, `import_largest_test` and `npm run audit`. `release.mjs
-   flatpak` builds the Flatpak and runs both of its checks.
+   the migration tests. Everything else the release needs tested, on every OS,
+   the workflow's [dry run](#the-release-workflow) runs before the tag: E2E, the
+   packages, both Flatpak checks, `npm run audit` and `import_largest_test`.
 7. **The AI security review** (constitution, "Development Workflow & Quality
    Gates"). Run `/ai-security-review release <commit>` on the commit you will
    tag. It reviews the whole codebase against `docs/attack-surface.md` and

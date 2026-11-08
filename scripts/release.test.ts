@@ -138,7 +138,7 @@ describe("release script", () => {
   });
 
   it("leaves the records out of all, since they reach the commit through a pull request", () => {
-    expect(steps("all")).toEqual(["version", "checks", "flatpak", "review", "gate", "tag"]);
+    expect(steps("all")).toEqual(["version", "checks", "review", "gate", "tag"]);
     expect(steps("records")).toEqual(["records"]);
   });
 
@@ -162,9 +162,16 @@ describe("release script", () => {
     ]);
   });
 
-  it("runs the container's commands there, the Flatpak's with --flatpak", () => {
-    const [build] = plan("flatpak", { version: "0.1.0", commit, after: null, container: true });
-    expect(build.run.slice(0, 3)).toEqual(["scripts/dev-container.sh", "--flatpak", "bash"]);
+  it("runs the container's commands there, and only what no workflow job runs", () => {
+    const checks = (container: boolean): string[][] =>
+      plan("checks", { version: "0.1.0", commit, after: null, container }).map(
+        (p: { run: string[] }) => p.run,
+      );
+    expect(checks(true)[0].slice(0, 3)).toEqual(["scripts/dev-container.sh", "bash", "-c"]);
+    expect(checks(false)[0].slice(0, 2)).toEqual(["bash", "-c"]);
+    expect(checks(false)).toHaveLength(2);
+    expect(checks(false).join(" ")).not.toMatch(/import_largest_test|npm run audit|flatpak/);
+    expect(() => plan("flatpak", { version: "0.1.0", commit, after: null })).toThrow(/no step/);
     const [review] = plan("review", {
       version: "0.1.0",
       commit,
@@ -201,7 +208,7 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
     const head = repo.commit(carrying("0.2.0"), older);
 
     expect(repo.release("version", "0.2.0", "--commit", head)).toMatchObject({ status: 0 });
-    for (const step of ["version", "checks", "flatpak", "all"]) {
+    for (const step of ["version", "checks", "all"]) {
       const r = repo.release(step, "0.1.0-rc.1", "--commit", older, "--dry-run");
       expect(r.status, step).toBe(1);
       expect(r.stderr, step).toContain(`HEAD is ${head}, not ${older}`);
@@ -266,6 +273,48 @@ function ciSteps(): Step[][] {
   };
   return Object.values(ci.jobs).map((j) => j.steps);
 }
+
+const hasCargo = spawnSync("cargo", ["--version"], { stdio: "ignore" }).status === 0;
+
+describe("the checks step's tests", () => {
+  it.runIf(hasCargo)("are selected by what Cargo really has", () => {
+    const { packages } = JSON.parse(
+      execFileSync(
+        "cargo",
+        [
+          "metadata",
+          "--no-deps",
+          "--format-version",
+          "1",
+          "--manifest-path",
+          "src-tauri/Cargo.toml",
+        ],
+        { cwd: ROOT, encoding: "utf8" },
+      ),
+    );
+    const targets = packages
+      .flatMap((p: { targets: { kind: string[]; name: string }[] }) => p.targets)
+      .filter((t: { kind: string[] }) => t.kind.includes("test"))
+      .map((t: { name: string }) => t.name);
+    const commands = plan("checks", { version: "0.1.0", commit, after: null, container: false })
+      .map((p: { run: string[] }) => p.run[2])
+      .join("\n");
+    const named = (pattern: RegExp) => [...commands.matchAll(pattern)].map((m) => m[1]);
+
+    const asTargets = [...named(/--test (\w+)/g), ...named(/binary\((\w+)\)/g)];
+    expect(asTargets.sort()).toEqual(["performance_test", "release_upgrade_test"]);
+    for (const t of asTargets) expect(targets).toContain(t);
+
+    // A file compiled into `integration`: its tests' names start with its name
+    // (docs/development/testing.md), and it is no target of its own.
+    expect(named(/test\(\/\^(\w+)::\/\)/g)).toEqual(["released_migrations_test"]);
+    expect(targets).toContain("integration");
+    expect(targets).not.toContain("released_migrations_test");
+    expect(fs.existsSync(path.join(ROOT, "src-tauri/tests/released_migrations_test.rs"))).toBe(
+      true,
+    );
+  });
+});
 
 describe("the package jobs' artifacts", () => {
   it("are one path each, so the draft job gets a flat list of files (upload-artifact keeps the folders below several paths' common ancestor)", () => {

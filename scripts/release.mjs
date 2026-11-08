@@ -10,9 +10,8 @@
 //   records   a final release only: add the migration records to released.txt in
 //             the working tree, for a pull request (each unreleased step, then
 //             the stored database, which must exist)
-//   checks    the release-only tests (release_upgrade_test, released_migrations_test,
-//             performance_test, import_largest_test) and `npm run audit`
-//   flatpak   build the Flatpak, then `test:flatpak`, then `test:flatpak -- --fresh-install`
+//   checks    the tests to run on the owner's machine: release_upgrade_test,
+//             released_migrations_test and performance_test
 //   review    start the AI security review of --commit (default: origin/main's
 //             head) in Claude Code, with --after <reviewed commit> after fixes
 //   gate      the release gate, and the workflow's own check of --commit
@@ -24,12 +23,14 @@
 //             the commit already: `tag`'s check of the commit comes first of all
 //
 // <version> is the app's version with the tag's suffix, if any: `0.1.0` or
-// `0.1.0-rc.1`. version, checks, flatpak and all run on the working tree, so they
-// refuse unless it is clean and HEAD is --commit. With --dry-run each command,
-// the tag's included, is printed instead of run, and `all` stops at the first
-// step that fails, so it tags only after every check. Commands that the
-// development docs run in the dev container go through scripts/dev-container.sh
-// when podman is here and this isn't the container already.
+// `0.1.0-rc.1`. version, checks and all run on the working tree, so they refuse
+// unless it is clean and HEAD is --commit. With --dry-run each command, the
+// tag's included, is printed instead of run, and `all` stops at the first step
+// that fails, so it tags only after every check. Commands that the development
+// docs run in the dev container go through scripts/dev-container.sh when podman
+// is here and this isn't the container already. What the release workflow runs
+// (the Flatpak's checks, the dependency audit, import_largest_test) stays there:
+// its manual dry run is the check before a tag, on every OS.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -42,9 +43,9 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const RELEASED = "src-tauri/src/db/migrations/released.txt";
 const MIGRATIONS = "src-tauri/src/db/mod.rs";
 const METAINFO = "flatpak/io.github.exodious.HoploDex.metainfo.xml";
-export const STEPS = ["version", "records", "checks", "flatpak", "review", "gate", "tag"];
+export const STEPS = ["version", "records", "checks", "review", "gate", "tag"];
 /** The steps that run on the working tree, so it must be the commit they are for. */
-const ON_THE_TREE = ["version", "checks", "flatpak"];
+const ON_THE_TREE = ["version", "checks"];
 
 /** `0.1.0-rc.1` → { app: "0.1.0", final: false }. */
 export function parseVersion(version) {
@@ -126,14 +127,9 @@ const hasPodman = () => spawnSync("podman", ["--version"], { stdio: "ignore" }).
  * A command line for bash, through the dev container when the docs run it
  * there and it applies (CLAUDE.md, "Run tests in the dev container").
  */
-export function containerised(
-  cmd,
-  { flatpak = false, container = !inContainer() && hasPodman() } = {},
-) {
+export function containerised(cmd, { container = !inContainer() && hasPodman() } = {}) {
   const line = ["bash", "-c", cmd.join(" ")];
-  return container
-    ? ["scripts/dev-container.sh", ...(flatpak ? ["--flatpak"] : []), ...line]
-    : line;
+  return container ? ["scripts/dev-container.sh", ...line] : line;
 }
 
 const MANIFEST = ["--manifest-path", "src-tauri/Cargo.toml"];
@@ -142,7 +138,7 @@ const UNWIND = ["env", "CARGO_PROFILE_RELEASE_PANIC=unwind"];
 /** What each step runs: `run` commands, or a `print` the owner acts on. */
 export function plan(step, { version, commit, after, container }) {
   const { final, tag } = parseVersion(version);
-  const c = (cmd, o = {}) => ({ run: containerised(cmd, { container, ...o }) });
+  const c = (cmd) => ({ run: containerised(cmd, { container }) });
   switch (step) {
     case "version":
     case "records":
@@ -156,10 +152,8 @@ export function plan(step, { version, commit, after, container }) {
           ...MANIFEST,
           "--features",
           "test-kdf",
-          "--test",
-          "release_upgrade_test",
-          "--test",
-          "released_migrations_test",
+          "-E",
+          "'binary(release_upgrade_test) or test(/^released_migrations_test::/)'",
         ]),
         c([
           ...UNWIND,
@@ -176,27 +170,6 @@ export function plan(step, { version, commit, after, container }) {
           "--nocapture",
           "--test-threads=1",
         ]),
-        c([
-          ...UNWIND,
-          "cargo",
-          "test",
-          ...MANIFEST,
-          "--release",
-          "--test",
-          "import_largest_test",
-          "--",
-          "--ignored",
-          "--nocapture",
-        ]),
-        c(["npm", "run", "audit"]),
-      ];
-    case "flatpak":
-      return [
-        c(["npm", "run", "bundle:flatpak"], { flatpak: true }),
-        c(["npm", "run", "build", "&&", "npm", "run", "test:flatpak"], { flatpak: true }),
-        c(["npm", "run", "build", "&&", "npm", "run", "test:flatpak", "--", "--fresh-install"], {
-          flatpak: true,
-        }),
       ];
     case "review":
       return [
