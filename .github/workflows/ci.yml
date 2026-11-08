@@ -222,6 +222,8 @@ jobs:
         run: npm run test:e2e
       - name: Quit cleanup
         if: steps.scope.outputs.run == 'true'
+        env:
+          HOPLODEX_E2E_PROFILE: ${{ inputs.release && 'release' || 'e2e' }}
         run: xvfb-run -a python3 e2e/scripts/quit-cleanup.py
 
   windows-e2e:
@@ -282,6 +284,7 @@ jobs:
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
+          HOPLODEX_E2E_PROFILE: ${{ inputs.release && 'release' || 'e2e' }}
         run: powershell -ExecutionPolicy Bypass -File e2e/scripts/quit-cleanup.ps1
 
   macos-e2e:
@@ -335,6 +338,8 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         continue-on-error: ${{ !inputs.release }}
         timeout-minutes: 5
+        env:
+          HOPLODEX_E2E_PROFILE: ${{ inputs.release && 'release' || 'e2e' }}
         run: python3 e2e/scripts/quit-cleanup.py
       - name: Record the failures
         if: always() && (steps.e2e.outcome == 'failure' || steps.quit.outcome == 'failure')

@@ -60,7 +60,8 @@ npm run build && HOPLODEX_E2E_PROFILE=release npm run test:e2e
 
 `HOPLODEX_E2E_PROFILE` is `e2e` (the default) or `release`; it picks the
 profile `wdio.conf.ts` builds the app and the seed with, and the binary it
-launches (`target/<profile>/hoplodex`).
+and the [quit cleanup](#quit-cleanup) scripts launch
+(`target/<profile>/hoplodex`).
 
 The `e2e` Cargo feature is for builds that must never reach a shipped one. It
 compiles in `tauri-plugin-wdio-webdriver`, a W3C WebDriver server on

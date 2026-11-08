@@ -247,13 +247,24 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
   });
 });
 
+type Step = {
+  name?: string;
+  uses?: string;
+  env?: Record<string, string>;
+  with?: Record<string, string>;
+};
+
+function ciSteps(): Step[][] {
+  const ci = yaml.load(fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8")) as {
+    jobs: Record<string, { steps: Step[] }>;
+  };
+  return Object.values(ci.jobs).map((j) => j.steps);
+}
+
 describe("the package jobs' artifacts", () => {
   it("are one path each, so the draft job gets a flat list of files (upload-artifact keeps the folders below several paths' common ancestor)", () => {
-    const ci = yaml.load(fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8")) as {
-      jobs: Record<string, { steps: { uses?: string; with?: Record<string, string> }[] }>;
-    };
-    const uploads = Object.values(ci.jobs)
-      .flatMap((j) => j.steps)
+    const uploads = ciSteps()
+      .flat()
       .filter(
         (s) => s.uses?.startsWith("actions/upload-artifact") && /^packages-/.test(s.with!.name),
       );
@@ -266,4 +277,45 @@ describe("the package jobs' artifacts", () => {
     ]);
     for (const s of uploads) expect(s.with!.path.trim(), s.with!.name).not.toContain("\n");
   });
+});
+
+describe("Quit cleanup on a release's build", () => {
+  it("checks the profile its job's E2E step built, on every OS", () => {
+    const jobs = ciSteps().filter((steps) => steps.some((s) => s.name === "Quit cleanup"));
+    expect(jobs).toHaveLength(3);
+    for (const steps of jobs) {
+      const profile = (name: string) =>
+        steps.find((s) => s.name === name)?.env?.HOPLODEX_E2E_PROFILE;
+      expect(profile("E2E")).toBeTruthy();
+      expect(profile("Quit cleanup")).toBe(profile("E2E"));
+    }
+  });
+
+  // A scratch copy: its binary is never there, so it stops before starting an app.
+  it.skipIf(process.platform === "win32")(
+    "looks for target/<profile>/hoplodex, as e2e/support/app.ts launches it",
+    () => {
+      const dir = tempDir();
+      const script = path.join(dir, "e2e/scripts/quit-cleanup.py");
+      fs.mkdirSync(path.dirname(script), { recursive: true });
+      fs.copyFileSync(path.join(ROOT, "e2e/scripts/quit-cleanup.py"), script);
+      const missing = (env: Record<string, string>) => {
+        const r = spawnSync("python3", [script], {
+          encoding: "utf8",
+          env: { ...process.env, HOPLODEX_BIN: undefined, HOPLODEX_E2E_PROFILE: undefined, ...env },
+        });
+        expect(r.status).toBe(1);
+        return r.stderr;
+      };
+      const built = (profile: string) => path.join(dir, "src-tauri/target", profile, "hoplodex");
+      expect(missing({})).toContain(`${built("e2e")} not found`);
+      expect(missing({ HOPLODEX_E2E_PROFILE: "" })).toContain(`${built("e2e")} not found`);
+      expect(missing({ HOPLODEX_E2E_PROFILE: "release" })).toContain(
+        `${built("release")} not found`,
+      );
+      expect(
+        missing({ HOPLODEX_E2E_PROFILE: "release", HOPLODEX_BIN: path.join(dir, "elsewhere") }),
+      ).toContain(`${path.join(dir, "elsewhere")} not found`);
+    },
+  );
 });

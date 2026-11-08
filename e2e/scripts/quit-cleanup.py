@@ -24,7 +24,8 @@ can't be checked that way, since the page answers the quit, but it ends
 through the same exit handler.
 
 Linux and macOS; quit-cleanup.ps1 is its Windows counterpart (#27). Build the
-E2E binary first:
+E2E binary first (HOPLODEX_E2E_PROFILE=release checks target/release/hoplodex,
+as the E2E suite drives it, instead of target/e2e/hoplodex):
 
     npm run build && cargo build --profile e2e --features custom-protocol,e2e \\
         --manifest-path src-tauri/Cargo.toml
@@ -58,7 +59,8 @@ LINUX = sys.platform.startswith("linux")
 MACOS = sys.platform == "darwin"
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-BINARY = os.environ.get("HOPLODEX_BIN", os.path.join(ROOT, "src-tauri", "target", "e2e", "hoplodex"))
+PROFILE = os.environ.get("HOPLODEX_E2E_PROFILE") or "e2e"
+BINARY = os.environ.get("HOPLODEX_BIN", os.path.join(ROOT, "src-tauri", "target", PROFILE, "hoplodex"))
 WINDOW_TITLE = "HoploDex"
 IDENTIFIER = "io.github.exodious.HoploDex"
 # The embedded WebDriver server answers once the app is up. The port is above
