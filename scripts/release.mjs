@@ -14,7 +14,7 @@
 //             released_migrations_test and performance_test
 //   review    start the AI security review of --commit (default: origin/main's
 //             head) in Claude Code, with --after <reviewed commit> after fixes
-//   gate      the release gate, and the workflow's own check of --commit
+//   gate      the release gate (`ai-security-review.mjs gate`)
 //   tag       check the workflow will accept --commit (its tag check, read from
 //             the commit, and `ai-security-review.mjs reviewed`), then create the
 //             annotated tag v<version> on it and push it to origin, which starts
@@ -181,10 +181,7 @@ export function plan(step, { version, commit, after, container }) {
         },
       ];
     case "gate":
-      return [
-        { run: ["node", "scripts/ai-security-review.mjs", "gate"] },
-        { run: ["node", "scripts/ai-security-review.mjs", "reviewed", "--commit", commit] },
-      ];
+      return [{ run: ["node", "scripts/ai-security-review.mjs", "gate"] }];
     case "tag":
       return [
         { run: ["node", "scripts/ai-security-review.mjs", "reviewed", "--commit", commit] },

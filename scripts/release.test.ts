@@ -153,6 +153,10 @@ describe("release script", () => {
       }
     }
     expect(STEPS.at(-1)).toBe("tag");
+    const gate = plan("gate", { version: "0.1.0-rc.1", commit, after: null, container: false });
+    expect(gate.map((p: { run?: string[] }) => p.run)).toEqual([
+      ["node", "scripts/ai-security-review.mjs", "gate"],
+    ]);
     const tag = plan("tag", { version: "0.1.0-rc.1", commit, after: null, container: false });
     expect(tag.map((p: { run?: string[] }) => p.run)).toEqual([
       ["node", "scripts/ai-security-review.mjs", "reviewed", "--commit", commit],
