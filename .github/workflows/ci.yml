@@ -299,17 +299,15 @@ jobs:
       - name: Build the frontend
         if: steps.scope.outputs.run == 'true'
         run: npm run build
-      # One worker: the suite passed so on the 3-CPU, 7 GB runner, where two
-      # would run out of memory. Optional (#25): a failure or a hang (the step
-      # timeouts, well inside the job's) doesn't fail the job, and the last
-      # step records it.
+      # One worker, wdio.conf.ts's default on macOS: the 3-CPU, 7 GB runner
+      # would run out of memory with two. Optional (#25): a failure or a hang
+      # (the step timeouts, well inside the job's) doesn't fail the job, and
+      # the last step records it.
       - name: E2E
         id: e2e
         if: steps.scope.outputs.run == 'true'
         continue-on-error: true
         timeout-minutes: 40
-        env:
-          HOPLODEX_E2E_WORKERS: 1
         # bash with pipefail, so a failing suite fails the step rather than tee.
         shell: bash
         run: npm run test:e2e 2>&1 | tee "$RUNNER_TEMP/e2e.log"

@@ -357,7 +357,18 @@ fn check_links(conn: &Connection) -> Result<(), UpgradeError> {
     if broken.is_empty() {
         return Ok(());
     }
-    for table in broken.iter().collect::<std::collections::BTreeSet<_>>() {
+    // The name comes from the database, so only one our own schema creates is
+    // logged; anything else could be a user's text of any length (013 FR-016).
+    let ours = |table: &str| {
+        crate::db::MIGRATIONS
+            .iter()
+            .any(|(_, sql)| sql.contains(&format!("CREATE TABLE {table} (")))
+    };
+    let tables: std::collections::BTreeSet<&str> = broken
+        .iter()
+        .map(|table| if ours(table) { table.as_str() } else { "a table outside HoploDex's schema" })
+        .collect();
+    for table in tables {
         log::error!("the upgrade left a broken link in {table}");
     }
     Err(UpgradeError::LinkCheck { violations: broken.len() })

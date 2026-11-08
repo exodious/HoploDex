@@ -217,15 +217,19 @@ fn a_failed_start_without_the_variable_leaves_the_files_alone() {
 }
 
 /// 013 FR-016: a broken link is told by its table, once, however many rows have
-/// one, so the log doesn't say how many of a user's records are affected.
+/// one, so the log doesn't say how many of a user's records are affected. A table
+/// our schema doesn't create is never named: the name is the database's text.
 #[test]
 fn an_upgrades_broken_links_are_logged_once_for_each_table() {
     let Some(root) = std::env::var_os(CHILD) else {
         let (_dir, folder) =
             in_a_child("an_upgrades_broken_links_are_logged_once_for_each_table", true);
         let text = log_text(&folder.join(file::FOLDER));
-        assert_eq!(text.matches("a broken link in photo_like").count(), 1, "{text}");
-        assert_eq!(text.matches("a broken link in document_like").count(), 1, "{text}");
+        assert_eq!(text.matches("a broken link in photos\n").count(), 1, "{text}");
+        assert_eq!(text.matches("a broken link in document_attachments\n").count(), 1, "{text}");
+        let outside = "a broken link in a table outside HoploDex's schema\n";
+        assert_eq!(text.matches(outside).count(), 1, "{text}");
+        assert!(!text.contains("TABLE-PLANTED"), "{text}");
         return;
     };
     let root = PathBuf::from(root);
@@ -235,13 +239,17 @@ fn an_upgrades_broken_links_are_logged_once_for_each_table() {
     let step = (
         "breaks_links",
         "CREATE TABLE owner (id INTEGER PRIMARY KEY);
-         CREATE TABLE photo_like (id INTEGER PRIMARY KEY, owner INTEGER REFERENCES owner (id));
-         CREATE TABLE document_like (id INTEGER PRIMARY KEY, owner INTEGER REFERENCES owner (id));
-         INSERT INTO photo_like (owner) VALUES (101), (102), (103);
-         INSERT INTO document_like (owner) VALUES (104), (105);",
+         CREATE TABLE photos (id INTEGER PRIMARY KEY, owner INTEGER REFERENCES owner (id));
+         CREATE TABLE document_attachments (id INTEGER PRIMARY KEY, owner INTEGER REFERENCES owner (id));
+         CREATE TABLE \"TABLE-PLANTED-a\" (id INTEGER PRIMARY KEY, owner INTEGER REFERENCES owner (id));
+         CREATE TABLE \"TABLE-PLANTED-b\" (id INTEGER PRIMARY KEY, owner INTEGER REFERENCES owner (id));
+         INSERT INTO photos (owner) VALUES (101), (102), (103);
+         INSERT INTO document_attachments (owner) VALUES (104), (105);
+         INSERT INTO \"TABLE-PLANTED-a\" (owner) VALUES (106);
+         INSERT INTO \"TABLE-PLANTED-b\" (owner) VALUES (107);",
     );
     let result = upgrade::upgrade(&conn, &[step], None, &mut |_, _| {});
-    assert!(matches!(result, Err(UpgradeError::LinkCheck { violations: 5 })), "{result:?}");
+    assert!(matches!(result, Err(UpgradeError::LinkCheck { violations: 7 })), "{result:?}");
 }
 
 /// What the journey plants: a user name in the home folder, and text in the

@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use hoplodex_lib::logging::file::{self, CURRENT, LogFile, MAX_AGE, MAX_BYTES, ROTATED};
+use hoplodex_lib::logging::file::{self, CURRENT, LogFile, MAX_AGE, MAX_BYTES, MAX_LINE, ROTATED};
 use hoplodex_lib::logging::{self, Output};
 use hoplodex_lib::models::troubleshooting_log::{LogChoice, LogState};
 use tempfile::TempDir;
@@ -33,6 +33,24 @@ fn the_file_rotates_at_the_cap_and_keeps_one() {
     assert!(fs::metadata(dir.path().join(CURRENT)).unwrap().len() <= MAX_BYTES);
     assert!(fs::metadata(dir.path().join(ROTATED)).unwrap().len() <= MAX_BYTES);
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2, "at most two files");
+}
+
+/// 013 FR-007: a line longer than the cap is cut, so no one write takes a file past it.
+#[test]
+fn a_line_longer_than_the_cap_is_cut_to_fit() {
+    let dir = TempDir::new().unwrap();
+    let mut log = LogFile::open(dir.path()).unwrap();
+    log.write_line("before\n").unwrap();
+    log.write_line(&format!("{}\n", "é".repeat(MAX_BYTES as usize))).unwrap();
+    log.write_line("after\n").unwrap();
+    for name in [CURRENT, ROTATED] {
+        let len = fs::metadata(dir.path().join(name)).map_or(0, |meta| meta.len());
+        assert!(len <= MAX_BYTES, "{name}: {len} bytes");
+    }
+    let current = fs::read_to_string(dir.path().join(CURRENT)).unwrap();
+    let cut = current.lines().find(|line| line.starts_with('é')).expect("the long line, cut");
+    assert!(cut.len() < MAX_LINE && cut.ends_with('…'), "{} bytes", cut.len());
+    assert!(current.ends_with("…\nafter\n"));
 }
 
 /// A later run appends, and still counts what is there towards the cap.

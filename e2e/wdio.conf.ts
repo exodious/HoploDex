@@ -35,11 +35,13 @@ import {
 // WebDriver port and, on Linux, X display (support/display.ts).
 
 /**
- * How many spec files run at once: HOPLODEX_E2E_WORKERS, or half the CPUs,
- * at most 8. Each worker runs its own app (a few hundred MB for WebKitGTK).
- * On a 24-core host 8 workers slow each spec by about a tenth against 4, and
- * the run then waits on its longest spec file (#77, step 6).
- * HOPLODEX_E2E_WORKERS=1 runs one spec file at a time, for debugging.
+ * How many spec files run at once: HOPLODEX_E2E_WORKERS, or on Linux half
+ * the CPUs, at most 8. Each worker runs its own app (a few hundred MB for
+ * WebKitGTK). On a 24-core host 8 workers slow each spec by about a tenth
+ * against 4, and the run then waits on its longest spec file (#77, step 6).
+ * On Windows and macOS the default is 1: workers share one desktop there, and
+ * another worker's window taking the foreground closes an open menu or select
+ * list. HOPLODEX_E2E_WORKERS=1 runs one spec file at a time, for debugging.
  */
 function workerCount(): number {
   const set = process.env.HOPLODEX_E2E_WORKERS;
@@ -50,6 +52,7 @@ function workerCount(): number {
     }
     return count;
   }
+  if (process.platform !== "linux") return 1;
   return Math.max(1, Math.min(8, Math.floor(os.availableParallelism() / 2)));
 }
 

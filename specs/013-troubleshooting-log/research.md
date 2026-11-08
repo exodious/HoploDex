@@ -19,7 +19,7 @@ A run the variable decides needs no saved choice, so its file starts first in `s
 ## §4 Creating, appending, rotating
 
 - **Create or append:** the file is created with `create_new` and mode 0600, in a 0700 folder on Unix. An existing one must pass `scratch::is_plain_file`, and is opened with `scratch::open_no_follow`. Anything else leaves the file log off for the run and says so in About. Either way the handle appends, so two copies of the app add whole lines rather than overwrite each other's.
-- **Rotate:** at 2 MiB by the open file's own length, which counts another copy's lines and is at the cap for a copy whose file was rotated away. `rename` to `.1` replaces a symlink rather than following it. A current file that has gone leaves nothing to rename, and a new one starts.
+- **Rotate:** at 2 MiB by the open file's own length, which counts another copy's lines and is at the cap for a copy whose file was rotated away. `rename` to `.1` replaces a symlink rather than following it. A current file that has gone leaves nothing to rename, and a new one starts. A line longer than 4 KiB is cut to 4 KiB first, so no one write takes a file past the cap.
 - **Delete:** `secure_delete::secure_delete_file`, the way the app deletes other files it no longer wants. It logs, so the logger's lock is never held across it.
 - **Age:** when the file was made, or its last change where the file system does not record that, at start only (013 FR-008). A new file on Windows sets its own creation time, since NTFS can give a reused name the old one.
 
@@ -35,7 +35,7 @@ The logger only sees formatted text, so two versions of a line would need every 
 
 - 64 calls move to `place`.
 - `reach.describe()` uses `place`, so the Flatpak's reach line reads `[~/*/*, /media, /run/media]`; `flatpak.e2e.ts` follows, and `scripts/flatpak/check.sh` matches only the line's start.
-- `commands/backups.rs` row counts become "the counts differ"; `db/mod.rs`'s integrity text is dropped; `db/upgrade.rs` logs each table with a broken link once, with no row id or count; opened-document copies that can't be deleted get one line, not one each; `services/sandbox.rs` stops quoting a raw entry.
+- `commands/backups.rs` row counts become "the counts differ"; `db/mod.rs`'s integrity text is dropped; `db/upgrade.rs` logs each table with a broken link once, with no row id or count, naming only a table HoploDex's own schema creates; opened-document copies that can't be deleted get one line, not one each; `services/sandbox.rs` stops quoting a raw entry.
 - `logging::db_error` gives a `rusqlite::Error`'s kind and SQLite result code without its text. `lifecycle.rs` logs a `CommandError`'s `code`, not its `message`, which can name a file.
 - `clean` replaces the home folder's path in a line and escapes control characters, as a backstop for OS error text. It can't catch everything, which is why the wording says "designed to leave out".
 
