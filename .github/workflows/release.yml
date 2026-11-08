@@ -4,10 +4,11 @@
 # person publishes the draft. RELEASING.md is the written process around it.
 #
 # - The tag's commit must have had the release's AI security review: its
-#   upload to code scanning for exactly that commit, on a branch, with no
-#   critical or high code scanning alert open there (constitution, Development
-#   Workflow & Quality Gates; scripts/ai-security-review.mjs `reviewed`), and
-#   no critical or high Dependabot alert open.
+#   upload to code scanning for exactly that commit, on a branch whose head
+#   the commit still is, with no critical or high code scanning alert open
+#   there (constitution, Development Workflow & Quality Gates;
+#   scripts/ai-security-review.mjs `reviewed`), and no critical or high
+#   Dependabot alert open.
 # - The per-PR CI (ci.yml) runs again on the tag, with `release` set: E2E
 #   against the shipping profile on all three OSes, both Flatpak checks, and
 #   the package jobs, which keep the Windows NSIS installer, the macOS .dmg, the

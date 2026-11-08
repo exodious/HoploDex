@@ -489,9 +489,10 @@ describe("the release workflow's review check", () => {
     created_at: "2026-11-08T00:00:00Z",
     ...over,
   });
-  const reviewGh = (analyses: unknown[], highs = 0, dependabot = 0) =>
+  const reviewGh = (analyses: unknown[], highs = 0, dependabot = 0, compare = "identical") =>
     fakeGh([
       [/code-scanning\/analyses/, () => analyses],
+      [/compare\//, () => ({ status: compare })],
       [/severity=critical&ref=refs%2Fheads%2Fmain/, () => []],
       [/severity=high&ref=refs%2Fheads%2Fmain/, () => Array(highs).fill({})],
       [/dependabot\/alerts\?state=open&severity=critical,high/, () => Array(dependabot).fill({})],
@@ -521,6 +522,11 @@ describe("the release workflow's review check", () => {
     // A later review on another branch doesn't count.
     const elsewhere = { ...later, ref: "refs/heads/release/x" };
     expect(reviewed(reviewGh([elsewhere, analysis()]).gh, sha).pass).toBe(true);
+  });
+
+  it("fails once the commit is no longer its branch's head, so the branch's alerts aren't its own", () => {
+    const r = reviewed(reviewGh([analysis()], 0, 0, "ahead").gh, sha);
+    expect(r).toMatchObject({ pass: false, behind: "refs/heads/main" });
   });
 
   it("fails on an open high alert, or a Dependabot one, and refuses a short sha", () => {
