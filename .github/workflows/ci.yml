@@ -2,7 +2,13 @@
 # E2E and the packages on Linux, Windows and macOS, and the Flatpak. It is a
 # second net: tests pass in the owner's own Linux, macOS and Windows
 # environments before a pull request opens. What runs, what is optional and
-# how to reproduce a job locally are in docs/development/ci.md. The release run is #19's.
+# how to reproduce a job locally are in docs/development/ci.md.
+#
+# The release workflow (release.yml, #19) calls this one on a `v*` tag with
+# `release` set: E2E runs against the shipping profile, macOS E2E counts, the
+# Flatpak job runs both Flatpak checks, and the package jobs keep what they
+# built as the run's artifacts. Every other step is the same as on a pull
+# request, so each one tests the release's builds.
 #
 # The jobs run natively on pinned runner images, not in the dev container,
 # whose image would have to be built every run. Under CI (`CI=true`, which
@@ -24,6 +30,12 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      release:
+        description: Run as part of the release workflow (release.yml)
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -201,8 +213,11 @@ jobs:
       - name: Build the frontend
         if: steps.scope.outputs.run == 'true'
         run: npm run build
+      # A release runs E2E against the shipping profile (docs/development/e2e.md).
       - name: E2E
         if: steps.scope.outputs.run == 'true'
+        env:
+          HOPLODEX_E2E_PROFILE: ${{ inputs.release && 'release' || 'e2e' }}
         run: npm run test:e2e
       - name: Quit cleanup
         if: steps.scope.outputs.run == 'true'
@@ -259,6 +274,7 @@ jobs:
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
+          HOPLODEX_E2E_PROFILE: ${{ inputs.release && 'release' || 'e2e' }}
         run: npm run test:e2e
       - name: Quit cleanup
         if: steps.scope.outputs.run == 'true'
@@ -302,19 +318,21 @@ jobs:
       # One worker, wdio.conf.ts's default on macOS: the 3-CPU, 7 GB runner
       # would run out of memory with two. Optional (#25): a failure or a hang
       # (the step timeouts, well inside the job's) doesn't fail the job, and
-      # the last step records it.
+      # the last step records it. A release's run counts it.
       - name: E2E
         id: e2e
         if: steps.scope.outputs.run == 'true'
-        continue-on-error: true
+        continue-on-error: ${{ !inputs.release }}
         timeout-minutes: 40
+        env:
+          HOPLODEX_E2E_PROFILE: ${{ inputs.release && 'release' || 'e2e' }}
         # bash with pipefail, so a failing suite fails the step rather than tee.
         shell: bash
         run: npm run test:e2e 2>&1 | tee "$RUNNER_TEMP/e2e.log"
       - name: Quit cleanup
         id: quit
         if: steps.scope.outputs.run == 'true'
-        continue-on-error: true
+        continue-on-error: ${{ !inputs.release }}
         timeout-minutes: 5
         run: python3 e2e/scripts/quit-cleanup.py
       - name: Record the failures
@@ -340,9 +358,11 @@ jobs:
           [ "$QUIT" != failure ] || echo "::warning title=macOS E2E (optional)::quit-cleanup.py failed"
           [ -n "$specs" ] || [ "$E2E" != failure ] || echo "::warning title=macOS E2E (optional)::the E2E run failed; see its log"
 
+  # Built on the oldest supported Ubuntu, which sets the .deb's and .rpm's
+  # glibc floor (README.md, "Supported platforms"; #19).
   linux-packages:
     name: Packages (Linux)
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -357,11 +377,11 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/apt
         with:
-          sets: build
+          sets: build packages
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup
 
-      # Unsigned and published nowhere. bundle:linux is
+      # Unsigned, and published only by a release. bundle:linux is
       # scripts/build-appimage.sh, named for the AppImage it can also build:
       # it runs `tauri build`, then checks the release binary for the E2E-only
       # WebDriver server (#29), as the Windows and macOS jobs do. Linux ships
@@ -369,15 +389,22 @@ jobs:
       - name: Build the .deb and .rpm
         if: steps.scope.outputs.run == 'true'
         run: npm run bundle:linux -- --bundles deb,rpm
-      # apport's ignore entry must match the path the .deb installs the app at (#166).
-      # Tauri's bundler writes its tar entries without the leading `./`.
-      - name: Check the .deb installs the app where apport's ignore entry names it
+      # The notices beside the program, and in the .deb apport's ignore entry
+      # at the path it installs the app at (#166).
+      - name: Check the .deb and .rpm
         if: steps.scope.outputs.run == 'true'
         run: |
-          listing=$(dpkg-deb -c src-tauri/target/release/bundle/deb/*.deb | awk '{sub(/^\.\//, "", $NF); print $NF}')
-          for path in usr/bin/hoplodex etc/apport/blacklist.d/hoplodex; do
-            grep -qxF "$path" <<<"$listing" || { echo "::error::the .deb has no $path"; exit 1; }
-          done
+          node scripts/check-package.mjs deb src-tauri/target/release/bundle/deb/*.deb
+          node scripts/check-package.mjs rpm src-tauri/target/release/bundle/rpm/*.rpm
+      - name: Keep the packages
+        if: inputs.release
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-linux
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
 
   windows-packages:
     name: Packages (Windows)
@@ -395,15 +422,28 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup
 
-      # bash, so `--` reaches npm as it is.
-      - name: Build the MSI and NSIS installers
+      # bash, so `--` reaches npm as it is. Only the NSIS installer is
+      # published, no MSI (#19); tauri.bundle.conf.json adds NOTICES.txt.
+      - name: Build the NSIS installer
         if: steps.scope.outputs.run == 'true'
         shell: bash
-        run: npm run tauri build -- --bundles msi,nsis
+        run: npm run tauri build -- --config src-tauri/tauri.bundle.conf.json --bundles nsis
       # The E2E-only WebDriver server must never ship (#29).
       - name: Check the shipped binary
         if: steps.scope.outputs.run == 'true'
         run: node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex.exe
+      # 7-Zip is on the runner image.
+      - name: Check the installer
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: node scripts/check-package.mjs nsis src-tauri/target/release/bundle/nsis/*-setup.exe
+      - name: Keep the installer
+        if: inputs.release
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-windows
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
 
   macos-packages:
     name: Packages (macOS)
@@ -421,12 +461,25 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/setup
 
+      # The .dmg carries the .app, which isn't published on its own (#19).
       - name: Build the .app and .dmg
         if: steps.scope.outputs.run == 'true'
-        run: npm run tauri build -- --bundles app,dmg
+        run: npm run tauri build -- --config src-tauri/tauri.bundle.conf.json --bundles app,dmg
       - name: Check the shipped binary
         if: steps.scope.outputs.run == 'true'
         run: node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
+      # The .app in the .dmg: its notices, its own ad-hoc signature (no
+      # Developer ID, #19) and its binary.
+      - name: Check the .dmg
+        if: steps.scope.outputs.run == 'true'
+        run: node scripts/check-package.mjs dmg src-tauri/target/release/bundle/dmg/*.dmg
+      - name: Keep the .dmg
+        if: inputs.release
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-macos
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
 
   flatpak:
     name: Flatpak
@@ -454,7 +507,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/apt
         with:
-          sets: flatpak ${{ steps.scope.outputs.flatpak-check == 'true' && 'flatpak-check' || '' }}
+          sets: flatpak ${{ (inputs.release || steps.scope.outputs.flatpak-check == 'true') && 'flatpak-check' || '' }}
       - name: Make the Flatpak installation's folders
         if: steps.scope.outputs.run == 'true'
         run: sudo install -d -o "$USER" "$FLATPAK_USER_DIR" "$HOPLODEX_FLATPAK_STATE"
@@ -471,16 +524,28 @@ jobs:
         run: npm run bundle:flatpak
 
       # Only for a pull request that changes the paths docs/development/flatpak.md lists
-      # (011 FR-021), after the build, which installed the runtime and SDK the
-      # check needs. The stand-ins the dev container has: a removable drive,
-      # and two folders outside what the Flatpak reaches.
+      # (011 FR-021), and for a release, after the build, which installed the
+      # runtime and SDK the check needs. The stand-ins the dev container has:
+      # a removable drive, and two folders outside what the Flatpak reaches.
       - name: Make the Flatpak check's stand-ins
-        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.flatpak-check == 'true'
+        if: steps.scope.outputs.run == 'true' && (inputs.release || steps.scope.outputs.flatpak-check == 'true')
         run: |
           sudo mkdir -p /run/media/dev/hoplodex-check /mnt/hoplodex-check
           sudo mount -t tmpfs -o mode=1777 tmpfs /run/media/dev/hoplodex-check
           sudo mount -t tmpfs -o mode=1777 tmpfs /mnt/hoplodex-check
           sudo install -d -m 0755 -o "$USER" /srv/hoplodex-check
       - name: Flatpak check
-        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.flatpak-check == 'true'
+        if: steps.scope.outputs.run == 'true' && (inputs.release || steps.scope.outputs.flatpak-check == 'true')
         run: npm run build && npm run test:flatpak
+      # A release also installs the file it built into an empty installation
+      # with no remotes, and starts it (011 US4-2, SC-010; needs the network).
+      - name: Flatpak fresh install
+        if: inputs.release
+        run: npm run test:flatpak -- --fresh-install
+      - name: Keep the Flatpak
+        if: inputs.release
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-flatpak
+          path: flatpak/out/HoploDex-*-x86_64.flatpak
+          if-no-files-found: error

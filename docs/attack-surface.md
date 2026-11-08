@@ -273,10 +273,10 @@ and peer review catch that.
 
 ## shipped-build: what only test and E2E builds may contain
 
-- **Code:** `src-tauri/Cargo.toml` (`[features]`, `[patch.crates-io]`); `src-tauri/build.rs`; `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/upgrade.rs`; `src-tauri/src/app_dirs.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/services/keyring.rs`; `src-tauri/vendor/**`; `scripts/check-no-webdriver.mjs`; `scripts/build-appimage.sh`
+- **Code:** `src-tauri/Cargo.toml` (`[features]`, `[patch.crates-io]`); `src-tauri/build.rs`; `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/upgrade.rs`; `src-tauri/src/app_dirs.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/services/keyring.rs`; `src-tauri/vendor/**`; `scripts/check-no-webdriver.mjs`; `scripts/check-package.mjs`; `scripts/build-appimage.sh`
 - **Ask:**
   - Is `e2e` still the only thing that brings `tauri-plugin-wdio-webdriver` (`cargo tree`)? `flatpak-check` implies it.
-  - Is every marker absent from every shipped binary and installer, on each OS? macOS and Windows release builds don't exist yet (#19); check them when they do.
+  - Is every marker absent from every shipped binary and installer, on each OS? The package jobs check the release binary they built on each OS, and `check-package.mjs` the binary inside the `.dmg` (#19). Is every published package built by a job that runs one of these checks?
   - Should the markers in `check-no-webdriver.mjs` cover every E2E-only `HOPLODEX_E2E_*` name in the backend?
   - Does anything stop a shipped build with `mock-keyring` alone, beside `custom-protocol`?
   - Do `test-kdf` and `upgrade-test-steps` still refuse `custom-protocol` and `e2e` at compile time?
@@ -293,7 +293,7 @@ and peer review catch that.
 
 ## build-ci: what can change what ships, or the repository
 
-- **Code:** `.github/workflows/**`; `.github/actions/**`; `.github/dependabot.yml`; `.github/codeql/**`; `scripts/ai-security-review.mjs`; `src-tauri/build.rs`; `vite.config.ts`; `scripts/licenses/vitePlugin.mjs`; `scripts/build-appimage.sh`; `flatpak/**`; `scripts/flatpak/build.sh`; `scripts/flatpak/sources.mjs`; `tools/plate-tuner/**`; `package.json` (scripts); `audit-ci.jsonc`; `audit-deprecated.json`; `audit-openssl.json`; `scripts/check-openssl-advisories.mjs`; `scripts/windows/vcpkg/vcpkg.json`; `src-tauri/deny.toml`
+- **Code:** `.github/workflows/**`; `.github/actions/**`; `.github/dependabot.yml`; `.github/codeql/**`; `.github/release-notes.md`; `scripts/ai-security-review.mjs`; `scripts/check-package.mjs`; `scripts/release.mjs`; `src-tauri/tauri.bundle.conf.json`; `src-tauri/build.rs`; `vite.config.ts`; `scripts/licenses/vitePlugin.mjs`; `scripts/build-appimage.sh`; `flatpak/**`; `scripts/flatpak/build.sh`; `scripts/flatpak/sources.mjs`; `tools/plate-tuner/**`; `package.json` (scripts); `audit-ci.jsonc`; `audit-deprecated.json`; `audit-openssl.json`; `scripts/check-openssl-advisories.mjs`; `scripts/windows/vcpkg/vcpkg.json`; `src-tauri/deny.toml`
 - **Ask:**
   - Do workflows take least privilege, avoid `pull_request_target`, receive untrusted input only through `env`, pin actions (#72), set `persist-credentials: false`, and expose no secrets on pull request events?
   - Can no code change skip the audit (`audit.yml`'s skip rule, #142), or `ci.yml`'s jobs (`.github/actions/scope`'s Markdown-only rule), including the packages jobs' `check-no-webdriver.mjs`? Does `FLATPAK_PATHS` still cover what the Flatpak check protects?
@@ -303,8 +303,10 @@ and peer review catch that.
   - Is the vendored crate built only under `e2e`?
   - Is the Flatpak built offline from the committed source lists?
   - Does `scripts/ai-security-review.mjs` change code scanning only as the skill says: uploads only to a branch or `refs/pull/<n>/head`, under the fixed `TOOL` and `CATEGORY`, with only introduced findings on a pull request (its annotations are public); dismissals only through `carry-dismissal`, from an alert already dismissed? Does `upload` report an open alert an upload left out (which closes it)? Does `gate` count every tool's open critical and high alerts, Dependabot, secret scanning and draft or triage advisories?
+  - The release workflow (`release.yml`, #19): does it draft a release only on a `v*` tag, which only the repository's admins can create (a `workflow_dispatch` run is a dry run that drafts nothing), and never publish it? Does only its draft job hold `contents: write`, and only after every other job passed? Does it refuse to draft unless `ai-security-review.mjs reviewed` finds the release review's upload for exactly the tagged commit, on a branch, with no critical or high code scanning or Dependabot alert open? Does `ci.yml`'s `release` input change only what `docs/development/ci.md` says (the E2E profile, macOS E2E counting, both Flatpak checks, keeping the packages)? Does every published file come from a package job of this run, never a cache?
+  - Does `scripts/release.mjs` tag only in its last step, after every earlier step passed and `reviewed` accepted the commit, and make no GitHub release?
   - Regression: #70, #72.
-- **Since:** the baseline review (#70, #72); CodeQL #82; audit #85; pr-body #134; code scanning uploads and the release gate, #21's review skill; the per-pull-request CI and its pinned OpenSSL #25.
+- **Since:** the baseline review (#70, #72); CodeQL #82; audit #85; pr-body #134; code scanning uploads and the release gate, #21's review skill; the per-pull-request CI and its pinned OpenSSL #25; the release workflow and the package checks #19.
 
 ## not-surface: checked and left out
 

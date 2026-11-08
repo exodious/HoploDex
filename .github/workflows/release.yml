@@ -1,0 +1,261 @@
+# The release workflow (#19): on a `v*` tag it checks the release, builds every
+# published package from a clean release build, runs the release-time checks,
+# and opens a draft GitHub release with the packages and their checksums. A
+# person publishes the draft. RELEASING.md is the written process around it.
+#
+# - The tag's commit must have had the release's AI security review: its
+#   upload to code scanning for exactly that commit, on a branch, with no
+#   critical or high code scanning alert open there (constitution, Development
+#   Workflow & Quality Gates; scripts/ai-security-review.mjs `reviewed`), and
+#   no critical or high Dependabot alert open.
+# - The per-PR CI (ci.yml) runs again on the tag, with `release` set: E2E
+#   against the shipping profile on all three OSes, both Flatpak checks, and
+#   the package jobs, which keep the Windows NSIS installer, the macOS .dmg, the
+#   Linux .deb and .rpm (built on ubuntu-24.04) and the Flatpak as artifacts.
+# - Here only: the dependency audit, import_largest_test, and the PDF surface
+#   and window controls checks on each OS.
+#
+# A tag with a pre-release suffix (`v0.1.0-rc.1`) drafts a GitHub pre-release.
+# The draft stays a draft, never marked latest, until a person publishes it.
+#
+# Run by hand (workflow_dispatch) on a branch, it is a dry run: every job but
+# the draft, with the tag check skipped and the review check reporting
+# without failing the run. GitHub dispatches it only from a branch where this
+# file exists, so the first dry run is on main once it has merged.
+# Nothing is signed beyond the macOS build's own ad-hoc signature, which
+# ci.yml's macOS package job checks. A failed job can be re-run; the draft is
+# opened only when every job passed, and a re-run replaces its files.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  review:
+    name: Release review
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: read
+      vulnerability-alerts: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The tag names the version the app carries; only a final release's tag
+      # adds the migration records (RELEASING.md, src-tauri/src/db/migrations/README.md).
+      - name: Check the tag against the version and the migration records
+        if: github.event_name == 'push'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
+          [[ "$TAG" == "v$version" || "$TAG" == "v$version-"* ]] || {
+            echo "::error::$TAG doesn't name the app's version, $version"; exit 1; }
+          if [[ "$TAG" == "v$version" ]]; then
+            fixture="tests/fixtures/releases/$version.hoplodex"
+            [ -f "src-tauri/$fixture" ] || { echo "::error::no stored database src-tauri/$fixture"; exit 1; }
+            grep -qE "^$fixture [0-9a-f]{64} $version\$" src-tauri/src/db/migrations/released.txt || {
+              echo "::error::released.txt has no line for $fixture"; exit 1; }
+          fi
+
+      # A dry run reports whether the commit could be released without
+      # failing on the commit it ran on.
+      - name: Check the release's AI security review
+        continue-on-error: ${{ github.event_name != 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ai-security-review.mjs reviewed --commit "$GITHUB_SHA"
+
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    with:
+      release: true
+    permissions:
+      contents: read
+
+  checks:
+    name: Release checks
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      # The Dockerfile's version, as audit.yml has it.
+      CARGO_DENY_VERSION: 0.20.2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Linux packages
+        uses: ./.github/actions/apt
+        with:
+          sets: build
+      - uses: ./.github/actions/setup
+      # v2.87.31, as .github/actions/setup has it for cargo-nextest.
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-deny@${{ env.CARGO_DENY_VERSION }}
+
+      - name: Dependency audit
+        run: npm run audit
+      # docs/development/testing.md, "Release-only tests".
+      - name: import_largest_test
+        env:
+          CARGO_PROFILE_RELEASE_PANIC: unwind
+        run: cargo test --manifest-path src-tauri/Cargo.toml --release --test import_largest_test -- --ignored --nocapture
+
+  linux-surface:
+    name: Surface checks (Linux)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Linux packages
+        uses: ./.github/actions/apt
+        with:
+          sets: build e2e
+      - uses: ./.github/actions/setup
+      # docs/development/surface-checks.md. Each keeps its log in
+      # e2e/screenshots-out/, kept below whatever happened.
+      - name: PDF surface check
+        run: scripts/pdf-surface-check.sh
+      - name: Window controls check
+        if: success() || failure()
+        run: scripts/window-controls-check.sh
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surface-checks-linux
+          path: e2e/screenshots-out/
+          if-no-files-found: ignore
+
+  windows-surface:
+    name: Surface checks (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: PDF surface check
+        run: powershell -ExecutionPolicy Bypass -File scripts\windows\pdf-surface-check.ps1
+      - name: Window controls check
+        if: success() || failure()
+        run: powershell -ExecutionPolicy Bypass -File scripts\windows\window-controls-check.ps1
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surface-checks-windows
+          path: e2e/screenshots-out/
+          if-no-files-found: ignore
+
+  macos-surface:
+    name: Surface checks (macOS)
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    # The scripts run the check here, as they do inside the test VM.
+    env:
+      HOPLODEX_PDF_CHECK_IN_VM: "1"
+      HOPLODEX_WINDOW_CHECK_IN_VM: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: PDF surface check
+        run: scripts/macos/pdf-surface-check.sh
+      - name: PDF surface check, with WebKit's PDF HUD on
+        if: success() || failure()
+        run: scripts/macos/pdf-surface-check.sh --hud-on
+      - name: Window controls check
+        if: success() || failure()
+        run: scripts/macos/window-controls-check.sh
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surface-checks-macos
+          path: e2e/screenshots-out/
+          if-no-files-found: ignore
+
+  draft:
+    name: Draft the release
+    if: github.event_name == 'push'
+    needs: [review, ci, checks, linux-surface, windows-surface, macos-surface]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: packages-*
+          path: packages
+          merge-multiple: true
+
+      - name: Write the checksums
+        working-directory: packages
+        run: |
+          ls -l
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Keep the packages and checksums together
+        uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: packages/
+          if-no-files-found: error
+
+      # The notes are .github/release-notes.md with the version and tag filled
+      # in, and for a pre-release the release-candidate note first.
+      - name: Open the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=${TAG#v}
+          {
+            if [[ "$TAG" == *-* ]]; then
+              echo "**This is a release candidate, for testing.** It doesn't count as a release for the database's upgrades: a database it opened isn't guaranteed to open in the final release, so try it on a copy of your collection."
+              echo
+            fi
+            sed -e "s/{{version}}/$version/g" -e "s/{{tag}}/$TAG/g" .github/release-notes.md
+          } > "$RUNNER_TEMP/notes.md"
+          prerelease=()
+          [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
+            gh release upload "$TAG" packages/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" packages/* --draft --verify-tag "${prerelease[@]}" \
+              --title "HoploDex $version" --notes-file "$RUNNER_TEMP/notes.md" --repo "$GITHUB_REPOSITORY"
+          fi

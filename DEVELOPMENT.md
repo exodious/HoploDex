@@ -91,5 +91,6 @@ which older specs and commits still cite.
 | Run the dependency audit, answer a finding, add an exception | [dependency-audit.md](docs/development/dependency-audit.md) | "Dependency audit", "Deprecated npm packages", "Unmaintained crates", "Yanked crates", "The pinned OpenSSL", "Before a release" |
 | Run the license audit, answer a notices failure | [licenses.md](docs/development/licenses.md) | "License audit", "System libraries", "Assets that aren't packages", "C code built inside a crate", "Exceptions and clarifications that are behind", "License notices", "What ships", "Answering a failure" |
 | See what CI runs, reproduce a job, understand a timing budget | [ci.md](docs/development/ci.md) | "Continuous integration", "The CI workflow", "Timing budgets under CI", "Reproducing a job locally", "The vcpkg pin" |
+| Make a release | [RELEASING.md](RELEASING.md) | |
 | Understand how the code is organised | [docs/architecture.md](docs/architecture.md) | |
 | See what counts as attack surface | [docs/attack-surface.md](docs/attack-surface.md) | |

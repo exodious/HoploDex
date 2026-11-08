@@ -119,8 +119,10 @@ target the build is for (`TAURI_ENV_TARGET_TRIPLE` when Tauri runs it, so
 - `dist/notices.json`: the program block, the GPL-3.0 text, the additional
   permission, every shipped component with its license text. About HoploDex
   reads it.
-- `dist/NOTICES.txt`: the same as plain text, for the bundles. Putting it next
-  to the program in each bundle is the release process's (#19).
+- `dist/NOTICES.txt`: the same as plain text, for the bundles. Each published
+  package carries it as a file of its own beside the program:
+  `src-tauri/tauri.bundle.conf.json` adds it to the Tauri bundles, and the
+  Flatpak's manifest installs it (#19, [RELEASING.md](../../RELEASING.md)).
 
 The build fails, naming what to fix, when a notice can't be made. The E2E
 build uses the same `dist/`. `vite` (the dev server) serves `/notices.json`

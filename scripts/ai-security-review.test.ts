@@ -19,6 +19,7 @@ import {
   fingerprint,
   gate,
   openAlerts,
+  reviewed,
   surfaceIds,
   touchedSurfaces,
   TOOL,
@@ -474,5 +475,45 @@ describe("release gate", () => {
       const n = { critical: 0, high: 0, dependabot: 0, secrets: 0, advisories: 0, [key]: 1 };
       expect(gate(gateGh(n).gh).pass).toBe(false);
     }
+  });
+});
+
+describe("the release workflow's review check", () => {
+  const sha = "a".repeat(40);
+  const other = "b".repeat(40);
+  const analysis = (over: Record<string, unknown> = {}) => ({
+    id: 9,
+    commit_sha: sha,
+    category: CATEGORY,
+    ref: "refs/heads/main",
+    created_at: "2026-11-08T00:00:00Z",
+    ...over,
+  });
+  const reviewGh = (analyses: unknown[], highs = 0, dependabot = 0) =>
+    fakeGh([
+      [/code-scanning\/analyses/, () => analyses],
+      [/severity=critical&ref=refs%2Fheads%2Fmain/, () => []],
+      [/severity=high&ref=refs%2Fheads%2Fmain/, () => Array(highs).fill({})],
+      [/dependabot\/alerts\?state=open&severity=critical,high/, () => Array(dependabot).fill({})],
+    ]);
+
+  it("passes on the tagged commit's release review with nothing critical or high open", () => {
+    const { gh, calls } = reviewGh([analysis({ commit_sha: other }), analysis()]);
+    const r = reviewed(gh, sha);
+    expect(r.pass).toBe(true);
+    expect(r.analysis).toMatchObject({ id: 9, ref: "refs/heads/main" });
+    expect(calls[0].endpoint).toContain(`tool_name=${encodeURIComponent(TOOL)}`);
+  });
+
+  it("fails without a review of that commit, or with only a pull request's", () => {
+    expect(reviewed(reviewGh([analysis({ commit_sha: other })]).gh, sha).pass).toBe(false);
+    expect(reviewed(reviewGh([analysis({ ref: "refs/pull/7/head" })]).gh, sha).pass).toBe(false);
+    expect(reviewed(reviewGh([analysis({ category: "other" })]).gh, sha).pass).toBe(false);
+  });
+
+  it("fails on an open high alert, or a Dependabot one, and refuses a short sha", () => {
+    expect(reviewed(reviewGh([analysis()], 1).gh, sha).pass).toBe(false);
+    expect(reviewed(reviewGh([analysis()], 0, 1).gh, sha).pass).toBe(false);
+    expect(() => reviewed(reviewGh([]).gh, "abc")).toThrow(/full commit/);
   });
 });

@@ -22,6 +22,10 @@
 //       uploads the recorded SARIF, waits for it, and checks the alerts
 //   node scripts/ai-security-review.mjs gate [--ref <ref>]
 //       the release gate: open critical and high alerts, and draft advisories
+//   node scripts/ai-security-review.mjs reviewed --commit <sha>
+//       the release workflow's check (#19): a release review's analysis of
+//       <sha> on a branch, and no open critical or high code scanning alert
+//       there or Dependabot alert
 //   node scripts/ai-security-review.mjs carry-dismissal <new alert> <old alert>
 //       dismisses <new> with <old>'s reason (a moved finding; ask first)
 //
@@ -426,6 +430,46 @@ export function gate(gh, { ref = null } = {}) {
 }
 
 /**
+ * What the release workflow (release.yml, #19) can check with its own token
+ * before it drafts a release: a release review's upload for exactly the tagged
+ * commit, on a branch (a pull request's upload is no release review), no
+ * open critical or high code scanning alert from any tool on that branch, and
+ * no open critical or high Dependabot alert. The token can't read the rest of
+ * the gate (secret scanning, advisories), so the operator runs `gate` before
+ * tagging (RELEASING.md).
+ */
+export function reviewed(gh, commit) {
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`not a full commit sha: ${commit}`);
+  const analysis = paged(
+    gh,
+    `repos/${REPO}/code-scanning/analyses?tool_name=${enc(TOOL)}&per_page=100`,
+  )
+    .filter(
+      (a) => a.commit_sha === commit && a.category === CATEGORY && /^refs\/heads\//.test(a.ref),
+    )
+    .at(0);
+  if (!analysis) return { commit, analysis: null, pass: false };
+  const [critical, high] = ["critical", "high"].map(
+    (s) =>
+      paged(
+        gh,
+        `repos/${REPO}/code-scanning/alerts?state=open&severity=${s}&ref=${enc(analysis.ref)}&per_page=100`,
+      ).length,
+  );
+  const dependabot = paged(
+    gh,
+    `repos/${REPO}/dependabot/alerts?state=open&severity=critical,high&per_page=100`,
+  ).length;
+  return {
+    commit,
+    analysis: { id: analysis.id, ref: analysis.ref, created_at: analysis.created_at },
+    code_scanning: { critical, high },
+    dependabot,
+    pass: critical + high + dependabot === 0,
+  };
+}
+
+/**
  * Dismiss `next` as `old` was: only this tool's alerts, `next` open and `old`
  * dismissed, on the same surface, so it can't silence another tool's alert.
  */
@@ -650,13 +694,22 @@ function main(argv) {
       if (!g.pass) process.exitCode = 1;
       break;
     }
+    case "reviewed": {
+      if (!opts.commit) throw new Error("reviewed --commit <sha>");
+      const r = reviewed(realGh, opts.commit);
+      console.log(JSON.stringify(r, null, 1));
+      if (!r.analysis) console.log(`FAIL: no release review of ${opts.commit} on a branch`);
+      else console.log(r.pass ? "PASS" : "FAIL: open critical or high alerts");
+      if (!r.pass) process.exitCode = 1;
+      break;
+    }
     case "carry-dismissal":
       carryDismissal(realGh, Number(opts._[1]), Number(opts._[2]));
       console.log(`#${opts._[1]} dismissed as #${opts._[2]} was`);
       break;
     default:
       throw new Error(
-        "usage: touched | open | build | upload | gate | carry-dismissal (see the header)",
+        "usage: touched | open | build | upload | gate | reviewed | carry-dismissal (see the header)",
       );
   }
 }

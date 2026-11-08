@@ -2,12 +2,13 @@
 
 _Part of the [development docs](../../DEVELOPMENT.md)._
 
-Four workflows run on GitHub: the [CI workflow](#the-ci-workflow)
+Five workflows run on GitHub: the [CI workflow](#the-ci-workflow)
 (`.github/workflows/ci.yml`) and CodeQL (`.github/workflows/codeql.yml`) on
 every pull request to `main` and on pushes to it (CodeQL weekly too), the
-[dependency audit](dependency-audit.md) (`.github/workflows/audit.yml`), and the
+[dependency audit](dependency-audit.md) (`.github/workflows/audit.yml`), the
 check of a pull request description's required sections
-(`.github/workflows/pr-body.yml`). In all of them, third-party actions are
+(`.github/workflows/pr-body.yml`), and the [release workflow](#the-release-workflow)
+(`.github/workflows/release.yml`) on a `v*` tag. In all of them, third-party actions are
 pinned to a commit (#72) and GitHub's own to a release tag. Dependabot
 (`.github/dependabot.yml`) opens a weekly pull request to update them, and
 another for the [vcpkg pin](dependency-audit.md#the-pinned-openssl).
@@ -44,13 +45,14 @@ in it which ran where. The jobs run natively on pinned images (`ubuntu-26.04`,
 | Checks (Linux) | `npm run format:check`, `cargo fmt --check`, `npm run lint`, both clippys ([Linting & formatting](lint.md)), `npm test`, `cargo nextest run --features test-kdf --no-fail-fast`, the doctests, `npm run build` |
 | Checks (Windows, macOS) | both clippys, `npm test`, nextest as above |
 | E2E (Linux, Windows, macOS) | `npm run build`, `npm run test:e2e`, then the quit-cleanup script for that OS |
-| Packages (Linux) | `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary, then `dpkg-deb -c` checks the `.deb` installs `/usr/bin/hoplodex` and apport's ignore entry for it (#166); no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
-| Packages (Windows) | `npm run tauri build -- --bundles msi,nsis`, then `scripts/check-no-webdriver.mjs` on `hoplodex.exe` |
-| Packages (macOS) | `npm run tauri build -- --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary |
+| Packages (Linux) | On `ubuntu-24.04`, which sets the packages' glibc floor: `npm run bundle:linux -- --bundles deb,rpm`, which then runs `scripts/check-no-webdriver.mjs` on the binary, then `scripts/check-package.mjs` checks the `.deb` installs `/usr/bin/hoplodex`, `NOTICES.txt` and apport's ignore entry for it (#166), and the `.rpm` the first two; no AppImage, since Linux ships the `.deb`, `.rpm` and Flatpak (010 FR-017) |
+| Packages (Windows) | `npm run tauri build -- --config src-tauri/tauri.bundle.conf.json --bundles nsis` (no MSI, #19), then `scripts/check-no-webdriver.mjs` on `hoplodex.exe` and `scripts/check-package.mjs` on the installer (7-Zip lists `hoplodex.exe` and `NOTICES.txt`) |
+| Packages (macOS) | `npm run tauri build -- --config src-tauri/tauri.bundle.conf.json --bundles app,dmg`, then `scripts/check-no-webdriver.mjs` on the binary and `scripts/check-package.mjs` on the `.dmg`: the `.app` in it has `NOTICES.txt`, a valid ad-hoc signature (`codesign --verify`) and no WebDriver |
 | Flatpak | `npm run bundle:flatpak`, whose manifest runs `scripts/check-no-webdriver.mjs` on the release binary (the check's variant carries the driver on purpose); then, only when the pull request changes one of the paths [The Flatpak check](flatpak.md#the-flatpak-check) lists, the check's stand-ins and `npm run build && npm run test:flatpak` |
 
-The packages are unsigned, kept nowhere and published nowhere; the job only
-shows they build. `performance_test` and `import_largest_test` don't run
+The packages are those a release publishes, built the same way, but a pull
+request's run keeps them nowhere; the jobs show they build and pass their
+checks. `performance_test` and `import_largest_test` don't run
 here; [Test](testing.md) says when to run them.
 
 - **One app at a time on Windows and macOS.** E2E there runs one worker
@@ -112,3 +114,18 @@ libsqlite3-sys doesn't rebuild SQLCipher when `OPENSSL_DIR` moves) and caches
 it under a key from the manifest, so it is built again only when the pin
 moves. Dependabot moves the pin weekly; `npm run audit:openssl` checks the
 OpenSSL it resolves to ([The pinned OpenSSL](dependency-audit.md#the-pinned-openssl)).
+
+## The release workflow
+
+`.github/workflows/release.yml` (#19) runs on a `v*` tag and opens a draft
+GitHub release; [RELEASING.md](../../RELEASING.md) is the process around it.
+It calls this CI workflow (`workflow_call`) with its `release` input set, which
+changes only this: E2E runs against the shipping profile
+(`HOPLODEX_E2E_PROFILE=release`), macOS E2E counts, the Flatpak job runs
+`test:flatpak` and then `test:flatpak -- --fresh-install`, and the package
+jobs keep what they built as artifacts. Its own jobs check the tag and the
+release's AI security review, run `npm run audit`, `import_largest_test` and
+the [surface checks](surface-checks.md) on each OS, then draft the release.
+Run by hand (`workflow_dispatch`), it is a dry run of every job but the draft.
+Keep the job names in `ci.yml` as they are: the `Default` ruleset requires
+them by name.

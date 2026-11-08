@@ -18,6 +18,22 @@ npm run tauri build                                         # production install
 npm run bundle:linux                                        # the same on Linux, with a working AppImage (below)
 ```
 
+The bundles are the ones `bundle.targets` in `src-tauri/tauri.conf.json`
+names: the `.deb`, `.rpm` and AppImage on Linux, the NSIS installer on
+Windows (no MSI), the `.app` and `.dmg` on macOS. What a release publishes is
+in [RELEASING.md](../../RELEASING.md). A published package carries
+`NOTICES.txt` beside the program, which `src-tauri/tauri.bundle.conf.json`
+adds: `npm run bundle:linux` passes it, and elsewhere add
+`--config src-tauri/tauri.bundle.conf.json` to `tauri build`, after
+`npm run build` has written `dist/`. It isn't in `tauri.conf.json` because
+`tauri-build` copies a bundle's files on every Cargo build, which would then
+fail without `dist/`. On macOS, Tauri signs the `.app` ad-hoc
+(`signingIdentity: "-"`, RELEASING.md's "Signing"); in the macOS VM, build the
+`.dmg` with `CI=true`, which skips `bundle_dmg.sh`'s Finder layout step: it
+needs Automation access that the VM's session doesn't have, and fails
+("failed to run bundle_dmg.sh") without it. `node scripts/check-package.mjs deb|rpm|nsis|dmg <file>`
+checks a built package.
+
 `npm run build` also writes the third-party notices, `dist/notices.json` and
 `dist/NOTICES.txt`, for the build's target, and fails when they can't be made
 (see [License notices](licenses.md#license-notices)). Run it before `test:e2e` or

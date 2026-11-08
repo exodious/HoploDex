@@ -9,8 +9,8 @@ inputs:
   sets:
     description: >-
       Space-separated set names: build (Tauri and the bundled SQLCipher),
-      tests (nextest), e2e, flatpak (bundle:flatpak), flatpak-check
-      (test:flatpak)
+      tests (nextest), e2e, packages (check-package.mjs), flatpak
+      (bundle:flatpak), flatpak-check (test:flatpak)
     required: true
 runs:
   using: composite
@@ -28,6 +28,8 @@ runs:
           # (quit-cleanup.py); ss (iproute2) clears a stale app's WebDriver
           # port; ImageMagick's `import` takes document-preview's pixel shots.
           [e2e]="xvfb xauth iproute2 imagemagick python3"
+          # rpm -qlp lists the .rpm (scripts/check-package.mjs).
+          [packages]="rpm"
           # The build, its validators (desktop-file-validate, appstreamcli),
           # readelf (binutils) and env.sh's dbus-daemon.
           [flatpak]="flatpak flatpak-builder desktop-file-utils appstream binutils dbus"
