@@ -10,7 +10,8 @@ into it. That binary embeds whatever is in `dist/`, so **run `npm run build`
 first** (the same goes for `npm run screenshots`).
 
 Spec files run in parallel, each in a WebdriverIO worker of its own: up to
-`HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 8. Each
+`HOPLODEX_E2E_WORKERS` at once, by default half the CPUs and at most 8 on
+Linux, and 1 on Windows and macOS (see the display section below). Each
 worker runs its own app (a few hundred MB for WebKitGTK) and several hundred
 threads, which is why `scripts/dev-container.sh` raises the container's
 process limit. A run takes at least as long as its longest spec file, and
@@ -108,7 +109,11 @@ points `DISPLAY` at it, so the app never touches your real desktop and
 parallel workers never share a screen, a pointer or a keyboard. WebdriverIO 10's testrunner would otherwise start one
 display shared by the whole run, so `wdio.conf.ts` turns it off
 (`displayServerEnabled: false`), and `run-e2e.mjs` drops `WAYLAND_DISPLAY`,
-which would make the testrunner point GTK at your compositor even then. The harness self-heals after an interrupted prior run,
+which would make the testrunner point GTK at your compositor even then. On Windows and macOS
+workers would share a desktop, so another worker's window could take the foreground at any moment,
+and Radix closes an open menu or select list when its window loses focus. So the suite runs one
+worker at a time there by default; setting `HOPLODEX_E2E_WORKERS` higher brings the race back.
+The harness self-heals after an interrupted prior run,
 killing anything left over on a worker's port before launching the app.
 
 ## Quit cleanup
@@ -185,7 +190,7 @@ A new journey goes into a new `describe()` in the existing file whose setup
 it shares (the same seed, the same databases, the same relaunch or idle-lock
 setting in `wdio.conf.ts`), whatever spec it belongs to. Each file costs
 about 2.2 s to start and 2.5 s to set up its database or seed (#77), and at
-2 workers, the macOS and Windows VMs, a split costs more than it saves. Start
+1 worker, on the macOS and Windows VMs, a split costs more than it saves. Start
 a new file only when a journey shares setup with no existing file, or when
 the per-spec times (issue #77's "Measuring") show that one file has grown long
 enough to hold the run up. Then split it along its `describe()` blocks, name

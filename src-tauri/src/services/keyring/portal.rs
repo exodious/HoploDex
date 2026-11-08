@@ -62,8 +62,23 @@ impl SecretPortal for DesktopPortal {
     }
 
     fn retrieve_secret(&self) -> std::result::Result<Vec<u8>, String> {
-        zbus::block_on(oo7::ashpd::desktop::secret::retrieve())
-            .map_err(|err| format!("the Secret portal gave no secret: {err}"))
+        use oo7::ashpd::{Error as Failure, PortalError};
+
+        log::debug!("portal: RetrieveSecret");
+        let secret = zbus::block_on(oo7::ashpd::desktop::secret::retrieve()).map_err(|err| {
+            let name = match &err {
+                Failure::Zbus(err) | Failure::Portal(PortalError::ZBus(err)) => {
+                    crate::logging::portal_error(err)
+                }
+                Failure::Portal(portal) => zbus::DBusError::name(portal).to_string(),
+                Failure::Response(response) => format!("{response:?}"),
+                _ => "not a D-Bus reply".to_owned(),
+            };
+            log::debug!("portal: RetrieveSecret refused: {name}");
+            format!("the Secret portal gave no secret: {name}")
+        })?;
+        log::debug!("portal: RetrieveSecret answered");
+        Ok(secret)
     }
 }
 
@@ -124,7 +139,7 @@ async fn read_secret_portal_version(
     proxy
         .get_property::<u32>("version")
         .await
-        .map_err(|err| describe("the Secret portal's version", &err))
+        .map_err(|err| describe("the Secret portal's version", &crate::logging::portal_error(&err)))
 }
 
 /// The keyring file inside the Flatpak's own data folder:

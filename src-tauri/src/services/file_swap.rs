@@ -67,22 +67,25 @@ pub fn replace(original: &Path) -> Result<Replaced, CommandError> {
     if !scratch::is_plain_file(&new) {
         // Not the copy this operation made (it was swapped for a link, say):
         // never move it into the database's place, and never touch it.
-        log::error!("{} is not a plain file of ours: not replacing", new.display());
+        log::error!("{} is not a plain file of ours: not replacing", crate::logging::place(&new));
         return Err(CommandError::replace_failed(original));
     }
     remove_old(original, &old);
     let linked = !testing::hard_links_disabled() && fs::hard_link(original, &old).is_ok();
     if !linked && let Err(err) = fs::rename(original, &old) {
-        log::error!("could not move {} aside: {err}", original.display());
+        log::error!("could not move {} aside: {err}", crate::logging::place(original));
         let _ = secure_delete::secure_delete_file(&new);
         return Err(CommandError::replace_failed(original));
     }
     if let Err(err) = rename_with_retry(&new, original) {
-        log::error!("could not replace {}: {err}", original.display());
+        log::error!("could not replace {}: {err}", crate::logging::place(original));
         let _ = secure_delete::secure_delete_file(&new);
         let put_back = if linked { fs::remove_file(&old) } else { fs::rename(&old, original) };
         if let Err(err) = put_back {
-            log::error!("could not tidy up after replacing {}: {err}", original.display());
+            log::error!(
+                "could not tidy up after replacing {}: {err}",
+                crate::logging::place(original)
+            );
         }
         return Err(CommandError::replace_failed(original));
     }
@@ -115,7 +118,7 @@ fn sync_folder(path: &Path) {
     if let Some(folder) = path.parent()
         && let Err(err) = fs::File::open(folder).and_then(|dir| dir.sync_all())
     {
-        log::warn!("could not flush {}: {err}", folder.display());
+        log::warn!("could not flush {}: {err}", crate::logging::place(folder));
     }
     #[cfg(not(unix))]
     let _ = path;
@@ -152,11 +155,11 @@ fn remove_old(original: &Path, old: &Path) {
     } else if scratch::is_plain_file(old) {
         secure_delete::secure_delete_whole_file(old, WipeControl::default()).map(|_| ())
     } else {
-        log::warn!("{} is not a plain file of ours: leaving it alone", old.display());
+        log::warn!("{} is not a plain file of ours: leaving it alone", crate::logging::place(old));
         return;
     };
     if let Err(err) = removed {
-        log::warn!("could not remove {}: {err}", old.display());
+        log::warn!("could not remove {}: {err}", crate::logging::place(old));
     }
 }
 
@@ -187,14 +190,17 @@ pub fn finish_interrupted(path: &Path) {
     } else {
         for leftover in [&new, &old] {
             if exists(leftover) {
-                log::warn!("{} is not a plain file of ours: leaving it alone", leftover.display());
+                log::warn!(
+                    "{} is not a plain file of ours: leaving it alone",
+                    crate::logging::place(leftover)
+                );
             }
         }
         return;
     };
-    log::warn!("{what} an interrupted replacement of {}", path.display());
+    log::warn!("{what} an interrupted replacement of {}", crate::logging::place(path));
     if let Err(err) = fs::rename(&from, path) {
-        log::error!("could not recover {}: {err}", path.display());
+        log::error!("could not recover {}: {err}", crate::logging::place(path));
     }
 }
 
@@ -216,9 +222,9 @@ pub fn remove_leftovers(path: &Path) {
         return;
     }
     if !scratch::is_plain_file(&new) {
-        log::warn!("{} is not a plain file of ours: leaving it alone", new.display());
+        log::warn!("{} is not a plain file of ours: leaving it alone", crate::logging::place(&new));
     } else if let Err(err) = secure_delete::secure_delete_file(&new) {
-        log::warn!("could not remove {}: {err}", new.display());
+        log::warn!("could not remove {}: {err}", crate::logging::place(&new));
     }
 }
 

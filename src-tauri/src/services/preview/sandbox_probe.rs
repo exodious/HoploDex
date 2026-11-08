@@ -174,6 +174,8 @@ fn run_child() -> ProbeOutcome {
     let spawned = Command::new(SELF_EXE)
         .arg(ARGUMENT)
         .env("WEBKIT_FORCE_SANDBOX", "1")
+        // It logs nothing and opens no file; the parent logs for it (013 FR-031).
+        .env_remove(crate::logging::VARIABLE)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

@@ -94,6 +94,7 @@ collection data, top-bar tabs or counts are shown.
   from `tools/icons/AppIcon.tsx` with `npm run icons`, never drawn by hand.
 - **Notices** (from `get_chooser_state` and `session:closed`), above the list,
   one line each, dismissible:
+  _Amended by [spec 013](../../013-troubleshooting-log/contracts/ui.md): the troubleshooting log's notice is longer than one line and has a Turn off button._
   - locked: "HoploDex locked <name>." (for `lockedByUser`, `idle`, `sleep`,
     `screenLocked`). Idle adds " after <n> minutes without use".
   - stopped operation: "The computer went to sleep while <a backup | the

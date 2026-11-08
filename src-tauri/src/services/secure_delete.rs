@@ -36,7 +36,7 @@ fn open_for_wipe(path: &Path) -> io::Result<Option<File>> {
         // The folder only: a document's copy is named after it (logging.rs).
         log::warn!(
             "a file in {} has other names: unlinking it without overwriting",
-            crate::logging::folder_of(path)
+            crate::logging::place(path)
         );
         return Ok(None);
     }

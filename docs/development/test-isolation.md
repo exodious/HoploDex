@@ -33,6 +33,12 @@ of it:
   holds no database, key or setting, and is deleted when the helper ends. The
   app's start-up deletes any left by processes that have gone, its own or a real
   one's, and leaves those of running ones.
+- The troubleshooting log (`src-tauri/src/logging.rs`, 013) writes under the app's
+  cache directory, so an E2E run's file is in its sandbox like the rest. The
+  sandbox also sets `HOPLODEX_LOG=off`, so no run gets the log's notice on the
+  chooser or writes the file, unless a journey changes it. Rust tests name their own
+  folders, and the process-wide logger is only installed in
+  `tests/log_contents_test.rs`'s child processes.
 - `e2e/wdio.conf.ts` gives each session (one spec file, in a worker of its
   own) a throwaway sandbox (`e2e/support/sandbox.ts`, which `npm run session`
   uses too). An E2E build takes its config and cache

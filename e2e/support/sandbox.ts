@@ -145,6 +145,10 @@ export function isolateAppData(options: { fixedDir?: string } = {}): string {
   // fill (ui.ts, `answerPassphrase`), and logs each prompt here.
   process.env.HOPLODEX_E2E_PASSPHRASES = path.join(root, "passphrases.queue");
   process.env.HOPLODEX_E2E_PASSPHRASE_LOG = path.join(root, "passphrase.log");
+  // The troubleshooting log stays off, so no run gets its notice on the chooser
+  // or writes its file: the journeys that want it clear this and relaunch
+  // (013 plan.md "Test Levels").
+  process.env.HOPLODEX_LOG = "off";
 
   if (process.platform === "linux") {
     process.env.XDG_DATA_HOME = data;

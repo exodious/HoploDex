@@ -138,6 +138,7 @@ The audit that found HoploDex's dependencies compatible with GPL-3.0 (#20) is wr
 - **SC-003**: From the chooser or an open database, a user reaches the license statement and source address in 2 actions or fewer, and the full GPL-3.0 text in 3 or fewer.
 - **SC-004**: About HoploDex opens within 1 second, narrowing the list shows results within 500 milliseconds of typing, and scrolling the whole list, with every component listed, shows no frame longer than 100 milliseconds (constitution IV).
 - **SC-005**: About HoploDex makes 0 network requests and 0 reads or writes of any database or setting.
+  _Amended by [spec 013](../013-troubleshooting-log/spec.md): About's troubleshooting log section reads and changes that one setting, and still touches no database and makes no request._
 - **SC-006**: All 7 word lists have a recorded source and compatible license or are absent from the shipped app, and 0 of the manual license checks #20 names remain open.
 
 ## Assumptions

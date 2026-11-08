@@ -48,7 +48,8 @@ insurance status, valuation, attachment storage, secure delete,
   field. `native::Controller` is what every OS's dialog shows, from `checks`
   (the rules as typed) and `strength` (the `zxcvbn` crate's estimate, which
   replaced the page's strength worker); the idle lock waits while one is up),
-- `machine_settings` (`machine.json`),
+- `machine_settings` (`machine.json`, which also keeps the troubleshooting log's
+  saved choice and that its notice was queued: 013 data-model.md),
 - `keyring` (saved passphrases: every `Entry` is keyring-core's; outside a
   Flatpak the `keyring` crate's OS store, and inside one (011)
   `keyring/portal.rs`'s `Store`, a keyring-core store over oo7's file keyring at
@@ -88,7 +89,8 @@ insurance status, valuation, attachment storage, secure delete,
   `check_backup` asks `ReadFile` only. It never writes a probe file);
 - `AppOpener` (007) takes an `OpenerRoute`, `XdgOpen` or, inside a Flatpak,
   `Portal { timeout }`, which asks the OpenURI portal and treats no answer
-  within the timeout as opened;
+  within the timeout as opened; its `reveal` shows the troubleshooting log's file
+  (013 research.md §10);
 - and for 004 `entry_text` (the entry key and 004 FR-015 rules), `cartridges`
   (the embedded catalog and caliber derivation) and `suggestions` (ranking,
   snapping, the import sheet pass);

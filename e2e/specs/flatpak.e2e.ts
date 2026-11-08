@@ -28,6 +28,7 @@ import {
 import {
   CHECK_LOG_DIR,
   FLATPAK_APP_ID,
+  OPENURI_LOG,
   addLogindSession,
   appDataDir,
   appLogPath,
@@ -141,8 +142,9 @@ describe("011 US5 - The Flatpak Is Tested in Its Sandbox, Away From Real Data", 
       .split("\n")
       .find((candidate) => candidate.startsWith("[INFO] running in a Flatpak; reach: "));
     expect(line).toBeDefined();
+    // By their shapes (013 FR-014): the Documents grant is two names under the home.
     const granted = /reach: \[(.*?)\]/.exec(line!)![1].split(", ").sort();
-    expect(granted).toEqual([reachDir(), "/media", "/run/media"].sort());
+    expect(granted).toEqual(["~/*/*", "/media", "/run/media"].sort());
   });
 
   it("011 SC-007: the app's data went under the run's throwaway home, not the real one", () => {
@@ -1652,5 +1654,43 @@ describe("011 US4 - Each GitHub Release Carries a Flatpak File That Gets Its Run
       expect(await openingChecked("Open in another app")).toBe(true);
     });
     await switchDatabase();
+  });
+});
+
+describe("013 US1 - Gather a log for a repeatable issue", () => {
+  after(() => {
+    process.env.HOPLODEX_LOG = "off";
+  });
+
+  it("is at the Flatpak's cache path, and Show log file reaches the portal with a read-only descriptor (013 US1-4, 013 research.md §3, §10)", async () => {
+    const file = path.join(
+      appDataDir(currentRun().home),
+      "cache",
+      FLATPAK_APP_ID,
+      "logs",
+      "hoplodex.log",
+    );
+    // `flatpak run --env=HOPLODEX_LOG=debug`, the README's one line (013 US4-1), in
+    // place of the sandbox's own HOPLODEX_LOG=off.
+    process.env.HOPLODEX_LOG = "debug";
+    await relaunchApp(flatpakLauncher());
+    await waitForChooser();
+    expect(fs.readFileSync(file, "utf8")).toContain("(Flatpak), started ");
+
+    await clickButton("About HoploDex");
+    await $(".hd-about__log").waitForExist();
+    await clickButton("Show log file");
+    const entry = () =>
+      fs
+        .readFileSync(OPENURI_LOG, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { method?: string; path: string; accessMode: number })
+        .find((candidate) => candidate.method === "OpenDirectory");
+    await browser.waitUntil(() => entry() !== undefined);
+    expect(entry()!.path.endsWith("/logs/hoplodex.log")).toBe(true);
+    expect(entry()!.accessMode).toBe(0);
+    await pressEscape();
+    await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 });

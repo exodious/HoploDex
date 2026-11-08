@@ -89,6 +89,11 @@ impl Bus {
         Self { child, address, _stdout: stdout, _dir: dir }
     }
 
+    /// This bus's address, for a test's child process to use as its session bus.
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+
     /// A connection to this bus, as the app's portal route would make.
     pub fn connect(&self) -> zbus::Connection {
         zbus::block_on(async {

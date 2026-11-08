@@ -38,8 +38,9 @@ test file refers to the shared helpers as `crate::support`,
 which has its own `main`; `portability_test` and `tiff_preview_test`,
 which set environment variables for a test. That is sound only while no
 other thread reads the environment, and `cargo test` runs a program's tests
-as threads of one process; and `release_upgrade_test`, which keys with the
-pinned KDF (below). A test in one of these isn't prefixed with its
+as threads of one process; `release_upgrade_test`, which keys with the
+pinned KDF (below); and `log_contents_test`, which installs the process-wide
+logger in child processes it starts. A test in one of these isn't prefixed with its
 file's name: select it with `-E 'binary(portability_test)'`, or
 `--test portability_test` under `cargo test`.
 

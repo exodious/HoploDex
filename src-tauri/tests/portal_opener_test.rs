@@ -119,6 +119,41 @@ async fn emit_response(connection: &zbus::Connection, to: &str, handle: &str, co
 
 #[zbus::interface(name = "org.freedesktop.portal.OpenURI")]
 impl OpenUri {
+    /// 013 research.md §10. It answers no `Response`: the portal shows the folder
+    /// and no one waits on it. Recorded with the same fields as `OpenFile`.
+    async fn open_directory(
+        &self,
+        parent_window: String,
+        fd: OwnedFd,
+        options: HashMap<String, OwnedValue>,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
+        use std::io::Read;
+
+        let raw = fd.as_raw_fd();
+        let info = fs::read_to_string(format!("/proc/self/fdinfo/{raw}")).unwrap_or_default();
+        let flags = info
+            .lines()
+            .find_map(|line| line.strip_prefix("flags:"))
+            .and_then(|octal| u32::from_str_radix(octal.trim(), 8).ok())
+            .expect("the descriptor's flags");
+        let mut file = fs::File::from(std::os::fd::OwnedFd::from(fd));
+        let meta = file.metadata().unwrap();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).unwrap();
+        self.seen.lock().unwrap().push(Seen {
+            parent_window,
+            access_mode: flags & 0o3,
+            dev_ino: (meta.dev(), meta.ino()),
+            bytes,
+            writable: None,
+            option_names: options.keys().cloned().collect(),
+        });
+        if matches!(self.answer, Answer::Refuse) {
+            return Err(zbus::fdo::Error::AccessDenied("the test portal refuses".into()));
+        }
+        Ok(OwnedObjectPath::try_from("/org/freedesktop/portal/desktop/request/x/y").unwrap())
+    }
+
     async fn open_file(
         &self,
         parent_window: String,
@@ -504,4 +539,32 @@ fn open_document_with_no_portal_is_no_app_for_document() {
 
     assert_eq!(refused.code, "NO_APP_FOR_DOCUMENT", "{refused:?}");
     assert!(world.copy_files().is_empty());
+}
+
+/// 013 research.md §10: Show log file inside a Flatpak hands the portal a
+/// read-only descriptor for the log file, whose folder it shows.
+#[test]
+fn showing_the_log_file_gives_the_portal_a_read_only_descriptor() {
+    use hoplodex_lib::commands::documents::portal_open_directory;
+
+    let bus = Bus::start();
+    let portal = Portal::serve(&bus, Answer::Silent);
+    let client = bus.connect();
+    let (_dir, file) = a_copy();
+    assert_opened(&portal_open_directory(&client, &file));
+    assert_eq!(portal.calls(), 1);
+    drop(bus);
+
+    let bus = Bus::start();
+    let _portal = Portal::serve(&bus, Answer::Refuse);
+    let client = bus.connect();
+    assert_no_app(&portal_open_directory(&client, &file));
+
+    // A link swapped in at the name isn't followed (013 FR-010).
+    let link = file.with_file_name("a link");
+    std::os::unix::fs::symlink(&file, &link).unwrap();
+    assert!(matches!(
+        portal_open_directory(&client, &link),
+        Err(hoplodex_lib::commands::documents::OpenFailure::Other(_))
+    ));
 }

@@ -62,7 +62,7 @@ native passphrase dialog, which no WebDriver can reach, with real keys:
 XTest on Linux (`realInput.ts`'s `realKeyOutsidePage`), `real_input.swift`'s
 `key-to` to the app's process on macOS (`macInput.ts`), and
 `e2e/scripts/dialog-input.ps1` on Windows, which posts the keys to the app's
-dialog itself, since another worker's app can have the foreground (as macOS
+dialog itself, since another app can have the foreground (as macOS
 addresses its keys to the process, #122), all through `e2e/support/dialogInput.ts`.
 The app runs with `HOPLODEX_E2E_PASSPHRASE_DIALOG=native` there, and the spec
 reads what the dialog shows from its log (`HOPLODEX_E2E_PASSPHRASE_LOG`: each
@@ -80,8 +80,8 @@ the sandboxed app's process only) with `e2e/support/macInput.ts`, which
 compiles `src-tauri/examples/real_input.swift`. Every one of its functions is addressed to
 the test's own process (⌘Q by `key-to`, which posts the key with
 `CGEvent.postToPid`; the others through Accessibility and Apple Events), because
-the suite's workers run apps side by side and a new one takes the front: a
-global `key` goes to whichever app is frontmost when it arrives (#122). `locking` sends the quit event with
+another app can take the front (another worker's, with `HOPLODEX_E2E_WORKERS`
+above 1): a global `key` goes to whichever app is frontmost when it arrives (#122). `locking` sends the quit event with
 a log out's reason (`kAEReallyLogOut`), which must end the app at once with
 its unsaved input kept as pending changes. It needs Accessibility for
 whatever runs the suite (as `quit-cleanup.py` does) and is skipped on the

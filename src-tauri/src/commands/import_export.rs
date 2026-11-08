@@ -546,6 +546,7 @@ pub mod ops {
         is_cancelled: &dyn Fn() -> bool,
         reach: &Reach,
     ) -> Result<ExportResult, CommandError> {
+        log::debug!("exporting as {format:?} to {}", crate::logging::place(destination_folder));
         let destination_folder = reach.check(destination_folder, Need::WriteFolder)?;
         let destination_folder = destination_folder.as_path();
         let mut reserved = ExportFiles::reserve(
@@ -2104,6 +2105,7 @@ pub mod ops {
         progress: &mut dyn FnMut(&str, u64, u64),
         reach: &Reach,
     ) -> Result<Vec<ReadTable>, CommandError> {
+        log::debug!("import: reading the files in the helper");
         let files = files
             .iter()
             .map(|file| {
@@ -2129,6 +2131,7 @@ pub mod ops {
 
     /// `cancel_import`: the running import stops if it is still reading.
     pub fn cancel_import(operations: &Operations) {
+        log::debug!("import: cancel asked for");
         operations.stop_by_user(OperationKind::Import);
     }
 
@@ -2184,6 +2187,7 @@ pub mod ops {
         is_cancelled: &dyn Fn() -> bool,
         record_imported: &dyn Fn(u64),
     ) -> Result<ImportResult, CommandError> {
+        log::debug!("import: matching and saving what was read");
         let (firearm_rows, accessory_rows) = collect_tables(tables)?;
         let snapping = Snapping::new(conn, &firearm_rows, &accessory_rows)?;
         let total = firearm_rows.len() + accessory_rows.len();
@@ -2300,6 +2304,7 @@ pub mod ops {
         resolutions: &[ConflictResolution],
         apply_to_remaining: Option<&str>,
     ) -> Result<ResolveResult, CommandError> {
+        log::debug!("import: resolving conflicts");
         // An import this store doesn't hold is gone, whatever the reason: it
         // was resolved, dropped for a newer one, or belongs to an open that
         // has closed (issue #64).

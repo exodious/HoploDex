@@ -14,8 +14,8 @@ getBoundingClientRect() gives it, is the same point in the picture, whatever
 the window's frame and position.
 
 It captures the window of one process, the E2E worker's own app (-ProcessId),
-and not the screen, so the parallel workers' other windows, on top or beside
-it, don't matter and nothing is brought to the front. Run it in the signed-in
+and not the screen, so other windows, on top or beside it, don't matter and
+nothing is brought to the front. Run it in the signed-in
 desktop session, at 100% scaling. The window must not be minimized. Exits 1
 when the process has no window.
 

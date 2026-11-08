@@ -470,7 +470,7 @@ fn delete_copy(path: &Path) {
         }
         thread::sleep(Duration::from_millis(2));
     }
-    log::warn!("a copy the PDF viewer wrote could not be deleted: {}", path.display());
+    log::warn!("a copy the PDF viewer wrote could not be deleted: {}", crate::logging::place(path));
 }
 
 /// Lists `folder` for copies that are new, deletes each, and returns their

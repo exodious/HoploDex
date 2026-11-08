@@ -207,7 +207,7 @@ the walk's viewer shots (`shotDisplay`) run `e2e/scripts/window-shot.ps1` on
 Windows. It saves the client area of this worker's app window (by its process,
 `appPid()`), so a point in the page is the same point in the picture. It asks
 the window to paint itself (PrintWindow) rather than copying the screen, so
-the parallel workers' windows over it don't matter (#88); the window mustn't
+other windows over it don't matter (#88); the window mustn't
 be minimized. macOS does the same with `screencapture -l` on the worker's
 window (`macWindowShot` in `e2e/support/screenshots.ts`), which still needs
 Screen Recording.

@@ -87,7 +87,7 @@ pub mod ops {
             });
         }
         let backups = backups::list(&folder, &database_id).unwrap_or_else(|err| {
-            log::warn!("could not list the backups in {}: {err}", folder.display());
+            log::warn!("could not list the backups in {}: {err}", crate::logging::place(&folder));
             Vec::new()
         });
         Ok(BackupList {
@@ -198,6 +198,7 @@ pub mod ops {
         upgrade: bool,
         reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
+        log::debug!("restoring a backup");
         let backup = reach.check(Path::new(backup_path), Need::ReadFile)?;
         let backup = backup.as_path();
         let damaged = match target {
@@ -448,7 +449,7 @@ pub mod ops {
     }
 
     fn io_failure(path: &Path, err: &io::Error) -> CommandError {
-        log::error!("restore: {}: {err}", path.display());
+        log::error!("restore: {}: {err}", crate::logging::place(path));
         CommandError::from_io(err, || {
             CommandError::new("INTERNAL_ERROR", "The backup couldn't be copied.")
         })
@@ -459,7 +460,7 @@ pub mod ops {
         if let Err(err) = secure_delete::secure_delete_file(new)
             && err.kind() != io::ErrorKind::NotFound
         {
-            log::warn!("could not remove {}: {err}", new.display());
+            log::warn!("could not remove {}: {err}", crate::logging::place(new));
         }
         let mut journal = new.as_os_str().to_owned();
         journal.push("-journal");
@@ -551,7 +552,11 @@ pub mod ops {
                 return Err(stopped());
             }
             Err(failure) => {
-                log::error!("the backup before restoring {} failed: {failure:?}", path.display());
+                log::error!(
+                    "the backup before restoring {} failed: {}",
+                    crate::logging::place(&path),
+                    failure.for_log()
+                );
                 remove_copy(&new);
                 return Err(CommandError::restore_cancelled());
             }
@@ -660,7 +665,7 @@ pub mod ops {
             )),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
             Err(err) => {
-                log::error!("could not look at {}: {err}", path.display());
+                log::error!("could not look at {}: {err}", crate::logging::place(path));
                 Err(CommandError::replace_failed(path))
             }
         }
@@ -760,20 +765,26 @@ pub mod ops {
         // for a link or given other names, which would be moved into the
         // database's place.
         if !scratch::is_plain_file(new) {
-            log::error!("{} is not a plain file of ours: not restoring", new.display());
+            log::error!(
+                "{} is not a plain file of ours: not restoring",
+                crate::logging::place(new)
+            );
             return Err(CommandError::replace_failed(path));
         }
         if set_aside {
             if fs::symlink_metadata(kept).is_ok() {
-                log::error!("{} is already there", kept.display());
+                log::error!("{} is already there", crate::logging::place(kept));
                 return Err(CommandError::replace_failed(path));
             }
             if let Err(err) = fs::rename(path, kept) {
-                log::error!("could not set {} aside: {err}", path.display());
+                log::error!("could not set {} aside: {err}", crate::logging::place(path));
                 return Err(CommandError::replace_failed(path));
             }
             if !fs::symlink_metadata(kept).is_ok_and(|meta| meta.file_type().is_file()) {
-                log::error!("{} was swapped for something else, put back", path.display());
+                log::error!(
+                    "{} was swapped for something else, put back",
+                    crate::logging::place(path)
+                );
                 let _ = fs::rename(kept, path);
                 return Err(CommandError::replace_failed(path));
             }
@@ -781,7 +792,7 @@ pub mod ops {
         // Nothing may have appeared at `path` meanwhile, for the rename
         // would replace a file.
         if fs::symlink_metadata(path).is_ok() || fs::rename(new, path).is_err() {
-            log::error!("could not put the restored copy at {}", path.display());
+            log::error!("could not put the restored copy at {}", crate::logging::place(path));
             if set_aside {
                 let _ = fs::rename(kept, path);
             }
@@ -803,7 +814,7 @@ pub mod ops {
     }
 
     fn change_io_failure(path: &Path, err: &io::Error) -> CommandError {
-        log::error!("passphrase change: {}: {err}", path.display());
+        log::error!("passphrase change: {}: {err}", crate::logging::place(path));
         CommandError::from_io(err, || {
             CommandError::new(
                 "INTERNAL_ERROR",
@@ -835,6 +846,7 @@ pub mod ops {
         current: &Passphrase,
         new: &Passphrase,
     ) -> Result<PassphraseChanged, CommandError> {
+        log::debug!("changing the passphrase");
         change(session, id, machine, Some(scratch_dir), current, new)
     }
 
@@ -939,7 +951,10 @@ pub mod ops {
             Err(err) => {
                 // Closed, and the backend keeps no passphrase (003 FR-007): the
                 // user opens it again.
-                log::error!("could not reopen {} after changing its passphrase", path.display());
+                log::error!(
+                    "could not reopen {} after changing its passphrase",
+                    crate::logging::place(&path)
+                );
                 session.forget_open();
                 session.set_last_closed(&path);
                 events.emit(
@@ -1070,14 +1085,14 @@ pub mod ops {
             )
         };
         let copy = db::check_copy(new_copy, new).map_err(|err| {
-            log::error!("the copy with the new passphrase failed its checks: {err}");
+            log::error!("the copy with the new passphrase failed its checks: {}", err.for_log());
             not_sound()
         })?;
         let expected = table_row_counts(conn).map_err(CommandError::from_db)?;
         let found = table_row_counts(&copy).map_err(CommandError::from_db)?;
         drop(copy);
         if found != expected {
-            log::error!("the copy with the new passphrase has other row counts: {found:?}");
+            log::error!("the copy with the new passphrase has other row counts");
             return Err(not_sound());
         }
         if operation.is_cancelled() {
@@ -1122,7 +1137,7 @@ pub mod ops {
             Ok(false) => Err(CommandError::passphrase_incorrect(None, None)
                 .on_field("currentPassphrase", CURRENT_REFUSED)),
             Err(err) => {
-                log::error!("could not check the current passphrase: {err}");
+                log::error!("could not check the current passphrase: {}", err.for_log());
                 Err(CommandError::new(
                     "INTERNAL_ERROR",
                     "The current passphrase couldn't be checked.",
@@ -1371,7 +1386,10 @@ pub mod ops {
                     operation.record_done(deleted);
                 }
                 Err(err) => {
-                    log::warn!("could not delete the backup {}: {err}", backup.path);
+                    log::warn!(
+                        "could not delete the backup {}: {err}",
+                        crate::logging::place(Path::new(&backup.path))
+                    );
                     failed_paths.push(backup.path.clone());
                 }
             }

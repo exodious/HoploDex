@@ -53,8 +53,12 @@ The packages are unsigned, kept nowhere and published nowhere; the job only
 shows they build. `performance_test` and `import_largest_test` don't run
 here; [Test](testing.md) says when to run them.
 
+- **One app at a time on Windows and macOS.** E2E there runs one worker
+  (`wdio.conf.ts`'s default off Linux), since workers would share a desktop
+  and another worker's window can close an open menu ([E2E](e2e.md)); Linux
+  runs half the runner's CPUs, each worker on a display of its own.
 - **Optional: E2E on macOS.** The runner has 3 CPUs and 7 GB, which one worker
-  (`HOPLODEX_E2E_WORKERS=1`) fills, so the job runs the suite on every pull
+  fills, so the job runs the suite on every pull
   request but passes whatever it finds. A failure, or a hang that the step's
   timeout (40 minutes, 5 for quit-cleanup) ends, appears in the run's summary
   and as a warning naming each failed spec file; record it in an issue so it

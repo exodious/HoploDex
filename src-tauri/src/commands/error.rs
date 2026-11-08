@@ -240,7 +240,11 @@ impl CommandError {
         at_backup_location: bool,
         database_path: &Path,
     ) -> Self {
-        log::error!("upgrading {} failed and was rolled back: {err}", database_path.display());
+        log::error!(
+            "upgrading {} failed and was rolled back: {}",
+            crate::logging::place(database_path),
+            err.for_log()
+        );
         let error = Self::from_upgrade(err);
         if error.code == Self::DISK_FULL {
             let mut error = error.located_at(database_path);
@@ -589,7 +593,7 @@ impl CommandError {
     /// §2), and an I/O error as a file that can't be reached, whose path the
     /// session adds (003 research.md §6).
     pub fn from_db(err: rusqlite::Error) -> Self {
-        log::error!("db error: {err}");
+        log::error!("db error: {}", crate::logging::db_error(&err));
         match err {
             rusqlite::Error::QueryReturnedNoRows => {
                 Self::not_found("The requested record was not found.")
@@ -615,7 +619,7 @@ impl CommandError {
         match err.into_sqlite() {
             Ok(sqlite) => Self::from_db(sqlite),
             Err(other) => {
-                log::error!("upgrade error: {other}");
+                log::error!("upgrade error: {}", other.for_log());
                 Self::new("INTERNAL_ERROR", "An unexpected error occurred.")
             }
         }

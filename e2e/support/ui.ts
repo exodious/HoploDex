@@ -397,12 +397,10 @@ export async function choose(text: string) {
   await settle();
 }
 
-/** Regroups the collection through the "Group by" menu (005
- * contracts/ui-registration.md §6): opens it (it opens on pointer down, which a
- * plain click doesn't send) and picks the radio item named `label`, such as
- * "Cartridge", "Registered as" or "None". */
-export async function groupBy(label: string) {
-  const trigger = await $('button[aria-haspopup="menu"][aria-label^="Group by"]');
+/** Opens the Radix menu behind `triggerSelector` (it opens on pointer down,
+ * which a plain click doesn't send) and leaves it open. */
+export async function openMenu(triggerSelector: string) {
+  const trigger = await $(triggerSelector);
   await trigger.waitForExist();
   await browser.execute((element: HTMLElement) => {
     element.dispatchEvent(
@@ -410,6 +408,14 @@ export async function groupBy(label: string) {
     );
   }, trigger);
   await $('[role="menu"]').waitForExist({ timeout: 5000 });
+}
+
+/** Regroups the collection through the "Group by" menu (005
+ * contracts/ui-registration.md §6): opens it (it opens on pointer down, which a
+ * plain click doesn't send) and picks the radio item named `label`, such as
+ * "Cartridge", "Registered as" or "None". */
+export async function groupBy(label: string) {
+  await openMenu('button[aria-haspopup="menu"][aria-label^="Group by"]');
   await browser.waitUntil(
     () =>
       browser.execute((text: string) => {
@@ -909,14 +915,7 @@ export async function unlock(passphrase: string) {
  * down, which a plain click doesn't send) and picks the item whose label
  * starts with `item`. */
 export async function chooseMenuItem(triggerSelector: string, item: string) {
-  const trigger = await $(triggerSelector);
-  await trigger.waitForExist();
-  await browser.execute((element: HTMLElement) => {
-    element.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
-    );
-  }, trigger);
-  await $('[role="menu"]').waitForExist({ timeout: 5000 });
+  await openMenu(triggerSelector);
   await browser.waitUntil(
     () =>
       browser.execute((label: string) => {

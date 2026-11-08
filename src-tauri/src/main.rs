@@ -238,6 +238,14 @@ fn read_reach(_app: &AppHandle) -> Reach {
     Reach::Unconfined
 }
 
+/// Tauri panics with a failed `setup`'s error, and a release build's panic gives
+/// only its location (013 FR-027), so the reason is logged first.
+fn saying_why_it_failed(
+    setup: impl FnOnce(&mut tauri::App) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
+) -> impl FnOnce(&mut tauri::App) -> Result<(), Box<dyn std::error::Error>> + Send + 'static {
+    move |app| setup(app).inspect_err(|err| hoplodex_lib::logging::startup_failed(err))
+}
+
 fn main() {
     // A crash ends the process without a core, before anything else, so the
     // helpers and the sandbox probe below are covered too (#166).
@@ -246,6 +254,11 @@ fn main() {
     // The render helper, the import helper and the sandbox probe are this executable started
     // again (007 research.md §9, §11; 008 research.md §8): before any Tauri, keyring, session
     // or logging setup, so they have none of them, and they never return here.
+    // A release build's panic says where, not what, since its message can quote a value
+    // (013 FR-027). First, so the hooks below call this one rather than Rust's default.
+    if !cfg!(debug_assertions) {
+        hoplodex_lib::logging::panic_location_only();
+    }
     // No Windows Error Reporting box, heap or snapshot, and a panic ends the
     // process at once rather than in abort's fail-fast, which Windows Error
     // Reporting would report to Microsoft (#166). First, so the helpers below
@@ -279,7 +292,8 @@ fn main() {
         );
         std::process::exit(1);
     }
-    // The log goes to standard error from here on (the helpers above have none).
+    // The log goes to standard error from here on, and to its file once
+    // `setup` can name the folder (the helpers above have neither: 013 FR-031).
     hoplodex_lib::logging::init();
     // Before this process starts any other.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -321,7 +335,13 @@ fn main() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(move |app| {
+        .setup(saying_why_it_failed(move |app| {
+            // A run the variable decides starts its file before anything here
+            // can fail; any other waits for the saved choice below (013 US4-1).
+            let log_folder = app_dirs::cache_dir(app.handle())
+                .ok()
+                .map(|cache| cache.join(hoplodex_lib::logging::file::FOLDER));
+            let log_by_variable = hoplodex_lib::logging::start_for_variable(log_folder.clone());
             #[cfg(target_os = "linux")]
             {
                 log::info!("{}", webkit_sandbox.describe());
@@ -351,6 +371,15 @@ fn main() {
             // about when the chooser needs to know whether it is there.
             let machine = MachineSettings::load(&app_dirs::config_dir(app.handle())?)?
                 .with_keyring(Keyring::for_reach(&reach));
+            // The troubleshooting log's file, now that the saved choice is
+            // known; earlier lines were held for it. A user of a build where it
+            // is on by default is told, once (013 FR-020).
+            let log_decided = log_by_variable.unwrap_or_else(|| {
+                hoplodex_lib::logging::start(log_folder, machine.troubleshooting_log())
+            });
+            if log_decided.notice {
+                machine.queue_troubleshooting_log_notice();
+            }
             // A backup a crash or forced quit cut short (003 research.md §7).
             backups::sweep_unfinished(&machine);
             // Copies the macOS PDF viewer left behind in a run that couldn't
@@ -473,7 +502,7 @@ fn main() {
                 Err(err) => log::error!("the application menu could not be built: {err}"),
             }
             Ok(())
-        })
+        }))
         .on_menu_event(|app, event| {
             // Only the About item is the app's own; the predefined items act
             // by themselves (010 contracts/tauri-commands.md).
@@ -510,6 +539,9 @@ fn main() {
             hoplodex_lib::commands::databases::lock_database,
             hoplodex_lib::commands::databases::get_document_opening,
             hoplodex_lib::commands::databases::set_document_opening,
+            hoplodex_lib::commands::troubleshooting_log::get_troubleshooting_log,
+            hoplodex_lib::commands::troubleshooting_log::set_troubleshooting_log,
+            hoplodex_lib::commands::troubleshooting_log::show_troubleshooting_log,
             hoplodex_lib::commands::databases::stage_pending_changes,
             hoplodex_lib::commands::databases::resolve_pending_changes,
             hoplodex_lib::commands::databases::note_activity,
@@ -577,6 +609,7 @@ fn main() {
             hoplodex_lib::commands::import_export::resolve_import_conflicts,
         ])
         .build(tauri::generate_context!())
+        .inspect_err(|err| hoplodex_lib::logging::startup_failed(err))
         .expect("error while building tauri application");
     // Every macOS `terminate:` (⌘Q, the application menu's and the Dock's
     // Quit, an Apple Event quit) is a request, like the window's close

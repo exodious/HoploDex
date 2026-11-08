@@ -7,6 +7,7 @@ import {
   choose,
   expect,
   fill,
+  openMenu,
   settle,
 } from "../support/ui";
 import {
@@ -415,15 +416,6 @@ describe("Issue #117 - Nothing on the page moves when a modal opens", () => {
     await scrollToPinnedStrip();
     await expectBarsStay(() => clickPinned("Edit"), closeModal);
     await expectBarsStay(() => clickPinned("Delete"), closeModal);
-    await expectBarsStay(async () => {
-      await browser.execute(() => {
-        document
-          .querySelector("button.hd-db-menu")!
-          .dispatchEvent(
-            new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
-          );
-      });
-      await $('[role="menu"]').waitForExist();
-    }, closeModal);
+    await expectBarsStay(() => openMenu("button.hd-db-menu"), closeModal);
   });
 });

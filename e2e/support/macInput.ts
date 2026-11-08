@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
  *
  * Every function here is addressed to the process `pid` (a key by
  * `CGEvent.postToPid`, the menu bar and the quit events through the
- * Accessibility API and Apple Events), because the suite's workers run apps
- * side by side and a new one takes the front. Only the real_input tool's
+ * Accessibility API and Apple Events), because another app can take the front
+ * (another worker's, with HOPLODEX_E2E_WORKERS above 1). Only the real_input tool's
  * `activate`, which {@link pressCommandQ} and {@link chooseMenuBarItem} call
  * first, and its pointer and `key` commands (not used here) go to the
  * frontmost app or the screen.
@@ -71,8 +71,8 @@ export function pressElement(pid: number, title: string): boolean {
 
 /** Presses ⌘Q in the app with process id `pid`. The key is posted to that
  * process alone (`CGEvent.postToPid`), not to whichever app is frontmost when
- * it arrives: another worker's app, launched meanwhile, takes the front, and
- * a global ⌘Q would quit it instead (#122). */
+ * it arrives: another app can take the front meanwhile, as another worker's
+ * did when one launched, and a global ⌘Q would quit it instead (#122). */
 export function pressCommandQ(pid: number) {
   bringToFront(pid);
   // 12 is the virtual key code of Q.

@@ -315,6 +315,12 @@ path = "tests/portability_test.rs"
 name = "tiff_preview_test"
 path = "tests/tiff_preview_test.rs"
 
+# The process-wide logger can be installed once per process, and each of these
+# tests installs its own (013 FR-028).
+[[test]]
+name = "log_contents_test"
+path = "tests/log_contents_test.rs"
+
 # The stored release databases are keyed with the pinned KDF, which a
 # `test-kdf` build can use only for a whole process (`cipher::test_kdf`).
 [[test]]

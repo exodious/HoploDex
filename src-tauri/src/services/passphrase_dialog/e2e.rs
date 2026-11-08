@@ -147,7 +147,10 @@ fn take_queued() -> Option<Queued> {
     match serde_json::from_str(first) {
         Ok(queued) => Some(queued),
         Err(err) => {
-            log::warn!("a queued passphrase answer isn't JSON: {err}");
+            log::warn!(
+                "a queued passphrase answer isn't JSON: {}",
+                crate::logging::json_error(&err)
+            );
             None
         }
     }
