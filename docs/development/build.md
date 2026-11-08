@@ -24,8 +24,8 @@ Windows (no MSI), the `.app` and `.dmg` on macOS. What a release publishes is
 in [RELEASING.md](../../RELEASING.md). A published package carries
 `NOTICES.txt` beside the program, which `src-tauri/tauri.bundle.conf.json`
 adds: `npm run bundle:linux` passes it, and elsewhere add
-`--config src-tauri/tauri.bundle.conf.json` to `tauri build`, after
-`npm run build` has written `dist/`. It isn't in `tauri.conf.json` because
+`--config src-tauri/tauri.bundle.conf.json` to `tauri build`, whose
+`beforeBuildCommand` writes `dist/` first. It isn't in `tauri.conf.json` because
 `tauri-build` copies a bundle's files on every Cargo build, which would then
 fail without `dist/`. On macOS, Tauri signs the `.app` ad-hoc, with the
 hardened runtime on (`signingIdentity: "-"`, RELEASING.md's "Signing"); in the macOS VM, build the

@@ -51,8 +51,9 @@ The `e2e` profile (`[profile.e2e]` in `src-tauri/Cargo.toml`) is the release
 profile without fat LTO, with 16 codegen units and incremental builds, so
 touching the backend rebuilds in seconds instead of a minute. It keeps
 `panic = "abort"`. The trade-off: E2E doesn't drive a byte-identical copy of
-the shipping binary. (It never did, because of the in-memory keyring.) Before
-a release, run the suite once against the shipping profile:
+the shipping binary. (It never did, because of the in-memory keyring.) The
+[release workflow](ci.md#the-release-workflow) runs the suite against the
+shipping profile; to do the same by hand:
 
 ```bash
 npm run build && HOPLODEX_E2E_PROFILE=release npm run test:e2e

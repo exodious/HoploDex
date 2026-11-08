@@ -11,8 +11,9 @@
 
 use std::io::{self, Read, Write};
 
-/// The largest frame the TIFF mode accepts at either end: 768 MiB, above the
-/// largest document the parent loads or the largest page the helper renders.
+/// The largest frame the TIFF mode accepts: 768 MiB, above the largest document
+/// the parent loads. The app holds each response to a smaller limit for its kind
+/// (`preview::helper_protocol`'s `max_response`, through [`read_frame_by_tag`]).
 pub const MAX_FRAME: usize = 768 * 1024 * 1024;
 
 pub fn invalid(message: &str) -> io::Error {

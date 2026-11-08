@@ -79,7 +79,7 @@ here; [Test](testing.md) says when to run them.
 - **What each runner needs** is set up by its job: on Linux, every Ubuntu
   package it uses, named rather than left to the image, from the sets in
   `.github/actions/apt` (`build` is the Debian/Ubuntu list in
-  [Prerequisites](prerequisites.md); `tests`, `e2e`, `flatpak` and
+  [Prerequisites](prerequisites.md); `tests`, `e2e`, `packages`, `flatpak` and
   `flatpak-check` add what those steps run); on Windows, `TEMP` on the D: disk with a Defender call for the
   tests, which makes nextest three times faster there, and the desktop at
   1920×1080 with animations on for E2E; on macOS, Reduce Motion off and the
