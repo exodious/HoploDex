@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildProfile } from "./app";
@@ -20,6 +21,13 @@ import { buildProfile } from "./app";
  */
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+/** Whether this version has the troubleshooting log on for a user who never
+ * chose: on when the major version is 0, off otherwise (013 FR-001). */
+export function logOnByDefault(): boolean {
+  const config = fs.readFileSync(path.join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8");
+  return (JSON.parse(config) as { version: string }).version.split(".")[0] === "0";
+}
 
 const cargoArgs = [
   "--profile",

@@ -36,7 +36,7 @@ import {
   waitForCollection,
 } from "../support/ui";
 import { killApp, relaunchApp } from "../support/app";
-import { repoRoot } from "../support/build";
+import { logOnByDefault, repoRoot } from "../support/build";
 import { copyReleaseFixture, sandboxPath, seedCollection } from "../support/sandbox";
 import {
   SCREENSHOT_WINDOW,
@@ -1577,10 +1577,13 @@ describe("Screenshots: About HoploDex", () => {
     await waitForChooser();
     await chooseTheme("Light");
     await settleChooserPlate();
-    await $(".hd-chooser__notice").waitForExist();
-    await shotBothThemes("95-log-notice");
+    if (logOnByDefault()) {
+      await $(".hd-chooser__notice").waitForExist();
+      await shotBothThemes("95-log-notice");
+    }
 
     await clickButton("About HoploDex");
+    if (!logOnByDefault()) await clickButton("Turn on");
     await $(".hd-about__log-path").waitForExist();
     await settle();
     await shotBothThemes("96-about-log-on");

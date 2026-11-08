@@ -113,8 +113,7 @@ which would make the testrunner point GTK at your compositor even then. On Windo
 workers would share a desktop, so another worker's window could take the foreground at any moment,
 and Radix closes an open menu or select list when its window loses focus. So the suite runs one
 worker at a time there by default; setting `HOPLODEX_E2E_WORKERS` higher brings the race back.
-As a second layer, open menus and select lists through `openMenu` or `selectOption` in
-`e2e/support/ui.ts`, which keep them open through a window `blur`. The harness self-heals after an interrupted prior run,
+The harness self-heals after an interrupted prior run,
 killing anything left over on a worker's port before launching the app.
 
 ## Quit cleanup

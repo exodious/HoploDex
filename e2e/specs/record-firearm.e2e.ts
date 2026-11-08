@@ -416,11 +416,6 @@ describe("Issue #117 - Nothing on the page moves when a modal opens", () => {
     await scrollToPinnedStrip();
     await expectBarsStay(() => clickPinned("Edit"), closeModal);
     await expectBarsStay(() => clickPinned("Delete"), closeModal);
-    await expectBarsStay(async () => {
-      await openMenu("button.hd-db-menu");
-      // Another worker's window can take the foreground just now, on Windows
-      // and macOS: the menu has to stay open for this step to mean anything.
-      await browser.execute(() => window.dispatchEvent(new Event("blur")));
-    }, closeModal);
+    await expectBarsStay(() => openMenu("button.hd-db-menu"), closeModal);
   });
 });

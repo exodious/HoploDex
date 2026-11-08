@@ -35,7 +35,7 @@ import {
   waitForCollection,
 } from "../support/ui";
 import { appPid, killApp, launchApp, relaunchApp, waitForAppToQuit } from "../support/app";
-import { repoRoot } from "../support/build";
+import { logOnByDefault, repoRoot } from "../support/build";
 import { logLines } from "../support/documentPreview";
 import { copyReleaseFixture, sha256Of } from "../support/sandbox";
 import {
@@ -1074,8 +1074,13 @@ describe("013 US3 - Told, and able to say no, while it is on by default", () => 
     await relaunch();
   });
 
-  it("tells a user once, turns it off from the notice, and it stays off at the relaunch (013 US3-1, US3-2, US3-5)", async () => {
+  it("tells a user once on a 0.x build, turns it off from the notice, and it stays off at the relaunch; tells no one and writes nothing from 1.0.0 (013 US3-1, US3-2, US3-3, US3-5)", async () => {
     await relaunchWithLog(undefined);
+    if (!logOnByDefault()) {
+      expect(await $(".hd-chooser__notice*=troubleshooting log").isExisting()).toBe(false);
+      expect(fs.existsSync(path.join(logFolder(), "hoplodex.log"))).toBe(false);
+      return;
+    }
     const notice = $(".hd-chooser__notice*=troubleshooting log");
     await notice.waitForExist();
     await expect(notice).toHaveText(expect.stringContaining("designed to leave out"));
