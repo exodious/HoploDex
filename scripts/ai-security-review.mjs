@@ -22,6 +22,10 @@
 //       uploads the recorded SARIF, waits for it, and checks the alerts
 //   node scripts/ai-security-review.mjs gate [--ref <ref>]
 //       the release gate: open critical and high alerts, and draft advisories
+//   node scripts/ai-security-review.mjs reviewed --commit <sha>
+//       the release workflow's check (#19): <sha> is main's head and its
+//       newest release review, and no critical or high code scanning or
+//       Dependabot alert is open
 //   node scripts/ai-security-review.mjs carry-dismissal <new alert> <old alert>
 //       dismisses <new> with <old>'s reason (a moved finding; ask first)
 //
@@ -426,6 +430,56 @@ export function gate(gh, { ref = null } = {}) {
 }
 
 /**
+ * What the release workflow (release.yml, #19) can check with its own token
+ * before it drafts a release: a release review's upload for exactly the tagged
+ * commit, on `main` (CodeQL analyzes only `main`, and no release branches are
+ * used, #19) and the newest of this tool's there; the commit still `main`'s
+ * head, so every tool's alerts on it are that commit's; no open critical or
+ * high code scanning alert from any tool on `main`; and no open critical or
+ * high Dependabot alert. The token can't read the rest of the gate (secret
+ * scanning, advisories), so the operator runs `gate` before tagging
+ * (RELEASING.md). A release from a release branch would need CodeQL there
+ * first, and this widened with it.
+ */
+export const RELEASE_REF = "refs/heads/main";
+
+export function reviewed(gh, commit) {
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`not a full commit sha: ${commit}`);
+  const analyses = paged(
+    gh,
+    `repos/${REPO}/code-scanning/analyses?tool_name=${enc(TOOL)}&per_page=100`,
+  ).filter((a) => a.category === CATEGORY && a.ref === RELEASE_REF);
+  const analysis = analyses.find((a) => a.commit_sha === commit);
+  if (!analysis) return { commit, analysis: null, pass: false };
+  // A later review on the branch would have moved its alerts on from this commit's.
+  const newest = analyses.reduce((n, a) => (a.created_at > n.created_at ? a : n));
+  if (newest.commit_sha !== commit) {
+    return { commit, analysis: null, newer: newest.commit_sha, pass: false };
+  }
+  if (gh([`repos/${REPO}/compare/${commit}...main`]).status !== "identical") {
+    return { commit, analysis: null, behind: RELEASE_REF, pass: false };
+  }
+  const [critical, high] = ["critical", "high"].map(
+    (s) =>
+      paged(
+        gh,
+        `repos/${REPO}/code-scanning/alerts?state=open&severity=${s}&ref=${enc(RELEASE_REF)}&per_page=100`,
+      ).length,
+  );
+  const dependabot = paged(
+    gh,
+    `repos/${REPO}/dependabot/alerts?state=open&severity=critical,high&per_page=100`,
+  ).length;
+  return {
+    commit,
+    analysis: { id: analysis.id, ref: analysis.ref, created_at: analysis.created_at },
+    code_scanning: { critical, high },
+    dependabot,
+    pass: critical + high + dependabot === 0,
+  };
+}
+
+/**
  * Dismiss `next` as `old` was: only this tool's alerts, `next` open and `old`
  * dismissed, on the same surface, so it can't silence another tool's alert.
  */
@@ -650,13 +704,25 @@ function main(argv) {
       if (!g.pass) process.exitCode = 1;
       break;
     }
+    case "reviewed": {
+      if (!opts.commit) throw new Error("reviewed --commit <sha>");
+      const r = reviewed(realGh, opts.commit);
+      console.log(JSON.stringify(r, null, 1));
+      if (r.newer)
+        console.log(`FAIL: ${r.newer} was reviewed after ${opts.commit} on the same branch`);
+      else if (r.behind) console.log(`FAIL: ${opts.commit} is no longer ${r.behind}'s head`);
+      else if (!r.analysis) console.log(`FAIL: no release review of ${opts.commit} on main`);
+      else console.log(r.pass ? "PASS" : "FAIL: open critical or high alerts");
+      if (!r.pass) process.exitCode = 1;
+      break;
+    }
     case "carry-dismissal":
       carryDismissal(realGh, Number(opts._[1]), Number(opts._[2]));
       console.log(`#${opts._[1]} dismissed as #${opts._[2]} was`);
       break;
     default:
       throw new Error(
-        "usage: touched | open | build | upload | gate | carry-dismissal (see the header)",
+        "usage: touched | open | build | upload | gate | reviewed | carry-dismissal (see the header)",
       );
   }
 }

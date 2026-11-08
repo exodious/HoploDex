@@ -164,9 +164,8 @@ scp -r '<user>@<windows-host>:C:/HoploDex/e2e/screenshots-out' e2e/   # results 
 - **The checkout** is a git clone on the machine's own disk (a network share
   is slow, and changes SQLite's locking and the file-identity check). Code
   goes over through GitHub: push the branch, then pull it there.
-- **Directly over SSH:** builds, Vitest, lint and the audits. Building the
-  MSI is the exception: its `light.exe` failed over SSH and worked through `gui.ps1`.
-  Not with `ssh -t`: an interactive session's console closes when the
+- **Directly over SSH:** builds, the NSIS installer included, Vitest, lint
+  and the audits. Not with `ssh -t`: an interactive session's console closes when the
   connection drops, and its commands end with it.
 - **Through `scripts\windows\gui.ps1`:** `cargo nextest`, and anything that
   opens the app's window: E2E, screenshots, `quit-cleanup.ps1`, the PDF surface

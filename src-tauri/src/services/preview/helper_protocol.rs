@@ -8,8 +8,10 @@
 use std::io::{self, Read, Write};
 
 use super::PageSize;
-use super::tiff::MAX_PAGES;
-use crate::services::helper::frames::{MAX_FRAME, invalid, read_frame, write_frame};
+use super::tiff::{MAX_PAGES, MAX_PIXELS};
+use crate::services::helper::frames::{
+    MAX_FRAME, invalid, read_frame, read_frame_by_tag, write_frame,
+};
 
 const LOAD: u8 = 1;
 const RENDER: u8 = 2;
@@ -20,6 +22,22 @@ const PAGE_FAILED: u8 = 14;
 
 /// A `Page` frame's width, height and channels, before its samples.
 const PAGE_HEADER: usize = 9;
+
+/// The longest `Failed` reason a helper sends.
+const MAX_REASON: usize = 4096;
+
+/// The largest response of each kind (its tag and payload), which the app
+/// checks before it reads one: a page holds at most [`MAX_PIXELS`] pixels of
+/// three samples each, a page list only what [`MAX_PAGES`] pages need.
+fn max_response(tag: u8) -> usize {
+    match tag {
+        LOADED => 1 + 4 + MAX_PAGES * 16,
+        FAILED => 1 + MAX_REASON,
+        PAGE => 1 + PAGE_HEADER + MAX_PIXELS as usize * 3,
+        PAGE_FAILED => 1,
+        _ => 0,
+    }
+}
 
 /// Parent to helper.
 #[derive(Debug, PartialEq)]
@@ -100,24 +118,28 @@ pub fn write_response(w: &mut impl Write, response: &Response) -> io::Result<()>
                 payload.extend_from_slice(&page.width.to_be_bytes());
                 payload.extend_from_slice(&page.height.to_be_bytes());
             }
-            write_frame(w, LOADED, &payload, MAX_FRAME)
+            write_frame(w, LOADED, &payload, max_response(LOADED))
         }
-        Response::Failed { reason } => write_frame(w, FAILED, reason.as_bytes(), MAX_FRAME),
+        Response::Failed { reason } => {
+            write_frame(w, FAILED, reason.as_bytes(), max_response(FAILED))
+        }
         Response::Page(pixels) => {
             let mut payload = Vec::with_capacity(PAGE_HEADER + pixels.samples.len());
             payload.extend_from_slice(&pixels.width.to_be_bytes());
             payload.extend_from_slice(&pixels.height.to_be_bytes());
             payload.push(pixels.channels);
             payload.extend_from_slice(&pixels.samples);
-            write_frame(w, PAGE, &payload, MAX_FRAME)
+            write_frame(w, PAGE, &payload, max_response(PAGE))
         }
-        Response::PageFailed => write_frame(w, PAGE_FAILED, &[], MAX_FRAME),
+        Response::PageFailed => write_frame(w, PAGE_FAILED, &[], max_response(PAGE_FAILED)),
     }
 }
 
 /// The next response, or `None` when the helper has closed the pipe.
 pub fn read_response(r: &mut impl Read) -> io::Result<Option<Response>> {
-    let Some((tag, mut payload)) = read_frame(r, MAX_FRAME)? else { return Ok(None) };
+    let Some((tag, mut payload)) = read_frame_by_tag(r, MAX_FRAME, max_response)? else {
+        return Ok(None);
+    };
     match tag {
         LOADED => {
             let count = payload
@@ -228,18 +250,43 @@ mod tests {
         assert!(read_response(&mut &wire[..]).is_err());
 
         // A well-formed loaded frame with one page more than the helper's
-        // limit is refused; one at the limit is not.
-        let list = |count| {
-            let mut wire = Vec::new();
-            let pages = vec![PageSize { width: 1.0, height: 1.0 }; count];
-            write_response(&mut wire, &Response::Loaded { pages }).unwrap();
+        // limit is refused (and can't be sent); one at the limit is not.
+        let list = |count: usize| {
+            let mut wire = ((1 + 4 + count * 16) as u32).to_be_bytes().to_vec();
+            wire.push(LOADED);
+            wire.extend_from_slice(&(count as u32).to_be_bytes());
+            wire.extend(1.0f64.to_be_bytes().repeat(2 * count));
             wire
         };
+        let pages = vec![PageSize { width: 1.0, height: 1.0 }; MAX_PAGES + 1];
+        assert!(write_response(&mut Vec::new(), &Response::Loaded { pages }).is_err());
         assert!(read_response(&mut &list(MAX_PAGES + 1)[..]).is_err());
         assert!(matches!(
             read_response(&mut &list(MAX_PAGES)[..]).unwrap(),
             Some(Response::Loaded { pages }) if pages.len() == MAX_PAGES
         ));
+
+        // A frame longer than its kind's largest is refused from its length
+        // and tag alone, before its payload arrives.
+        let page_limit = 1 + 9 + 3 * 24 * 1024 * 1024;
+        for (tag, max) in [
+            (LOADED, 1 + 4 + MAX_PAGES * 16),
+            (FAILED, 1 + MAX_REASON),
+            (PAGE, page_limit),
+            (PAGE_FAILED, 1),
+        ] {
+            let mut wire = (max as u32 + 1).to_be_bytes().to_vec();
+            wire.push(tag);
+            let err = read_response(&mut &wire[..]).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::InvalidData, "tag {tag}");
+        }
+        let mut wire = (MAX_FRAME as u32).to_be_bytes().to_vec();
+        wire.push(99);
+        assert_eq!(read_response(&mut &wire[..]).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        // The largest page passes that check: this frame is only cut short.
+        let mut wire = (page_limit as u32).to_be_bytes().to_vec();
+        wire.push(PAGE);
+        assert_eq!(read_response(&mut &wire[..]).unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
 
         // A page frame too short to say its size.
         let mut wire = 9u32.to_be_bytes().to_vec();

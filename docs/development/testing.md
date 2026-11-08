@@ -106,8 +106,9 @@ the import time and the process's peak memory. It takes minutes and a few
 hundred MB of disk, it does not exist in a debug build, and it is `#[ignore]`d,
 so the default run skips it. **Run it before a pull request that touches the
 import's reading or matching (`services/import_reader/`,
-`commands/import_export.rs`), note the three figures in the pull request, and
-run it before every release:**
+`commands/import_export.rs`), and note the three figures in the pull request.**
+The [release workflow](ci.md#the-release-workflow) runs the same command for
+every release:
 
 ```bash
 CARGO_PROFILE_RELEASE_PANIC=unwind cargo test --manifest-path src-tauri/Cargo.toml \

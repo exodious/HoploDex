@@ -35,7 +35,8 @@ Build the E2E binary first, then run it in a desktop session:
 
 .PARAMETER Binary
 The E2E build to check. Defaults to HOPLODEX_BIN, or
-src-tauri\target\e2e\hoplodex.exe.
+src-tauri\target\<HOPLODEX_E2E_PROFILE, or e2e>\hoplodex.exe, as the E2E suite
+drives it.
 #>
 #Requires -Version 5.1
 [CmdletBinding()]
@@ -48,7 +49,8 @@ $ErrorActionPreference = 'Stop'
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 if (-not $Binary) {
-    $Binary = if ($env:HOPLODEX_BIN) { $env:HOPLODEX_BIN } else { Join-Path $Root 'src-tauri\target\e2e\hoplodex.exe' }
+    $BuildProfile = if ($env:HOPLODEX_E2E_PROFILE) { $env:HOPLODEX_E2E_PROFILE } else { 'e2e' }
+    $Binary = if ($env:HOPLODEX_BIN) { $env:HOPLODEX_BIN } else { Join-Path $Root "src-tauri\target\$BuildProfile\hoplodex.exe" }
 }
 $WindowTitle = 'HoploDex'
 $Identifier = 'io.github.exodious.HoploDex'

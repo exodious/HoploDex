@@ -1,7 +1,8 @@
 # The toolchains every CI job (ci.yml) needs, then `npm ci`: Node 24 with
 # npm 12 (the lockfile format, and `allowScripts`), Rust, cargo-nextest when
-# asked, and on Windows the OpenSSL the build links (docs/development/ci.md). Caches are saved only from main and restored by
-# pull requests, so a pull request never fills the 10 GB with its own.
+# asked, and on Windows the OpenSSL the build links (docs/development/ci.md).
+# Caches are saved only by pushes to main and restored by every other run, so a
+# pull request never fills the 10 GB with its own.
 name: CI setup
 description: Node, npm, Rust, caches and the Windows OpenSSL for a CI job
 inputs:
@@ -25,14 +26,14 @@ runs:
       shell: bash
       run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
 
-    - if: github.ref == 'refs/heads/main'
+    - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: actions/cache@v6
       with:
         path: ${{ steps.npm.outputs.dir }}
         key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
         restore-keys: npm-${{ runner.os }}-
 
-    - if: github.ref != 'refs/heads/main'
+    - if: github.event_name != 'push' || github.ref != 'refs/heads/main'
       uses: actions/cache/restore@v6
       with:
         path: ${{ steps.npm.outputs.dir }}
@@ -59,7 +60,7 @@ runs:
       with:
         workspaces: src-tauri
         shared-key: ${{ runner.os }}-${{ inputs.rust-cache }}
-        save-if: ${{ github.ref == 'refs/heads/main' }}
+        save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
     # v2.87.31, the prebuilt cargo-nextest at the Dockerfile's version.
     - if: inputs.nextest == 'true'
@@ -72,14 +73,14 @@ runs:
     # LOCALAPPDATA in their environment, so a DLL build's helpers can't find
     # libcrypto. The install folder is fixed, since libsqlite3-sys doesn't rebuild SQLCipher
     # when OPENSSL_DIR moves; the cache is keyed on the pin.
-    - if: runner.os == 'Windows' && github.ref == 'refs/heads/main'
+    - if: runner.os == 'Windows' && github.event_name == 'push' && github.ref == 'refs/heads/main'
       id: openssl-main
       uses: actions/cache@v6
       with:
         path: C:\hoplodex-openssl
         key: openssl-x64-windows-static-md-${{ hashFiles('scripts/windows/vcpkg/vcpkg.json') }}
 
-    - if: runner.os == 'Windows' && github.ref != 'refs/heads/main'
+    - if: runner.os == 'Windows' && (github.event_name != 'push' || github.ref != 'refs/heads/main')
       id: openssl-pr
       uses: actions/cache/restore@v6
       with:

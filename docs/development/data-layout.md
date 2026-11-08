@@ -56,9 +56,11 @@ upgrade question.
 
 **`released.txt`.** `src/db/migrations/released.txt` lists, one line each,
 `<step name or fixture path> <sha256 of its bytes> <release>`: every step a
-release shipped and every stored release database. The release process (#19)
-adds a release's lines at its tag, with `sha256sum` on the step files (LF line
-endings in every checkout, `.gitattributes`) and on the fixture, and lines are
+release shipped and every stored release database. A final release's lines are
+merged before its tag, which the release workflow refuses without them, and a
+release candidate adds none ([RELEASING.md](../../RELEASING.md), step 2). Each
+is `sha256sum` of the step file (LF line endings in every checkout,
+`.gitattributes`) or of the fixture, and lines are
 never edited afterwards. Until then it holds only a comment and the test passes.
 `released_migrations_test` fails when a listed step's bytes change, when it is
 missing, renamed or not among the build's first steps in order, when a listed
