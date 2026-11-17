@@ -183,6 +183,7 @@ accept the commit, then tags it and pushes the tag. By hand, once the commit
 carries the version and the records, that is:
 
 ```bash
+node scripts/release.mjs tag-check 0.1.0-rc.1   # the workflow's tag check, with <commit> checked out
 node scripts/ai-security-review.mjs reviewed --commit <commit>
 git tag -a v0.1.0-rc.1 -m "HoploDex 0.1.0-rc.1" <commit>
 git push origin refs/tags/v0.1.0-rc.1
