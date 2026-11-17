@@ -36,7 +36,11 @@
 //!      "windows_after": number | null,            // Windows: top-level windows it sees
 //!      "reach_after": object | null,              // Windows, given the last three: what
 //!                                                 // it did to <file>, <address> and <pipe>,
-//!                                                 // and the Credential Manager's answer
+//!                                                 // and the Credential Manager's answer:
+//!                                                 // { "write", "create", "rename",
+//!                                                 //   "delete": bool, "udp": [bool, bool],
+//!                                                 //   "tcp": number | null, "pipe": number
+//!                                                 //   | null, "credential": number }
 //!      "env_vars": number,                        // variables in its environment
 //!      "rlimit_core": [soft, max] | null,         // unix
 //!      "dumpable": bool | null,                   // Linux
@@ -404,6 +408,7 @@ fn it_holds_no_descriptor_it_inherited() {
 fn once_confined_it_can_reach_no_file_network_pipe_credential_program_or_parent() {
     use std::net::{Ipv4Addr, UdpSocket};
     use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_NOT_FOUND};
+    use windows_sys::Win32::Networking::WinSock::{WSAEPROVIDERFAILEDINIT, WSANOTINITIALISED};
 
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("secret.txt");
@@ -472,7 +477,15 @@ fn once_confined_it_can_reach_no_file_network_pipe_credential_program_or_parent(
     assert_eq!(json["exec_after"], false, "a confined helper started a program: {json}");
     assert_eq!(json["process_after"], false, "a confined helper opened HoploDex: {json}");
     let reach = &json["reach_after"];
-    assert_eq!(reach["tcp"], false, "a confined helper connected to this machine: {json}");
+    assert_eq!(
+        reach["udp"],
+        serde_json::json!([true, true]),
+        "Winsock didn't start in the helper, so the network checks mean nothing: {json}"
+    );
+    assert_ne!(reach["tcp"], 0, "a confined helper connected to this machine: {json}");
+    for code in [WSAEPROVIDERFAILEDINIT, WSANOTINITIALISED] {
+        assert_ne!(reach["tcp"], code, "Winsock didn't start in the helper: {json}");
+    }
     assert!(listener.accept().is_err(), "a connection reached the listener: {json}");
     assert!(udp.recv(&mut [0; 64]).is_err(), "a datagram reached the listener: {json}");
     for what in ["write", "create", "rename", "delete"] {
@@ -480,7 +493,10 @@ fn once_confined_it_can_reach_no_file_network_pipe_credential_program_or_parent(
     }
     assert_eq!(std::fs::read(&file).unwrap(), b"not for the helper");
     assert!(!file.with_extension("made").exists() && !file.with_extension("moved").exists());
-    assert_eq!(reach["pipe"], false, "a confined helper opened a user's named pipe: {json}");
+    assert_eq!(
+        reach["pipe"], ERROR_ACCESS_DENIED,
+        "a confined helper opened a user's named pipe, or the check means nothing: {json}"
+    );
     assert_eq!(
         reach["credential"], ERROR_ACCESS_DENIED,
         "a confined helper reached the user's Credential Manager: {json}"

@@ -383,8 +383,12 @@ mod self_check {
     /// research.md §11, amended 2026-11-07), given `<address> <udp port> <pipe>`
     /// after the process id: `<address>` is the machine's own, the TCP listener
     /// is on `port` and the UDP one on `<udp port>`. `file` is gone afterwards if
-    /// it could delete it. `udp` says whether each send to `<address>` and
-    /// to 127.0.0.1 went out; the test sees whether it arrived. `credential` is
+    /// it could delete it. `tcp` is the OS error the connect to `<address>`
+    /// failed with, 0 if it connected or null if the error has none (a timeout).
+    /// `udp` says whether each send to `<address>` and to 127.0.0.1 went out,
+    /// which shows Winsock started; the test sees whether it arrived. `pipe` is
+    /// the OS error opening it failed with, for writing if reading failed too,
+    /// or 0 if it opened. `credential` is
     /// what reading a credential nobody has fails with: 1168 (not found) in
     /// reach of the user's Credential Manager, 5 (access denied) out of it.
     #[cfg(windows)]
@@ -417,15 +421,16 @@ mod self_check {
                 .and_then(|socket| socket.send_to(b"helper", (to, udp_port)))
                 .is_ok()
         };
+        let open = |read: bool| OpenOptions::new().read(read).write(!read).open(pipe);
         Some(json!({
             "write": write,
             "create": create,
             "rename": rename,
             "delete": delete,
-            "tcp": TcpStream::connect_timeout(&SocketAddr::new(address, port), WAIT).is_ok(),
+            "tcp": TcpStream::connect_timeout(&SocketAddr::new(address, port), WAIT)
+                .map_or_else(|e| e.raw_os_error(), |_| Some(0)),
             "udp": [send(address), send(IpAddr::V4(Ipv4Addr::LOCALHOST))],
-            "pipe": OpenOptions::new().read(true).open(pipe).is_ok()
-                || OpenOptions::new().write(true).open(pipe).is_ok(),
+            "pipe": open(true).or_else(|_| open(false)).map_or_else(|e| e.raw_os_error(), |_| Some(0)),
             "credential": credential_error(),
         }))
     }
