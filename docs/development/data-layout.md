@@ -60,8 +60,10 @@ upgrade question.
 `<step name or fixture path> <sha256 of its bytes> <release>`: every step a
 release shipped and every stored release database. A version's lines are
 merged before its first release candidate, with the version without its suffix,
-and the release workflow refuses any tag without them; a later candidate and
-the final release add none ([RELEASING.md](../../RELEASING.md), step 2). Each
+and the release workflow refuses any tag whose commit lacks its stored
+database's line or a line for a step in `MIGRATIONS`; a later candidate adds
+only the line of a step that fixes a problem its testing found, and the final
+release adds none ([RELEASING.md](../../RELEASING.md), step 2). Each
 is `sha256sum` of the step file (LF line endings in every checkout,
 `.gitattributes`) or of the fixture, and lines are
 never edited afterwards. Until then it holds only a comment and the test passes.

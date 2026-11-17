@@ -44,6 +44,13 @@ const RELEASED = "src-tauri/src/db/migrations/released.txt";
 
 const fixtureOf = (app: string) => `tests/fixtures/releases/${app}.hoplodex`;
 
+/** src-tauri/src/db/mod.rs's `MIGRATIONS` entries for `steps`. */
+const migrations = (...steps: string[]) => ({
+  "src-tauri/src/db/mod.rs": steps
+    .map((s) => `    ("${s}", include_str!("migrations/${s}.sql")),`)
+    .join("\n"),
+});
+
 /** A version's stored database and its released.txt lines. */
 const recorded = (app: string) => ({
   [`src-tauri/${fixtureOf(app)}`]: "abc",
@@ -59,6 +66,7 @@ const carrying = (version: string, released = "# none yet\n") => ({
   "src-tauri/tauri.conf.json": JSON.stringify({ version }),
   "flatpak/io.github.exodious.HoploDex.metainfo.xml": `<release version="${version}" />`,
   [RELEASED]: released,
+  ...migrations("0001_a"),
 });
 
 /** A scratch repository with the script in it, since it works on its own checkout. */
@@ -113,7 +121,7 @@ describe("release script", () => {
     expect(versionProblems(ROOT, "9.9.9")).toHaveLength(7);
   });
 
-  it("writes a version's records, for its first release candidate: each unreleased step in MIGRATIONS' order, then its database", () => {
+  it("writes a version's records before a release candidate: each unreleased step in MIGRATIONS' order, then its database unless listed", () => {
     const dir = tempDir();
     writeAll(dir, {
       "src-tauri/src/db/mod.rs": [
@@ -144,6 +152,13 @@ describe("release script", () => {
     // A later candidate and the final, on the same records: nothing to add.
     expect(recordLines(dir, "0.2.0-rc.2")).toEqual([]);
     expect(recordLines(dir, "0.2.0")).toEqual([]);
+    // A step that fixes what a candidate's testing found gets its line before the next one.
+    fs.appendFileSync(
+      path.join(dir, "src-tauri/src/db/mod.rs"),
+      `\n("0005_fix", include_str!("migrations/0005_fix.sql")),`,
+    );
+    writeAll(dir, { "src-tauri/src/db/migrations/0005_fix.sql": "" });
+    expect(recordLines(dir, "0.2.0-rc.2")).toEqual([`0005_fix ${EMPTY} 0.2.0`]);
     expect(() => recordLines(dir, "0.3.0-rc.1")).toThrow(/no stored database/);
   });
 
@@ -281,6 +296,25 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
     expect(again.status).toBe(0);
     expect(again.stdout).toContain("already has 0.1.0's lines");
     expect(repo.git(["status", "--porcelain"])).toBe("");
+
+    // A step added to fix what rc.1's testing found: no tag until it has its line.
+    const fix = repo.commit(
+      { ...migrations("0001_a", "0002_fix"), "src-tauri/src/db/migrations/0002_fix.sql": "abc" },
+      listed,
+    );
+    for (const version of ["0.1.0-rc.2", "0.1.0"]) {
+      const unlisted = repo.release("tag", version, "--commit", fix, "--dry-run");
+      expect(unlisted.status, version).toBe(1);
+      expect(unlisted.stderr, version).toContain("no line for the step 0002_fix");
+    }
+    expect(repo.release("records", "0.1.0-rc.2", "--commit", fix).status).toBe(0);
+    expect(fs.readFileSync(path.join(repo.dir, RELEASED), "utf8")).toBe(
+      `${lines}0002_fix ${ABC} 0.1.0\n`,
+    );
+    const recordedFix = repo.commit({}, fix);
+    for (const version of ["0.1.0-rc.2", "0.1.0"]) {
+      expect(repo.release("tag", version, "--commit", recordedFix, "--dry-run").status).toBe(0);
+    }
   });
 });
 
@@ -293,7 +327,7 @@ type Step = {
 
 // Its own script, run by bash in a scratch checkout. Windows' `bash` may be WSL's.
 describe.skipIf(process.platform === "win32")("release.yml's tag check", () => {
-  it("requires the stored database and released.txt line for every tag, a release candidate's too", () => {
+  it("requires the stored database and released.txt lines for it and every step, for every tag, a release candidate's too", () => {
     const release = yaml.load(
       fs.readFileSync(path.join(ROOT, ".github/workflows/release.yml"), "utf8"),
     ) as { jobs: Record<string, { steps: (Step & { run?: string })[] }> };
@@ -303,12 +337,15 @@ describe.skipIf(process.platform === "win32")("release.yml's tag check", () => {
     const check = (files: Record<string, string>, tag: string) => {
       const dir = tempDir();
       writeAll(dir, files);
+      writeAll(dir, {
+        "scripts/release.mjs": fs.readFileSync(path.join(ROOT, "scripts/release.mjs"), "utf8"),
+      });
       const r = spawnSync("bash", ["-e", "-c", script], {
         cwd: dir,
         encoding: "utf8",
         env: { ...process.env, TAG: tag },
       });
-      return { status: r.status, out: r.stdout };
+      return { status: r.status, out: r.stdout + r.stderr };
     };
     for (const tag of ["v0.1.0-rc.1", "v0.1.0"]) {
       const { [RELEASED]: lines, ...stored } = recorded("0.1.0");
@@ -319,6 +356,16 @@ describe.skipIf(process.platform === "win32")("release.yml's tag check", () => {
       expect(check({ ...carrying("0.1.0", lines), ...stored }, "v0.2.0-rc.1").out).toContain(
         "doesn't name",
       );
+      const withFix = {
+        ...carrying("0.1.0", lines),
+        ...stored,
+        ...migrations("0001_a", "0002_fix"),
+      };
+      expect(check(withFix, tag).out).toContain("no line for the step 0002_fix");
+      expect(check({ ...withFix, [RELEASED]: `${lines}0002_fix ${ABC} 0.1.0\n` }, tag).status).toBe(
+        0,
+      );
+      expect(check(carrying("0.1.0"), "0.1.0").out).toContain("isn't v<version>");
     }
   });
 });

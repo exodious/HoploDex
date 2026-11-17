@@ -42,7 +42,8 @@ review included, is done for the first release candidate, not the final:
 - **The database layout freezes at the first release candidate.** Its
   migration records are merged before it (step 2), and from then on a released
   step never changes. A layout problem found in a release candidate's testing
-  is fixed as a new step, in the next release candidate.
+  is fixed as a new step, in the next release candidate, whose `released.txt`
+  line is merged before that candidate is tagged (step 2).
 - **Nothing merges to `main` while a release candidate is under test.** The
   workflow takes a tag only on `main`'s head, as the AI security review's
   check (step 7) requires, so a merge during testing means a new release
@@ -64,15 +65,17 @@ node scripts/release.mjs all 0.1.0-rc.1             # run them, stopping at the 
 node scripts/release.mjs checks 0.1.0               # or one step
 ```
 
-Its steps are `version`, `records` (before a version's first release
-candidate; once its lines are there it says so and changes nothing), `checks`,
+Its steps are `version`, `records` (before a release candidate: it adds a line
+for each step not yet listed and for the stored database unless it is listed,
+and says so when there is nothing to add), `checks`,
 `review`, `gate` and `tag`. `all` runs them in that order, all but `records`, whose lines
 must already be on the commit (step 2). `--commit <sha>` names another commit
 than `origin/main`'s head, and `--after <reviewed commit>` goes to the review.
 `version`, `checks` and `all` refuse unless the working tree is clean and `HEAD`
 is that commit, so what they test is what gets tagged. `tag`, and `all` before anything else, read the commit itself and refuse
 what the workflow would: a tag that doesn't name its version, or one whose
-commit has no stored database or `released.txt` line for it.
+commit has no stored database, or no `released.txt` line for it or for a step
+in `MIGRATIONS`.
 The tests run in the dev container when podman is there. It tags only when
 every step before passed; it never makes a GitHub release. It leaves what the
 release workflow runs to the workflow: the [dry run](#the-release-workflow) is
@@ -112,9 +115,10 @@ request like any other; then start again from the new commit.
    the app's version (`0.1.0`); commit them, run the tests with
    `release.mjs checks <version> --commit HEAD`, and merge them through a pull
    request. From that merge on the layout is frozen: a later release
-   candidate's change to it is a new step. The workflow refuses any tag, a
-   release candidate's included, whose commit has no `released.txt` line for
-   its stored database.
+   candidate's change to it is a new step, whose line `release.mjs records
+   0.1.0-rc.2` adds the same way before that candidate. The workflow refuses
+   any tag, a release candidate's included, whose commit has no `released.txt`
+   line for its stored database or for a step in `MIGRATIONS`.
 3. **The manual license checks** ([Licenses](docs/development/licenses.md), "License
    audit", and its "Exceptions and clarifications that are behind"):
    - grep each new MPL-2.0 crate for Exhibit B ("Incompatible With Secondary
@@ -193,7 +197,8 @@ On the tag, `release.yml` runs:
 
 - **Release review:** the tag names the app's version (`v<version>` or
   `v<version>-<suffix>`); the commit has that version's stored database and
-  `released.txt` line, for a release candidate too; and the AI security review
+  `released.txt` lines for it and every step in `MIGRATIONS`, for a release
+  candidate too; and the AI security review
   covers the commit (step 7).
 - **CI**, ci.yml called with `release` set, from clean release builds: format,
   lint and the tests on every OS; E2E against the shipping profile

@@ -8,9 +8,9 @@
 //   version   check the version is the same everywhere it is written, with a
 //             metainfo <release> entry for it
 //   records   add the version's migration records to released.txt in the working
-//             tree, for a pull request merged before its first release candidate
-//             (each unreleased step, then the stored database, which must exist);
-//             once the version has its lines, it says so and changes nothing
+//             tree, for a pull request merged before a release candidate: each
+//             step not yet listed, then the stored database, which must exist,
+//             unless it is listed already; with nothing to add, it says so
 //   checks    the tests to run on the owner's machine: release_upgrade_test,
 //             released_migrations_test and performance_test
 //   review    start the AI security review of --commit (default: origin/main's
@@ -22,6 +22,9 @@
 //             the release workflow
 //   all       each of the above but records, in that order, the records being on
 //             the commit already: `tag`'s check of the commit comes first of all
+//   tag-check release.yml's tag check, of the working tree: the tag names the
+//             app's version, and the commit has its stored database and a
+//             released.txt line for it and for every step in MIGRATIONS
 //
 // <version> is the app's version with the tag's suffix, if any: `0.1.0` or
 // `0.1.0-rc.1`. version, checks and all run on the working tree, so they refuse
@@ -84,39 +87,62 @@ export function versionProblems(root, version) {
     .map(([file, v]) => `${file} says ${v ?? "nothing"}, not ${app}`);
 }
 
-/** The step names in `MIGRATIONS`' order. */
-export function migrationSteps(root) {
-  return [...read(root, MIGRATIONS).matchAll(/\(\s*"(\d{4}_[a-z0-9_]+)",\s*include_str!/g)].map(
-    (m) => m[1],
-  );
+/** The step names in `MIGRATIONS`' order, from src-tauri/src/db/mod.rs's text. */
+export function migrationSteps(text) {
+  return [...text.matchAll(/\(\s*"(\d{4}_[a-z0-9_]+)",\s*include_str!/g)].map((m) => m[1]);
 }
 
 const sha256 = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
-/**
- * The lines a version adds to released.txt, before its first release
- * candidate: each step not yet listed, in `MIGRATIONS`' order, then its stored
- * database. None once the version has its lines (a later candidate, the final).
- */
-export function recordLines(root, version) {
-  const { app } = parseVersion(version);
-  const listed = read(root, RELEASED)
+/** released.txt's lines, each split into its fields. */
+const listedIn = (text) =>
+  text
     .split("\n")
     .filter((l) => l.trim() && !l.startsWith("#"))
     .map((l) => l.split(/\s+/));
-  if (listed.some((f) => f[2] === app)) return [];
+
+/**
+ * The lines a version adds to released.txt before a release candidate: each
+ * step not yet listed, in `MIGRATIONS`' order, then its stored database unless
+ * that is listed. None when every one is (a later candidate with no new step,
+ * the final).
+ */
+export function recordLines(root, version) {
+  const { app } = parseVersion(version);
+  const done = new Set(listedIn(read(root, RELEASED)).map((f) => f[0]));
+  const lines = migrationSteps(read(root, MIGRATIONS))
+    .filter((s) => !done.has(s))
+    .map(
+      (s) => `${s} ${sha256(path.join(root, "src-tauri/src/db/migrations", `${s}.sql`))} ${app}`,
+    );
   const fixture = `tests/fixtures/releases/${app}.hoplodex`;
+  if (done.has(fixture)) return lines;
   const fixturePath = path.join(root, "src-tauri", fixture);
   if (!fs.existsSync(fixturePath)) {
     throw new Error(`no stored database ${fixturePath}: make it first (RELEASING.md, step 2)`);
   }
-  const done = new Set(listed.map((f) => f[0]));
-  const steps = migrationSteps(root).filter((s) => !done.has(s));
+  return [...lines, `${fixture} ${sha256(fixturePath)} ${app}`];
+}
+
+/**
+ * What release.yml's tag check refuses about a tag of `version`, reading the
+ * tagged commit's files through `read` (text) and `has` (whether it exists).
+ */
+export function tagProblems(version, { read: show, has }) {
+  const { app, tag } = parseVersion(version);
+  const carried = JSON.parse(show("src-tauri/tauri.conf.json")).version;
+  if (carried !== app) return [`${tag} doesn't name the app's version, ${carried}`];
+  const fixture = `tests/fixtures/releases/${app}.hoplodex`;
+  const listed = listedIn(show(RELEASED));
+  const names = new Set(listed.map((f) => f[0]));
   return [
-    ...steps.map(
-      (s) => `${s} ${sha256(path.join(root, "src-tauri/src/db/migrations", `${s}.sql`))} ${app}`,
-    ),
-    `${fixture} ${sha256(fixturePath)} ${app}`,
+    ...(has(`src-tauri/${fixture}`) ? [] : [`no stored database src-tauri/${fixture}`]),
+    ...(listed.some((f) => f[0] === fixture && /^[0-9a-f]{64}$/.test(f[1]) && f[2] === app)
+      ? []
+      : [`released.txt has no line for ${fixture}`]),
+    ...migrationSteps(show(MIGRATIONS))
+      .filter((s) => !names.has(s))
+      .map((s) => `released.txt has no line for the step ${s}`),
   ];
 }
 
@@ -214,22 +240,19 @@ function requireCheckoutAt(commit) {
   if (head !== commit) throw new Error(`HEAD is ${head}, not ${commit}: check that commit out`);
 }
 
+function requireNoProblems(problems, of) {
+  if (problems.length) throw new Error(`${of} fails the tag check:\n  ${problems.join("\n  ")}`);
+}
+
 /** Refuses, from `commit` itself, what release.yml's tag check would. */
 function requireTaggable(version, commit) {
-  const { app, tag } = parseVersion(version);
-  const carried = JSON.parse(git(["show", `${commit}:src-tauri/tauri.conf.json`])).version;
-  if (carried !== app) throw new Error(`${tag} doesn't name ${commit}'s version, ${carried}`);
-  const fixture = `tests/fixtures/releases/${app}.hoplodex`;
-  const stored = spawnSync("git", ["cat-file", "-e", `${commit}:src-tauri/${fixture}`], {
-    cwd: ROOT,
-    stdio: "ignore",
-  });
-  if (stored.status !== 0) throw new Error(`${commit} has no stored database src-tauri/${fixture}`);
-  const listed = git(["show", `${commit}:${RELEASED}`])
-    .split("\n")
-    .map((l) => /^(\S+) [0-9a-f]{64} (\S+)$/.exec(l))
-    .some((m) => m?.[1] === fixture && m[2] === app);
-  if (!listed) throw new Error(`${commit}'s released.txt has no line for ${fixture}`);
+  const has = (f) =>
+    spawnSync("git", ["cat-file", "-e", `${commit}:${f}`], { cwd: ROOT, stdio: "ignore" })
+      .status === 0;
+  requireNoProblems(
+    tagProblems(version, { read: (f) => git(["show", `${commit}:${f}`]), has }),
+    commit,
+  );
 }
 
 function main(argv) {
@@ -249,6 +272,12 @@ function main(argv) {
     );
   }
   parseVersion(version);
+  if (step === "tag-check") {
+    const has = (f) => fs.existsSync(path.join(ROOT, f));
+    requireNoProblems(tagProblems(version, { read: (f) => read(ROOT, f), has }), "the checkout");
+    console.log(`v${version} passes the tag check`);
+    return;
+  }
   const dryRun = values["dry-run"];
   const commit = git(["rev-parse", "--verify", `${values.commit ?? "origin/main"}^{commit}`]);
   const toRun = steps(step);

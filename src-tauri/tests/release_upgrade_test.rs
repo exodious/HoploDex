@@ -97,9 +97,16 @@ fn migration_names(conn: &Connection) -> Vec<String> {
 /// 009 FR-023, research.md §12: until 0.1.0's records are merged, before its
 /// first release candidate, the layout still changes in place (CLAUDE.md), so
 /// the stored 0.1.0 database has to be what a new database is. From then on it
-/// is never regenerated, and this check stops applying to it.
+/// is never regenerated, later steps upgrade it, and this check stops applying
+/// to it.
 #[test]
 fn release_fixture_matches_layout() {
+    if include_str!("../src/db/migrations/released.txt")
+        .lines()
+        .any(|l| l.starts_with("tests/fixtures/releases/0.1.0.hoplodex "))
+    {
+        return;
+    }
     let _serial = one_at_a_time();
     let (_dir, fixture) = raw_fixture();
     let new = TestDb::new();

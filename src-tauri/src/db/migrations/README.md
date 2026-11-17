@@ -112,6 +112,6 @@ ships (`sha256sum` of the step's file, LF line endings) and one for its stored
 database `tests/fixtures/releases/<release>.hoplodex`, in `MIGRATIONS`' order,
 with the version without its suffix, and never edit a line after that. The
 layout freezes there: a problem found while a release candidate is tested is
-fixed with a new step, and the final release is the accepted candidate's
-commit. The release's steps must be the first entries
+fixed with a new step, whose line is added the same way before the next
+candidate, and the final release is the accepted candidate's commit. The release's steps must be the first entries
 of `MIGRATIONS`, in order; a later release only appends.

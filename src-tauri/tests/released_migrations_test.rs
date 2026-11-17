@@ -1,8 +1,8 @@
 //! Released migration steps and stored release databases stay byte-for-byte
 //! unchanged (009 US4-2, 009 FR-021, 009 SC-006, 009 research.md §11).
 //!
-//! `src/db/migrations/released.txt` lists, from before each version's first
-//! release candidate (#19), every step that release shipped and every database
+//! `src/db/migrations/released.txt` lists, from before the release candidate
+//! that ships it (#19), every step that release shipped and every database
 //! it stored under `tests/fixtures/releases/`: `<name or fixture path> <sha256
 //! of its bytes> <release>`, `#` starting a comment. [`problems`] is the check, taking the
 //! manifest's text, the build's steps and a reader for fixtures, so a test can

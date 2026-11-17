@@ -61,10 +61,11 @@ jobs:
           node-version: 24
 
       # The tag is v<version>[-<suffix>], as scripts/release.mjs makes it, and
-      # names the version the app carries, whose migration records are merged
-      # before its first release candidate, so an accepted candidate's commit
-      # takes the final tag unchanged (RELEASING.md, step 2). The later jobs
-      # rely on the tag having that form.
+      # names the version the app carries, whose migration records (every step
+      # in MIGRATIONS, and the stored database) are merged before the release
+      # candidate, so an accepted candidate's commit takes the final tag
+      # unchanged (RELEASING.md, step 2). `release.mjs tag-check` is the check
+      # its `tag` step makes too. The later jobs rely on the tag having that form.
       - name: Check the tag against the version and the migration records
         if: github.event_name == 'push'
         env:
@@ -72,13 +73,8 @@ jobs:
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || {
             echo "::error::$TAG isn't v<version> or v<version>-<suffix>"; exit 1; }
-          version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
-          [[ "$TAG" == "v$version" || "$TAG" == "v$version-"* ]] || {
-            echo "::error::$TAG doesn't name the app's version, $version"; exit 1; }
-          fixture="tests/fixtures/releases/$version.hoplodex"
-          [ -f "src-tauri/$fixture" ] || { echo "::error::no stored database src-tauri/$fixture"; exit 1; }
-          grep -qE "^$fixture [0-9a-f]{64} $version\$" src-tauri/src/db/migrations/released.txt || {
-            echo "::error::released.txt has no line for $fixture"; exit 1; }
+          node scripts/release.mjs tag-check "${TAG#v}" || {
+            echo "::error::$TAG fails the tag check (above)"; exit 1; }
 
       # The commit checked out, the tag's own. A dry run reports whether the
       # commit could be released without failing on the commit it ran on.
