@@ -536,6 +536,9 @@ wording ships in 0.1.0 (FR-018). The same text is used when a restore or
   <release>`, plus one line for each stored release database (§12). It is
   empty, apart from a comment, until 0.1.0 is tagged. The release process
   (#19) adds the 0.1.0 lines at the tag.
+  _Amended 2026-11-17 (#19): the records are merged before a version's first
+  release candidate, every tag needs them, and the final tag reuses the
+  accepted candidate's commit (RELEASING.md, step 2)._
 - **The test.** `tests/released_migrations_test.rs` fails:
   - when a listed step's bytes no longer hash to its line;
   - when a listed step is missing from `MIGRATIONS`, renamed or out of order
@@ -553,6 +556,9 @@ wording ships in 0.1.0 (FR-018). The same text is used when a restore or
   (`released.txt`, `tests/released_migrations_test.rs`), and each new step is
   covered by `tests/release_upgrade_test.rs` (§12)". DEVELOPMENT.md gains a
   short "Changing the data layout" section with §7's step rules.
+  _Amended 2026-11-17 (#19): CLAUDE.md's rule now runs until 0.1.0's migration
+  records are merged, before its first release candidate (RELEASING.md,
+  step 2)._
 - **This feature's own layout changes** (§1, §2, `app_state.backup_before_upgrade_to`)
   are the last made in place: `0001_initial.sql` is edited, and existing
   development databases must be recreated (Edge Cases). The developer's
