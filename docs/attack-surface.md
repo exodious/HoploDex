@@ -202,8 +202,11 @@ and peer review catch that.
   - Does each child die with the app (`PR_SET_PDEATHSIG`, the job, `kqueue`)?
   - Are frames bounded both ways, and is each render-helper response refused from its length and tag alone (`helper_protocol::max_response` through `frames::read_frame_by_tag`) before its payload is read?
   - Can anything but the app start a helper mode (for example a desktop file or shell association passing `--import-helper`)? Is the mode harmless if one does?
-- **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)): the macOS helper has no enforced memory cap.
-- **Since:** 007; shared with import 008.
+- **Accepted:**
+  - [008 research.md §22](../specs/008-hardening-batch/research.md): the macOS helper has no enforced memory cap.
+  - [007 research.md §11](../specs/007-document-preview/research.md) (amended 2026-11-17, the owner's decision), Windows: a volume without ACLs (FAT32, exFAT, such as a USB stick holding backups) is open to a helper as to any process.
+  - [007 research.md §11](../specs/007-document-preview/research.md) (amended 2026-11-17, the owner's decision), Windows: whatever grants ALL APPLICATION PACKAGES (much of the registry, many system files, and the pipes and RPC or COM servers that admit any AppContainer) is open to a helper, since its AppContainer isn't a low-privilege one.
+- **Since:** 007; shared with import 008; AppContainer #190.
 
 ## untrusted-images: photos
 

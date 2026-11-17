@@ -35,7 +35,8 @@
 //!      "process_after": bool | null,              // Windows, given <process id>: could open it
 //!      "windows_after": number | null,            // Windows: top-level windows it sees
 //!      "reach_after": object | null,              // Windows, given the last three: what
-//!                                                 // it did to <file>, <address> and <pipe>
+//!                                                 // it did to <file>, <address> and <pipe>,
+//!                                                 // and the Credential Manager's answer
 //!      "env_vars": number,                        // variables in its environment
 //!      "rlimit_core": [soft, max] | null,         // unix
 //!      "dumpable": bool | null,                   // Linux
@@ -392,13 +393,17 @@ fn it_holds_no_descriptor_it_inherited() {
 /// AppContainer has no capability, so from its first instruction the helper
 /// can't read, write, create, rename or delete a user's file, reach a listener
 /// on this machine by TCP or UDP, at loopback or the machine's own address, open
-/// a user's named pipe or reach into HoploDex, and the job object's one-process
-/// limit and child-process policy stop it starting a program. The probes mean
-/// something because this test, outside the container, can do each.
+/// a user's named pipe, reach the user's Credential Manager or reach into
+/// HoploDex, and the job object's one-process limit and child-process policy
+/// stop it starting a program. The probes mean something because this test,
+/// outside the container, can do each. The Credential Manager's is read-only:
+/// it asks for a credential nobody has, which this test is told isn't there and
+/// the helper is refused.
 #[cfg(all(debug_assertions, windows))]
 #[test]
-fn once_confined_it_can_reach_no_file_network_pipe_program_or_parent() {
+fn once_confined_it_can_reach_no_file_network_pipe_credential_program_or_parent() {
     use std::net::{Ipv4Addr, UdpSocket};
+    use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_NOT_FOUND};
 
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("secret.txt");
@@ -433,6 +438,8 @@ fn once_confined_it_can_reach_no_file_network_pipe_program_or_parent() {
     // One instance for this test to show it opens, one left for the helper.
     let _instances = [user_pipe(&pipe), user_pipe(&pipe)];
     let _client = std::fs::OpenOptions::new().read(true).write(true).open(&pipe).unwrap();
+
+    assert_eq!(credential_error(), ERROR_NOT_FOUND, "the check means nothing");
 
     assert!(
         std::process::Command::new(r"C:\Windows\System32\whoami.exe")
@@ -474,6 +481,31 @@ fn once_confined_it_can_reach_no_file_network_pipe_program_or_parent() {
     assert_eq!(std::fs::read(&file).unwrap(), b"not for the helper");
     assert!(!file.with_extension("made").exists() && !file.with_extension("moved").exists());
     assert_eq!(reach["pipe"], false, "a confined helper opened a user's named pipe: {json}");
+    assert_eq!(
+        reach["credential"], ERROR_ACCESS_DENIED,
+        "a confined helper reached the user's Credential Manager: {json}"
+    );
+}
+
+/// The error `CredReadW` gives for a generic credential nobody has, as the
+/// self-check asks for it, or 0 if someone has it.
+#[cfg(all(debug_assertions, windows))]
+fn credential_error() -> u32 {
+    use windows_sys::Win32::Foundation::GetLastError;
+    use windows_sys::Win32::Security::Credentials::{
+        CRED_TYPE_GENERIC, CREDENTIALW, CredFree, CredReadW,
+    };
+    let name: Vec<u16> = "hoplodex-test-no-such-credential".encode_utf16().chain([0]).collect();
+    let mut found: *mut CREDENTIALW = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated name that outlives the call; what it finds is
+    // freed once.
+    unsafe {
+        if CredReadW(name.as_ptr(), CRED_TYPE_GENERIC, 0, &mut found) == 0 {
+            return GetLastError();
+        }
+        CredFree(found.cast());
+    }
+    0
 }
 
 /// An IPv4 address of this machine's own that isn't loopback.

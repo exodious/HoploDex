@@ -384,7 +384,9 @@ mod self_check {
     /// after the process id: `<address>` is the machine's own, the TCP listener
     /// is on `port` and the UDP one on `<udp port>`. `file` is gone afterwards if
     /// it could delete it. `udp` says whether each send to `<address>` and
-    /// to 127.0.0.1 went out; the test sees whether it arrived.
+    /// to 127.0.0.1 went out; the test sees whether it arrived. `credential` is
+    /// what reading a credential nobody has fails with: 1168 (not found) in
+    /// reach of the user's Credential Manager, 5 (access denied) out of it.
     #[cfg(windows)]
     fn reach(file: &str, port: u16, args: &[String]) -> Option<serde_json::Value> {
         use std::fs::{self, OpenOptions};
@@ -424,7 +426,29 @@ mod self_check {
             "udp": [send(address), send(IpAddr::V4(Ipv4Addr::LOCALHOST))],
             "pipe": OpenOptions::new().read(true).open(pipe).is_ok()
                 || OpenOptions::new().write(true).open(pipe).is_ok(),
+            "credential": credential_error(),
         }))
+    }
+
+    /// The error `CredReadW` gives for a generic credential nobody has, or 0 if
+    /// someone has it. Read-only: it writes nothing and reads no real entry.
+    #[cfg(windows)]
+    fn credential_error() -> u32 {
+        use windows_sys::Win32::Foundation::GetLastError;
+        use windows_sys::Win32::Security::Credentials::{
+            CRED_TYPE_GENERIC, CREDENTIALW, CredFree, CredReadW,
+        };
+        let name: Vec<u16> = "hoplodex-test-no-such-credential".encode_utf16().chain([0]).collect();
+        let mut found: *mut CREDENTIALW = std::ptr::null_mut();
+        // SAFETY: a NUL-terminated name that outlives the call; what it finds
+        // is freed once.
+        unsafe {
+            if CredReadW(name.as_ptr(), CRED_TYPE_GENERIC, 0, &mut found) == 0 {
+                return GetLastError();
+            }
+            CredFree(found.cast());
+        }
+        0
     }
 
     /// How many top-level windows this process can see.
