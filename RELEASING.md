@@ -227,7 +227,10 @@ Flathub or a store.
 `gh workflow run release.yml --ref main`) to try every job but the draft on a
 branch's head, before tagging: the tag check is skipped and the review check
 reports without failing. GitHub runs it only from a branch that has the
-workflow, so `main` once it has merged.
+workflow, so `main` once it has merged. After it, read the log of its "Check
+the release's AI security review" step, not just the run's result: that step
+doesn't fail a dry run, so a refusal there, such as a 403 listing Dependabot
+alerts, shows only in its log.
 
 ## Publish
 
