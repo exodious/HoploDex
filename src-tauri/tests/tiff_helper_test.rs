@@ -1,9 +1,10 @@
 //! The TIFF render helper itself, run as `CARGO_BIN_EXE_hoplodex
 //! --render-helper` (007 T033; 007 research.md §11's confinement table):
 //! once confined it can open no file and no TCP socket, on Linux a seccomp
-//! filter refuses its listed system calls and it won't serve without the
-//! filter, it holds no inherited descriptor, it exits when its parent dies, its
-//! environment holds only what the OS needs, core dumps are off, the parent
+//! filter refuses its listed system calls, Unix sockets among them, even with
+//! no Landlock, and it won't serve without the filter, it holds no inherited
+//! descriptor, it exits when its parent dies, its environment holds only what
+//! the OS needs, core dumps are off, the parent
 //! kills it past the `Load` and `Render` limits, and the parent encodes what it
 //! answers only if the pixels fit the request.
 //!
@@ -21,11 +22,15 @@
 //! - A self-check mode, `hoplodex --render-helper --self-check <port>
 //!   <file> [<process id>]`: it tries to open `<file>`, to connect to 127.0.0.1:<port> and to
 //!   start a program, confines itself exactly as it does before serving
-//!   frames, tries all three again, and prints one JSON line then exits 0:
+//!   frames, tries all three again, and prints one JSON line then exits 0.
+//!   On Linux, `<socket path> <abstract name>` in place of the process id are
+//!   Unix sockets it tries to connect to as well, before and after:
 //!   `{ "file_before": bool, "tcp_before": bool,   // could, before confining
 //!      "exec_before": bool,                       // could start a program
 //!      "file_after": bool, "tcp_after": bool,     // could, once confined
 //!      "exec_after": bool,                        // could start it, once confined
+//!      "unix_before": object | null,              // Linux, given sockets: `path` and
+//!      "unix_after": object | null,               // `abstract`, 0 if it connected, else the error
 //!      "process_after": bool | null,              // Windows, given <process id>: could open it
 //!      "windows_after": number | null,            // Windows: top-level windows it sees
 //!      "env_vars": number,                        // variables in its environment
@@ -216,27 +221,32 @@ fn its_filter_leaves_its_speculation_settings_as_they_were() {
 #[cfg(target_os = "linux")]
 #[test]
 fn without_its_filter_it_refuses_to_serve() {
+    let mut command = HelperHandle::command(&exe());
+    under_a_parents_filter(&mut command, &[(libc::SYS_seccomp, libc::EPERM)]);
+    let output = command.output().unwrap();
+
+    assert_eq!(output.status.code(), Some(3), "a helper without its filter served");
+    assert!(output.stdout.is_empty());
+}
+
+/// Has `command` start under a seccomp filter of the test's own, which the
+/// helper inherits and can't remove, answering each of `calls` with its error.
+#[cfg(target_os = "linux")]
+fn under_a_parents_filter(command: &mut std::process::Command, calls: &[(libc::c_long, i32)]) {
     use std::os::unix::process::CommandExt;
 
-    fn statement(code: u32, k: u32) -> libc::sock_filter {
-        libc::sock_filter { code: code as u16, jt: 0, jf: 0, k }
-    }
-    fn when_equal(k: u32, jf: u8) -> libc::sock_filter {
-        let code = libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K;
-        libc::sock_filter { code: code as u16, jt: 0, jf, k }
-    }
-    let load = libc::BPF_LD | libc::BPF_W | libc::BPF_ABS;
+    let statement = |code: u32, k: u32| libc::sock_filter { code: code as u16, jt: 0, jf: 0, k };
+    let when_equal = (libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K) as u16;
     let ret = libc::BPF_RET | libc::BPF_K;
-    let filter = [
-        statement(load, 0),
-        when_equal(libc::SYS_seccomp as u32, 1),
-        statement(ret, libc::SECCOMP_RET_ERRNO | libc::EPERM as u32),
-        statement(ret, libc::SECCOMP_RET_ALLOW),
-    ];
+    let mut filter = vec![statement(libc::BPF_LD | libc::BPF_W | libc::BPF_ABS, 0)];
+    for &(call, error) in calls {
+        filter.push(libc::sock_filter { code: when_equal, jt: 0, jf: 1, k: call as u32 });
+        filter.push(statement(ret, libc::SECCOMP_RET_ERRNO | error as u32));
+    }
+    filter.push(statement(ret, libc::SECCOMP_RET_ALLOW));
 
-    let mut command = HelperHandle::command(&exe());
-    // SAFETY: between fork and exec, only two system calls and a program on
-    // the stack, which the kernel copies.
+    // SAFETY: between fork and exec, only two system calls and a program
+    // built before the fork, which the kernel copies.
     unsafe {
         command.pre_exec(move || {
             let program =
@@ -254,10 +264,82 @@ fn without_its_filter_it_refuses_to_serve() {
             Ok(())
         });
     }
-    let output = command.output().unwrap();
+}
 
-    assert_eq!(output.status.code(), Some(3), "a helper without its filter served");
-    assert!(output.stdout.is_empty());
+/// Runs `command`'s self-check with a Unix socket at a path, as the session
+/// bus is at one anyone can predict, and an abstract one, both listened on
+/// here. What it printed, and how many connections each socket took.
+#[cfg(all(debug_assertions, target_os = "linux"))]
+fn unix_self_check(mut command: std::process::Command) -> (Value, [usize; 2]) {
+    use std::os::linux::net::SocketAddrExt;
+    use std::os::unix::net::{SocketAddr, UnixListener};
+
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("secret.txt");
+    std::fs::write(&file, b"not for the helper").unwrap();
+    let bus = dir.path().join("bus");
+    // Abstract names are apart from paths, and the temporary folder's is unique.
+    let name = bus.to_str().unwrap();
+    let listeners = [
+        UnixListener::bind(&bus).unwrap(),
+        UnixListener::bind_addr(&SocketAddr::from_abstract_name(name).unwrap()).unwrap(),
+    ];
+    for listener in &listeners {
+        listener.set_nonblocking(true).unwrap();
+    }
+
+    let output =
+        command.args(["--self-check", "9", file.to_str().unwrap(), name, name]).output().unwrap();
+    assert!(output.status.success(), "{:?}", output.status);
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let connections = listeners.map(|l| std::iter::from_fn(|| l.accept().ok()).count());
+    (json, connections)
+}
+
+/// A confined helper reaches no Unix socket, at a path or abstract, because the
+/// filter refuses the socket itself (`EPERM`). So it holds on a kernel whose
+/// Landlock doesn't refuse them: pathname ones before ABI 9 (kernel 7.1),
+/// abstract ones before ABI 6 (kernel 6.12).
+#[cfg(all(debug_assertions, target_os = "linux"))]
+#[test]
+fn once_confined_it_reaches_no_unix_socket() {
+    let (json, connections) = unix_self_check(HelperHandle::command(&exe()));
+
+    eprintln!("Landlock ABI of the helper: {:?}", json["landlock_abi"]);
+    let reached = serde_json::json!({ "path": 0, "abstract": 0 });
+    assert_eq!(json["unix_before"], reached, "the probes mean something only if they worked");
+    let refused = serde_json::json!({ "path": libc::EPERM, "abstract": libc::EPERM });
+    assert_eq!(json["unix_after"], refused, "{json}");
+    assert_eq!(connections, [1, 1], "only the connections made before confining arrived");
+}
+
+/// With no Landlock at all, which is less than any kernel's ABI leaves: a
+/// parent's filter answers Landlock's calls as a kernel without it does. The
+/// helper's filter alone keeps it from files, programs and Unix sockets.
+#[cfg(all(debug_assertions, target_os = "linux"))]
+#[test]
+fn without_landlock_its_filter_alone_keeps_it_from_files_programs_and_unix_sockets() {
+    let mut command = HelperHandle::command(&exe());
+    under_a_parents_filter(
+        &mut command,
+        &[
+            (libc::SYS_landlock_create_ruleset, libc::ENOSYS),
+            (libc::SYS_landlock_add_rule, libc::ENOSYS),
+            (libc::SYS_landlock_restrict_self, libc::ENOSYS),
+        ],
+    );
+    let (json, connections) = unix_self_check(command);
+
+    assert_eq!(json["landlock_abi"], Value::Null, "{json}");
+    assert_eq!(json["landlock_enforced"], false, "{json}");
+    assert_eq!(json["file_before"], true, "{json}");
+    assert_eq!(json["exec_before"], true, "{json}");
+    assert_eq!(json["unix_before"], serde_json::json!({ "path": 0, "abstract": 0 }), "{json}");
+    assert_eq!(json["file_after"], false, "a helper without Landlock opened a file: {json}");
+    assert_eq!(json["exec_after"], false, "a helper without Landlock started a program: {json}");
+    let refused = serde_json::json!({ "path": libc::EPERM, "abstract": libc::EPERM });
+    assert_eq!(json["unix_after"], refused, "{json}");
+    assert_eq!(connections, [1, 1], "only the connections made before confining arrived");
 }
 
 /// Whatever a parent leaves inheritable is closed before the helper reads a
