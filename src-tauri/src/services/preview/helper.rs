@@ -79,10 +79,10 @@ fn serve() -> io::Result<()> {
     Ok(())
 }
 
-/// `hoplodex --render-helper --self-check <port> <file> [<process id>]`: what the helper
-/// could do before and after confining itself, as one JSON line. On Linux,
-/// `<socket path> <abstract name>` in place of the process id are Unix sockets
-/// it tries to connect to. With
+/// `hoplodex --render-helper --self-check <port> <file> [<process id> [<address>
+/// <udp port> <pipe>]]`: what the helper could do before and after confining
+/// itself, as one JSON line. On Linux, `<socket path> <abstract name>` in place
+/// of the process id are Unix sockets it tries to connect to. With
 /// `--foreign-arch` after them it only tries a call from another architecture,
 /// which a kernel without that compatibility mode ends the process for. It is the
 /// only way to look inside a confined process from outside
@@ -91,8 +91,9 @@ fn serve() -> io::Result<()> {
 #[cfg(debug_assertions)]
 mod self_check {
     use std::fs::File;
-    use std::net::TcpStream;
+    use std::net::{Ipv4Addr, SocketAddr, TcpStream};
     use std::process::Command;
+    use std::time::Duration;
 
     use serde_json::json;
 
@@ -107,6 +108,9 @@ mod self_check {
     #[cfg(windows)]
     const PROGRAM: &str = r"C:\Windows\System32\whoami.exe";
 
+    /// The longest a probe waits for a connection.
+    const WAIT: Duration = Duration::from_secs(2);
+
     pub fn run(args: &[String]) -> i32 {
         let (Some(port), Some(file)) =
             (args.first().and_then(|p| p.parse::<u16>().ok()), args.get(1))
@@ -114,7 +118,9 @@ mod self_check {
             return 2;
         };
         let can_open = || File::open(file).is_ok();
-        let can_connect = || TcpStream::connect(("127.0.0.1", port)).is_ok();
+        let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        // A connection a firewall drops would otherwise wait 21 seconds on Windows.
+        let can_connect = || TcpStream::connect_timeout(&loopback, WAIT).is_ok();
         let can_start = || Command::new(PROGRAM).status().is_ok();
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
         if args.get(2).map(String::as_str) == Some("--foreign-arch") {
@@ -128,6 +134,15 @@ mod self_check {
         let reach_unix = || reach_unix(args.get(2).zip(args.get(3)));
         #[cfg(not(target_os = "linux"))]
         let reach_unix = || None::<serde_json::Value>;
+        let env_vars = std::env::vars_os().count();
+        // Code that has taken a helper over can give it back what Windows needs:
+        // without `SystemRoot`, Winsock doesn't start (10106), and the network
+        // probes would fail whatever the confinement.
+        #[cfg(windows)]
+        // SAFETY: the self-check has no other thread.
+        unsafe {
+            std::env::set_var("SystemRoot", r"C:\Windows")
+        };
         let descriptors_before = open_descriptors();
         let file_before = can_open();
         let tcp_before = can_connect();
@@ -137,11 +152,19 @@ mod self_check {
         let descriptors_after = open_descriptors();
         let exec_after = can_start();
         let unix_after = reach_unix();
+        let file_after = can_open();
         #[cfg(windows)]
-        let (process_after, windows_after) =
-            (args.get(2).and_then(|id| id.parse().ok()).map(can_touch), Some(windows()));
+        let (process_after, windows_after, reach_after) = (
+            args.get(2).and_then(|id| id.parse().ok()).map(can_touch),
+            Some(windows()),
+            args.get(3..).and_then(|rest| reach(file, port, rest)),
+        );
         #[cfg(not(windows))]
-        let (process_after, windows_after): (Option<bool>, Option<u32>) = (None, None);
+        let (process_after, windows_after, reach_after): (
+            Option<bool>,
+            Option<u32>,
+            Option<serde_json::Value>,
+        ) = (None, None, None);
         #[cfg(unix)]
         let rlimit_core = {
             let mut limit = libc::rlimit { rlim_cur: 1, rlim_max: 1 };
@@ -166,14 +189,15 @@ mod self_check {
                 "file_before": file_before,
                 "tcp_before": tcp_before,
                 "exec_before": exec_before,
-                "file_after": can_open(),
+                "file_after": file_after,
                 "tcp_after": can_connect(),
                 "exec_after": exec_after,
                 "unix_before": unix_before,
                 "unix_after": unix_after,
                 "process_after": process_after,
                 "windows_after": windows_after,
-                "env_vars": std::env::vars_os().count(),
+                "reach_after": reach_after,
+                "env_vars": env_vars,
                 "rlimit_core": rlimit_core,
                 "dumpable": dumpable,
                 "landlock_abi": confinement.landlock_abi,
@@ -352,6 +376,55 @@ mod self_check {
             CloseHandle(handle);
             true
         }
+    }
+
+    /// What a confined helper could do to the user's `file`, to a user's named
+    /// `pipe`, and to listeners on all of this machine's interfaces (007
+    /// research.md §11, amended 2026-11-07), given `<address> <udp port> <pipe>`
+    /// after the process id: `<address>` is the machine's own, the TCP listener
+    /// is on `port` and the UDP one on `<udp port>`. `file` is gone afterwards if
+    /// it could delete it. `udp` says whether each send to `<address>` and
+    /// to 127.0.0.1 went out; the test sees whether it arrived.
+    #[cfg(windows)]
+    fn reach(file: &str, port: u16, args: &[String]) -> Option<serde_json::Value> {
+        use std::fs::{self, OpenOptions};
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+        use std::path::Path;
+
+        let [address, udp_port, pipe] = args else { return None };
+        let (Ok(address), Ok(udp_port)) = (address.parse::<IpAddr>(), udp_port.parse::<u16>())
+        else {
+            return None;
+        };
+        let path = Path::new(file);
+        let moved = path.with_extension("moved");
+
+        let write = OpenOptions::new().write(true).open(path).is_ok();
+        let create = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path.with_extension("made"))
+            .is_ok();
+        let rename = fs::rename(path, &moved).is_ok();
+        if rename {
+            let _ = fs::rename(&moved, path);
+        }
+        let delete = fs::remove_file(path).is_ok();
+        let send = |to: IpAddr| {
+            UdpSocket::bind(("0.0.0.0", 0))
+                .and_then(|socket| socket.send_to(b"helper", (to, udp_port)))
+                .is_ok()
+        };
+        Some(json!({
+            "write": write,
+            "create": create,
+            "rename": rename,
+            "delete": delete,
+            "tcp": TcpStream::connect_timeout(&SocketAddr::new(address, port), WAIT).is_ok(),
+            "udp": [send(address), send(IpAddr::V4(Ipv4Addr::LOCALHOST))],
+            "pipe": OpenOptions::new().read(true).open(pipe).is_ok()
+                || OpenOptions::new().write(true).open(pipe).is_ok(),
+        }))
     }
 
     /// How many top-level windows this process can see.
