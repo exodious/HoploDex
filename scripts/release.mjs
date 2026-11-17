@@ -7,9 +7,10 @@
 //
 //   version   check the version is the same everywhere it is written, with a
 //             metainfo <release> entry for it
-//   records   a final release only: add the migration records to released.txt in
-//             the working tree, for a pull request (each unreleased step, then
-//             the stored database, which must exist)
+//   records   add the version's migration records to released.txt in the working
+//             tree, for a pull request merged before its first release candidate
+//             (each unreleased step, then the stored database, which must exist);
+//             once the version has its lines, it says so and changes nothing
 //   checks    the tests to run on the owner's machine: release_upgrade_test,
 //             released_migrations_test and performance_test
 //   review    start the AI security review of --commit (default: origin/main's
@@ -93,17 +94,17 @@ export function migrationSteps(root) {
 const sha256 = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
 /**
- * The lines a final release adds to released.txt: each step not yet listed,
- * in `MIGRATIONS`' order, then the release's stored database.
+ * The lines a version adds to released.txt, before its first release
+ * candidate: each step not yet listed, in `MIGRATIONS`' order, then its stored
+ * database. None once the version has its lines (a later candidate, the final).
  */
 export function recordLines(root, version) {
-  const { app, final } = parseVersion(version);
-  if (!final) throw new Error("a release candidate adds no migration records");
+  const { app } = parseVersion(version);
   const listed = read(root, RELEASED)
     .split("\n")
     .filter((l) => l.trim() && !l.startsWith("#"))
     .map((l) => l.split(/\s+/));
-  if (listed.some((f) => f[2] === app)) throw new Error(`${RELEASED} already has ${app}'s lines`);
+  if (listed.some((f) => f[2] === app)) return [];
   const fixture = `tests/fixtures/releases/${app}.hoplodex`;
   const fixturePath = path.join(root, "src-tauri", fixture);
   if (!fs.existsSync(fixturePath)) {
@@ -215,10 +216,9 @@ function requireCheckoutAt(commit) {
 
 /** Refuses, from `commit` itself, what release.yml's tag check would. */
 function requireTaggable(version, commit) {
-  const { app, final, tag } = parseVersion(version);
+  const { app, tag } = parseVersion(version);
   const carried = JSON.parse(git(["show", `${commit}:src-tauri/tauri.conf.json`])).version;
   if (carried !== app) throw new Error(`${tag} doesn't name ${commit}'s version, ${carried}`);
-  if (!final) return;
   const fixture = `tests/fixtures/releases/${app}.hoplodex`;
   const stored = spawnSync("git", ["cat-file", "-e", `${commit}:src-tauri/${fixture}`], {
     cwd: ROOT,
@@ -266,6 +266,10 @@ function main(argv) {
         console.log(`${parseVersion(version).app} everywhere`);
       } else if (p.internal === "records") {
         const lines = recordLines(ROOT, version);
+        if (!lines.length) {
+          console.log(`${RELEASED} already has ${parseVersion(version).app}'s lines`);
+          continue;
+        }
         console.log(`${dryRun ? "would add" : "adding"} to ${RELEASED}:\n  ${lines.join("\n  ")}`);
         if (!dryRun) fs.appendFileSync(path.join(ROOT, RELEASED), `${lines.join("\n")}\n`);
       } else {

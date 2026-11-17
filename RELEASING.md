@@ -33,12 +33,22 @@ Linux packages and the `.flatpak` are unsigned. The release notes say how to
 open an unsigned build.
 
 **Release candidates.** A tag with a pre-release suffix, such as
-`v0.1.0-rc.1`, makes a GitHub pre-release. A release candidate doesn't count
-as a release for the database's migrations: it adds no `released.txt` lines and
-stores no release database, and its notes say a database it opened isn't
-guaranteed to upgrade to the final release (the workflow writes that note).
-Everything else below applies to it as to a final release, the AI security
-review included.
+`v0.1.0-rc.1`, makes a GitHub pre-release. The first tag of a version is a
+release candidate, and once one is accepted, its commit is tagged as the final
+release with no changes: `v0.1.0` goes on the same commit as the accepted
+`v0.1.0-rc.<n>`. So everything below, the migration records and the AI security
+review included, is done for the first release candidate, not the final:
+
+- **The database layout freezes at the first release candidate.** Its
+  migration records are merged before it (step 2), and from then on a released
+  step never changes. A layout problem found in a release candidate's testing
+  is fixed as a new step, in the next release candidate.
+- **Nothing merges to `main` while a release candidate is under test.** The
+  workflow takes a tag only on `main`'s head, as the AI security review's
+  check (step 7) requires, so a merge during testing means a new release
+  candidate, with its own review (`--after`) and its own testing.
+- **The final release carries the release candidate's metainfo `<release>`
+  date** (step 1), since its commit is the same.
 
 ## The release script
 
@@ -54,32 +64,42 @@ node scripts/release.mjs all 0.1.0-rc.1             # run them, stopping at the 
 node scripts/release.mjs checks 0.1.0               # or one step
 ```
 
-Its steps are `version`, `records` (a final release only), `checks`, `review`,
-`gate` and `tag`. `all` runs them in that order, all but `records`, whose lines
+Its steps are `version`, `records` (before a version's first release
+candidate; once its lines are there it says so and changes nothing), `checks`,
+`review`, `gate` and `tag`. `all` runs them in that order, all but `records`, whose lines
 must already be on the commit (step 2). `--commit <sha>` names another commit
 than `origin/main`'s head, and `--after <reviewed commit>` goes to the review.
 `version`, `checks` and `all` refuse unless the working tree is clean and `HEAD`
 is that commit, so what they test is what gets tagged. `tag`, and `all` before anything else, read the commit itself and refuse
-what the workflow would: a tag that doesn't name its version, or a final
-release's tag whose commit has no stored database or `released.txt` line for it.
+what the workflow would: a tag that doesn't name its version, or one whose
+commit has no stored database or `released.txt` line for it.
 The tests run in the dev container when podman is there. It tags only when
 every step before passed; it never makes a GitHub release. It leaves what the
 release workflow runs to the workflow: the [dry run](#the-release-workflow) is
 the check before a tag, on every OS. The version, its `<release>` entry and the checks a person makes (steps 1, 3 to 5)
 are still yours.
 
+For the final release, once a release candidate is accepted and nothing has
+merged since, tag its commit: `release.mjs gate 0.1.0`, for any alert opened
+during testing, then `release.mjs tag 0.1.0 --commit <the candidate's commit>`.
+The steps before ran on that commit already.
+
 ## Before the tag
 
-Work through these on the commit you will tag, on `main`. A fix made along the
-way is a pull request like any other; then start again from the new commit.
+Work through these on the commit you will tag, on `main`, for a version's
+first release candidate (a later one repeats them on its own commit, and the
+final release reuses the accepted one's). A fix made along the way is a pull
+request like any other; then start again from the new commit.
 
 1. **The version.** Set it in `package.json` (and `package-lock.json`),
    `src-tauri/Cargo.toml` (and `Cargo.lock`) and `src-tauri/tauri.conf.json`. Add the
    release's `<release>` entry to `flatpak/io.github.exodious.HoploDex.metainfo.xml`,
    with its date and notes: the newest entry's version must equal the app's
    version (a test enforces it). A release candidate carries the version it
-   is a candidate for; its tag adds the suffix.
-2. **The migration records** (a final release only; `src-tauri/src/db/migrations/README.md`,
+   is a candidate for; its tag adds the suffix. Its date is the final
+   release's too, since the final tag reuses the candidate's commit.
+2. **The migration records**, merged before the version's first release
+   candidate (`src-tauri/src/db/migrations/README.md`,
    "At a release", and [Changing the data layout](docs/development/data-layout.md)):
    - add a line to `src-tauri/src/db/migrations/released.txt` for every step the
      release ships and for its stored database (`<name or path> <sha256> <release>`,
@@ -88,10 +108,13 @@ way is a pull request like any other; then start again from the new commit.
      (`cargo run --example release_fixture` writes it). 0.1.0's is stored already;
    - run `release_upgrade_test.rs` and `released_migrations_test.rs`.
 
-   `release.mjs records` writes the lines into the working tree; commit them,
-   run the tests with `release.mjs checks <version> --commit HEAD`, and merge
-   them through a pull request. The workflow refuses a final release's tag
-   whose commit has no `released.txt` line for its stored database.
+   `release.mjs records 0.1.0-rc.1` writes the lines into the working tree, with
+   the app's version (`0.1.0`); commit them, run the tests with
+   `release.mjs checks <version> --commit HEAD`, and merge them through a pull
+   request. From that merge on the layout is frozen: a later release
+   candidate's change to it is a new step. The workflow refuses any tag, a
+   release candidate's included, whose commit has no `released.txt` line for
+   its stored database.
 3. **The manual license checks** ([Licenses](docs/development/licenses.md), "License
    audit", and its "Exceptions and clarifications that are behind"):
    - grep each new MPL-2.0 crate for Exhibit B ("Incompatible With Secondary
@@ -153,7 +176,7 @@ way is a pull request like any other; then start again from the new commit.
 The `version tags` ruleset lets only the repository's admins create `v*`
 tags. `release.mjs tag` (the last step of `all`) checks the workflow will
 accept the commit, then tags it and pushes the tag. By hand, once the commit
-carries the version and any records, that is:
+carries the version and the records, that is:
 
 ```bash
 node scripts/ai-security-review.mjs reviewed --commit <commit>
@@ -169,8 +192,9 @@ A tag is never moved. If the release needs another commit, it gets a new tag
 On the tag, `release.yml` runs:
 
 - **Release review:** the tag names the app's version (`v<version>` or
-  `v<version>-<suffix>`); a final release has its `released.txt` line; and the
-  AI security review covers the commit (step 7).
+  `v<version>-<suffix>`); the commit has that version's stored database and
+  `released.txt` line, for a release candidate too; and the AI security review
+  covers the commit (step 7).
 - **CI**, ci.yml called with `release` set, from clean release builds: format,
   lint and the tests on every OS; E2E against the shipping profile
   (`HOPLODEX_E2E_PROFILE=release`) on all three, macOS's counting too; the

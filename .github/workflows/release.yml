@@ -61,9 +61,10 @@ jobs:
           node-version: 24
 
       # The tag is v<version>[-<suffix>], as scripts/release.mjs makes it, and
-      # names the version the app carries; only a final release's tag adds the
-      # migration records (RELEASING.md, src-tauri/src/db/migrations/README.md).
-      # The later jobs rely on the tag having that form.
+      # names the version the app carries, whose migration records are merged
+      # before its first release candidate, so an accepted candidate's commit
+      # takes the final tag unchanged (RELEASING.md, step 2). The later jobs
+      # rely on the tag having that form.
       - name: Check the tag against the version and the migration records
         if: github.event_name == 'push'
         env:
@@ -74,12 +75,10 @@ jobs:
           version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
           [[ "$TAG" == "v$version" || "$TAG" == "v$version-"* ]] || {
             echo "::error::$TAG doesn't name the app's version, $version"; exit 1; }
-          if [[ "$TAG" == "v$version" ]]; then
-            fixture="tests/fixtures/releases/$version.hoplodex"
-            [ -f "src-tauri/$fixture" ] || { echo "::error::no stored database src-tauri/$fixture"; exit 1; }
-            grep -qE "^$fixture [0-9a-f]{64} $version\$" src-tauri/src/db/migrations/released.txt || {
-              echo "::error::released.txt has no line for $fixture"; exit 1; }
-          fi
+          fixture="tests/fixtures/releases/$version.hoplodex"
+          [ -f "src-tauri/$fixture" ] || { echo "::error::no stored database src-tauri/$fixture"; exit 1; }
+          grep -qE "^$fixture [0-9a-f]{64} $version\$" src-tauri/src/db/migrations/released.txt || {
+            echo "::error::released.txt has no line for $fixture"; exit 1; }
 
       # The commit checked out, the tag's own. A dry run reports whether the
       # commit could be released without failing on the commit it ran on.
@@ -261,7 +260,7 @@ jobs:
           version=${TAG#v}
           {
             if [[ "$TAG" == *-* ]]; then
-              echo "**This is a release candidate, for testing.** It doesn't count as a release for the database's upgrades: a database it opened isn't guaranteed to open in the final release, so try it on a copy of your collection."
+              echo "**This is a release candidate, for testing.** Try it on a copy of your collection."
               echo
             fi
             VERSION="$version" node -e 'const fs = require("node:fs");

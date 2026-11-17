@@ -1,13 +1,13 @@
 //! Released migration steps and stored release databases stay byte-for-byte
 //! unchanged (009 US4-2, 009 FR-021, 009 SC-006, 009 research.md §11).
 //!
-//! `src/db/migrations/released.txt` lists, at each release's tag (#19), every
-//! step that release shipped and every database it stored under
-//! `tests/fixtures/releases/`: `<name or fixture path> <sha256 of its bytes>
-//! <release>`, `#` starting a comment. [`problems`] is the check, taking the
+//! `src/db/migrations/released.txt` lists, from before each version's first
+//! release candidate (#19), every step that release shipped and every database
+//! it stored under `tests/fixtures/releases/`: `<name or fixture path> <sha256
+//! of its bytes> <release>`, `#` starting a comment. [`problems`] is the check, taking the
 //! manifest's text, the build's steps and a reader for fixtures, so a test can
 //! hand it doctored inputs and see each one fail. The real manifest is empty
-//! until 0.1.0 is tagged, and passes.
+//! until 0.1.0's records are merged, and passes.
 
 use std::path::Path;
 
@@ -15,7 +15,7 @@ use hoplodex_lib::db;
 use sha2::{Digest, Sha256};
 
 /// Said at the end of every problem, so whoever sees one knows the rule.
-const RULE: &str = "CLAUDE.md: from the 0.1.0 tag on, a released migration step and a stored release \
+const RULE: &str = "CLAUDE.md: from 0.1.0's records on, a released migration step and a stored release \
                     database never change; make the change a new step in src/db/migrations/ (and \
                     its release_upgrade_test case) instead (009 FR-021, research.md §11)";
 
@@ -125,8 +125,8 @@ fn read_real_fixture(path: &str) -> Option<Vec<u8>> {
 }
 
 /// 009 US4-2, 009 FR-021, 009 SC-006: the real manifest holds against this
-/// build (today it lists nothing; from the 0.1.0 tag it lists the steps and the
-/// stored database).
+/// build (today it lists nothing; from 0.1.0's records it lists the steps and
+/// the stored database).
 #[test]
 fn the_real_manifest_holds_against_this_build() {
     let found = problems(&real_manifest(), db::MIGRATIONS, &read_real_fixture);

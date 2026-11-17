@@ -7,8 +7,8 @@ file is the author's guide; the reasons are in 009 research.md §7, §11 and §1
 (`specs/009-upgrade-readiness/research.md`), and the workflow around it (testing
 a step, the stored release databases) is in `docs/development/data-layout.md`.
 
-Until 0.1.0 is tagged these files are edited in place. **From the tag on, a
-released step never changes** (`released.txt` holds its hash and
+Until 0.1.0's records are merged, before its first release candidate, these
+files are edited in place. **From then on, a released step never changes** (`released.txt` holds its hash and
 `tests/released_migrations_test.rs` fails when the bytes differ): a change to the
 layout is a new step.
 
@@ -106,9 +106,12 @@ lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4'
 ## At a release
 
 `released.txt` lists, one per line, `<step name or fixture path> <sha256 of its
-bytes> <release>`. Before a final release is tagged, not a release candidate
+bytes> <release>`. Before a version's first release candidate is tagged
 ([RELEASING.md](../../../../RELEASING.md), step 2), add a line for every step it
 ships (`sha256sum` of the step's file, LF line endings) and one for its stored
 database `tests/fixtures/releases/<release>.hoplodex`, in `MIGRATIONS`' order,
-and never edit a line after that. The release's steps must be the first entries
+with the version without its suffix, and never edit a line after that. The
+layout freezes there: a problem found while a release candidate is tested is
+fixed with a new step, and the final release is the accepted candidate's
+commit. The release's steps must be the first entries
 of `MIGRATIONS`, in order; a later release only appends.

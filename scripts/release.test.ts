@@ -42,6 +42,14 @@ function tempDir(): string {
 
 const RELEASED = "src-tauri/src/db/migrations/released.txt";
 
+const fixtureOf = (app: string) => `tests/fixtures/releases/${app}.hoplodex`;
+
+/** A version's stored database and its released.txt lines. */
+const recorded = (app: string) => ({
+  [`src-tauri/${fixtureOf(app)}`]: "abc",
+  [RELEASED]: `0001_a ${EMPTY} ${app}\n${fixtureOf(app)} ${ABC} ${app}\n`,
+});
+
 /** Every file `version` and `tag` read, carrying `version`. */
 const carrying = (version: string, released = "# none yet\n") => ({
   "package.json": JSON.stringify({ version }),
@@ -105,7 +113,7 @@ describe("release script", () => {
     expect(versionProblems(ROOT, "9.9.9")).toHaveLength(7);
   });
 
-  it("writes a final release's records: each unreleased step in MIGRATIONS' order, then its database", () => {
+  it("writes a version's records, for its first release candidate: each unreleased step in MIGRATIONS' order, then its database", () => {
     const dir = tempDir();
     writeAll(dir, {
       "src-tauri/src/db/mod.rs": [
@@ -124,17 +132,19 @@ describe("release script", () => {
       "src-tauri/src/db/migrations/0004_a_step_name_long_enough_to_wrap.sql": "abc",
       "src-tauri/tests/fixtures/releases/0.2.0.hoplodex": "abc",
     });
-    const lines = recordLines(dir, "0.2.0");
+    const lines = recordLines(dir, "0.2.0-rc.1");
     expect(lines).toEqual([
       `0003_later ${EMPTY} 0.2.0`,
       `0002_new ${ABC} 0.2.0`,
       `0004_a_step_name_long_enough_to_wrap ${ABC} 0.2.0`,
       `tests/fixtures/releases/0.2.0.hoplodex ${ABC} 0.2.0`,
     ]);
+    expect(recordLines(dir, "0.2.0")).toEqual(lines);
     fs.appendFileSync(path.join(dir, RELEASED), `${lines.join("\n")}\n`);
-    expect(() => recordLines(dir, "0.2.0")).toThrow(/already has/);
-    expect(() => recordLines(dir, "0.3.0")).toThrow(/no stored database/);
-    expect(() => recordLines(dir, "0.2.0-rc.1")).toThrow(/release candidate/);
+    // A later candidate and the final, on the same records: nothing to add.
+    expect(recordLines(dir, "0.2.0-rc.2")).toEqual([]);
+    expect(recordLines(dir, "0.2.0")).toEqual([]);
+    expect(() => recordLines(dir, "0.3.0-rc.1")).toThrow(/no stored database/);
   });
 
   it("leaves the records out of all, since they reach the commit through a pull request", () => {
@@ -227,7 +237,7 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
 
   it("applies the workflow's tag check to the commit, not the working tree", () => {
     const repo = scratchRepo();
-    const older = repo.commit(carrying("0.1.0"));
+    const older = repo.commit({ ...carrying("0.1.0"), ...recorded("0.1.0") });
     repo.commit(carrying("0.2.0"), older);
 
     expect(repo.release("tag", "0.1.0-rc.1", "--commit", older, "--dry-run").status).toBe(0);
@@ -237,30 +247,40 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
     expect(wrong.stdout).toBe("");
   });
 
-  it("refuses a final tag without its stored database or released.txt line, before any step", () => {
+  it("refuses any tag, a release candidate's too, without its stored database or released.txt line, before any step", () => {
     const repo = scratchRepo();
     const bare = repo.commit(carrying("0.1.0"));
-    const none = repo.release("all", "0.1.0", "--commit", bare, "--dry-run");
-    expect(none.status).toBe(1);
-    expect(none.stderr).toContain("no stored database");
-    expect(none.stdout).toBe("");
+    const { [RELEASED]: lines, ...stored } = recorded("0.1.0");
+    const unlisted = repo.commit(stored, bare);
+    const listed = repo.commit({ [RELEASED]: lines }, unlisted);
+    for (const version of ["0.1.0-rc.1", "0.1.0"]) {
+      const none = repo.release("tag", version, "--commit", bare, "--dry-run");
+      expect(none.status, version).toBe(1);
+      expect(none.stderr, version).toContain("no stored database");
+      expect(none.stdout, version).toBe("");
 
-    const fixture = "tests/fixtures/releases/0.1.0.hoplodex";
-    const unlisted = repo.commit({ [`src-tauri/${fixture}`]: "abc" }, bare);
-    const noLine = repo.release("all", "0.1.0", "--commit", unlisted, "--dry-run");
-    expect(noLine.status).toBe(1);
-    expect(noLine.stderr).toContain("no line");
+      const noLine = repo.release("tag", version, "--commit", unlisted, "--dry-run");
+      expect(noLine.status, version).toBe(1);
+      expect(noLine.stderr, version).toContain("no line");
+    }
 
-    const listed = repo.commit(
-      { [RELEASED]: `0001_a ${EMPTY} 0.1.0\n${fixture} ${ABC} 0.1.0\n` },
-      unlisted,
-    );
-    const ready = repo.release("all", "0.1.0", "--commit", listed, "--dry-run");
-    expect(ready.status).toBe(0);
-    expect(ready.stdout).not.toContain("== records");
-    expect(ready.stdout).toContain(`$ git tag -a v0.1.0 -m "HoploDex 0.1.0" ${listed}`);
+    // The final tag goes on the accepted candidate's commit, with no change.
+    for (const version of ["0.1.0-rc.1", "0.1.0"]) {
+      const ready = repo.release("all", version, "--commit", listed, "--dry-run");
+      expect(ready.status, version).toBe(0);
+      expect(ready.stdout, version).not.toContain("== records");
+      expect(ready.stdout, version).toContain(
+        `$ git tag -a v${version} -m "HoploDex ${version}" ${listed}`,
+      );
+    }
     // A dry run only prints it.
     expect(repo.git(["tag", "-l"])).toBe("");
+
+    // Once the records are there, `records` says so and changes nothing.
+    const again = repo.release("records", "0.1.0-rc.2", "--commit", listed);
+    expect(again.status).toBe(0);
+    expect(again.stdout).toContain("already has 0.1.0's lines");
+    expect(repo.git(["status", "--porcelain"])).toBe("");
   });
 });
 
@@ -270,6 +290,38 @@ type Step = {
   env?: Record<string, string>;
   with?: Record<string, string>;
 };
+
+// Its own script, run by bash in a scratch checkout. Windows' `bash` may be WSL's.
+describe.skipIf(process.platform === "win32")("release.yml's tag check", () => {
+  it("requires the stored database and released.txt line for every tag, a release candidate's too", () => {
+    const release = yaml.load(
+      fs.readFileSync(path.join(ROOT, ".github/workflows/release.yml"), "utf8"),
+    ) as { jobs: Record<string, { steps: (Step & { run?: string })[] }> };
+    const script = Object.values(release.jobs)
+      .flatMap((j) => j.steps)
+      .find((s) => s.name === "Check the tag against the version and the migration records")!.run!;
+    const check = (files: Record<string, string>, tag: string) => {
+      const dir = tempDir();
+      writeAll(dir, files);
+      const r = spawnSync("bash", ["-e", "-c", script], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, TAG: tag },
+      });
+      return { status: r.status, out: r.stdout };
+    };
+    for (const tag of ["v0.1.0-rc.1", "v0.1.0"]) {
+      const { [RELEASED]: lines, ...stored } = recorded("0.1.0");
+      expect(check(carrying("0.1.0"), tag)).toMatchObject({ status: 1 });
+      expect(check(carrying("0.1.0"), tag).out).toContain("no stored database");
+      expect(check({ ...carrying("0.1.0"), ...stored }, tag).out).toContain("has no line");
+      expect(check({ ...carrying("0.1.0", lines), ...stored }, tag).status, tag).toBe(0);
+      expect(check({ ...carrying("0.1.0", lines), ...stored }, "v0.2.0-rc.1").out).toContain(
+        "doesn't name",
+      );
+    }
+  });
+});
 
 function ciSteps(): Step[][] {
   const ci = yaml.load(fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8")) as {
