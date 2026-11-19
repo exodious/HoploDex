@@ -80,7 +80,9 @@ fn serve() -> io::Result<()> {
 }
 
 /// `hoplodex --render-helper --self-check <port> <file> [<process id>]`: what the helper
-/// could do before and after confining itself, as one JSON line. With
+/// could do before and after confining itself, as one JSON line. On Linux,
+/// `<socket path> <abstract name>` in place of the process id are Unix sockets
+/// it tries to connect to. With
 /// `--foreign-arch` after them it only tries a call from another architecture,
 /// which a kernel without that compatibility mode ends the process for. It is the
 /// only way to look inside a confined process from outside
@@ -122,13 +124,19 @@ mod self_check {
             println!("{}", json!({ "answer": i386_getpid() }));
             return 0;
         }
+        #[cfg(target_os = "linux")]
+        let reach_unix = || reach_unix(args.get(2).zip(args.get(3)));
+        #[cfg(not(target_os = "linux"))]
+        let reach_unix = || None::<serde_json::Value>;
         let descriptors_before = open_descriptors();
         let file_before = can_open();
         let tcp_before = can_connect();
         let exec_before = can_start();
+        let unix_before = reach_unix();
         let Ok(confinement) = confine::confine(MEMORY_LIMIT) else { return 3 };
         let descriptors_after = open_descriptors();
         let exec_after = can_start();
+        let unix_after = reach_unix();
         #[cfg(windows)]
         let (process_after, windows_after) =
             (args.get(2).and_then(|id| id.parse().ok()).map(can_touch), Some(windows()));
@@ -161,6 +169,8 @@ mod self_check {
                 "file_after": can_open(),
                 "tcp_after": can_connect(),
                 "exec_after": exec_after,
+                "unix_before": unix_before,
+                "unix_after": unix_after,
                 "process_after": process_after,
                 "windows_after": windows_after,
                 "env_vars": std::env::vars_os().count(),
@@ -174,6 +184,22 @@ mod self_check {
             })
         );
         0
+    }
+
+    /// Connecting to the Unix socket at a path and to the abstract one of a
+    /// name: `0` for each it connected to, else the error it got. `None` when
+    /// none was given.
+    #[cfg(target_os = "linux")]
+    fn reach_unix(sockets: Option<(&String, &String)>) -> Option<serde_json::Value> {
+        use std::os::linux::net::SocketAddrExt;
+        use std::os::unix::net::{SocketAddr, UnixStream};
+
+        let (path, name) = sockets?;
+        let answer = |connected: std::io::Result<UnixStream>| {
+            connected.map_or_else(|e| e.raw_os_error().unwrap_or(-1), |_| 0)
+        };
+        let named = SocketAddr::from_abstract_name(name).and_then(|a| UnixStream::connect_addr(&a));
+        Some(json!({ "path": answer(UnixStream::connect(path)), "abstract": answer(named) }))
     }
 
     /// The descriptors from 3 up that are open, up to any a test would use.
