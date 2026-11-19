@@ -94,19 +94,26 @@ fn migration_names(conn: &Connection) -> Vec<String> {
         .collect()
 }
 
-/// 009 FR-023, research.md §12: until 0.1.0 is released, the layout still
-/// changes in place (CLAUDE.md), so the stored 0.1.0 database has to be what
-/// a new database is. From the release on it is never regenerated, and this
-/// check stops applying to it.
+/// 009 FR-023, research.md §12: until 0.1.0's records are merged, before its
+/// first release candidate, the layout still changes in place (CLAUDE.md), so
+/// the stored 0.1.0 database has to be what a new database is. From then on it
+/// is never regenerated, later steps upgrade it, and this check stops applying
+/// to it.
 #[test]
 fn release_fixture_matches_layout() {
+    if include_str!("../src/db/migrations/released.txt")
+        .lines()
+        .any(|l| l.starts_with("tests/fixtures/releases/0.1.0.hoplodex "))
+    {
+        return;
+    }
     let _serial = one_at_a_time();
     let (_dir, fixture) = raw_fixture();
     let new = TestDb::new();
 
     let (stored, current) = (schema(&fixture), schema(&new.conn));
     let hint = "src-tauri/tests/fixtures/releases/0.1.0.hoplodex is out of step with the layout a \
-                new database has (until 0.1.0 is released the layout changes in place); rerun \
+                new database has (until 0.1.0's records are merged the layout changes in place); rerun \
                 `cargo run --example release_fixture` and commit the result";
     assert!(stored.len() > 20, "the fixture's schema was not read");
     assert_eq!(stored, current, "{hint}: sqlite_schema differs");
@@ -286,7 +293,7 @@ fn every_stored_release_database_holds_every_kind() {
         assert!(
             missing.is_empty(),
             "the {} database must hold a row in every table and a value in every column; \
-             regenerate it with `cargo run --example release_fixture` (before the 0.1.0 tag) or \
+             regenerate it with `cargo run --example release_fixture` (before 0.1.0's records) or \
              make the next release's fixture richer: {missing:#?}",
             release.version
         );

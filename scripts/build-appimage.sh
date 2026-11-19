@@ -6,7 +6,8 @@
 #   scripts/build-appimage.sh                     same as `npm run tauri build`
 #   scripts/build-appimage.sh --bundles appimage  only the AppImage
 #
-# Arguments are passed to `tauri build`.
+# Arguments are passed to `tauri build`, after src-tauri/tauri.bundle.conf.json,
+# which puts NOTICES.txt in each bundle (#19).
 #
 # Why: linuxdeploy copies libwayland-*, libxkbcommon, libxcb-* and friends
 # from the build machine into the AppImage, and they shadow the host's copies.
@@ -41,7 +42,7 @@ export LINUXDEPLOY_EXCLUDED_LIBRARIES
 check=$(mktemp -d)
 trap 'rm -rf "$check"' EXIT
 touch "$check/started"
-npx tauri build "$@"
+npx tauri build --config src-tauri/tauri.bundle.conf.json "$@"
 # The E2E-only WebDriver server must never ship (#29).
 node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
 

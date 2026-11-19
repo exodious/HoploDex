@@ -6,15 +6,15 @@
 //! kept as pending changes, a backup record and changes waiting for a backup,
 //! keyed with the pinned KDF and [`PASSPHRASE`].
 //!
-//! Until 0.1.0 is released the layout still changes in place, and
-//! `tests/release_upgrade_test.rs` fails when the fixture's layout differs from
+//! Until 0.1.0's records are merged, before its first release candidate, the
+//! layout still changes in place, and `tests/release_upgrade_test.rs` fails when the fixture's layout differs from
 //! a new database's. Regenerate it then, and commit the result:
 //!
 //! ```sh
 //! cargo run --example release_fixture
 //! ```
 //!
-//! From the release on it is never regenerated: its hash goes in
+//! From then on it is never regenerated: its hash goes in
 //! `src/db/migrations/released.txt` (009 research.md §11).
 //!
 //! It writes that one file inside this checkout (or at the path it is given,

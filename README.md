@@ -6,6 +6,25 @@ built with Tauri 2: a Rust backend (`src-tauri/`) owns persistence,
 encryption, and business logic; a React + TypeScript frontend (`src/`)
 owns the UI.
 
+## Supported platforms
+
+This is the one place that says which systems HoploDex supports; the release
+notes and [RELEASING.md](RELEASING.md) point here. "Supported" carries no
+obligation: HoploDex is free software, offered without warranty (below).
+
+| System | Releases | Package |
+|---|---|---|
+| Linux, x86-64 | Any distribution with Flatpak | The Flatpak (`.flatpak`), which brings its own GNOME runtime from Flathub |
+| | Ubuntu LTS from 24.04 (24.04 and 26.04); no other Ubuntu release | The `.deb` |
+| | Fedora 44 and later | The `.rpm` |
+| macOS, Apple silicon | macOS 26 and later; no Intel Macs | The `.dmg` |
+| Windows, x86-64 | Windows 11 and Windows Server 2025, with the WebView2 runtime; not in S mode | The setup `.exe` |
+
+Older Linux systems, Ubuntu 22.04 among them, can use the Flatpak. A Windows
+computer in S mode runs only apps from the Microsoft Store, which HoploDex
+isn't in: it has to leave S mode first. Each release's notes say how to
+install it, and how to open a build that isn't signed by a paid certificate.
+
 ## The troubleshooting log
 
 While HoploDex is before version 1.0, it keeps a troubleshooting log on this

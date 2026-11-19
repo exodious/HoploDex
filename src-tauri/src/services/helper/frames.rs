@@ -11,8 +11,9 @@
 
 use std::io::{self, Read, Write};
 
-/// The largest frame the TIFF mode accepts at either end: 768 MiB, above the
-/// largest document the parent loads or the largest page the helper renders.
+/// The largest frame the TIFF mode accepts: 768 MiB, above the largest document
+/// the parent loads. The app holds each response to a smaller limit for its kind
+/// (`preview::helper_protocol`'s `max_response`, through [`read_frame_by_tag`]).
 pub const MAX_FRAME: usize = 768 * 1024 * 1024;
 
 pub fn invalid(message: &str) -> io::Error {
@@ -36,6 +37,16 @@ pub fn write_frame(w: &mut impl Write, tag: u8, payload: &[u8], max: usize) -> i
 /// reading any of it. `None` at a clean end of input (nothing at all before
 /// the end).
 pub fn read_frame(r: &mut impl Read, max: usize) -> io::Result<Option<(u8, Vec<u8>)>> {
+    read_frame_by_tag(r, max, |_| max)
+}
+
+/// [`read_frame`] for a mode whose frames differ in size: once the tag is read,
+/// a length over `max_for(tag)` is refused before the payload is read.
+pub fn read_frame_by_tag(
+    r: &mut impl Read,
+    max: usize,
+    max_for: impl Fn(u8) -> usize,
+) -> io::Result<Option<(u8, Vec<u8>)>> {
     let mut prefix = [0u8; 4];
     let mut filled = 0;
     while filled < prefix.len() {
@@ -51,14 +62,17 @@ pub fn read_frame(r: &mut impl Read, max: usize) -> io::Result<Option<(u8, Vec<u
     if length == 0 || length > max {
         return Err(invalid("frame length out of range"));
     }
-    let mut body = Vec::new();
-    let read = r.take(length as u64).read_to_end(&mut body)?;
-    if read != length {
+    let mut tag = [0u8];
+    r.read_exact(&mut tag)?;
+    if length > max_for(tag[0]) {
+        return Err(invalid("frame length out of range"));
+    }
+    let mut payload = Vec::new();
+    let read = r.take(length as u64 - 1).read_to_end(&mut payload)?;
+    if read != length - 1 {
         return Err(io::ErrorKind::UnexpectedEof.into());
     }
-    let tag = body[0];
-    body.drain(..1);
-    Ok(Some((tag, body)))
+    Ok(Some((tag[0], payload)))
 }
 
 #[cfg(test)]
@@ -109,6 +123,40 @@ mod tests {
         assert!(write_frame(&mut Vec::new(), 1, &[0; 100], 100).is_err());
         let err = read_frame(&mut &wire[..], 99).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData, "refused before its bytes are read");
+    }
+
+    #[test]
+    fn a_frame_longer_than_its_tag_allows_is_refused_before_its_payload_is_read() {
+        // A reader that counts what is taken from it, with no end.
+        struct Endless(usize);
+        impl Read for Endless {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                buf.fill(7);
+                self.0 += buf.len();
+                Ok(buf.len())
+            }
+        }
+        let max_for = |tag| if tag == 1 { 100 } else { MAX_FRAME };
+        let mut wire = Endless(0);
+        let mut framed = 101u32.to_be_bytes().to_vec();
+        framed.push(1);
+        let mut reader = (&framed[..]).chain(&mut wire);
+        let err = read_frame_by_tag(&mut reader, MAX_FRAME, max_for).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(wire.0, 0, "nothing past the tag was read");
+
+        let mut framed = 100u32.to_be_bytes().to_vec();
+        framed.push(1);
+        framed.extend_from_slice(&[0; 99]);
+        assert_eq!(
+            read_frame_by_tag(&mut &framed[..], MAX_FRAME, max_for).unwrap().unwrap().1.len(),
+            99
+        );
+        framed[4] = 2;
+        assert!(
+            read_frame_by_tag(&mut &framed[..], MAX_FRAME, max_for).is_ok(),
+            "another tag's limit"
+        );
     }
 
     #[test]

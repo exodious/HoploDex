@@ -1348,6 +1348,7 @@ _Amended by [spec 013](../013-troubleshooting-log/research.md): the log also rea
 - **The `.flatpak` file is unsigned**, as the other bundles are until #19
   decides signing. Installing it from anywhere but the release page is the
   user's risk.
+  _Amended 2026-11-08: #19 decided on no paid signing for now, so the `.flatpak` stays unsigned ([RELEASING.md](../../RELEASING.md), "Signing")._
 
 ## §21 Dependencies and tools
 

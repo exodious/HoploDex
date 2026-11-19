@@ -2,9 +2,11 @@
 
 _Part of the [development docs](../../DEVELOPMENT.md)._
 
-Until 0.1.0 is tagged, a schema change edits the existing migrations in place
-(`0001_initial.sql` and the rest) and regenerates the stored 0.1.0 database
-(below). From the tag on, **every change is a new step in
+Until 0.1.0's migration records are merged, before its first release
+candidate ([RELEASING.md](../../RELEASING.md), step 2), a schema change edits the
+existing migrations in place (`0001_initial.sql` and the rest) and regenerates
+the stored 0.1.0 database (below). The layout freezes at that first release
+candidate: from then on, a problem found in its testing included, **every change is a new step in
 `src-tauri/src/db/migrations/`, and a released step never changes**
 (009 FR-021, `released.txt`, `tests/released_migrations_test.rs`). A database
 made by an older release is upgraded when it is opened, after the user agrees
@@ -56,9 +58,14 @@ upgrade question.
 
 **`released.txt`.** `src/db/migrations/released.txt` lists, one line each,
 `<step name or fixture path> <sha256 of its bytes> <release>`: every step a
-release shipped and every stored release database. The release process (#19)
-adds a release's lines at its tag, with `sha256sum` on the step files (LF line
-endings in every checkout, `.gitattributes`) and on the fixture, and lines are
+release shipped and every stored release database. A version's lines are
+merged before its first release candidate, with the version without its suffix,
+and the release workflow refuses any tag whose commit lacks its stored
+database's line or a line for a step in `MIGRATIONS`; a later candidate adds
+only the line of a step that fixes a problem its testing found, and the final
+release adds none ([RELEASING.md](../../RELEASING.md), step 2). Each
+is `sha256sum` of the step file (LF line endings in every checkout,
+`.gitattributes`) or of the fixture, and lines are
 never edited afterwards. Until then it holds only a comment and the test passes.
 `released_migrations_test` fails when a listed step's bytes change, when it is
 missing, renamed or not among the build's first steps in order, when a listed
@@ -68,7 +75,7 @@ CLAUDE.md's rule.
 **The stored release databases.** `src-tauri/tests/fixtures/releases/<release>.hoplodex`
 is what that release made: the human-testing seed's main collection, pending
 changes and a backup record, keyed with the pinned KDF and the passphrase
-`release fixture <release>`. Until 0.1.0 is tagged, regenerate it whenever the
+`release fixture <release>`. Until 0.1.0's records are merged, regenerate it whenever the
 layout changes (`release_fixture_matches_layout` fails when it is out of step
 with a new database), without `test-kdf` and `upgrade-test-steps`, which
 `examples/release_fixture.rs` refuses:
@@ -77,7 +84,7 @@ with a new database), without `test-kdf` and `upgrade-test-steps`, which
 scripts/dev-container.sh bash -c 'cd src-tauri && cargo run --example release_fixture'
 ```
 
-From the tag on, never regenerate it: its hash goes in `released.txt`, and each
+From then on, never regenerate it: its hash goes in `released.txt`, and each
 later release adds its own file beside it and an entry to `RELEASES` in
 `release_upgrade_test.rs`. That test also fails when a table has no row or a
 column no value in a stored database, so the fixture cannot thin out.

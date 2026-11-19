@@ -167,6 +167,7 @@ The maintainer changes the data layout after 0.1.0, including changes that can o
 
 - **One feature for two issues and a question**: specified together at the owner's request. Stories 1 and 2 change the layout and must land before 0.1.0 is tagged; Stories 3 and 4 build the upgrade machinery and its tests. The plan may order them, but Story 4's stored 0.1.0 database is made after Stories 1 and 2 are in.
 - **The last change made in place**: Stories 1 and 2 edit the existing layout in place, as CLAUDE.md allows while the application is unreleased. FR-021's rule takes effect at the 0.1.0 tag, which the release process (#19) records.
+  _Amended 2026-11-17 (#19): FR-021's rule takes effect when 0.1.0's migration records are merged, before its first release candidate, and the final tag reuses the accepted candidate's commit (RELEASING.md, step 2)._
 - **What the earlier version must already know**: FR-013's marking of the backup before an upgrade is written into a copy in the earlier layout. Whatever holds it (a value in the database's own housekeeping, or the backup's file name) must therefore already exist in 0.1.0's layout or naming; the plan settles which, before 0.1.0 is tagged.
 - **The backup before an upgrade and the backup record**: it does not clear or set the database's "changes waiting" or count as the day's backup at close (003 FR-025). The upgrade itself isn't a collection change.
 - **No upgrade of pre-0.1.0 databases**: databases made before this feature are recreated, as before every unreleased layout change.

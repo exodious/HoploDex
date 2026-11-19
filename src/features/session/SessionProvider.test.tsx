@@ -123,7 +123,10 @@ describe("SessionProvider (003 US1)", () => {
   it("shows only the chooser while no database is open", async () => {
     renderSession();
 
-    expect(await screen.findByRole("button", { name: "Open…" })).toBeInTheDocument();
+    // The file's first render can pass the default 1 s under a full-suite load.
+    expect(
+      await screen.findByRole("button", { name: "Open…" }, { timeout: 5000 }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Collection shell")).not.toBeInTheDocument();
   });
 

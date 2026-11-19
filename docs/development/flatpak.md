@@ -215,7 +215,8 @@ installation is removed whatever happened; the shipped build has no WebDriver
 and no log line for its window, so the check waits for the log line that says it
 runs in a Flatpak and for the two folders.
 
-Run it before each release and for a pull request that changes any of these
+The [release workflow](ci.md#the-release-workflow) runs both checks for every
+release. Run the first for a pull request that changes any of these
 paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,
 `e2e/specs/flatpak.e2e.ts`, `e2e/support/flatpak.ts`,
 `src-tauri/src/platform/linux.rs`, `src-tauri/src/platform/core_dumps.rs`,
