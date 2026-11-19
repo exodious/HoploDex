@@ -119,12 +119,14 @@ ignore = [
     # trusted party, such as a collection or backup from elsewhere. HoploDex
     # opens the databases the user creates or picks with Open… (and their
     # recent list), and a restore checks a copy it makes of the chosen backup
-    # file. It never puts a database in WAL mode: it keeps SQLite's rollback
-    # journal with exclusive locking. SQLite reads a `-wal` only for a
-    # database whose header says WAL, and SQLCipher encrypts that header with
-    # the database's key, so such a pair would have to come from someone who
-    # also knows its passphrase, and the user would have to open it with that
-    # passphrase. Checked 2026-11-17 at libsqlite3-sys 0.38.1.
+    # file. It never puts a database in WAL mode itself, but that doesn't keep
+    # a `-wal` out: SQLite opens one it finds beside a database whatever the
+    # journal mode (`pagerOpenWalIfPresent`). SQLCipher decrypts and checks
+    # the HMAC of every page it reads, from the database or a `-wal` frame,
+    # with the database's key (`readDbPage`), so such a pair would have to come
+    # from someone who also knows its passphrase, and the user would have to
+    # open it with that passphrase. Checked 2026-11-19 in libsqlite3-sys
+    # 0.38.1's bundled sqlite3.c.
     #
     # Review by 2026-12-17, or sooner if a SQLCipher release on SQLite 3.54
     # reaches libsqlite3-sys's `bundled-sqlcipher`.
