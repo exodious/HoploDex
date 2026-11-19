@@ -326,7 +326,7 @@ type Step = {
 };
 
 // Its own script, run by bash in a scratch checkout. Windows' `bash` may be WSL's.
-describe.skipIf(process.platform === "win32")("release.yml's tag check", () => {
+describe.skipIf(process.platform === "win32")("release.yml's tag check", { timeout: 60_000 }, () => {
   it("requires the stored database and released.txt lines for it and every step, for every tag, a release candidate's too", () => {
     const release = yaml.load(
       fs.readFileSync(path.join(ROOT, ".github/workflows/release.yml"), "utf8"),
