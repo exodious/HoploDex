@@ -45,7 +45,9 @@ PDF surface check uses too). The example opens a main window with the app's own
 `window_controls::apply` and a test page that has none of the page's handlers,
 so it judges the native layer alone. It right-clicks a blank area, a row, a
 button, an image, a text field and a selection and logs every item each native
-menu offered (the filter's own log, `apply(.., log_items: true)`), presses every
+menu offered (the filter's own log, `apply(.., log_items: true)`), waiting up to
+10 s for each menu, since the first one on a text field waits on the OS's text
+services (1.9 to 3.5 s on a freshly started GitHub macOS runner), presses every
 key 008 FR-012 names and the mouse's back and forward buttons with text typed in a
 field, and on macOS presses ⌃⌘D on a selection. It fails (exit 4) if a menu
 offered an item outside 008 FR-011's list or appeared where none belongs, a Look Up
