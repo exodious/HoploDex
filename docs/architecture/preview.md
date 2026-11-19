@@ -8,7 +8,11 @@ _Part of the [architecture docs](../architecture.md)._
 preview.
 
 The `hdpreview` protocol (`protocol_handler.rs`) serves one document's bytes by
-token to the web views, which have no file access.
+token to the web views, which have no file access. `main.rs` answers each
+request off the main thread, and on macOS hands the answer to the main thread,
+where WebKit stops a request: from another thread a stop can land between wry's
+check that the request is live and its answer, and the exception WebKit raises
+then aborts a `panic = "abort"` build.
 
 A PDF is shown by the OS web view's own viewer in a child web view over the page
 area (`surface/`, one file per OS plus `frame_script.js`; no network, no IPC

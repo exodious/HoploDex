@@ -712,6 +712,21 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
     await closeViewer();
   });
 
+  it("a PDF closed as soon as it opens, 40 times over, leaves the app up", async function () {
+    // macOS: WebKit stops the surface's requests as it closes. An answer
+    // racing a stop from off the main thread aborted the app, in about 1 run
+    // in 6 of 80 such cycles on GitHub's runner (main.rs answers on the main
+    // thread now). The other OSes' web views answer on it already.
+    if (process.platform !== "darwin") this.skip();
+    this.timeout(120000);
+    await attach("Closed early.pdf", "application/pdf", pdfWith("0 0 1 rg 0 0 612 792 re f"));
+    for (let i = 0; i < 40; i++) {
+      await openDocument("Closed early.pdf");
+      await closeViewer();
+      appPid(); // throws once the app has gone
+    }
+  });
+
   it("the PDF surface lies exactly over the viewer's page area, and not over the footer", async function () {
     this.timeout(120000);
     // A page that is all magenta, which nothing else in the app is, so that

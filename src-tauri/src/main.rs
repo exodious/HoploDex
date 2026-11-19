@@ -326,10 +326,23 @@ fn main() {
                 // Only the PDF surface's web view may ask (007 contracts/
                 // tauri-commands.md "The `hdpreview` protocol").
                 let webview_label = context.webview_label().to_owned();
+                #[cfg(target_os = "macos")]
+                let app = context.app_handle().clone();
                 // The handler takes the session's lock, so not on the thread
                 // the web view asks from.
                 tauri::async_runtime::spawn_blocking(move || {
-                    responder.respond(protocol_handler::handle(&session, &webview_label, &request));
+                    let response = protocol_handler::handle(&session, &webview_label, &request);
+                    // macOS: answered on the main thread, where WebKit stops a
+                    // request. From another thread a stop can land between
+                    // wry's check that the request is live and its answer, and
+                    // WebKit's exception then ("This task has already been
+                    // stopped") aborts the app: wry's catch can't work with
+                    // `panic = "abort"`. wry answers on the main thread itself
+                    // on Linux and Windows.
+                    #[cfg(target_os = "macos")]
+                    let _ = app.run_on_main_thread(move || responder.respond(response));
+                    #[cfg(not(target_os = "macos"))]
+                    responder.respond(response);
                 });
             },
         )
