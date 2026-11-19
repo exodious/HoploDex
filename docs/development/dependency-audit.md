@@ -197,7 +197,8 @@ commit whose OpenSSL is fixed (Dependabot's pull request, or `builtin-baseline`
 by hand), which the Windows jobs then build and cache.
 
 When the check of an advisory for a neighbouring branch shows the pinned
-version isn't affected, record it in `audit-openssl.json`, as
+version isn't affected, or that HoploDex doesn't reach the affected code,
+record it in `audit-openssl.json`, as
 `audit-deprecated.json` records a deprecation. Each entry in `exceptions` has
 these fields, and the audit fails on a missing field, an unknown key, or a
 value it can't read:
@@ -205,7 +206,7 @@ value it can't read:
 | Field    | Meaning                                                        |
 | -------- | -------------------------------------------------------------- |
 | `id`     | The advisory's CVE id, `CVE-2026-1234`.                        |
-| `reason` | Why the pinned version isn't affected: what was checked.       |
+| `reason` | Why it isn't affected, or isn't reached: what was checked.     |
 | `review` | A date to look at it again, `YYYY-MM-DD`.                      |
 
 An exception clears only that check, never an advisory that lists the pinned
