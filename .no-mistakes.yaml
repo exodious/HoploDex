@@ -26,3 +26,5 @@ commands:
 pr:
   # Keep the generated Intent section out of PR bodies; the intent still guides review.
   publish_intent: false
+  # Fold the evidence into one closed Validation block, so an over-long body drops Testing instead of failing.
+  appendix: collapsed

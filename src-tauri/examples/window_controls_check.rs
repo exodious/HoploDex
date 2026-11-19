@@ -24,11 +24,11 @@
 // can hide a menu the native layer would have shown.
 //
 // The check:
-//   1. right-clicks each target and logs every item the native menu offered,
-//      from the filter's own log (`window_controls::apply(.., log_items:
-//      true)`: "context menu item ..." on Linux, "menu item ..." on macOS,
-//      and on Windows lines naming `name=<item name>`; each ends in "kept" or
-//      "removed");
+//   1. right-clicks each target, waits up to `MENU_LIMIT` for its menu, and
+//      logs every item the native menu offered, from the filter's own log
+//      (`window_controls::apply(.., log_items: true)`: "context menu item ..."
+//      on Linux, "menu item ..." on macOS, and on Windows lines naming
+//      `name=<item name>`; each ends in "kept" or "removed");
 //   2. types in the text field, then presses every 008 FR-012 key and the mouse's
 //      back and forward buttons, and after each types a letter and deletes it:
 //      the letter must reach the field (nothing took the keyboard). The page
@@ -142,6 +142,12 @@ const ROW: (f64, f64) = (200.0, 40.0);
 const BUTTON: (f64, f64) = (170.0, 100.0);
 const IMAGE: (f64, f64) = (70.0, 190.0);
 const FIELD: (f64, f64) = (210.0, 280.0);
+/// How long a menu may take to reach the filter after its right click. The
+/// first menu on a text field waits on the OS's text services: 1.9 to 3.5 s on
+/// a freshly started GitHub macos-26 runner (WebKit selects the word that late
+/// with no filter installed too), where the other menus took under 0.75 s and
+/// the same menu 0.6 to 0.8 s on a second run.
+const MENU_LIMIT: Duration = Duration::from_secs(10);
 /// Right of the field's text, so a click there puts the caret at its end.
 const FIELD_END: (f64, f64) = (400.0, 280.0);
 const PARA: (f64, f64) = (200.0, 350.0);
@@ -588,8 +594,18 @@ impl Check {
     /// Right-clicks `at`, logs the menu's items and judges them.
     fn menu(&mut self, target: &str, at: (f64, f64), expect_menu: bool) {
         let from = NATIVE.lock().unwrap().len();
+        let clicked = Instant::now();
         self.input.mouse("rclick", at, &[]);
-        thread::sleep(Duration::from_millis(1500));
+        // Every OS's filter logs each menu it sees, so wait for the menu, not a
+        // set time: an Escape sent before a late menu would leave it open.
+        if wait_until(MENU_LIMIT, || !items_since(from).is_empty()) {
+            let after = clicked.elapsed().as_secs_f64();
+            eprintln!("CHECK menu {target}: reached the filter after {after:.2} s");
+        }
+        // The rest of its items, and the menu up a moment: 1.5 s from the click
+        // at least, as a menu that comes at once has.
+        let shown = Duration::from_millis(1500).saturating_sub(clicked.elapsed());
+        thread::sleep(shown.max(Duration::from_millis(500)));
         let items = items_since(from);
         let kept: Vec<&Item> = items.iter().filter(|item| item.kept).collect();
         eprintln!("CHECK menu {target}: {} offered, {} kept", items.len(), kept.len());
@@ -606,9 +622,12 @@ impl Check {
         }
         if expect_menu && kept.is_empty() {
             let why = if items.is_empty() {
-                "the filter saw no menu (the right click may not have arrived)"
+                format!(
+                    "the filter saw no menu in {} s (the right click may not have arrived)",
+                    MENU_LIMIT.as_secs()
+                )
             } else {
-                "it kept nothing"
+                "it kept nothing".into()
             };
             self.fail(format!("the {target} offered no editing menu: {why}"));
         }
