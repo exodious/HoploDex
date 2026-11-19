@@ -38,9 +38,10 @@
 //!                                                 // it did to <file>, <address> and <pipe>,
 //!                                                 // and the Credential Manager's answer:
 //!                                                 // { "write", "create", "rename",
-//!                                                 //   "delete": bool, "udp": [bool, bool],
-//!                                                 //   "tcp": number | null, "pipe": number
-//!                                                 //   | null, "credential": number }
+//!                                                 //   "delete": bool, "udp": [number |
+//!                                                 //   null, number | null], "tcp": number
+//!                                                 //   | null, "pipe": number | null,
+//!                                                 //   "credential": number }
 //!      "env_vars": number,                        // variables in its environment
 //!      "rlimit_core": [soft, max] | null,         // unix
 //!      "dumpable": bool | null,                   // Linux
@@ -477,14 +478,13 @@ fn once_confined_it_can_reach_no_file_network_pipe_credential_program_or_parent(
     assert_eq!(json["exec_after"], false, "a confined helper started a program: {json}");
     assert_eq!(json["process_after"], false, "a confined helper opened HoploDex: {json}");
     let reach = &json["reach_after"];
-    assert_eq!(
-        reach["udp"],
-        serde_json::json!([true, true]),
-        "Winsock didn't start in the helper, so the network checks mean nothing: {json}"
-    );
     assert_ne!(reach["tcp"], 0, "a confined helper connected to this machine: {json}");
+    // Refused or sent, any answer but these shows Winsock started, so the
+    // network checks mean something; the listeners show nothing arrived.
     for code in [WSAEPROVIDERFAILEDINIT, WSANOTINITIALISED] {
-        assert_ne!(reach["tcp"], code, "Winsock didn't start in the helper: {json}");
+        for tried in [&reach["tcp"], &reach["udp"][0], &reach["udp"][1]] {
+            assert_ne!(tried, code, "Winsock didn't start in the helper: {json}");
+        }
     }
     assert!(listener.accept().is_err(), "a connection reached the listener: {json}");
     assert!(udp.recv(&mut [0; 64]).is_err(), "a datagram reached the listener: {json}");

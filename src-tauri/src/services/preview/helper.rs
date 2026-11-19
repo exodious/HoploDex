@@ -385,8 +385,9 @@ mod self_check {
     /// is on `port` and the UDP one on `<udp port>`. `file` is gone afterwards if
     /// it could delete it. `tcp` is the OS error the connect to `<address>`
     /// failed with, 0 if it connected or null if the error has none (a timeout).
-    /// `udp` says whether each send to `<address>` and to 127.0.0.1 went out,
-    /// which shows Winsock started; the test sees whether it arrived. `pipe` is
+    /// `udp` is the OS error each send to `<address>` and to 127.0.0.1 failed
+    /// with, or 0 if it went out, which shows whether Winsock started; the test
+    /// sees whether it arrived. `pipe` is
     /// the OS error opening it failed with, for writing if reading failed too,
     /// or 0 if it opened. `credential` is
     /// what reading a credential nobody has fails with: 1168 (not found) in
@@ -419,7 +420,7 @@ mod self_check {
         let send = |to: IpAddr| {
             UdpSocket::bind(("0.0.0.0", 0))
                 .and_then(|socket| socket.send_to(b"helper", (to, udp_port)))
-                .is_ok()
+                .map_or_else(|e| e.raw_os_error(), |_| Some(0))
         };
         let open = |read: bool| OpenOptions::new().read(read).write(!read).open(pipe);
         Some(json!({
