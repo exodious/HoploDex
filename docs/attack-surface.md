@@ -174,7 +174,7 @@ and peer review catch that.
 
 ## document-preview: the PDF surface, TIFF and text preview
 
-- **Code:** `src-tauri/src/services/preview/**`; `src-tauri/src/services/crash_reports.rs` (`web_view_environment`); `src-tauri/src/commands/preview.rs`; `src/features/media/DocumentPreview.tsx`; `src/features/media/PreviewSurface.tsx`; `src-tauri/examples/pdf_surface_check.rs`; `src-tauri/examples/pdf_surface_dns.c`; `scripts/pdf-surface-check.sh`; `scripts/macos/pdf-surface-check.sh`; `scripts/windows/pdf-surface-check.ps1`
+- **Code:** `src-tauri/src/services/preview/**`; `src-tauri/src/main.rs` (the `hdpreview` scheme's registration: the web view label it passes to `protocol_handler::handle`, and the thread each answer is given on); `src-tauri/src/services/crash_reports.rs` (`web_view_environment`); `src-tauri/src/commands/preview.rs`; `src/features/media/DocumentPreview.tsx`; `src/features/media/PreviewSurface.tsx`; `src-tauri/examples/pdf_surface_check.rs`; `src-tauri/examples/pdf_surface_dns.c`; `scripts/pdf-surface-check.sh`; `scripts/macos/pdf-surface-check.sh`; `scripts/windows/pdf-surface-check.ps1`
 - **Ask** (007 research.md §4 to §8, §11):
   - Does the surface have no network, no disk and no running code? On Windows, does the environment HoploDex builds for it (`surface/windows.rs`'s `customize`) carry all of `browser_args` and the surface's own data folder?
   - Is the `hdpreview` token one-time, and refused to every web view but the preview's?
