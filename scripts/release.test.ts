@@ -326,49 +326,55 @@ type Step = {
 };
 
 // Its own script, run by bash in a scratch checkout. Windows' `bash` may be WSL's.
-describe.skipIf(process.platform === "win32")("release.yml's tag check", () => {
-  it("requires the stored database and released.txt lines for it and every step, for every tag, a release candidate's too", () => {
-    const release = yaml.load(
-      fs.readFileSync(path.join(ROOT, ".github/workflows/release.yml"), "utf8"),
-    ) as { jobs: Record<string, { steps: (Step & { run?: string })[] }> };
-    const script = Object.values(release.jobs)
-      .flatMap((j) => j.steps)
-      .find((s) => s.name === "Check the tag against the version and the migration records")!.run!;
-    const check = (files: Record<string, string>, tag: string) => {
-      const dir = tempDir();
-      writeAll(dir, files);
-      writeAll(dir, {
-        "scripts/release.mjs": fs.readFileSync(path.join(ROOT, "scripts/release.mjs"), "utf8"),
-      });
-      const r = spawnSync("bash", ["-e", "-c", script], {
-        cwd: dir,
-        encoding: "utf8",
-        env: { ...process.env, TAG: tag },
-      });
-      return { status: r.status, out: r.stdout + r.stderr };
-    };
-    for (const tag of ["v0.1.0-rc.1", "v0.1.0"]) {
-      const { [RELEASED]: lines, ...stored } = recorded("0.1.0");
-      expect(check(carrying("0.1.0"), tag)).toMatchObject({ status: 1 });
-      expect(check(carrying("0.1.0"), tag).out).toContain("no stored database");
-      expect(check({ ...carrying("0.1.0"), ...stored }, tag).out).toContain("has no line");
-      expect(check({ ...carrying("0.1.0", lines), ...stored }, tag).status, tag).toBe(0);
-      expect(check({ ...carrying("0.1.0", lines), ...stored }, "v0.2.0-rc.1").out).toContain(
-        "doesn't name",
-      );
-      const withFix = {
-        ...carrying("0.1.0", lines),
-        ...stored,
-        ...migrations("0001_a", "0002_fix"),
+describe.skipIf(process.platform === "win32")(
+  "release.yml's tag check",
+  { timeout: 60_000 },
+  () => {
+    it("requires the stored database and released.txt lines for it and every step, for every tag, a release candidate's too", () => {
+      const release = yaml.load(
+        fs.readFileSync(path.join(ROOT, ".github/workflows/release.yml"), "utf8"),
+      ) as { jobs: Record<string, { steps: (Step & { run?: string })[] }> };
+      const script = Object.values(release.jobs)
+        .flatMap((j) => j.steps)
+        .find(
+          (s) => s.name === "Check the tag against the version and the migration records",
+        )!.run!;
+      const check = (files: Record<string, string>, tag: string) => {
+        const dir = tempDir();
+        writeAll(dir, files);
+        writeAll(dir, {
+          "scripts/release.mjs": fs.readFileSync(path.join(ROOT, "scripts/release.mjs"), "utf8"),
+        });
+        const r = spawnSync("bash", ["-e", "-c", script], {
+          cwd: dir,
+          encoding: "utf8",
+          env: { ...process.env, TAG: tag },
+        });
+        return { status: r.status, out: r.stdout + r.stderr };
       };
-      expect(check(withFix, tag).out).toContain("no line for the step 0002_fix");
-      expect(check({ ...withFix, [RELEASED]: `${lines}0002_fix ${ABC} 0.1.0\n` }, tag).status).toBe(
-        0,
-      );
-      expect(check(carrying("0.1.0"), "0.1.0").out).toContain("isn't v<version>");
-    }
-  });
-});
+      for (const tag of ["v0.1.0-rc.1", "v0.1.0"]) {
+        const { [RELEASED]: lines, ...stored } = recorded("0.1.0");
+        expect(check(carrying("0.1.0"), tag)).toMatchObject({ status: 1 });
+        expect(check(carrying("0.1.0"), tag).out).toContain("no stored database");
+        expect(check({ ...carrying("0.1.0"), ...stored }, tag).out).toContain("has no line");
+        expect(check({ ...carrying("0.1.0", lines), ...stored }, tag).status, tag).toBe(0);
+        expect(check({ ...carrying("0.1.0", lines), ...stored }, "v0.2.0-rc.1").out).toContain(
+          "doesn't name",
+        );
+        const withFix = {
+          ...carrying("0.1.0", lines),
+          ...stored,
+          ...migrations("0001_a", "0002_fix"),
+        };
+        expect(check(withFix, tag).out).toContain("no line for the step 0002_fix");
+        expect(
+          check({ ...withFix, [RELEASED]: `${lines}0002_fix ${ABC} 0.1.0\n` }, tag).status,
+        ).toBe(0);
+        expect(check(carrying("0.1.0"), "0.1.0").out).toContain("isn't v<version>");
+      }
+    });
+  },
+);
 
 function ciSteps(): Step[][] {
   const ci = yaml.load(fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8")) as {

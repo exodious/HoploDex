@@ -20,8 +20,9 @@
 //!   has a `Default` of 20 s and 10 s. A load or render that passes its limit
 //!   returns an error, and the helper has been killed by then.
 //! - A self-check mode, `hoplodex --render-helper --self-check <port>
-//!   <file> [<process id>]`: it tries to open `<file>`, to connect to 127.0.0.1:<port> and to
-//!   start a program, confines itself exactly as it does before serving
+//!   <file> [<process id> [<address> <udp port> <pipe>]]`: it tries to open
+//!   `<file>`, to connect to 127.0.0.1:<port> and to start a program,
+//!   confines itself exactly as it does before serving
 //!   frames, tries all three again, and prints one JSON line then exits 0.
 //!   On Linux, `<socket path> <abstract name>` in place of the process id are
 //!   Unix sockets it tries to connect to as well, before and after:
@@ -33,6 +34,14 @@
 //!      "unix_after": object | null,               // `abstract`, 0 if it connected, else the error
 //!      "process_after": bool | null,              // Windows, given <process id>: could open it
 //!      "windows_after": number | null,            // Windows: top-level windows it sees
+//!      "reach_after": object | null,              // Windows, given the last three: what
+//!                                                 // it did to <file>, <address> and <pipe>,
+//!                                                 // and the Credential Manager's answer:
+//!                                                 // { "write", "create", "rename",
+//!                                                 //   "delete": bool, "udp": [number |
+//!                                                 //   null, number | null], "tcp": number
+//!                                                 //   | null, "pipe": number | null,
+//!                                                 //   "credential": number }
 //!      "env_vars": number,                        // variables in its environment
 //!      "rlimit_core": [soft, max] | null,         // unix
 //!      "dumpable": bool | null,                   // Linux
@@ -386,22 +395,58 @@ fn it_holds_no_descriptor_it_inherited() {
 }
 
 /// Windows' measures (007 research.md §11, amended 2026-11-07): the
-/// AppContainer has no capability, so the helper has no user file, no network
-/// and no reach into HoploDex from its first instruction, and the job object's
-/// one-process limit and child-process policy stop it starting a program. The
-/// probes mean something because this test, outside the container, can do each.
+/// AppContainer has no capability, so from its first instruction the helper
+/// can't read, write, create, rename or delete a user's file, reach a listener
+/// on this machine by TCP or UDP, at loopback or the machine's own address, open
+/// a user's named pipe, reach the user's Credential Manager or reach into
+/// HoploDex, and the job object's one-process limit and child-process policy
+/// stop it starting a program. The probes mean something because this test,
+/// outside the container, can do each. The Credential Manager's is read-only:
+/// it asks for a credential nobody has, which this test is told isn't there and
+/// the helper is refused.
 #[cfg(all(debug_assertions, windows))]
 #[test]
-fn once_confined_it_can_reach_no_file_network_program_or_parent() {
+fn once_confined_it_can_reach_no_file_network_pipe_credential_program_or_parent() {
+    use std::net::{Ipv4Addr, UdpSocket};
+    use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_NOT_FOUND};
+    use windows_sys::Win32::Networking::WinSock::{WSAEPROVIDERFAILEDINIT, WSANOTINITIALISED};
+
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("secret.txt");
     std::fs::write(&file, b"not for the helper").unwrap();
     std::fs::File::open(&file).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    std::fs::OpenOptions::new().write(true).open(&file).unwrap();
+    std::fs::rename(&file, file.with_extension("moved")).unwrap();
+    std::fs::rename(file.with_extension("moved"), &file).unwrap();
+    std::fs::File::create_new(file.with_extension("made")).unwrap();
+    std::fs::remove_file(file.with_extension("made")).unwrap();
+
+    // Listeners on all of this machine's interfaces: loopback and its own
+    // address. Each takes what this test sends it.
+    let own = own_address();
+    let listener = TcpListener::bind("0.0.0.0:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-    let ours = listener.accept().unwrap();
+    let ours = [Ipv4Addr::LOCALHOST.into(), own].map(|to| {
+        std::net::TcpStream::connect((to, port)).unwrap();
+        listener.accept().unwrap()
+    });
     listener.set_nonblocking(true).unwrap();
+    let udp = UdpSocket::bind("0.0.0.0:0").unwrap();
+    let udp_port = udp.local_addr().unwrap().port();
+    udp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    for to in [Ipv4Addr::LOCALHOST.into(), own] {
+        UdpSocket::bind("0.0.0.0:0").unwrap().send_to(b"test", (to, udp_port)).unwrap();
+        udp.recv(&mut [0; 64]).unwrap();
+    }
+    udp.set_nonblocking(true).unwrap();
+
+    let pipe = format!(r"\\.\pipe\hoplodex-test-{}", std::process::id());
+    // One instance for this test to show it opens, one left for the helper.
+    let _instances = [user_pipe(&pipe), user_pipe(&pipe)];
+    let _client = std::fs::OpenOptions::new().read(true).write(true).open(&pipe).unwrap();
+
+    assert_eq!(credential_error(), ERROR_NOT_FOUND, "the check means nothing");
+
     assert!(
         std::process::Command::new(r"C:\Windows\System32\whoami.exe")
             .stdout(std::process::Stdio::null())
@@ -411,8 +456,15 @@ fn once_confined_it_can_reach_no_file_network_program_or_parent() {
     );
 
     let parent = std::process::id().to_string();
-    let (success, stdout) =
-        run_self_check(&["--self-check", &port.to_string(), file.to_str().unwrap(), &parent]);
+    let (success, stdout) = run_self_check(&[
+        "--self-check",
+        &port.to_string(),
+        file.to_str().unwrap(),
+        &parent,
+        &own.to_string(),
+        &udp_port.to_string(),
+        &pipe,
+    ]);
     assert!(success, "the self-check failed");
     let json: Value =
         serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{e}: {stdout}"));
@@ -425,7 +477,95 @@ fn once_confined_it_can_reach_no_file_network_program_or_parent() {
     assert_eq!(json["tcp_after"], false, "a confined helper connected: {json}");
     assert_eq!(json["exec_after"], false, "a confined helper started a program: {json}");
     assert_eq!(json["process_after"], false, "a confined helper opened HoploDex: {json}");
+    let reach = &json["reach_after"];
+    assert_ne!(reach["tcp"], 0, "a confined helper connected to this machine: {json}");
+    // Refused or sent, any answer but these shows Winsock started, so the
+    // network checks mean something; the listeners show nothing arrived.
+    for code in [WSAEPROVIDERFAILEDINIT, WSANOTINITIALISED] {
+        for tried in [&reach["tcp"], &reach["udp"][0], &reach["udp"][1]] {
+            assert_ne!(tried, code, "Winsock didn't start in the helper: {json}");
+        }
+    }
     assert!(listener.accept().is_err(), "a connection reached the listener: {json}");
+    assert!(udp.recv(&mut [0; 64]).is_err(), "a datagram reached the listener: {json}");
+    for what in ["write", "create", "rename", "delete"] {
+        assert_eq!(reach[what], false, "a confined helper could {what} a user's file: {json}");
+    }
+    assert_eq!(std::fs::read(&file).unwrap(), b"not for the helper");
+    assert!(!file.with_extension("made").exists() && !file.with_extension("moved").exists());
+    assert_eq!(
+        reach["pipe"], ERROR_ACCESS_DENIED,
+        "a confined helper opened a user's named pipe, or the check means nothing: {json}"
+    );
+    assert_eq!(
+        reach["credential"], ERROR_ACCESS_DENIED,
+        "a confined helper reached the user's Credential Manager: {json}"
+    );
+}
+
+/// The error `CredReadW` gives for a generic credential nobody has, as the
+/// self-check asks for it, or 0 if someone has it.
+#[cfg(all(debug_assertions, windows))]
+fn credential_error() -> u32 {
+    use windows_sys::Win32::Foundation::GetLastError;
+    use windows_sys::Win32::Security::Credentials::{
+        CRED_TYPE_GENERIC, CREDENTIALW, CredFree, CredReadW,
+    };
+    let name: Vec<u16> = "hoplodex-test-no-such-credential".encode_utf16().chain([0]).collect();
+    let mut found: *mut CREDENTIALW = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated name that outlives the call; what it finds is
+    // freed once.
+    unsafe {
+        if CredReadW(name.as_ptr(), CRED_TYPE_GENERIC, 0, &mut found) == 0 {
+            return GetLastError();
+        }
+        CredFree(found.cast());
+    }
+    0
+}
+
+/// An IPv4 address of this machine's own that isn't loopback.
+#[cfg(all(debug_assertions, windows))]
+fn own_address() -> std::net::IpAddr {
+    use std::net::ToSocketAddrs;
+    let name = std::env::var("COMPUTERNAME").unwrap();
+    (name.as_str(), 0)
+        .to_socket_addrs()
+        .unwrap()
+        .map(|address| address.ip())
+        .find(|ip| ip.is_ipv4() && !ip.is_loopback())
+        .expect("this machine has no address but loopback, so the check means nothing")
+}
+
+/// One instance of a named pipe as a user's program makes one: the default
+/// security, which lets the user's own processes open it.
+#[cfg(all(debug_assertions, windows))]
+fn user_pipe(name: &str) -> std::os::windows::io::OwnedHandle {
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::FromRawHandle;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
+    use windows_sys::Win32::System::Pipes::{
+        CreateNamedPipeW, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
+    };
+
+    let wide: Vec<u16> = std::ffi::OsStr::new(name).encode_wide().chain([0]).collect();
+    // SAFETY: a NUL-terminated name that outlives the call, and no security
+    // attributes; a handle it returns is owned once.
+    unsafe {
+        let handle = CreateNamedPipeW(
+            wide.as_ptr(),
+            PIPE_ACCESS_DUPLEX,
+            PIPE_TYPE_BYTE,
+            PIPE_UNLIMITED_INSTANCES,
+            0,
+            0,
+            0,
+            std::ptr::null(),
+        );
+        assert_ne!(handle, INVALID_HANDLE_VALUE, "{}", std::io::Error::last_os_error());
+        std::os::windows::io::OwnedHandle::from_raw_handle(handle)
+    }
 }
 
 /// Each helper has a container of its own (007 research.md §11, amended

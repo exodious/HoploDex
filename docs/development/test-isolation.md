@@ -33,6 +33,10 @@ of it:
   holds no database, key or setting, and is deleted when the helper ends. The
   app's start-up deletes any left by processes that have gone, its own or a real
   one's, and leaves those of running ones.
+- On Windows, `tests/tiff_helper_test.rs` reads the Credential Manager, read
+  only: a generic credential named `hoplodex-test-no-such-credential`, which
+  nobody has, to show that the test is told it isn't there and a helper is
+  refused. It writes nothing and reads no real entry.
 - The troubleshooting log (`src-tauri/src/logging.rs`, 013) writes under the app's
   cache directory, so an E2E run's file is in its sandbox like the rest. The
   sandbox also sets `HOPLODEX_LOG=off`, so no run gets the log's notice on the
