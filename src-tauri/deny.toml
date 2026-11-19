@@ -94,6 +94,17 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
+    # chrono is unmaintained (RUSTSEC-2026-0543); all versions are affected
+    # and there is no release to move to. An unmaintained notice: no known
+    # vulnerability.
+    #
+    # HoploDex uses it directly, and through rusqlite's `chrono` feature and
+    # zxcvbn 3.1, so dropping HoploDex's own use wouldn't remove it either.
+    # Moving off it, to jiff or time, is #197. Checked 2026-11-18 at
+    # chrono 0.4.45.
+    #
+    # Review by 2027-01-17.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, no known vulnerability; direct, via rusqlite's chrono feature and zxcvbn" },
     # SQLite before 3.54.0 can return uninitialized page-cache memory when it
     # opens a database file with a sibling `-wal` file whose page size differs
     # from the database's (RUSTSEC-2026-0459, CVE-2026-119375). HoploDex
