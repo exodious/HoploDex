@@ -29,7 +29,10 @@
 //      session must never hold that file (a drag that starts in the page is
 //      not a drop of the user's files);
 //   3. does the same from a second web view in the main window, as the PDF
-//      surface is one, onto the main web view.
+//      surface is one, onto the main web view, from outside the window and
+//      back, and (Linux and macOS) from a window of the check's own process,
+//      a drag that does reach wry;
+//   4. drops another file from the other app, which must still be attachable.
 // It fails (exit 4, one "CHECK FAIL" line each) if the native drop isn't
 // attachable, if a drag from the app is, or if a drag from the app never
 // started (so that part proved nothing). `--no-refusal` leaves out
@@ -460,6 +463,9 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
         let from = (IN_APP_SOURCE_AT.0 + 80, IN_APP_SOURCE_AT.1 + 80);
         check.app_drag("a window of the app's own process", from, open, None, &planted);
     }
+    // A real drop still attaches after the app's own drags: nothing they left
+    // behind refuses it.
+    check.native_drop(&options, &options.scratch.join("native-after.pdf"), open);
     screenshot(&options.out.join(format!("drop-{}.png", std::env::consts::OS)));
 
     if check.failures.is_empty() {
@@ -639,7 +645,7 @@ fn main() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../e2e/screenshots-out/drop-check")
     });
     std::fs::create_dir_all(&out).unwrap();
-    for name in ["native.pdf", "planted.pdf"] {
+    for name in ["native.pdf", "native-after.pdf", "planted.pdf"] {
         std::fs::write(scratch.join(name), b"%PDF-1.4 a drop check file").unwrap();
     }
 

@@ -16,6 +16,7 @@ use tauri::{Runtime, WebviewWindow};
 use windows::{
     Win32::{
         Foundation::{HWND, LPARAM, POINTL},
+        System::Threading::GetCurrentThreadId,
         System::{
             Com::{DVASPECT_CONTENT, FORMATETC, IDataObject, TYMED_HGLOBAL},
             DataExchange::RegisterClipboardFormatW,
@@ -25,7 +26,7 @@ use windows::{
             },
             SystemServices::MODIFIERKEYS_FLAGS,
         },
-        UI::WindowsAndMessaging::{EnumChildWindows, GetPropW},
+        UI::WindowsAndMessaging::{EnumChildWindows, GetPropW, GetWindowThreadProcessId},
     },
     core::{BOOL, Interface, Ref, implement, w},
 };
@@ -74,11 +75,17 @@ fn wrap_all(parent: HWND) -> usize {
     wrapped
 }
 
-/// Replaces `hwnd`'s registered drop target with the filter in front of it.
+/// Replaces `hwnd`'s registered drop target with the filter in front of it,
+/// if `hwnd` is a window of this thread (the enumeration also lists the
+/// WebView2 processes' windows, whose property means nothing here).
 ///
 /// # Safety
-/// `hwnd` is a window of this thread.
+/// `hwnd` is a live window handle.
 unsafe fn wrap(hwnd: HWND) -> bool {
+    // SAFETY: plain queries of a window handle and of this thread.
+    if unsafe { GetWindowThreadProcessId(hwnd, None) != GetCurrentThreadId() } {
+        return false;
+    }
     // SAFETY: OLE keeps the target `RegisterDragDrop` was given in this
     // property, holding a reference, until `RevokeDragDrop`; the clone takes
     // a reference of its own before that.
