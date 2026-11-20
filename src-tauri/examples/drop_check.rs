@@ -272,6 +272,9 @@ fn screenshot(path: &Path) {
     }
 }
 
+/// How many drags the app's refusal logged as refused.
+static REFUSALS: AtomicUsize = AtomicUsize::new(0);
+
 /// Prints the app's own drop lines (`drops`), so the log shows each refusal.
 struct Capture;
 
@@ -282,7 +285,11 @@ impl log::Log for Capture {
 
     fn log(&self, record: &log::Record) {
         if record.module_path().unwrap_or("").contains("drops") {
-            eprintln!("CHECK app: {}", record.args());
+            let line = record.args().to_string();
+            if line.contains("was not taken as a drop") {
+                REFUSALS.fetch_add(1, Ordering::SeqCst);
+            }
+            eprintln!("CHECK app: {line}");
         }
     }
 
@@ -304,6 +311,8 @@ fn log_drag(source: &str, label: &str, event: &DragDropEvent) {
 }
 
 struct Check {
+    /// Whether `drops::refuse_app_drags` is installed (not `--no-refusal`).
+    refusal: bool,
     session: Session,
     shared: Arc<Shared>,
     input: Input,
@@ -363,7 +372,9 @@ impl Check {
         target: (f64, f64),
         via: Option<(i64, i64)>,
         planted: &Path,
+        reaches_wry: bool,
     ) {
+        let refusals = REFUSALS.load(Ordering::SeqCst);
         // Only a page reports its drag's start.
         let page = what.contains("page") || what.contains("web view");
         let starts = self.shared.drag_starts.load(Ordering::SeqCst);
@@ -387,6 +398,14 @@ impl Check {
             ));
         } else if started {
             eprintln!("CHECK the drag from {what} was not recorded");
+        }
+        // A drag that reaches wry must have met the refusal, not merely
+        // carried no file this time.
+        if self.refusal
+            && reaches_wry
+            && !wait_until(Duration::from_secs(2), || REFUSALS.load(Ordering::SeqCst) > refusals)
+        {
+            self.fail(format!("the refusal never saw the drag from {what}"));
         }
     }
 }
@@ -420,7 +439,8 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
 
     let native = options.scratch.join("native.pdf");
     let planted = options.scratch.join("planted.pdf");
-    let mut check = Check { session, shared, input, failures: Vec::new() };
+    let mut check =
+        Check { refusal: options.refusal, session, shared, input, failures: Vec::new() };
     let main = bounds(&app, drops::MAIN_WINDOW, scale);
     #[allow(unused_mut)]
     let mut other = bounds(&app, "other", scale);
@@ -440,11 +460,21 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
     };
     check.native_drop(&options, &native, open);
     let (main_link, other_link) = (check.input.at(main.link()), check.input.at(other.link()));
-    check.app_drag("the main page", main_link, page_target, None, &planted);
-    check.app_drag("a second web view", other_link, open, None, &planted);
+    // WebKit keeps a drag between its own web views to itself, so on Linux and
+    // macOS a page's drag never reaches wry; WebView2's does (with no file).
+    let page_reaches_wry = cfg!(windows);
+    check.app_drag("the main page", main_link, page_target, None, &planted, page_reaches_wry);
+    check.app_drag("a second web view", other_link, open, None, &planted, page_reaches_wry);
     // Out of the window (above it, on the screen's edge) and back.
     let outside = (main_link.0, 5);
-    check.app_drag("the main page, out and back", main_link, open, Some(outside), &planted);
+    check.app_drag(
+        "the main page, out and back",
+        main_link,
+        open,
+        Some(outside),
+        &planted,
+        page_reaches_wry,
+    );
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         // A window of the app's own process holding the planted file, as a
@@ -461,7 +491,7 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
         receive.recv_timeout(Duration::from_secs(5)).unwrap();
         thread::sleep(Duration::from_secs(2));
         let from = (IN_APP_SOURCE_AT.0 + 80, IN_APP_SOURCE_AT.1 + 80);
-        check.app_drag("a window of the app's own process", from, open, None, &planted);
+        check.app_drag("a window of the app's own process", from, open, None, &planted, true);
     }
     // A real drop still attaches after the app's own drags: nothing they left
     // behind refuses it.

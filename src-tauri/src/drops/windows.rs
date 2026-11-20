@@ -16,7 +16,7 @@ use tauri::{Runtime, WebviewWindow};
 use windows::{
     Win32::{
         Foundation::{HWND, LPARAM, POINTL},
-        System::Threading::GetCurrentThreadId,
+        System::Threading::GetCurrentProcessId,
         System::{
             Com::{DVASPECT_CONTENT, FORMATETC, IDataObject, TYMED_HGLOBAL},
             DataExchange::RegisterClipboardFormatW,
@@ -76,15 +76,22 @@ fn wrap_all(parent: HWND) -> usize {
 }
 
 /// Replaces `hwnd`'s registered drop target with the filter in front of it,
-/// if `hwnd` is a window of this thread (the enumeration also lists the
-/// WebView2 processes' windows, whose property means nothing here).
+/// if `hwnd` is a window of this process (the enumeration also lists the
+/// WebView2 processes' windows, whose property means nothing here). Not of
+/// this thread only: wry's targets are on WebView2's windows of this process,
+/// which another thread owns.
 ///
 /// # Safety
 /// `hwnd` is a live window handle.
 unsafe fn wrap(hwnd: HWND) -> bool {
-    // SAFETY: plain queries of a window handle and of this thread.
-    if unsafe { GetWindowThreadProcessId(hwnd, None) != GetCurrentThreadId() } {
-        return false;
+    let mut process = 0u32;
+    // SAFETY: plain queries of a window handle, into a local, and of this
+    // process.
+    unsafe {
+        GetWindowThreadProcessId(hwnd, Some(&mut process));
+        if process != GetCurrentProcessId() {
+            return false;
+        }
     }
     // SAFETY: OLE keeps the target `RegisterDragDrop` was given in this
     // property, holding a reference, until `RevokeDragDrop`; the clone takes
