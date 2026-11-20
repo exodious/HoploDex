@@ -37,9 +37,10 @@ use windows::{
 
 /// Puts the filter in front of wry's drop target on every window of the main
 /// web view, on the main thread, and then lets drops be recorded. Fails, and
-/// no drop is recorded, if wry's target is on none of them.
+/// no drop is recorded, if wry's target is on none of them, or if one of
+/// them couldn't be wrapped (that window would take drops unfiltered).
 pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
-    let (done, result) = std::sync::mpsc::channel::<Result<usize, String>>();
+    let (done, result) = std::sync::mpsc::channel::<Result<Wrapped, String>>();
     window.with_webview(move |platform| {
         let mut parent = HWND::default();
         // SAFETY: the controller's own window, asked on its thread, into a
@@ -48,7 +49,12 @@ pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<
         let _ = done.send(asked.map_err(|e| e.to_string()).map(|()| wrap_all(parent)));
     })?;
     match result.recv_timeout(std::time::Duration::from_secs(10)) {
-        Ok(Ok(0)) => Err(std::io::Error::other("no drop target to filter").into()),
+        Ok(Ok(Wrapped { failed, .. })) if failed > 0 => {
+            Err(std::io::Error::other("a drop target couldn't be filtered").into())
+        }
+        Ok(Ok(Wrapped { wrapped: 0, .. })) => {
+            Err(std::io::Error::other("no drop target to filter").into())
+        }
         Ok(Ok(_)) => {
             super::refusing();
             Ok(())
@@ -58,57 +64,70 @@ pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<
     }
 }
 
+/// How many of wry's drop targets were wrapped, and how many couldn't be.
+#[derive(Default)]
+struct Wrapped {
+    wrapped: usize,
+    failed: usize,
+}
+
 /// Wraps the drop target of every window under `parent` (wry registers one on
-/// each when it builds the web view) and returns how many it wrapped.
-fn wrap_all(parent: HWND) -> usize {
-    let mut wrapped = 0usize;
-    unsafe extern "system" fn each(hwnd: HWND, count: LPARAM) -> BOOL {
-        // SAFETY: `count` is the `usize` `wrap_all` passed, alive for the call.
+/// each when it builds the web view).
+fn wrap_all(parent: HWND) -> Wrapped {
+    let mut counts = Wrapped::default();
+    unsafe extern "system" fn each(hwnd: HWND, counts: LPARAM) -> BOOL {
+        // SAFETY: `counts` is the `Wrapped` `wrap_all` passed, alive for the
+        // call.
         unsafe {
-            if wrap(hwnd) {
-                *(count.0 as *mut usize) += 1;
+            let counts = &mut *(counts.0 as *mut Wrapped);
+            match wrap(hwnd) {
+                Some(true) => counts.wrapped += 1,
+                Some(false) => counts.failed += 1,
+                None => {}
             }
         }
         true.into()
     }
     // SAFETY: the callback only reads the windows it is given.
     unsafe {
-        let _ =
-            EnumChildWindows(Some(parent), Some(each), LPARAM(&mut wrapped as *mut usize as isize));
+        let _ = EnumChildWindows(
+            Some(parent),
+            Some(each),
+            LPARAM(&mut counts as *mut Wrapped as isize),
+        );
     }
-    wrapped
+    counts
 }
 
 /// Replaces `hwnd`'s registered drop target with the filter in front of it,
-/// if the target is wry's. wry registers on WebView2's windows, which its
+/// if the target is wry's: `None` when it isn't (or there is none), else
+/// whether the filter is in place. wry registers on WebView2's windows, which its
 /// browser and GPU processes own, so neither the window's process nor its
 /// thread says whose the property's pointer is; [`ours`] asks the pointer.
 ///
 /// # Safety
 /// `hwnd` is a live window handle.
-unsafe fn wrap(hwnd: HWND) -> bool {
+unsafe fn wrap(hwnd: HWND) -> Option<bool> {
     // SAFETY: OLE keeps the target `RegisterDragDrop` was given in this
     // property, holding a reference, until `RevokeDragDrop`; the clone takes
     // a reference of its own before that.
     unsafe {
         let raw = GetPropW(hwnd, w!("OleDropTargetInterface"));
         if raw.0.is_null() || !ours(raw.0) {
-            return false;
+            return None;
         }
-        let Some(inner) = IDropTarget::from_raw_borrowed(&raw.0).cloned() else {
-            return false;
-        };
+        let inner = IDropTarget::from_raw_borrowed(&raw.0).cloned()?;
         if RevokeDragDrop(hwnd).is_err() {
-            return false;
+            return Some(false);
         }
         let filter: IDropTarget =
             AppDragFilter { inner: inner.clone(), refused: Cell::new(false) }.into();
         if RegisterDragDrop(hwnd, &filter).is_err() {
             // Put wry's back rather than leave the window without one.
             let _ = RegisterDragDrop(hwnd, &inner);
-            return false;
+            return Some(false);
         }
-        true
+        Some(true)
     }
 }
 
