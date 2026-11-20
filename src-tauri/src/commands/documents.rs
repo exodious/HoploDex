@@ -191,6 +191,22 @@ pub mod ops {
         add_document(conn, owner, &file.bytes, &file.filename)
     }
 
+    /// [`add_document_from_path`] for a file dropped onto the main window in
+    /// session `id`: a path the user didn't drop there moments ago is refused
+    /// with a fixed `VALIDATION_ERROR` before reach or the file is looked at,
+    /// and a drop attaches once (code scanning alert `paths/cwe-73` on
+    /// `add_document_from_path`).
+    pub fn add_dropped_document(
+        session: &Session,
+        id: SessionId,
+        owner: RecordRef,
+        path: &Path,
+        reach: &Reach,
+    ) -> Result<DocumentAttachment, CommandError> {
+        let path = session.take_drop(id, path)?;
+        session.write(id, |conn| add_document_from_path(conn, owner, &path, reach))
+    }
+
     pub fn delete_document(
         conn: &Connection,
         id: i64,
@@ -1145,8 +1161,8 @@ pub async fn add_document(
     })
 }
 
-/// Attaches a document from a file on disk: what a drop onto the window
-/// delivers.
+/// Attaches a document dropped onto the window, by the path the drop
+/// delivered; only a file the user dropped (`ops::add_dropped_document`).
 #[tauri::command]
 pub async fn add_document_from_path(
     owner: RecordRef,
@@ -1156,10 +1172,8 @@ pub async fn add_document_from_path(
     reach: State<'_, Arc<Reach>>,
 ) -> Result<DocumentSummary, CommandError> {
     let pdf = pdf.get();
-    session.write(|conn| {
-        ops::add_document_from_path(conn, owner, Path::new(&path), &reach)
-            .map(|document| DocumentSummary::new(document, &pdf))
-    })
+    ops::add_dropped_document(&session.session, session.id, owner, Path::new(&path), &reach)
+        .map(|document| DocumentSummary::new(document, &pdf))
 }
 
 #[tauri::command]

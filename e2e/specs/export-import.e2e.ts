@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { $, addFirearm, back, browser, clickButton, expect, fill } from "../support/ui";
+import { $, addFirearm, back, browser, clickButton, expect, invokeFailure } from "../support/ui";
 import { createDatabase, dialogHeightWhenOpened, listedNames } from "../support/ui";
 import { scratchDocuments, search } from "../support/ui";
-import { importFile, tally } from "../support/importExport";
+import { chooseExportFolder, chooseImportFiles, importFile, tally } from "../support/importExport";
 import { writeSheetsWorkbook } from "../support/spreadsheets";
 
 /**
@@ -103,7 +103,7 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     await back();
 
     await clickButton("Export");
-    await fill("Save to folder", workDir);
+    await chooseExportFolder(workDir);
     await clickButton("Export");
 
     await $(".hd-outcome__headline*=Exported").waitForExist({
@@ -158,6 +158,30 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     await search("");
   });
 
+  // Code scanning alerts paths/cwe-73 on export_collection_stoppable and
+  // add_document_from_path (amended 2026-11-19 to 001 FR-018, FR-019): the export writes
+  // only to a folder, and the import reads only files, the user picked in the chooser
+  // the backend opened, whatever the page names.
+  it("exports only to a folder and imports only a file picked in the chooser (001 FR-018, FR-019)", async () => {
+    const folder = fs.mkdtempSync(path.join(scratchDocuments(), "not-picked-"));
+    const spreadsheet = path.join(folder, "not-picked.csv");
+    fs.writeFileSync(spreadsheet, csvFile(firearmRow("NotPickedE2E", "19", "NP-001")));
+
+    const exported = await invokeFailure("export_collection", {
+      input: { format: "csv", folderToken: folder, scope: "all" },
+    });
+    expect(exported).toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(fs.readdirSync(folder)).toEqual(["not-picked.csv"]);
+
+    const imported = await invokeFailure("import_collection", {
+      input: { fileTokens: [spreadsheet] },
+    });
+    expect(imported).toMatchObject({ code: "VALIDATION_ERROR" });
+    await search("NotPickedE2E");
+    expect(await listedNames()).toEqual([]);
+    await search("");
+  });
+
   // 008 US2 (008 spec.md FR-006 to FR-008; 008 contracts/ui.md §2).
   it("refuses a workbook over the import's limits and names it (008 US2, a refused file)", async () => {
     // Stands in for `import-samples/import-refused-too-many-sheets.xlsx`
@@ -168,7 +192,7 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     writeSheetsWorkbook(workbook, 17);
 
     await clickButton("Import");
-    await fill("Spreadsheet file", workbook);
+    await chooseImportFiles(workbook);
     await clickButton("Import");
 
     const banner = await $('[role="alert"]');
@@ -199,7 +223,7 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     fs.closeSync(fd);
 
     await clickButton("Import");
-    await fill("Spreadsheet file", large);
+    await chooseImportFiles(large);
     // The reading is one request in flight, so the app stays busy until it ends.
     await clickButton("Import", { settles: false });
     // The bar names the file and shows how much is read.

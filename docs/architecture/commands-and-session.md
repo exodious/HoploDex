@@ -65,6 +65,16 @@ restore, a quit, sleep, screen lock or shutdown), `upgrade_database` takes the
 backup before the upgrade, runs `db::upgrade::upgrade` and installs the
 database, and `cancel_upgrade` drops the slot or stops that backup.
 
+`session/grants.rs` holds what the user handed the app outside the page, for
+the open session only: the paths of files dropped onto the main window
+(recorded by `main.rs`'s `on_window_event`, kept two minutes) and the files and
+folder picked in a chooser Rust opened, under tokens (`choose_import_files`,
+`choose_export_folder`). `add_photo_from_path` and `add_document_from_path`
+take a drop once (`take_drop`); `import_collection` and `export_collection`
+take picks by token (`take_pick`), and put them back when the operation fails
+(`put_back_pick`). It has a mutex of its own, so a drop is recorded on the main
+thread without waiting for the database's, and `forget_open` empties it.
+
 Each open, unlock and restore gets a `SessionId` from a counter that only goes
 up within a run (`Session::current_id()` reads it without the mutex; 0 is none;
 a passphrase change keeps it), sent to the frontend as

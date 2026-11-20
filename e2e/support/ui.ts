@@ -839,6 +839,16 @@ export function answerPassphrase(...answers: PassphraseAnswer[]) {
   fs.appendFileSync(queue, `${lines.join("\n")}\n`);
 }
 
+/** Queues what the next native file or folder chooser answers: the paths the
+ * user picks, none for a cancel. No WebDriver can pick in one, so an E2E build
+ * answers the choosers the import and export open from Rust from this queue
+ * (code scanning alerts paths/cwe-73). A chooser with nothing queued cancels. */
+export function answerChooser(...paths: string[]) {
+  const queue = process.env.HOPLODEX_E2E_CHOOSER;
+  if (!queue) throw new Error("HOPLODEX_E2E_CHOOSER is not set (sandbox.ts)");
+  fs.appendFileSync(queue, `${JSON.stringify(paths)}\n`);
+}
+
 /** What the passphrase dialog logged, a JSON object a line: `asked` (its
  * title, message, primary button and fields), `shown` (the real dialog has
  * the focus in its first field), `retry` (the refusal under a field),
@@ -963,6 +973,57 @@ export async function selectChooserRow(name: string) {
  * the open database's session in the `HoploDex-Session` header, as the
  * frontend's scope does (spec 008 FR-004), which every command outside
  * `UNSCOPED_COMMANDS` requires; the id comes from `get_database_status`. */
+/** Drops `paths` onto the window as the OS's drag and drop does: Tauri's
+ * `tauri://drag-drop` event with the paths, which WebDriver can't make by
+ * dragging from the desktop. An E2E build records the paths as the window's
+ * handler records a real drop (main.rs), so `add_*_from_path` takes them. */
+export async function dropFiles(paths: string[]) {
+  await browser.execute((dropped: string[]) => {
+    type Invoke = (cmd: string, args: unknown) => Promise<unknown>;
+    const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: Invoke } })
+      .__TAURI_INTERNALS__;
+    void internals.invoke("plugin:event|emit", {
+      event: "tauri://drag-drop",
+      payload: { paths: dropped, position: { x: 10, y: 10 } },
+    });
+  }, paths);
+}
+
+/** An error `invoke` rejects with, as the command's `CommandError`, or null. */
+export async function invokeFailure(
+  cmd: string,
+  args: Record<string, unknown>,
+): Promise<{ code: string } | null> {
+  return browser.execute(
+    async (name: string, data: Record<string, unknown>) => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: {
+            invoke: (cmd: string, args: unknown, options?: unknown) => Promise<unknown>;
+          };
+        }
+      ).__TAURI_INTERNALS__;
+      const status = (await internals.invoke("get_database_status", {})) as {
+        sessionId?: number | null;
+      };
+      try {
+        await internals.invoke(
+          name,
+          data,
+          status.sessionId == null
+            ? undefined
+            : { headers: { "HoploDex-Session": String(status.sessionId) } },
+        );
+        return null;
+      } catch (error) {
+        return error;
+      }
+    },
+    cmd,
+    args,
+  ) as Promise<{ code: string } | null>;
+}
+
 export async function invokeCommand(cmd: string, args: Record<string, unknown>) {
   return browser.execute(
     async (name: string, data: Record<string, unknown>) => {

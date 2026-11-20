@@ -113,6 +113,8 @@ type DocumentOpening = "preview" | "external";
 
 ### `add_document_from_path`
 
+_Amended 2026-11-19: only a path the user dropped onto the window in the open session, once; see [001's `add_photo_from_path` / `add_document_from_path`](../../001-firearms-inventory/contracts/tauri-commands.md#add_photo_from_path--add_document_from_path)._
+
 - **Input and output**: unchanged.
 - **Errors**: as `add_document`.
 

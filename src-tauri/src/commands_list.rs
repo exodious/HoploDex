@@ -85,6 +85,8 @@ pub const COMMANDS: &[&str] = &[
     "set_preview_bounds",
     "focus_preview",
     "render_preview_page",
+    "choose_import_files",
+    "choose_export_folder",
     "get_export_scope",
     "export_collection",
     "import_collection",

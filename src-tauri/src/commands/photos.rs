@@ -14,6 +14,7 @@ use crate::services::attachments::{
 };
 use crate::services::sandbox::{Need, Reach};
 use crate::session::scoped::ScopedSession;
+use crate::session::{Session, SessionId};
 
 /// What `set_thumbnail_photo` returns (006 contracts/tauri-commands.md "Photos
 /// and documents (amended)"): the frontend already holds the record.
@@ -181,6 +182,22 @@ pub mod ops {
         add_photo(conn, owner, &file.bytes, &file.filename)
     }
 
+    /// [`add_photo_from_path`] for a file dropped onto the main window in
+    /// session `id`: a path the user didn't drop there moments ago is refused
+    /// with a fixed `VALIDATION_ERROR` before reach or the file is looked at,
+    /// and a drop is added once (code scanning alert `paths/cwe-73` on
+    /// `add_document_from_path`).
+    pub fn add_dropped_photo(
+        session: &Session,
+        id: SessionId,
+        owner: RecordRef,
+        path: &std::path::Path,
+        reach: &Reach,
+    ) -> Result<Photo, CommandError> {
+        let path = session.take_drop(id, path)?;
+        session.write(id, |conn| add_photo_from_path(conn, owner, &path, reach))
+    }
+
     /// Makes `photo_id` the owner's thumbnail; a photo of a different owner
     /// is `NOT_FOUND`.
     pub fn set_thumbnail_photo(
@@ -273,7 +290,8 @@ pub async fn add_photo(
         .write(|conn| ops::add_photo(conn, owner, &file_bytes, &original_filename).map(Into::into))
 }
 
-/// Adds a photo from a file on disk: what a drop onto the window delivers.
+/// Adds a photo dropped onto the window, by the path the drop delivered; only
+/// a file the user dropped (`ops::add_dropped_photo`).
 #[tauri::command]
 pub async fn add_photo_from_path(
     owner: RecordRef,
@@ -281,9 +299,8 @@ pub async fn add_photo_from_path(
     session: ScopedSession,
     reach: State<'_, Arc<Reach>>,
 ) -> Result<PhotoSummary, CommandError> {
-    session.write(|conn| {
-        ops::add_photo_from_path(conn, owner, std::path::Path::new(&path), &reach).map(Into::into)
-    })
+    ops::add_dropped_photo(&session.session, session.id, owner, std::path::Path::new(&path), &reach)
+        .map(Into::into)
 }
 
 /// Just the small cached thumbnail bytes for one photo — lets browse views

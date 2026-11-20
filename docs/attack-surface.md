@@ -66,12 +66,13 @@ and peer review catch that.
 
 ## webview-config: CSP, navigation and browser controls
 
-- **Code:** `src-tauri/tauri.conf.json` (`app.security.csp`); `src-tauri/tests/csp_test.rs`; `src-tauri/src/main.rs` (the main window, built in `setup()`); `src-tauri/src/app_menu.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/crash_reports.rs` (`web_view_environment`, `main_browser_args`, `WRY_DEFAULT_ARGS`); `src-tauri/src/window_controls/**`; `src/features/app/browserControls.ts`; `src/main.tsx`; `src-tauri/examples/window_controls_check.rs`; `scripts/window-controls-check.sh`; `scripts/macos/window-controls-check.sh`; `scripts/windows/window-controls-check.ps1`
+- **Code:** `src-tauri/tauri.conf.json` (`app.security.csp`); `src-tauri/tests/csp_test.rs`; `src-tauri/src/main.rs` (the main window, built in `setup()`); `src-tauri/src/app_menu.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/crash_reports.rs` (`web_view_environment`, `main_browser_args`, `WRY_DEFAULT_ARGS`); `src-tauri/src/services/autofill.rs`; `src-tauri/src/window_controls/**`; `src/features/app/browserControls.ts`; `src/main.tsx`; `src-tauri/examples/window_controls_check.rs`; `scripts/window-controls-check.sh`; `scripts/macos/window-controls-check.sh`; `scripts/windows/window-controls-check.ps1`
 - **Ask:**
   - Is there no `unsafe-inline` or `unsafe-eval` for scripts? The CSP allows `asset:` and `http://asset.localhost` in `img-src`, but the asset protocol is off (no `assetProtocol`, no `protocol-asset` feature, no `convertFileSrc`). Should those sources go?
   - Can any top-level navigation or new window leave the app's origin (#73)? Does Windows' filter act only on document requests, so IPC works and nothing else loads?
   - In release builds, are dev tools, reload, history, print, save, find and view-source off, and is only the context-menu allowlist left?
   - Does `src/` have no HTML sink (`dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`) outside tests? Is everything the page shows from a database, a spreadsheet, a file name or `notices.json` rendered as text?
+  - Is WebView2's general autofill off for the main window (`general_autofill_enabled(false)` in `main.rs`), and does every text field of the page (`TextField`, `TextArea` and the others) ask for `autocomplete="off"` as well?
   - On Windows, the main window's WebView2 environment is HoploDex's own (`crash_reports::web_view_environment`): is it the one the main window actually uses, with its own data folder, and are its browser arguments (`main_browser_args`) only wry's defaults and the autoplay policy, with nothing that loosens the web view (a debugging port, a switch that turns off a protection)?
 - **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
   - macOS's menu hook may miss items AppKit adds later (Writing Tools, Services).
@@ -84,15 +85,16 @@ and peer review catch that.
 
 ## paths: filesystem locations from the web view
 
-- **Code:** `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`; `src-tauri/src/commands/import_export.rs`; `src-tauri/src/commands/photos.rs`; `src-tauri/src/commands/documents.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/file_swap.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/attachments.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/app_dirs.rs`; `src/features/media/useFileDrop.ts`
+- **Code:** `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`; `src-tauri/src/commands/import_export.rs`; `src-tauri/src/commands/photos.rs`; `src-tauri/src/commands/documents.rs`; `src-tauri/src/services/scratch.rs`; `src-tauri/src/services/file_swap.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/attachments.rs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/app_dirs.rs`; `src-tauri/src/session/grants.rs`; `src-tauri/src/services/chooser.rs`; `src-tauri/src/main.rs` (`on_window_event`'s `DragDrop`); `src/features/media/useFileDrop.ts`; `src/features/import-export/ImportDialog.tsx`; `src/features/import-export/ExportDialog.tsx`; `src-tauri/tests/chosen_paths_test.rs`
 - **Ask:**
-  - For each command that takes a location from the web view (`create_database`, `open_database`, `upgrade_database` for its backup folder, `locate_database`, `remove_recent_database`, `forget_saved_passphrase`, `update_backup_settings`, `list_backups`, `check_backup`, `restore_backup`, `export_collection`, `import_collection`, `add_photo_from_path`, `add_document_from_path`): does it accept only what its purpose needs (absolute; an existing directory or a regular file)? Where it writes, does it create exclusively and follow no symlink or reparse point?
+  - `add_photo_from_path` and `add_document_from_path` read only a path the main window's native `DragDrop` event recorded in `session::grants` for the open session, at most two minutes before, once; `import_collection` and `export_collection` take only tokens for what the user picked in the chooser Rust opened (`choose_import_files`, `choose_export_folder`), held for the session and used up by an import or export that finishes. Can the page get a path into that store any other way (an event it emits, outside the `e2e` build's listener; a token it guesses), use an entry in another session or twice, or learn from the refusal whether a file exists? Is every entry gone when the session ends (`Session::forget_open`)?
+  - For each command that takes a location from the web view (`create_database`, `open_database`, `upgrade_database` for its backup folder, `locate_database`, `remove_recent_database`, `forget_saved_passphrase`, `update_backup_settings`, `list_backups`, `check_backup`, `restore_backup`, and for the dropped or picked location they use, `export_collection`, `import_collection`, `add_photo_from_path` and `add_document_from_path`): does it accept only what its purpose needs (absolute; an existing directory or a regular file)? Where it writes, does it create exclusively and follow no symlink or reparse point?
   - Is a target the web view names authorized before it is replaced or removed (#62)? Are only files the app created recovered or removed (#63)?
   - Is a name from inside a database or a spreadsheet ever joined to a path (#68)? Does a colliding export leave no stale photos (#74)?
   - A database from another computer carries `collection_settings.backup_location`. Is that path checked like one the user typed before backups are written there?
   - Does every location go through `Reach::check` with the right `Need` before anything is written (011)?
-  - Regression: #62, #63, #68, #74.
-- **Since:** 001, 003; Flatpak reach 011.
+  - Regression: #62, #63, #68, #74; code scanning alerts 89 and 110 (a path the page named read for an attachment or an import, and an export to a folder the page named).
+- **Since:** 001, 003; Flatpak reach 011; drops and choosers held in Rust 2026-11-19.
 
 ## import-export: spreadsheet import and export
 
@@ -135,13 +137,14 @@ and peer review catch that.
 
 ## plaintext-lifetime: secure deletion, locking and what outlives a session
 
-- **Code:** `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/db/mod.rs` (`secure_delete`, `reclaim_deleted_record`); `src-tauri/src/main.rs` (`end_web_processes`, `#[global_allocator]`, the core-limit and fatal-signal calls, the page-load hook); `src-tauri/src/allocator.rs`; `src-tauri/packaging/apport-ignore`; `src-tauri/tauri.conf.json` (`bundle.linux.deb.files`); `src-tauri/tests/core_dumps_test.rs`; `src-tauri/src/services/crash_reports.rs`; `src-tauri/src/session/lifecycle.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/session/clock.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/session/fingerprint.rs`; `src-tauri/src/platform/**`; `src/features/session/**`; `src/components/Toast.tsx`
+- **Code:** `src-tauri/src/services/secure_delete.rs`; `src-tauri/src/db/mod.rs` (`secure_delete`, `reclaim_deleted_record`); `src-tauri/src/main.rs` (`end_web_processes`, `#[global_allocator]`, the core-limit and fatal-signal calls, the page-load hook); `src-tauri/src/allocator.rs`; `src-tauri/packaging/apport-ignore`; `src-tauri/tauri.conf.json` (`bundle.linux.deb.files`); `src-tauri/tests/core_dumps_test.rs`; `src-tauri/src/services/crash_reports.rs`; `src-tauri/src/services/autofill.rs`; `src-tauri/src/session/lifecycle.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/session/clock.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/session/fingerprint.rs`; `src-tauri/src/platform/**`; `src/features/session/**`; `src/components/Toast.tsx`
 - **Ask:**
   - Is a deleted record's text gone from the file, both search indexes and the journal (`src-tauri/tests/deletion_wipe_test.rs`)?
   - Is a partial file securely deleted?
   - Does the database lock on idle, sleep, screen lock and shutdown on each OS, and inside the Flatpak (logind `session/auto`)?
   - On a lock, are the key dropped, the session's web-view state ended (`SessionScope.end()`) and late responses dropped (#69)?
   - Is a pending draft written only inside the encrypted file?
+  - Does anything typed into the page outlive the session in a web view's profile? On Windows, WebView2's general autofill is off and what earlier runs saved in `Web Data` is cleared at every start (`autofill::clear_saved`); `e2e/specs/databases.e2e.ts` checks a typed serial number is in none of its files after a clean quit (code scanning alert 109).
   - Is every block Rust frees zeroed first, in the app and both helpers, by a wipe the optimizer can't drop, and an old block on `realloc` too (`allocator.rs`)?
   - Does any copy of the passphrase or the derived key outlive the command that used it, in the app or a web view process, and after a lock? A typed passphrase never reaches the web view (`key-passphrase`; `e2e/specs/passphrase-dialog.e2e.ts` scans the web process on Linux); what the app process keeps is `key-passphrase`'s.
   - Are core dumps off, soft and hard limit, for the app and every process it starts on Linux and macOS, WebKit's web and network processes included on Linux (on macOS they are launchd's) (#166)? Inside the Flatpak, is the web process the portal starts (which doesn't inherit the app's limit) lowered at each page load of either web view, as the Flatpak check asserts?
@@ -280,11 +283,12 @@ and peer review catch that.
 
 ## shipped-build: what only test and E2E builds may contain
 
-- **Code:** `src-tauri/Cargo.toml` (`[features]`, `[patch.crates-io]`); `src-tauri/build.rs`; `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/upgrade.rs`; `src-tauri/src/app_dirs.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/services/keyring.rs`; `src-tauri/vendor/**`; `scripts/check-no-webdriver.mjs`; `scripts/check-package.mjs`; `scripts/build-appimage.sh`
+- **Code:** `src-tauri/Cargo.toml` (`[features]`, `[patch.crates-io]`); `src-tauri/build.rs`; `src-tauri/src/db/cipher.rs`; `src-tauri/src/db/upgrade.rs`; `src-tauri/src/app_dirs.rs`; `src-tauri/src/session/idle.rs`; `src-tauri/src/services/keyring.rs`; `src-tauri/src/services/chooser.rs` (`E2eChooser`); `src-tauri/vendor/**`; `scripts/check-no-webdriver.mjs`; `scripts/check-package.mjs`; `scripts/build-appimage.sh`
 - **Ask:**
   - Is `e2e` still the only thing that brings `tauri-plugin-wdio-webdriver` (`cargo tree`)? `flatpak-check` implies it.
   - Is every marker absent from every shipped binary and installer, on each OS? The package jobs check the release binary they built on each OS (#19). Is every published package built by a job that runs one of these checks?
   - Should the markers in `check-no-webdriver.mjs` cover every E2E-only `HOPLODEX_E2E_*` name in the backend?
+  - Are the E2E chooser (`E2eChooser`, which answers the import's and export's choosers from a queue file) and the listener that records the page's own `tauri://drag-drop` events as drops (`main.rs`) built only with `e2e`? Either in a shipped build would let the page choose what the backend reads or writes.
   - Does anything stop a shipped build with `mock-keyring` alone, beside `custom-protocol`?
   - Do `test-kdf` and `upgrade-test-steps` still refuse `custom-protocol` and `e2e` at compile time?
 - **Since:** #29, #76; seams 007, #76, 009; `test-kdf` #105.

@@ -318,6 +318,8 @@ _Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED`, as `add_photo` and `add_documen
 
 _Amended 2026-11-04: `ATTACHMENT_TOO_LARGE`, as `add_photo` and `add_document`, judged from the opened file's size before any of it is read; then the type from the first 1,024 bytes (a document's from its name too) before the rest is read; and a file that grows past that size while it is read is refused (`VALIDATION_ERROR`)._
 
+_Amended 2026-11-19 (code scanning alert 89): the input is unchanged, but the backend reads only a `path` the main window's native drop recorded for the open session (`session::grants`), at most two minutes before, and once. Any other path, whether or not the file exists, is `VALIDATION_ERROR` ("That file wasn't dropped onto HoploDex. Drop it again, or choose it with the button.") before reach or the file is looked at._
+
 - **Input**: `firearmId: number`, `path: string`.
 - **Output**: as `add_photo` / `add_document`. The backend reads the
   file itself and takes the original filename from the path and the mime
@@ -409,6 +411,8 @@ _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#exp
 
 _Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo's file name is a basename; see [spec 006's "Two tables"](../../006-accessory-links/contracts/spreadsheet-format.md#two-tables)._
 
+_Amended 2026-11-19 (code scanning alert 110): the input is `{ format, folderToken: string, scope, filter? }`, `destinationFolder` gone. `folderToken` is what the new scoped command `choose_export_folder` returned: no input, it opens the system's folder chooser from Rust and returns `{ token: string, path: string } | null` (`null` when cancelled), holding the folder for the open session. A token that isn't a held answer is `VALIDATION_ERROR`; the folder must be absolute and exist (`VALIDATION_ERROR` "That folder isn't there any more…") and is never made; reach is checked as before. An export that finishes uses the token up; one that fails or is stopped leaves it for another try._
+
 - **Input**: `{ format: "csv" | "xlsx", destinationFolder: string, scope: "all" | "filtered", filter?: ListFirearmsInput }`.
 - **Output (progress events, then)**: `{ spreadsheetPath: string, photosFolderPath: string, exportedFirearmCount: number, exportedPhotoCount: number }`.
 - **Behavior**: `scope` resolves the Edge Case "export while a filter is
@@ -422,6 +426,8 @@ _Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo
 _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#export-and-import-amended): the input is one or two files; `ImportResult` and its row reports gain `table`, conflicts gain `existingRecord`, and mount warnings arrive in `warnings`._
 
 _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): the file is read in a confined helper outside the session's lock, within limits, and one that passes a limit is refused as a whole with `IMPORT_LIMIT_EXCEEDED` before any row is saved. `cancel_import` stops the reading (`OPERATION_STOPPED`), and `import_collection:progress` gains `phase`._
+
+_Amended 2026-11-19 (code scanning alert 89): the input is `{ fileTokens: string[] }`, one or two of what the new scoped command `choose_import_files` returned: no input, it opens the system's file chooser from Rust (`.csv` and `.xlsx`, several at once) and returns `{ token: string, path: string }[]` (empty when cancelled), holding the files for the open session. A file's format is its extension's. A token that isn't a held answer is `VALIDATION_ERROR`, before any file is read. An import that finishes uses the tokens up; one that fails or is stopped leaves them for another try._
 
 - **Input**: `{ filePath: string, format: "csv" | "xlsx" }`.
 - **Output (progress events, then)**: `{ sessionId: string, importedCount: number, updatedCount: number, skippedCount: number, rowErrors: { row: number; message: string }[], conflicts: ImportConflict[] }`.

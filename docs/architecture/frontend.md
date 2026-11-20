@@ -101,8 +101,12 @@ Design tokens are in `src/styles/tokens.css`. Money values are **whole dollars**
 ## File drops
 
 **File drops** arrive as filesystem paths through Tauri's native drag-drop event
-(`listenForFileDrops`). They go to the `add_*_from_path` commands, whose
-`services::attachments::read_attachment_file` judges the opened file's size
+(`listenForFileDrops`). They go to the `add_*_from_path` commands, which read
+only a path the main window's `DragDrop` event recorded in Rust for the open
+session (`session::grants`, from `main.rs`'s `on_window_event`): at most two
+minutes after the drop, and once. Any other path the page sends is refused with
+a fixed `VALIDATION_ERROR` before the file is looked at, so the page can't
+name a file the user didn't drop. `read_attachment_file` judges the opened file's size
 before reading any of it, its type before the rest (a document's from its name
 and first bytes, `document_types::classify_header`; a photo's from its first
 bytes alone, `photo::photo_type`), and reads no more than the size it admitted.
@@ -110,6 +114,16 @@ bytes alone, `photo::photo_type`), and reads no more than the size it admitted.
 A file from the picker is read in the web view, so the panel refuses one over
 its limit from `File.size` before reading it, and the backend checks the bytes
 it receives again.
+
+**The import's files and the export's folder** are picked in a chooser the
+backend opens (`choose_import_files`, `choose_export_folder`, `services::chooser`),
+never typed: the page gets a token for each answer and shows its path
+(`ChosenPathField`), and `import_collection` and `export_collection` take the
+tokens. An import or export that finishes uses them up; one that fails leaves
+them, so the dialog can try again. Don't add a path field back, or a command
+that takes a file or folder the page names. An E2E build answers the chooser
+from a queue (`answerChooser` in `e2e/support/ui.ts`) and records the
+`tauri://drag-drop` events the specs send as drops.
 
 WebKitGTK gives HTML5 drops no `File`, so leave `dragDropEnabled` at its default
 and don't switch to HTML5 file drops.

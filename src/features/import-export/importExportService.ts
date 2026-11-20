@@ -1,6 +1,7 @@
 import { invoke } from "../../services/tauriClient";
 import type { SessionScope } from "../session/sessionScope";
 import type {
+  ChosenPath,
   ExportCollectionInput,
   ExportResult,
   ExportScope,
@@ -16,6 +17,19 @@ export function getExportScope(
   input: GetExportScopeInput,
 ): Promise<ExportScope> {
   return scope.invoke<ExportScope>("get_export_scope", { input });
+}
+
+/** Asks the user for the spreadsheets to import in the OS's chooser, which the
+ * backend opens and answers: the page gets a token for each file, never a
+ * path it could name itself. Empty when the user cancels. */
+export function chooseImportFiles(scope: SessionScope): Promise<ChosenPath[]> {
+  return scope.invoke<ChosenPath[]>("choose_import_files");
+}
+
+/** Asks the user for the folder to export to, as `chooseImportFiles` does;
+ * null when the user cancels. */
+export function chooseExportFolder(scope: SessionScope): Promise<ChosenPath | null> {
+  return scope.invoke<ChosenPath | null>("choose_export_folder");
 }
 
 export function exportCollection(

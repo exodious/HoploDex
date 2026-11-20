@@ -30,6 +30,7 @@ mod caliber_guess_test;
 mod cartridge_catalog_test;
 mod cartridge_test;
 mod chooser_details_test;
+mod chosen_paths_test;
 mod core_dumps_test;
 mod csp_test;
 mod database_open_test;

@@ -105,6 +105,11 @@ insurance status, valuation, attachment storage, secure delete,
   content at attach, preview and open), `consent` (`Consent`, `needs_consent`,
   the native confirmation's text before a document goes to another app) and
   `preview/` ([Document preview](preview.md));
+- `chooser` (`Chooser`: the native file and folder choosers the import and
+  export open from Rust, whose answers only `session::grants` holds; an E2E
+  build's `E2eChooser` answers from `HOPLODEX_E2E_CHOOSER`'s queue) and, on
+  Windows, `autofill` (clears what WebView2's general autofill saved in the
+  main web view's profile, at every start; the window turns it off);
 - and for 008 `helper/` (the confinement, Windows job object and AppContainer, framing and
   spawn/kill plumbing that `--render-helper` and `--import-helper` share; the
   memory cap is a parameter) and `import_reader/` (the import reads CSV and XLSX

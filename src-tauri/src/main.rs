@@ -22,6 +22,11 @@ use hoplodex_lib::db;
 use hoplodex_lib::platform::core_dumps;
 use hoplodex_lib::platform::{self, SystemEvent};
 use hoplodex_lib::services::backups;
+use hoplodex_lib::services::chooser::Chooser;
+#[cfg(feature = "e2e")]
+use hoplodex_lib::services::chooser::E2eChooser;
+#[cfg(not(feature = "e2e"))]
+use hoplodex_lib::services::chooser::NativeChooser;
 use hoplodex_lib::services::consent::Consent;
 #[cfg(not(feature = "e2e"))]
 use hoplodex_lib::services::consent::DialogConsent;
@@ -47,7 +52,10 @@ use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
 use hoplodex_lib::{allocator, app_dirs};
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{
+    AppHandle, DragDropEvent, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
+};
 
 /// Every process this executable runs (the app and both helpers) zeroes each
 /// block it frees and, on Windows, never reaches Windows Error Reporting
@@ -431,6 +439,31 @@ fn main() {
             app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
             #[cfg(feature = "e2e")]
             app.manage::<Arc<dyn Consent>>(Arc::new(E2eConsent));
+            // The choosers for the import's files and the export's folder,
+            // whose answers only Rust sees (code scanning alerts `paths/cwe-73`
+            // on `import_collection` and `export_collection`). An E2E build
+            // answers from the spec's queue.
+            #[cfg(not(feature = "e2e"))]
+            app.manage::<Arc<dyn Chooser>>(Arc::new(NativeChooser::new(app.handle().clone())));
+            #[cfg(feature = "e2e")]
+            app.manage::<Arc<dyn Chooser>>(Arc::new(E2eChooser));
+            // WebDriver can't drop a file from the desktop, so the specs send
+            // the page Tauri's drop event themselves; an E2E build records the
+            // paths they send as the window's handler records a real drop.
+            #[cfg(feature = "e2e")]
+            {
+                use tauri::Listener;
+                let session = app.state::<Session>().inner().clone();
+                app.listen_any("tauri://drag-drop", move |event| {
+                    #[derive(serde::Deserialize)]
+                    struct Dropped {
+                        paths: Vec<std::path::PathBuf>,
+                    }
+                    if let Ok(dropped) = serde_json::from_str::<Dropped>(event.payload()) {
+                        session.record_drop(dropped.paths);
+                    }
+                });
+            }
             // Passphrases are typed only in the OS's own dialog, never in the
             // page (amended 2026-11-04 to 003 FR-007). An E2E build answers from
             // the spec's queue, or shows the real dialog for the specs that type
@@ -484,6 +517,11 @@ fn main() {
             let main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::default())
                 .on_navigation(move |url| main_navigation::navigation_allowed(&origins, url))
                 .on_new_window(|_, _| NewWindowResponse::Deny)
+                // WebView2 saves what is typed into a form's fields, record
+                // values included, unencrypted in the profile's `Web Data`
+                // (code scanning alert `plaintext-lifetime/cwe-312`). The other
+                // OSes' web views have no such store and ignore this.
+                .general_autofill_enabled(false)
                 .title("HoploDex")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(800.0, 600.0);
@@ -495,6 +533,10 @@ fn main() {
             let _main = main.data_directory(main_data_dir).build()?;
             #[cfg(windows)]
             main_navigation::refuse_foreign_documents(&_main, filter_origins)?;
+            // What earlier runs' autofill saved goes (code scanning alert
+            // `plaintext-lifetime/cwe-312`); this run's saves nothing.
+            #[cfg(windows)]
+            hoplodex_lib::services::autofill::clear_saved(&_main);
             // The native half of the browser controls (008 FR-010 to FR-012,
             // 008 research.md §13): in release and E2E builds only, and a
             // failure leaves the web view's own menu rather than keeping
@@ -525,13 +567,24 @@ fn main() {
                 log::warn!("could not emit {name}: {err}");
             }
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match event {
             // Closing the window is a request: unsaved changes are asked
             // about first, and the database is closed normally.
-            if let WindowEvent::CloseRequested { api, .. } = event {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 request_quit(window.app_handle());
             }
+            // The files the user drops onto the main window are the only ones
+            // `add_photo_from_path` and `add_document_from_path` read, so the
+            // page can't name another (code scanning alert `paths/cwe-73` on
+            // `add_document_from_path`). Recorded before the page hears of the
+            // drop: Tauri only queues its event for the page.
+            WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. })
+                if window.label() == MAIN_WINDOW =>
+            {
+                window.state::<Session>().record_drop(paths.clone());
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             hoplodex_lib::commands::databases::get_chooser_state,
@@ -615,6 +668,8 @@ fn main() {
             hoplodex_lib::commands::preview::set_preview_bounds,
             hoplodex_lib::commands::preview::focus_preview,
             hoplodex_lib::commands::preview::render_preview_page,
+            hoplodex_lib::commands::import_export::choose_import_files,
+            hoplodex_lib::commands::import_export::choose_export_folder,
             hoplodex_lib::commands::import_export::get_export_scope,
             hoplodex_lib::commands::import_export::export_collection,
             hoplodex_lib::commands::import_export::import_collection,

@@ -1174,3 +1174,44 @@ describe("013 US2 - The log is designed to hold nothing sensitive", () => {
     expect(text).toMatch(/\[DEBUG\] closing the database/);
   });
 });
+
+// 003 US1's "nothing stored anywhere on the machine", for what is typed into a record
+// (code scanning alert plaintext-lifetime/cwe-312): WebView2's general autofill kept
+// it, serial numbers included, unencrypted in its profile's `Web Data`, past the lock,
+// the close and the record itself. The other OSes' web views keep no such store, so
+// this is Windows only. At the end of the file, since it quits the app.
+describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
+  it("leaves no typed serial number in WebView2's Web Data after a clean quit", async function () {
+    if (process.platform !== "win32") return this.skip();
+    const serial = `AUTOFILL-${randomBytes(4).toString("hex").toUpperCase()}`;
+    await createDatabase({ name: "Autofill" });
+    await addFirearm({
+      make: "AutofillMake",
+      model: "AutofillModel",
+      serial,
+      caliber: "9mm",
+      type: "Handgun",
+    });
+    // A clean quit, so WebView2 writes what it holds to its profile.
+    await requestQuit();
+    await waitForAppToQuit(30000);
+
+    const profile = path.join(
+      process.env.HOPLODEX_E2E_CACHE_HOME!,
+      "io.github.exodious.HoploDex",
+      "main-webview",
+    );
+    const webData = fs
+      .readdirSync(profile, { recursive: true, encoding: "utf-8" })
+      .filter((file) => path.basename(file).startsWith("Web Data"))
+      .map((file) => path.join(profile, file));
+    console.log(`autofill: ${webData.length} Web Data files in the main web view's profile`);
+    for (const file of webData) {
+      expect({ file, holdsSerial: fs.readFileSync(file).includes(serial) }).toEqual({
+        file,
+        holdsSerial: false,
+      });
+    }
+    await relaunch();
+  });
+});

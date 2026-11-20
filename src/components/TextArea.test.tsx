@@ -18,6 +18,14 @@ function Harness({ initial = "", limit }: { initial?: string; limit?: number }) 
   );
 }
 
+// Code scanning alert plaintext-lifetime/cwe-312, as for TextField.
+describe("TextArea autofill", () => {
+  it("asks the web view not to autofill or keep what is typed", () => {
+    render(<Harness />);
+    expect(screen.getByLabelText("Notes")).toHaveAttribute("autocomplete", "off");
+  });
+});
+
 describe("TextArea counter", () => {
   it("shows no counter below 3,600 characters", () => {
     render(<Harness initial={"a".repeat(3599)} limit={4000} />);

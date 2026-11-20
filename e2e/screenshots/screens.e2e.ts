@@ -37,6 +37,7 @@ import {
 } from "../support/ui";
 import { killApp, relaunchApp } from "../support/app";
 import { logOnByDefault, repoRoot } from "../support/build";
+import { chooseImportFiles } from "../support/importExport";
 import { copyReleaseFixture, sandboxPath, seedCollection } from "../support/sandbox";
 import {
   SCREENSHOT_WINDOW,
@@ -1038,7 +1039,7 @@ describe("Screenshots: the import report", () => {
       "import-samples",
     );
     await clickButton("Import");
-    await fill("Spreadsheet file", path.join(samples, "import-cartridges.csv"));
+    await chooseImportFiles(path.join(samples, "import-cartridges.csv"));
     await clickButton("Import");
     await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
     for (const title of [
@@ -1073,7 +1074,7 @@ describe("Screenshots: the import report with mount warnings", () => {
       "import-samples",
     );
     await clickButton("Import");
-    await fill("Spreadsheet file", path.join(samples, "import-accessory-mount-warnings.csv"));
+    await chooseImportFiles(path.join(samples, "import-accessory-mount-warnings.csv"));
     await clickButton("Import");
     await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
     await browser.execute(() => {
@@ -1105,7 +1106,7 @@ describe("Screenshots: replacing a record with a disposed row", () => {
       "import-samples",
     );
     await clickButton("Import");
-    await fill("Spreadsheet file", path.join(samples, "import-dispose-receiver.csv"));
+    await chooseImportFiles(path.join(samples, "import-dispose-receiver.csv"));
     await clickButton("Import");
     await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
     await choose("Replace existing");
@@ -1235,7 +1236,7 @@ describe("Screenshots: the import dialog's reading phase", () => {
     await goTo("Collection");
     await chooseTheme("Light");
     await openDialog("Import");
-    await fill("Spreadsheet file", "/home/user/Documents/large-inventory.csv");
+    await chooseImportFiles("/home/user/Documents/large-inventory.csv");
     await browser.execute(() => {
       const send = window.fetch;
       let release: ((response: Response) => void) | undefined;
@@ -1304,7 +1305,7 @@ describe("Screenshots: the import dialog's reading phase", () => {
       "import-samples",
     );
     await openDialog("Import");
-    await fill("Spreadsheet file", path.join(samples, "import-refused-too-many-sheets.xlsx"));
+    await chooseImportFiles(path.join(samples, "import-refused-too-many-sheets.xlsx"));
     await clickButton("Import");
     await $('[role="dialog"] [role="alert"]').waitForExist({
       timeout: 15000,

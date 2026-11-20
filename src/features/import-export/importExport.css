@@ -208,3 +208,25 @@
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
+
+/* ── A file or folder picked in the chooser (ChosenPathField) ───── */
+
+.hd-io-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.hd-io-chosen__value {
+  flex: 1 1 16rem;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.hd-io-chosen__none {
+  font-family: var(--font-body);
+  color: var(--ink-2);
+}

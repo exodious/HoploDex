@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionScope } from "../session/sessionScope";
 import { withIdlePaused } from "../session/useIdleActivity";
 import {
@@ -9,14 +8,14 @@ import {
   Dialog,
   Icon,
   ProgressBar,
-  TextField,
   useShownOnceLoaded,
 } from "../../components";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
 import type { BrowseState } from "../browse/types";
+import { ChosenPathField } from "./ChosenPathField";
 import * as importExportService from "./importExportService";
-import type { ExportResult, ExportScope, SpreadsheetFormat } from "./types";
+import type { ChosenPath, ExportResult, ExportScope, SpreadsheetFormat } from "./types";
 import "./importExport.css";
 
 export interface ExportDialogProps {
@@ -139,7 +138,10 @@ function ExportForm({
   const { firearms } = useCollection();
   const [format, setFormat] = useState<SpreadsheetFormat>("csv");
   const [scope, setScope] = useState<"all" | "filtered">("all");
-  const [folder, setFolder] = useState("");
+  // The folder picked in the backend's chooser, by the token the export
+  // takes it by. An export that finishes uses it up; one that fails leaves it
+  // chosen.
+  const [folder, setFolder] = useState<ChosenPath | null>(null);
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<ExportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -155,22 +157,22 @@ function ExportForm({
     state && state !== "unknown" ? ` (${scopeCounts(state)})` : "";
 
   async function chooseFolder() {
-    const selected = await withIdlePaused(() =>
-      openDialog({
-        directory: true,
-        multiple: false,
-        title: "Export to folder",
-      }),
-    );
-    if (typeof selected === "string") {
-      setFolder(selected);
-      setFolderError(undefined);
+    try {
+      const chosen = await withIdlePaused(() =>
+        importExportService.chooseExportFolder(sessionScope),
+      );
+      if (chosen) {
+        setFolder(chosen);
+        setFolderError(undefined);
+      }
+    } catch (e) {
+      setFolderError(e instanceof CommandFailure ? e.message : "The folder couldn't be chosen.");
     }
   }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!folder.trim()) {
+    if (!folder) {
       setFolderError("Choose the folder to save the export in.");
       return;
     }
@@ -180,7 +182,7 @@ function ExportForm({
       setResult(
         await importExportService.exportCollection(sessionScope, {
           format,
-          destinationFolder: folder.trim(),
+          folderToken: folder.token,
           scope,
           filter: scope === "filtered" ? filter : undefined,
         }),
@@ -285,29 +287,23 @@ function ExportForm({
           allScope !== "unknown" && <p className="hd-form-note">Exports {scopeCounts(allScope)}.</p>
         )}
 
-        <TextField
+        <ChosenPathField
           label="Save to folder"
-          required
-          value={folder}
-          onChange={(e) => {
-            setFolder(e.target.value);
-            setFolderError(undefined);
-          }}
-          error={folderError}
-          spellCheck={false}
-          trailing={
-            <button type="button" className="hd-input__text-action" onClick={chooseFolder}>
-              Choose…
-            </button>
+          value={
+            folder ? folder.path : <span className="hd-io-chosen__none">No folder chosen</span>
           }
+          chooseLabel="Choose a folder…"
+          onChoose={() => void chooseFolder()}
+          error={folderError}
+          disabled={exporting}
         />
 
         <p className="hd-privacy-note" role="note">
           <Icon name="alert" size={16} />
           <span>
             The spreadsheet and the photos will be written to{" "}
-            {folder.trim() ? (
-              <strong className="hd-privacy-note__path">{folder.trim()}</strong>
+            {folder ? (
+              <strong className="hd-privacy-note__path">{folder.path}</strong>
             ) : (
               "the folder you choose"
             )}

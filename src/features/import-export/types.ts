@@ -6,9 +6,18 @@ import type { MountedEntry, RecordRef } from "../mounts/types";
 
 export type SpreadsheetFormat = "csv" | "xlsx";
 
+/** A file or folder the user picked in the chooser the backend opened: the
+ * token a command takes it by (the backend keeps the path itself), and the
+ * path to show. */
+export interface ChosenPath {
+  token: string;
+  path: string;
+}
+
 export interface ExportCollectionInput {
   format: SpreadsheetFormat;
-  destinationFolder: string;
+  /** `choose_export_folder`'s token for the folder. */
+  folderToken: string;
   scope: "all" | "filtered";
   filter?: ListFirearmsInput;
 }
@@ -42,15 +51,10 @@ export interface ExportResult {
   exportedPhotoCount: number;
 }
 
-/** One file of an import: a CSV file or a workbook (006 FR-022). */
-export interface ImportFile {
-  filePath: string;
-  format: SpreadsheetFormat;
-}
-
 export interface ImportCollectionInput {
-  /** One file, or two: the firearm table and the accessory table. */
-  files: ImportFile[];
+  /** One file, or two: the firearm table and the accessory table (006 FR-022),
+   * as `choose_import_files`' tokens for them. */
+  fileTokens: string[];
 }
 
 /** The payload of `import_collection:progress`: the bytes of the files read

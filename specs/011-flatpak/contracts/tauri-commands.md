@@ -125,6 +125,8 @@ with the override advice for its host folder, and is kept for the one-off writes
 stay `WriteFolder` (a chosen folder that is the database's backup location itself
 is the stored one)._
 
+_Amended 2026-11-19: the files `import_collection` reads and the folder `export_collection` writes are picked in the chooser the backend opens, and the paths `add_photo_from_path` and `add_document_from_path` read are only ones the user dropped (001 contracts, `import_collection`, `export_collection`, `add_photo_from_path` / `add_document_from_path`); reach is checked as the table says._
+
 `change_passphrase` and `restore_backup`'s replacement of the open database
 act on its own path, which `open_database` already found within reach in
 this run, so they check only the backup folder above. With nothing open,

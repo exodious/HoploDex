@@ -31,7 +31,8 @@ import {
   clickEl,
   expect,
   goTo,
-  invokeCommand,
+  dropFiles,
+  invokeFailure,
   scratchDocuments,
   selectOption,
   settle,
@@ -56,78 +57,12 @@ import {
  * events the backend sends it, what is left on disk, and what is on the screen.
  */
 
-const GLOCK_SERIAL = "BXKT482";
 const LEUPOLD = "Leupold VX-5HD";
 const FIXTURES = fileURLToPath(
   new URL("../../src-tauri/tests/fixtures/documents/", import.meta.url),
 );
 
 // --- Helpers ----------------------------------------------------------------
-
-/** Leaves a record for the Collection page and opens the Glock again, which
- * reloads its document list. */
-async function reopenGlock() {
-  await goTo("Collection");
-  await openRecord(GLOCK);
-}
-
-/** An error `invoke` rejects with, as the command's `CommandError`, or null. */
-async function invokeFailure(
-  cmd: string,
-  args: Record<string, unknown>,
-): Promise<{ code: string } | null> {
-  return browser.execute(
-    async (name: string, data: Record<string, unknown>) => {
-      const internals = (
-        window as unknown as {
-          __TAURI_INTERNALS__: {
-            invoke: (cmd: string, args: unknown, options?: unknown) => Promise<unknown>;
-          };
-        }
-      ).__TAURI_INTERNALS__;
-      const status = (await internals.invoke("get_database_status", {})) as {
-        sessionId?: number | null;
-      };
-      try {
-        await internals.invoke(
-          name,
-          data,
-          status.sessionId == null
-            ? undefined
-            : { headers: { "HoploDex-Session": String(status.sessionId) } },
-        );
-        return null;
-      } catch (error) {
-        return error;
-      }
-    },
-    cmd,
-    args,
-  ) as Promise<{ code: string } | null>;
-}
-
-async function glockId(): Promise<number> {
-  // list_firearms names its session in the HoploDex-Session header (spec 008
-  // FR-004), as the frontend's scope sends it; the id comes from the status.
-  const listed = (await browser.execute(async (query: string) => {
-    const internals = (
-      window as unknown as {
-        __TAURI_INTERNALS__: {
-          invoke: (cmd: string, args: unknown, options?: unknown) => Promise<unknown>;
-        };
-      }
-    ).__TAURI_INTERNALS__;
-    const status = (await internals.invoke("get_database_status", {})) as { sessionId: number };
-    return internals.invoke(
-      "list_firearms",
-      { input: { query } },
-      { headers: { "HoploDex-Session": String(status.sessionId) } },
-    );
-  }, GLOCK_SERIAL)) as {
-    groups: { firearms: { id: number }[] }[];
-  };
-  return listed.groups[0].firearms[0].id;
-}
 
 /** Holds or restarts the idle lock's clock, as a native dialog does; restarting
  * starts the idle time again from zero. */
@@ -488,9 +423,11 @@ describe("007 US1 - Preview a Document Inside the Application (was us13-document
   it("007 SC-001: a PDF of about 10 MB is ready within 1 s", async () => {
     const file = writeLargePdf(path.join(scratchDocuments(), "large"));
     expect(fs.statSync(file).size).toBeGreaterThan(9.5 * 1024 * 1024);
-    const owner = { kind: "firearm", id: await glockId() };
-    await invokeCommand("add_document_from_path", { owner, path: file });
-    await reopenGlock();
+    await dropFiles([file]);
+    await $("button.hd-doc__name=Large appraisal.pdf").waitForExist({
+      timeout: 15000,
+      timeoutMsg: "the dropped PDF was never attached",
+    });
 
     const mark = await eventMark();
     const clickedAt = await openDocument("Large appraisal.pdf");
