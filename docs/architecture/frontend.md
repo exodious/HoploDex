@@ -112,8 +112,7 @@ the page, or out of the PDF surface) is not a drop of the user's files, and
 `drops::refuse_app_drags` keeps it from reaching the recorder with a path:
 on Linux by the drag's source widget being in the process, on macOS by its
 `draggingSource`, on Windows by Chromium's mark on a page's drag data. The
-drop check (`scripts/drop-check.sh`, `scripts/macos/drop-check.sh`,
-`scripts/windows/drop-check.ps1`) drags a file from another app and links out
+[drop check](../development/surface-checks.md#drop-check) drags a file from another app and links out
 of the page with real input, in a build without the `e2e` feature. `read_attachment_file` judges the opened file's size
 before reading any of it, its type before the rest (a document's from its name
 and first bytes, `document_types::classify_header`; a photo's from its first

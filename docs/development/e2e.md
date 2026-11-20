@@ -83,8 +83,7 @@ No WebDriver can pick in a native chooser or drop a file from the desktop, so an
 `chooseExportFolder` in `e2e/support/importExport.ts`), and hands the paths of
 the `tauri://drag-drop` events a spec sends (`dropFiles`) to `drops::record`,
 the recorder a real drop goes through; only the event's source differs. A real
-drop, in a build without `e2e`, is the drop check's to show
-(`scripts/drop-check.sh` and its macOS and Windows counterparts). The backend reads only those, so a spec that
+drop, in a build without `e2e`, is the [drop check](surface-checks.md#drop-check)'s to show. The backend reads only those, so a spec that
 calls `add_*_from_path` or the import and export commands with a path of its
 own is refused.
 
