@@ -2563,8 +2563,9 @@ async fn choose(
         return Err(CommandError::database_closed());
     }
     let picked =
-        tauri::async_runtime::spawn_blocking(move || chooser.pick(pick)).await.map_err(|err| {
-            log::error!("the chooser's thread failed: {err}");
+        tauri::async_runtime::spawn_blocking(move || chooser.pick(pick)).await.map_err(|_| {
+            // Not the error's text: it can carry a panic's message.
+            log::error!("the chooser's thread failed");
             CommandError::new("INTERNAL_ERROR", "The chooser couldn't be shown.")
         })?;
     // A lock or close while the chooser was open ends what it was for.
