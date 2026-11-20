@@ -1,2 +1,6 @@
 # <step name or fixture path> <sha256 of its bytes> <release>
 # Lines are added before each release candidate that ships a new step or database (#19) and never edited.
+0001_initial 25a4e2bbf4df13df758c9ba2f04dc6c50de8efc7c5da2dce7f374d6b5b849fa2 0.1.0
+0002_fts5 dedbbdee66bdf0f78e9b4b207e428f3faab61df67b87efacc15186ed4e5765bf 0.1.0
+0003_seed_firearm_types ec4c5e9c646c48c4293871de618082cf9c6431571c0ec961a929eb30cb7be943 0.1.0
+tests/fixtures/releases/0.1.0.hoplodex ec6f34ad8824525fc70780ea5211efb47ac53d0b10d8066ded3b123ba8dd0b01 0.1.0

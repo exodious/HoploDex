@@ -60,9 +60,13 @@
     </screenshot>
   </screenshots>
   <releases>
-    <release version="0.1.0" date="2026-10-19">
+    <release version="0.1.0" date="2026-11-19">
       <description>
-        <p>The first release.</p>
+        <p>
+          The first release: an encrypted inventory of firearms, accessories,
+          photos, documents and insurance policies, with spreadsheet import and
+          export and backups.
+        </p>
       </description>
     </release>
   </releases>
