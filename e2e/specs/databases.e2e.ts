@@ -1182,10 +1182,12 @@ describe("013 US2 - The log is designed to hold nothing sensitive", () => {
 // the close and the record itself. The other OSes' web views keep no such store, so
 // this is Windows only. At the end of the file, since it quits the app.
 describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
-  /** Quits the app as the user would, and waits for it to end. Nothing is unsaved,
-   * so it quits at once: the request isn't followed by a settle, as `requestQuit`'s
-   * is, which would find no app. A clean quit lets WebView2 write its profile. */
-  async function quitCleanly() {
+  /** Quits the app as the user would, and waits for it to end and for WebView2's
+   * browser process, which outlives it a little, to let go of `Web Data`; returns
+   * that file. Nothing is unsaved, so it quits at once: the request isn't followed
+   * by a settle, as `requestQuit`'s is, which would find no app. A clean quit lets
+   * WebView2 write its profile. */
+  async function quitCleanly(): Promise<string> {
     await browser.execute(() => {
       const internals = (
         window as unknown as {
@@ -1195,6 +1197,13 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
       void internals.invoke("plugin:event|emit", { event: "app:quit-requested", payload: {} });
     });
     await waitForAppToQuit(30000);
+    const store = webDataFiles().find((file) => path.basename(file) === "Web Data");
+    if (!store) throw new Error("the main web view's profile has no Web Data");
+    // An exclusive lock is had only once no other process holds the file.
+    const released = new DatabaseSync(store, { timeout: 30000 });
+    released.exec("BEGIN EXCLUSIVE; ROLLBACK");
+    released.close();
+    return store;
   }
 
   /** The main web view's `Web Data` files: its autofill store and its journal. */
@@ -1221,7 +1230,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
       caliber: "9mm",
       type: "Handgun",
     });
-    await quitCleanly();
+    const store = await quitCleanly();
 
     const files = webDataFiles();
     console.log(`autofill: ${files.length} Web Data files in the main web view's profile`);
@@ -1234,8 +1243,6 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
 
     // What an earlier version's autofill saved goes at the next start: a value
     // planted as it would have saved it is gone after a start and a clean quit.
-    const store = files.find((file) => path.basename(file) === "Web Data");
-    if (!store) throw new Error("the main web view's profile has no Web Data");
     const earlier = `EARLIER-${randomBytes(4).toString("hex").toUpperCase()}`;
     const planted = new DatabaseSync(store);
     planted
