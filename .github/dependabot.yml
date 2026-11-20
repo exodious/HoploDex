@@ -1,11 +1,13 @@
-# Dependabot version updates for the workflows' actions and the vcpkg pin.
-# Third-party actions are pinned to a commit (#72), and Dependabot raises no
-# alerts for a commit-pinned action, so these update pull requests are how a
-# pin moves. GitHub's own actions, pinned to a release tag, are updated the
-# same way. The vcpkg entry moves `builtin-baseline` in
+# Dependabot's version update pull requests are off: `open-pull-requests-limit: 0`
+# on each entry below, and its security update pull requests are off in the
+# repository's settings. Its pull requests can't meet HoploDex's pull request
+# rules (the description's required sections, required reviews), so every pin
+# now moves by hand: the workflows' actions, third-party ones pinned to a commit
+# (#72) and GitHub's own to a release tag, and `builtin-baseline` in
 # scripts/windows/vcpkg/vcpkg.json, which picks the OpenSSL the Windows jobs
-# link (#25); Dependabot raises no security alerts for vcpkg either, so
-# `npm run audit:openssl` checks that OpenSSL against OpenSSL's advisories.
+# link (#25). Dependabot raises no alerts for a commit-pinned action or for
+# vcpkg; `npm run audit:openssl` checks that OpenSSL against OpenSSL's
+# advisories, and still fails when vcpkg offers a newer OpenSSL than the pin.
 # npm and Cargo dependencies get Dependabot's security alerts and are updated
 # by hand (docs/development/dependency-audit.md).
 version: 2
@@ -14,6 +16,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     groups:
       actions:
         patterns: ["*"]
@@ -22,3 +25,4 @@ updates:
     directory: /scripts/windows/vcpkg
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0

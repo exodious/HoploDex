@@ -9,9 +9,10 @@ every pull request to `main` and on pushes to it (CodeQL weekly too), the
 check of a pull request description's required sections
 (`.github/workflows/pr-body.yml`), and the [release workflow](#the-release-workflow)
 (`.github/workflows/release.yml`) on a `v*` tag. In all of them, third-party actions are
-pinned to a commit (#72) and GitHub's own to a release tag. Dependabot
-(`.github/dependabot.yml`) opens a weekly pull request to update them, and
-another for the [vcpkg pin](dependency-audit.md#the-pinned-openssl).
+pinned to a commit (#72) and GitHub's own to a release tag. They, and the
+[vcpkg pin](dependency-audit.md#the-pinned-openssl), are moved by hand:
+Dependabot's version updates are off (`.github/dependabot.yml`), since its pull
+requests can't meet the pull request rules.
 
 On a pull request, the audit skips its work when the change can't affect it:
 when the pull request changes only Markdown, or only `codeql.yml`,
@@ -114,7 +115,7 @@ one: [Windows](windows.md) says how to build against it.
 OpenSSL into the fixed folder `C:\hoplodex-openssl` (fixed, because
 libsqlite3-sys doesn't rebuild SQLCipher when `OPENSSL_DIR` moves) and caches
 it under a key from the manifest, so it is built again only when the pin
-moves. Dependabot moves the pin weekly; `npm run audit:openssl` checks the
+moves. The pin is moved by hand; `npm run audit:openssl` checks the
 OpenSSL it resolves to ([The pinned OpenSSL](dependency-audit.md#the-pinned-openssl)).
 
 ## The release workflow

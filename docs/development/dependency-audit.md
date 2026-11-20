@@ -164,8 +164,9 @@ VM's audit this way).
 
 The Windows build links OpenSSL statically from vcpkg, at the commit
 `builtin-baseline` names in `scripts/windows/vcpkg/vcpkg.json` (#25).
-Dependabot moves that pin by pull request (`.github/dependabot.yml`), but it
-raises no security alerts for vcpkg, so `npm run audit:openssl`
+The pin is moved by hand (Dependabot's version updates are off,
+`.github/dependabot.yml`), and Dependabot raises no security alerts for vcpkg,
+so `npm run audit:openssl`
 (`scripts/check-openssl-advisories.mjs`) does that part:
 
 - It reads the OpenSSL version the pin resolves to from vcpkg's
@@ -179,8 +180,7 @@ raises no security alerts for vcpkg, so `npm run audit:openssl`
   too.
 - It fails when vcpkg's `master` (its `versions/baseline.json` there)
   resolves OpenSSL to a newer version than the pin does. vcpkg's own
-  port-version doesn't count. Take Dependabot's baseline update, or move
-  `builtin-baseline` by hand.
+  port-version doesn't count. Move `builtin-baseline` by hand.
 - It warns when that version's branch is past its end of life in the same
   repository's `data.json`. OpenSSL lists only supported versions in a new
   advisory, so a later one may not name it. While the branch is out of
@@ -193,8 +193,8 @@ raises no security alerts for vcpkg, so `npm run audit:openssl`
 
 It needs the network for all three, like the rest of the audit; without it, it
 fails saying what it couldn't fetch. To fix a finding, move the pin to a vcpkg
-commit whose OpenSSL is fixed (Dependabot's pull request, or `builtin-baseline`
-by hand), which the Windows jobs then build and cache.
+commit whose OpenSSL is fixed (`builtin-baseline`, by hand), which the Windows
+jobs then build and cache.
 
 When the check of an advisory for a neighbouring branch shows the pinned
 version isn't affected, or that HoploDex doesn't reach the affected code,
