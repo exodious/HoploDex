@@ -58,14 +58,6 @@ fn on_webview_event<R: Runtime>(webview: &Webview<R>, event: &WebviewEvent) {
     }
 }
 
-/// Records drops without [`refuse_app_drags`]: only for the drop check's
-/// `--no-refusal`, which shows what the refusal stops. Never call it in the
-/// app.
-#[doc(hidden)]
-pub fn record_without_refusal() {
-    refusing();
-}
-
 /// Adds the drop recorder to the app. Recorded before the page hears of the
 /// drop: Tauri only queues its event for the page.
 pub fn register<R: Runtime>(builder: Builder<R>) -> Builder<R> {

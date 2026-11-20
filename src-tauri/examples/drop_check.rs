@@ -7,7 +7,7 @@
 //
 //   cargo run --profile e2e --example drop_check -- \
 //       --input CMD [--input ARG]... --source CMD [--source ARG]... \
-//       [--scratch DIR] [--out DIR] [--timeout SECONDS] [--no-refusal]
+//       [--scratch DIR] [--out DIR] [--timeout SECONDS]
 //
 // `--input` is the command that posts real input, given `drag X1 Y1 X2 Y2`
 // (press at the first point, move to the second, release) and `click X Y`
@@ -35,9 +35,7 @@
 //   4. drops another file from the other app, which must still be attachable.
 // It fails (exit 4, one "CHECK FAIL" line each) if the native drop isn't
 // attachable, if a drag from the app is, or if a drag from the app never
-// started (so that part proved nothing). `--no-refusal` leaves out
-// `drops::refuse_app_drags`, to show what it refuses: parts 2 and 3 may then
-// fail.
+// started (so that part proved nothing).
 //
 // Exit codes:
 //   0  passed
@@ -194,7 +192,6 @@ fn serve(shared: &Shared, req: &http::Request<Vec<u8>>) -> http::Response<Vec<u8
 }
 
 struct Options {
-    refusal: bool,
     input: Vec<String>,
     source: Vec<String>,
     scratch: PathBuf,
@@ -253,7 +250,7 @@ fn wait_until(limit: Duration, condition: impl Fn() -> bool) -> bool {
 fn usage() -> ! {
     eprintln!(
         "usage: drop_check --input CMD [--input ARG]... --source CMD [--source ARG]... \
-         [--scratch DIR] [--out DIR] [--timeout SECONDS] [--no-refusal]\n       drop_check --drag-source FILE X Y"
+         [--scratch DIR] [--out DIR] [--timeout SECONDS]\n       drop_check --drag-source FILE X Y"
     );
     std::process::exit(3)
 }
@@ -311,8 +308,6 @@ fn log_drag(source: &str, label: &str, event: &DragDropEvent) {
 }
 
 struct Check {
-    /// Whether `drops::refuse_app_drags` is installed (not `--no-refusal`).
-    refusal: bool,
     session: Session,
     shared: Arc<Shared>,
     input: Input,
@@ -401,8 +396,7 @@ impl Check {
         }
         // A drag that reaches wry must have met the refusal, not merely
         // carried no file this time.
-        if self.refusal
-            && reaches_wry
+        if reaches_wry
             && !wait_until(Duration::from_secs(2), || REFUSALS.load(Ordering::SeqCst) > refusals)
         {
             self.fail(format!("the refusal never saw the drag from {what}"));
@@ -439,8 +433,7 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
 
     let native = options.scratch.join("native.pdf");
     let planted = options.scratch.join("planted.pdf");
-    let mut check =
-        Check { refusal: options.refusal, session, shared, input, failures: Vec::new() };
+    let mut check = Check { session, shared, input, failures: Vec::new() };
     let main = bounds(&app, drops::MAIN_WINDOW, scale);
     #[allow(unused_mut)]
     let mut other = bounds(&app, "other", scale);
@@ -629,12 +622,7 @@ fn main() {
     let mut out = None::<PathBuf>;
     let mut timeout = Duration::from_secs(40);
     let (mut input, mut source) = (Vec::new(), Vec::new());
-    let mut refusal = true;
     while let Some(flag) = args.next() {
-        if flag == "--no-refusal" {
-            refusal = false;
-            continue;
-        }
         if flag == "--drag-source" {
             #[cfg(target_os = "linux")]
             {
@@ -702,14 +690,8 @@ fn main() {
     } else {
         format!("file://{}", planted.display())
     };
-    let options = Mutex::new(Some(Options {
-        refusal,
-        input,
-        source,
-        scratch: scratch.clone(),
-        out,
-        timeout,
-    }));
+    let options =
+        Mutex::new(Some(Options { input, source, scratch: scratch.clone(), out, timeout }));
     let mut ctx = tauri::generate_context!();
     ctx.config_mut().app.windows.clear();
 
@@ -756,12 +738,7 @@ fn main() {
             let main = main.build()?;
             let options = options.lock().unwrap().take().expect("setup runs once");
             // The app's own refusal, as `setup()` installs it.
-            if options.refusal {
-                drops::refuse_app_drags(&main)?;
-            } else {
-                drops::record_without_refusal();
-                eprintln!("CHECK note: without drops::refuse_app_drags");
-            }
+            drops::refuse_app_drags(&main)?;
             // A second web view in the window, as the PDF surface is one.
             let other = WebviewBuilder::new(
                 "other",
