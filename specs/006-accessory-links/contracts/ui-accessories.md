@@ -300,6 +300,10 @@ own deletion wording is unchanged.
   Remove one to choose another." A pick that would make more than two adds
   nothing and the field's error says "An import takes at most two files,
   one of firearms and one of accessories. Nothing was added." (issue #56).
+  _Amended 2026-11-19 (code scanning alert 89): there is no path field, so
+  no typed path: files come only from "Choose a file…", the chooser the
+  backend opens, and once two are chosen that button is disabled; see
+  [001's `import_collection`](../../001-firearms-inventory/contracts/tauri-commands.md#import_collection)._
 - **The import report** names each row's table ("Accessories, row 4") and
   lists mount warnings with the other warnings. The conflict list shows an
   accessory conflict by its `RecordName`, under a column headed by the
