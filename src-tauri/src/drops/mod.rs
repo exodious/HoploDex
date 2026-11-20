@@ -2,8 +2,18 @@
 //! session (code scanning alert `paths/cwe-73` on `add_document_from_path`):
 //! `add_photo_from_path` and `add_document_from_path` read only those, so the
 //! page can't name another file (`session::grants`).
+//!
+//! The main web view is a child of its window (Tauri's `unstable` feature),
+//! so a drop reaches the app as the web view's `DragDrop` event, never the
+//! window's. A drag that starts in the app itself, in the page or in another
+//! of its web views, is not a drop of the user's files: each OS's module
+//! keeps such a drag from reaching the recorder with a path
+//! ([`refuse_app_drags`]).
 
-use tauri::{Builder, DragDropEvent, Manager, Runtime, Window, WindowEvent};
+#[cfg(target_os = "linux")]
+mod linux;
+
+use tauri::{Builder, DragDropEvent, Manager, Runtime, Webview, WebviewEvent, WebviewWindow};
 
 use crate::session::Session;
 
@@ -20,14 +30,31 @@ pub fn record(session: &Session, label: &str, event: &DragDropEvent) {
     }
 }
 
-fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
-    if let WindowEvent::DragDrop(drop) = event {
-        record(&window.state::<Session>(), window.label(), drop);
+fn on_webview_event<R: Runtime>(webview: &Webview<R>, event: &WebviewEvent) {
+    if let WebviewEvent::DragDrop(drop) = event {
+        record(&webview.state::<Session>(), webview.label(), drop);
     }
 }
 
 /// Adds the drop recorder to the app. Recorded before the page hears of the
 /// drop: Tauri only queues its event for the page.
 pub fn register<R: Runtime>(builder: Builder<R>) -> Builder<R> {
-    builder.on_window_event(on_window_event)
+    builder.on_webview_event(on_webview_event)
+}
+
+/// Keeps a drag that starts in the app from reaching the recorder with a
+/// path, on every web view of the process. Called once from `setup()`, after
+/// the main window exists.
+pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = window;
+        linux::refuse_app_drags();
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = window;
+        Ok(())
+    }
 }

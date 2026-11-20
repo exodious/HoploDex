@@ -12,8 +12,10 @@ the mouse's back and forward buttons, which that one lacks.
     real_input.py key Control_L+s X keysyms, + for a chord
     real_input.py xbutton X Y back|forward
                                          the mouse's side buttons (8 and 9)
-    real_input.py drag X1 Y1 X2 Y2  press the left button at X1 Y1, move to
-                                         X2 Y2 in steps and release there
+    real_input.py drag X1 Y1 X2 Y2 [VX VY]
+                                         press the left button at X1 Y1, move to
+                                         X2 Y2 in steps (by way of VX VY) and
+                                         release there
 """
 
 import importlib.util
@@ -80,8 +82,12 @@ def main(args):
             button(display, number)
 
         with_display(act)
-    elif command == "drag" and len(args) == 5:
-        x1, y1, x2, y2 = (int(v) for v in args[1:])
+    elif command == "drag" and len(args) in (5, 7):
+        points = [int(v) for v in args[1:]]
+        x1, y1, x2, y2 = points[:4]
+        legs = [(x1, y1, *points[4:6]), (*points[4:6], x2, y2)] if len(points) == 6 else [
+            (x1, y1, x2, y2)
+        ]
 
         def act(display):
             move(display, x1, y1)
@@ -89,12 +95,13 @@ def main(args):
             x11.XFlush(display)
             time.sleep(0.2)
             steps = 30
-            for i in range(1, steps + 1):
-                xtst.XTestFakeMotionEvent(
-                    display, -1, x1 + (x2 - x1) * i // steps, y1 + (y2 - y1) * i // steps, 0
-                )
-                x11.XFlush(display)
-                time.sleep(0.03)
+            for ax, ay, bx, by in legs:
+                for i in range(1, steps + 1):
+                    xtst.XTestFakeMotionEvent(
+                        display, -1, ax + (bx - ax) * i // steps, ay + (by - ay) * i // steps, 0
+                    )
+                    x11.XFlush(display)
+                    time.sleep(0.03)
             # Rest over the target, so it sees the drag before the release.
             time.sleep(0.5)
             xtst.XTestFakeMotionEvent(display, -1, x2 + 1, y2 + 1, 0)

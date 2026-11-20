@@ -543,6 +543,10 @@ fn main() {
             // `plaintext-lifetime/cwe-312`); this run's saves nothing.
             #[cfg(windows)]
             hoplodex_lib::services::autofill::clear_saved(&_main);
+            // A drag that starts in the app is not a drop of the user's files
+            // (`drops`); without the refusal the app doesn't start, rather
+            // than let the page plant a drop.
+            drops::refuse_app_drags(&_main)?;
             // The native half of the browser controls (008 FR-010 to FR-012,
             // 008 research.md §13): in release and E2E builds only, and a
             // failure leaves the web view's own menu rather than keeping

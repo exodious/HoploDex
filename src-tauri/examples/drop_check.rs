@@ -7,7 +7,7 @@
 //
 //   cargo run --profile e2e --example drop_check -- \
 //       --input CMD [--input ARG]... --source CMD [--source ARG]... \
-//       [--scratch DIR] [--out DIR] [--timeout SECONDS]
+//       [--scratch DIR] [--out DIR] [--timeout SECONDS] [--no-refusal]
 //
 // `--input` is the command that posts real input, given `drag X1 Y1 X2 Y2`
 // (press at the first point, move to the second, release) and `click X Y`
@@ -25,12 +25,16 @@
 //      `add_photo_from_path` and `add_document_from_path` call first, must
 //      give it back (the drop is attachable);
 //   2. drags a link out of the page itself, whose drag carries a `file://`
-//      URI list naming another file, and drops it on the main window: the
+//      URI list naming another file, and drops it on the main web view: the
 //      session must never hold that file (a drag that starts in the page is
-//      not a drop of the user's files).
+//      not a drop of the user's files);
+//   3. does the same from a second web view in the main window, as the PDF
+//      surface is one, onto the main web view.
 // It fails (exit 4, one "CHECK FAIL" line each) if the native drop isn't
-// attachable, if the page's drag is, or if the page's drag never started (so
-// the second part proved nothing).
+// attachable, if a drag from the app is, or if a drag from the app never
+// started (so that part proved nothing). `--no-refusal` leaves out
+// `drops::refuse_app_drags`, to show what it refuses: parts 2 and 3 may then
+// fail.
 //
 // Exit codes:
 //   0  passed
@@ -59,8 +63,8 @@ use hoplodex_lib::services::machine_settings::MachineIdentity;
 use hoplodex_lib::services::passphrase::Passphrase;
 use hoplodex_lib::session::{OpenDatabase, Session};
 use tauri::{
-    AppHandle, DragDropEvent, Manager, WebviewEvent, WebviewUrl, WebviewWindowBuilder,
-    WindowEvent, Wry, http,
+    AppHandle, DragDropEvent, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewEvent,
+    WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry, http, webview::PageLoadEvent,
 };
 
 /// The main window's page comes from a protocol, as in the window controls
@@ -78,20 +82,78 @@ const PAGE: &str = r#"<!doctype html><meta charset="utf-8"><title>drop check</ti
 </style>
 <a id="planted" href="PLANTED" draggable="true">a page link to drag</a>
 <script>
-  fetch('/loaded');
   planted.addEventListener('dragstart', (e) => {
     e.dataTransfer.setData('text/uri-list', 'PLANTED');
     e.dataTransfer.setData('text/plain', 'PLANTED');
     e.dataTransfer.effectAllowed = 'copy';
-    fetch('/dragstart');
+    fetch('/dragstart?from=' + location.pathname);
   });
 </script>"#;
 
-/// Where the page's link is (its middle) and where drops land, in logical
-/// pixels of the window's content area.
+/// Where a page's link is (its middle), in logical pixels of its web view.
 const LINK: (f64, f64) = (150.0, 70.0);
-const TARGET: (f64, f64) = (500.0, 400.0);
-const PAGE_TARGET: (f64, f64) = (600.0, 500.0);
+/// Where the second web view is asked to go in the window. Linux packs it
+/// beside the main one instead (`services::preview::surface::linux`), so the
+/// check asks each web view where it is.
+const OTHER_AT: (f64, f64) = (20.0, 460.0);
+const OTHER_SIZE: (f64, f64) = (320.0, 200.0);
+
+/// A web view's place in the window's content area, logical pixels.
+#[derive(Debug, Clone, Copy)]
+struct Bounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl Bounds {
+    /// The point `fraction` of the way across and down.
+    fn at(&self, fraction: (f64, f64)) -> (f64, f64) {
+        (self.x + self.width * fraction.0, self.y + self.height * fraction.1)
+    }
+
+    fn link(&self) -> (f64, f64) {
+        (self.x + LINK.0, self.y + LINK.1)
+    }
+}
+
+/// Where `label`'s web view is in its window.
+fn bounds(app: &AppHandle<Wry>, label: &str, scale: f64) -> Bounds {
+    let webview = app.get_webview(label).unwrap();
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        let _ = scale;
+        let (send, receive) = std::sync::mpsc::channel();
+        webview
+            .with_webview(move |view| {
+                let view = view.inner();
+                let top = view.toplevel().unwrap();
+                let (x, y) = view.translate_coordinates(&top, 0, 0).unwrap_or((0, 0));
+                let size = view.allocation();
+                let _ = send.send(Bounds {
+                    x: f64::from(x),
+                    y: f64::from(y),
+                    width: f64::from(size.width()),
+                    height: f64::from(size.height()),
+                });
+            })
+            .unwrap();
+        receive.recv_timeout(Duration::from_secs(5)).unwrap()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let at = webview.position().unwrap();
+        let size = webview.size().unwrap();
+        Bounds {
+            x: f64::from(at.x) / scale,
+            y: f64::from(at.y) / scale,
+            width: f64::from(size.width) / scale,
+            height: f64::from(size.height) / scale,
+        }
+    }
+}
 /// Where the source window goes, in the input command's units.
 const SOURCE_AT: (i64, i64) = (40, 160);
 /// The main window's top-left corner, logical pixels.
@@ -100,9 +162,11 @@ const MAIN_AT: (f64, f64) = (300.0, 60.0);
 /// How long a drop may take to be recorded after the input that made it.
 const DROP_LIMIT: Duration = Duration::from_secs(6);
 
+/// The pages that finished loading: both web views'.
+static FINISHED: AtomicUsize = AtomicUsize::new(0);
+
 #[derive(Default)]
 struct Shared {
-    loads: AtomicUsize,
     drag_starts: AtomicUsize,
     planted_uri: Mutex<String>,
 }
@@ -110,14 +174,10 @@ struct Shared {
 fn serve(shared: &Shared, req: &http::Request<Vec<u8>>) -> http::Response<Vec<u8>> {
     let empty = || http::Response::builder().body(Vec::new()).unwrap();
     match req.uri().path() {
-        "/loaded" => {
-            shared.loads.fetch_add(1, Ordering::SeqCst);
-            eprintln!("CHECK page loaded");
-            empty()
-        }
         "/dragstart" => {
             shared.drag_starts.fetch_add(1, Ordering::SeqCst);
-            eprintln!("CHECK the page's drag started");
+            let from = req.uri().query().unwrap_or("");
+            eprintln!("CHECK a page's drag started ({from})");
             empty()
         }
         _ => {
@@ -131,6 +191,7 @@ fn serve(shared: &Shared, req: &http::Request<Vec<u8>>) -> http::Response<Vec<u8
 }
 
 struct Options {
+    refusal: bool,
     input: Vec<String>,
     source: Vec<String>,
     scratch: PathBuf,
@@ -164,10 +225,13 @@ impl Input {
         )
     }
 
-    fn drag(&self, from: (i64, i64), to: (i64, i64)) -> bool {
-        let args = [from.0, from.1, to.0, to.1].map(|v| v.to_string());
+    /// A drag from `from` to `to`, by way of `via` if there is one.
+    fn drag(&self, from: (i64, i64), to: (i64, i64), via: Option<(i64, i64)>) -> bool {
         let mut all = vec!["drag".to_string()];
-        all.extend(args);
+        all.extend([from.0, from.1, to.0, to.1].map(|v| v.to_string()));
+        if let Some(via) = via {
+            all.extend([via.0, via.1].map(|v| v.to_string()));
+        }
         self.run(&all)
     }
 }
@@ -186,7 +250,7 @@ fn wait_until(limit: Duration, condition: impl Fn() -> bool) -> bool {
 fn usage() -> ! {
     eprintln!(
         "usage: drop_check --input CMD [--input ARG]... --source CMD [--source ARG]... \
-         [--scratch DIR] [--out DIR] [--timeout SECONDS]\n       drop_check --drag-source FILE X Y"
+         [--scratch DIR] [--out DIR] [--timeout SECONDS] [--no-refusal]\n       drop_check --drag-source FILE X Y"
     );
     std::process::exit(3)
 }
@@ -239,7 +303,7 @@ impl Check {
         wait_until(limit, || self.session.take_drop(id, path).is_ok())
     }
 
-    fn native_drop(&mut self, options: &Options, file: &Path) {
+    fn native_drop(&mut self, options: &Options, file: &Path, target: (f64, f64)) {
         let (program, rest) = options.source.split_first().expect("a source command");
         let child: Option<Child> = Command::new(program)
             .args(rest)
@@ -250,9 +314,9 @@ impl Check {
             .ok();
         thread::sleep(Duration::from_secs(3));
         let from = (SOURCE_AT.0 + 80, SOURCE_AT.1 + 80);
-        let to = self.input.at(TARGET);
+        let to = self.input.at(target);
         eprintln!("CHECK native drag from {from:?} to {to:?}");
-        let sent = self.input.drag(from, to);
+        let sent = self.input.drag(from, to, None);
         if !sent {
             self.fail("the native drag's input couldn't be sent".into());
         } else if self.attachable(file, DROP_LIMIT) {
@@ -269,34 +333,46 @@ impl Check {
         }
     }
 
-    fn page_drag(&mut self, planted: &Path) {
+    /// Drags from `from` (screen units of the input command) onto the main
+    /// web view at `target` (logical pixels of the window's content), by way
+    /// of `via` (screen units): a drag that starts in the app.
+    fn app_drag(
+        &mut self,
+        what: &str,
+        from: (i64, i64),
+        target: (f64, f64),
+        via: Option<(i64, i64)>,
+        planted: &Path,
+    ) {
+        // Only a page reports its drag's start.
+        let page = what.contains("page") || what.contains("web view");
         let starts = self.shared.drag_starts.load(Ordering::SeqCst);
-        let from = self.input.at(LINK);
-        let to = self.input.at(PAGE_TARGET);
-        eprintln!("CHECK page drag from {from:?} to {to:?}");
-        if !self.input.drag(from, to) {
-            self.fail("the page drag's input couldn't be sent".into());
+        let to = self.input.at(target);
+        eprintln!("CHECK drag from {what}: from {from:?} to {to:?} by way of {via:?}");
+        if !self.input.drag(from, to, via) {
+            self.fail(format!("the input of the drag from {what} couldn't be sent"));
             return;
         }
-        let started = wait_until(Duration::from_secs(3), || {
-            self.shared.drag_starts.load(Ordering::SeqCst) > starts
-        });
+        let started = !page
+            || wait_until(Duration::from_secs(3), || {
+                self.shared.drag_starts.load(Ordering::SeqCst) > starts
+            });
         if !started {
-            self.fail("the page's drag never started, so it proved nothing".into());
+            self.fail(format!("the drag from {what} never started, so it proved nothing"));
         }
         if self.attachable(planted, DROP_LIMIT) {
             self.fail(format!(
-                "a drag that started in the page was recorded as a drop: {} is attachable",
+                "a drag from {what} was recorded as a drop: {} is attachable",
                 planted.display()
             ));
         } else if started {
-            eprintln!("CHECK the page's drag was not recorded");
+            eprintln!("CHECK the drag from {what} was not recorded");
         }
     }
 }
 
 fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Options) {
-    if !wait_until(options.timeout, || shared.loads.load(Ordering::SeqCst) > 0) {
+    if !wait_until(options.timeout, || FINISHED.load(Ordering::SeqCst) >= 2) {
         eprintln!("CHECK FAILED: the page didn't load");
         screenshot(&options.out.join(format!("drop-failed-{}.png", std::env::consts::OS)));
         std::process::exit(1);
@@ -325,8 +401,41 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
     let native = options.scratch.join("native.pdf");
     let planted = options.scratch.join("planted.pdf");
     let mut check = Check { session, shared, input, failures: Vec::new() };
-    check.native_drop(&options, &native);
-    check.page_drag(&planted);
+    let main = bounds(&app, drops::MAIN_WINDOW, scale);
+    let other = bounds(&app, "other", scale);
+    eprintln!("CHECK main web view at {main:?}, second web view at {other:?}");
+    // The main web view's area away from where the second one is laid over it
+    // (macOS and Windows) or beside it (Linux).
+    let (open, page_target) = if cfg!(target_os = "linux") {
+        (main.at((0.5, 0.6)), main.at((0.8, 0.8)))
+    } else {
+        (main.at((0.6, 0.35)), main.at((0.8, 0.5)))
+    };
+    check.native_drop(&options, &native, open);
+    let (main_link, other_link) = (check.input.at(main.link()), check.input.at(other.link()));
+    check.app_drag("the main page", main_link, page_target, None, &planted);
+    check.app_drag("a second web view", other_link, open, None, &planted);
+    // Out of the window (above it, on the screen's edge) and back.
+    let outside = (main_link.0, 5);
+    check.app_drag("the main page, out and back", main_link, open, Some(outside), &planted);
+    #[cfg(target_os = "linux")]
+    {
+        // A window of the app's own process holding the planted file, as a
+        // file manager offers one: not a web view, so WebKit asks it for the
+        // drag's data as it asks another app.
+        let (send, receive) = std::sync::mpsc::channel();
+        let file = planted.display().to_string();
+        app.run_on_main_thread(move || {
+            let window = source_window(&file, IN_APP_SOURCE_AT.0 as i32, IN_APP_SOURCE_AT.1 as i32);
+            std::mem::forget(window);
+            let _ = send.send(());
+        })
+        .unwrap();
+        receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        thread::sleep(Duration::from_secs(2));
+        let from = (IN_APP_SOURCE_AT.0 + 80, IN_APP_SOURCE_AT.1 + 80);
+        check.app_drag("a window of the app's own process", from, open, None, &planted);
+    }
     screenshot(&options.out.join(format!("drop-{}.png", std::env::consts::OS)));
 
     if check.failures.is_empty() {
@@ -338,12 +447,24 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
     }
 }
 
+/// Where the Linux check's in-process source window goes, screen pixels.
+#[cfg(target_os = "linux")]
+const IN_APP_SOURCE_AT: (i64, i64) = (40, 780);
+
 /// `--drag-source FILE X Y` on Linux: a window of its own process at X Y
 /// holding FILE to drag, as a file manager offers one.
 #[cfg(target_os = "linux")]
 fn drag_source(file: &str, x: i32, y: i32) -> ! {
-    use gtk::{gdk, prelude::*};
     gtk::init().expect("GTK starts");
+    let _window = source_window(file, x, y);
+    gtk::main();
+    std::process::exit(0)
+}
+
+/// A window at X Y holding FILE to drag.
+#[cfg(target_os = "linux")]
+fn source_window(file: &str, x: i32, y: i32) -> gtk::Window {
+    use gtk::{gdk, prelude::*};
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
     window.set_title("drop check source");
     window.set_default_size(160, 160);
@@ -358,8 +479,7 @@ fn drag_source(file: &str, x: i32, y: i32) -> ! {
     });
     window.add(&area);
     window.show_all();
-    gtk::main();
-    std::process::exit(0)
+    window
 }
 
 fn main() {
@@ -368,7 +488,12 @@ fn main() {
     let mut out = None::<PathBuf>;
     let mut timeout = Duration::from_secs(40);
     let (mut input, mut source) = (Vec::new(), Vec::new());
+    let mut refusal = true;
     while let Some(flag) = args.next() {
+        if flag == "--no-refusal" {
+            refusal = false;
+            continue;
+        }
         if flag == "--drag-source" {
             #[cfg(target_os = "linux")]
             {
@@ -429,7 +554,14 @@ fn main() {
     } else {
         format!("file://{}", planted.display())
     };
-    let options = Mutex::new(Some(Options { input, source, scratch: scratch.clone(), out, timeout }));
+    let options = Mutex::new(Some(Options {
+        refusal,
+        input,
+        source,
+        scratch: scratch.clone(),
+        out,
+        timeout,
+    }));
     let mut ctx = tauri::generate_context!();
     ctx.config_mut().app.windows.clear();
 
@@ -441,6 +573,12 @@ fn main() {
         .on_window_event(|window, event| {
             if let WindowEvent::DragDrop(drop) = event {
                 log_drag("window", window.label(), drop);
+            }
+        })
+        .on_page_load(|webview, payload| {
+            if let PageLoadEvent::Finished = payload.event() {
+                eprintln!("CHECK {} loaded {}", webview.label(), payload.url());
+                FINISHED.fetch_add(1, Ordering::SeqCst);
             }
         })
         .on_webview_event(|webview, event| {
@@ -467,8 +605,30 @@ fn main() {
             .incognito(true);
             #[cfg(windows)]
             let main = main.data_directory(scratch.join("main-webview"));
-            let _main = main.build()?;
+            let main = main.build()?;
             let options = options.lock().unwrap().take().expect("setup runs once");
+            // The app's own refusal, as `setup()` installs it.
+            if options.refusal {
+                drops::refuse_app_drags(&main)?;
+            } else {
+                eprintln!("CHECK note: without drops::refuse_app_drags");
+            }
+            // A second web view in the window, as the PDF surface is one.
+            let other = WebviewBuilder::new(
+                "other",
+                WebviewUrl::External(format!("{base}other").parse().unwrap()),
+            );
+            // A web context of its own, so the check's protocol is registered
+            // for it too (WebKitGTK shows "The URL can't be shown" otherwise).
+            #[cfg(windows)]
+            let other = other.data_directory(scratch.join("main-webview"));
+            #[cfg(not(windows))]
+            let other = other.incognito(true).data_directory(scratch.join("other-webview"));
+            main.as_ref().window().add_child(
+                other,
+                LogicalPosition::new(OTHER_AT.0, OTHER_AT.1),
+                LogicalSize::new(OTHER_SIZE.0, OTHER_SIZE.1),
+            )?;
             let (app, shared, session) =
                 (app.handle().clone(), setup_shared.clone(), setup_session.clone());
             thread::spawn(move || run(app, shared, session, options));

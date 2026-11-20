@@ -17,6 +17,7 @@ use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
+use hoplodex_lib::drops;
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
@@ -202,6 +203,49 @@ fn an_earlier_session_cannot_use_a_drop() {
     ));
     // It is still there for the session it was dropped in.
     world.add_document(&receipt).unwrap();
+}
+
+/// The drag events Tauri delivers, as `drops::record` takes them from the
+/// main web view's `WebviewEvent::DragDrop` (and the E2E build from the specs'
+/// `tauri://drag-drop` events).
+fn drop_event(paths: Vec<PathBuf>) -> tauri::DragDropEvent {
+    tauri::DragDropEvent::Drop { paths, position: tauri::PhysicalPosition::new(10.0, 20.0) }
+}
+
+#[test]
+fn a_drop_onto_the_main_web_view_is_recorded_once() {
+    let world = World::new();
+    let receipt = world.file("receipt.pdf", PDF);
+    let photo = world.file("side.png", &sample_png_bytes());
+    drops::record(
+        &world.session,
+        drops::MAIN_WINDOW,
+        &drop_event(vec![receipt.clone(), photo.clone()]),
+    );
+
+    world.add_document(&receipt).unwrap();
+    world.add_photo(&photo).unwrap();
+    refused(world.add_document(&receipt));
+}
+
+#[test]
+fn only_a_drop_onto_the_main_web_view_is_recorded() {
+    let world = World::new();
+    let receipt = world.file("receipt.pdf", PDF);
+    let position = tauri::PhysicalPosition::new(10.0, 20.0);
+    // Another web view's drop (the PDF surface's), and the main web view's
+    // events that aren't a drop: a drag passing over it is not the user's
+    // permission to read the file.
+    drops::record(&world.session, "preview-surface", &drop_event(vec![receipt.clone()]));
+    for event in [
+        tauri::DragDropEvent::Enter { paths: vec![receipt.clone()], position },
+        tauri::DragDropEvent::Over { position },
+        tauri::DragDropEvent::Leave,
+    ] {
+        drops::record(&world.session, drops::MAIN_WINDOW, &event);
+    }
+    refused(world.add_document(&receipt));
+    assert_eq!(world.documents(), 0);
 }
 
 /// Exports through the held answer `token`, as `export_collection` does, with
