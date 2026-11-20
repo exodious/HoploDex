@@ -88,6 +88,8 @@ _Amended 2026-11-04: the passphrase-copies investigation measured what that left
 
 _Amended 2026-11-06: since #173 the global allocator (`src-tauri/src/allocator.rs`) zeroes every block Rust frees, so `zxcvbn`'s copies of the passphrase are wiped when they are freed, and `docs/attack-surface.md` (`key-passphrase`) no longer lists them as accepted._
 
+_Amended 2026-11-19: on macOS, reading `stringValue()` of the field being edited (at each change, pause and press, and when Show is toggled) makes AppKit commit the typed text into the cell as new `NSString`s, which AppKit frees without wiping; HoploDex's own buffer is still wiped straight after (`getCharacters:range:`). The owner accepted this, since only AppKit could wipe those copies (`docs/attack-surface.md`, `key-passphrase`)._
+
 **SQLCipher logging**: SQLCipher writes `ERROR CORE … hmac check failed` to
 stderr on every wrong passphrase (seen in the spike). It contains no key
 material, but it is noise in a user's terminal. `PRAGMA cipher_log_level =
