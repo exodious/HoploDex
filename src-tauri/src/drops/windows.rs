@@ -16,17 +16,21 @@ use tauri::{Runtime, WebviewWindow};
 use windows::{
     Win32::{
         Foundation::{HWND, LPARAM, POINTL},
-        System::Threading::GetCurrentProcessId,
         System::{
             Com::{DVASPECT_CONTENT, FORMATETC, IDataObject, TYMED_HGLOBAL},
             DataExchange::RegisterClipboardFormatW,
+            LibraryLoader::GetModuleHandleW,
+            Memory::{
+                MEM_COMMIT, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE,
+                PAGE_GUARD, PAGE_READONLY, PAGE_READWRITE, VirtualQuery,
+            },
             Ole::{
                 DROPEFFECT, DROPEFFECT_NONE, IDropTarget, IDropTarget_Impl, RegisterDragDrop,
                 RevokeDragDrop,
             },
             SystemServices::MODIFIERKEYS_FLAGS,
         },
-        UI::WindowsAndMessaging::{EnumChildWindows, GetPropW, GetWindowThreadProcessId},
+        UI::WindowsAndMessaging::{EnumChildWindows, GetPropW},
     },
     core::{BOOL, Interface, Ref, implement, w},
 };
@@ -76,29 +80,19 @@ fn wrap_all(parent: HWND) -> usize {
 }
 
 /// Replaces `hwnd`'s registered drop target with the filter in front of it,
-/// if `hwnd` is a window of this process (the enumeration also lists the
-/// WebView2 processes' windows, whose property means nothing here). Not of
-/// this thread only: wry's targets are on WebView2's windows of this process,
-/// which another thread owns.
+/// if the target is wry's. wry registers on WebView2's windows, which its
+/// browser and GPU processes own, so neither the window's process nor its
+/// thread says whose the property's pointer is; [`ours`] asks the pointer.
 ///
 /// # Safety
 /// `hwnd` is a live window handle.
 unsafe fn wrap(hwnd: HWND) -> bool {
-    let mut process = 0u32;
-    // SAFETY: plain queries of a window handle, into a local, and of this
-    // process.
-    unsafe {
-        GetWindowThreadProcessId(hwnd, Some(&mut process));
-        if process != GetCurrentProcessId() {
-            return false;
-        }
-    }
     // SAFETY: OLE keeps the target `RegisterDragDrop` was given in this
     // property, holding a reference, until `RevokeDragDrop`; the clone takes
     // a reference of its own before that.
     unsafe {
         let raw = GetPropW(hwnd, w!("OleDropTargetInterface"));
-        if raw.0.is_null() {
+        if raw.0.is_null() || !ours(raw.0) {
             return false;
         }
         let Some(inner) = IDropTarget::from_raw_borrowed(&raw.0).cloned() else {
@@ -116,6 +110,38 @@ unsafe fn wrap(hwnd: HWND) -> bool {
         }
         true
     }
+}
+
+/// Whether `object` is a COM object this executable made, as wry's drop
+/// targets are: committed, readable memory of this process whose first word,
+/// the vtable, lies in this executable's image. A pointer another process
+/// stored in a window property fails it, and is never followed.
+fn ours(object: *mut std::ffi::c_void) -> bool {
+    let readable = |address: *const std::ffi::c_void| {
+        let mut info = MEMORY_BASIC_INFORMATION::default();
+        // SAFETY: VirtualQuery only describes the address, into a local.
+        let size = unsafe {
+            VirtualQuery(Some(address), &mut info, std::mem::size_of::<MEMORY_BASIC_INFORMATION>())
+        };
+        let readable = PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE;
+        (size != 0
+            && info.State == MEM_COMMIT
+            && (info.Protect & readable).0 != 0
+            && (info.Protect & PAGE_GUARD).0 == 0)
+            .then_some(info)
+    };
+    if object.is_null() || !(object as usize).is_multiple_of(std::mem::align_of::<usize>()) {
+        return false;
+    }
+    // SAFETY: a module handle for this executable, which isn't freed.
+    let Ok(image) = (unsafe { GetModuleHandleW(None) }) else { return false };
+    if readable(object).is_none() {
+        return false;
+    }
+    // SAFETY: an aligned word in committed, readable memory of this process
+    // (an aligned word never crosses a page).
+    let vtable = unsafe { *(object as *const *const std::ffi::c_void) };
+    readable(vtable).is_some_and(|info| info.AllocationBase == image.0)
 }
 
 /// Whether Chromium marked `data` as made by a renderer: a drag out of a page.
