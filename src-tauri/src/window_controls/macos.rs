@@ -223,7 +223,7 @@ fn add_methods(web_view: *mut c_void) -> Result<(), String> {
 /// it `wry::wkwebview::class::wry_web_view::WryWebView<version>`, and wry's
 /// key-value observers make the instance's class a hidden `NSKVONotifying_…`
 /// subclass of it, so the walk goes up the superclasses.
-fn wry_web_view_class(mut class: &'static AnyClass) -> Option<&'static AnyClass> {
+pub(crate) fn wry_web_view_class(mut class: &'static AnyClass) -> Option<&'static AnyClass> {
     loop {
         let name = class.name().to_string_lossy();
         if !name.starts_with("NSKVONotifying_") && name.contains("::wry_web_view::WryWebView") {

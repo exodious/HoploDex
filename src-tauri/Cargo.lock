@@ -1889,6 +1889,7 @@ dependencies = [
  "webkit2gtk",
  "webview2-com",
  "windows",
+ "windows-core 0.61.2",
  "windows-sys 0.61.2",
  "zbus",
  "zeroize",

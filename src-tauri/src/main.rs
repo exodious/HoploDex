@@ -18,6 +18,7 @@ use hoplodex_lib::commands::documents::{
 };
 use hoplodex_lib::commands::preview::{AppSurfaces, PreviewEnv};
 use hoplodex_lib::db;
+use hoplodex_lib::drops;
 #[cfg(unix)]
 use hoplodex_lib::platform::core_dumps;
 use hoplodex_lib::platform::{self, SystemEvent};
@@ -52,10 +53,7 @@ use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
 use hoplodex_lib::{allocator, app_dirs};
 use tauri::webview::NewWindowResponse;
-use tauri::{
-    AppHandle, DragDropEvent, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder,
-    WindowEvent,
-};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// Every process this executable runs (the app and both helpers) zeroes each
 /// block it frees and, on Windows, never reaches Windows Error Reporting
@@ -325,6 +323,9 @@ fn main() {
     // script in the page, so it must never reach a shipped build.
     #[cfg(feature = "e2e")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    // The files the user drops onto the main window are the only ones
+    // `add_photo_from_path` and `add_document_from_path` read (`drops`).
+    let builder = drops::register(builder);
     let app = builder
         // The PDF surface's documents, from memory (007 research.md §4).
         .register_asynchronous_uri_scheme_protocol(
@@ -448,8 +449,9 @@ fn main() {
             #[cfg(feature = "e2e")]
             app.manage::<Arc<dyn Chooser>>(Arc::new(E2eChooser));
             // WebDriver can't drop a file from the desktop, so the specs send
-            // the page Tauri's drop event themselves; an E2E build records the
-            // paths they send as the window's handler records a real drop.
+            // the page Tauri's drop event themselves; an E2E build hands the
+            // paths they send to the recorder a real drop goes through
+            // (`drops::record`). Only the event's source differs.
             #[cfg(feature = "e2e")]
             {
                 use tauri::Listener;
@@ -460,7 +462,11 @@ fn main() {
                         paths: Vec<std::path::PathBuf>,
                     }
                     if let Ok(dropped) = serde_json::from_str::<Dropped>(event.payload()) {
-                        session.record_drop(dropped.paths);
+                        let drop = tauri::DragDropEvent::Drop {
+                            paths: dropped.paths,
+                            position: tauri::PhysicalPosition::new(0.0, 0.0),
+                        };
+                        drops::record(&session, drops::MAIN_WINDOW, &drop);
                     }
                 });
             }
@@ -537,6 +543,12 @@ fn main() {
             // `plaintext-lifetime/cwe-312`); this run's saves nothing.
             #[cfg(windows)]
             hoplodex_lib::services::autofill::clear_saved(&_main);
+            // A drag that starts in the app is not a drop of the user's files
+            // (`drops`). Without the refusal no drop is recorded, so the page
+            // can't plant one; files are then attached with the button.
+            if let Err(err) = drops::refuse_app_drags(&_main) {
+                log::error!("drags from the app can't be refused, so no drop is recorded: {err}");
+            }
             // The native half of the browser controls (008 FR-010 to FR-012,
             // 008 research.md §13): in release and E2E builds only, and a
             // failure leaves the web view's own menu rather than keeping
@@ -567,24 +579,13 @@ fn main() {
                 log::warn!("could not emit {name}: {err}");
             }
         })
-        .on_window_event(|window, event| match event {
+        .on_window_event(|window, event| {
             // Closing the window is a request: unsaved changes are asked
             // about first, and the database is closed normally.
-            WindowEvent::CloseRequested { api, .. } => {
+            if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 request_quit(window.app_handle());
             }
-            // The files the user drops onto the main window are the only ones
-            // `add_photo_from_path` and `add_document_from_path` read, so the
-            // page can't name another (code scanning alert `paths/cwe-73` on
-            // `add_document_from_path`). Recorded before the page hears of the
-            // drop: Tauri only queues its event for the page.
-            WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. })
-                if window.label() == MAIN_WINDOW =>
-            {
-                window.state::<Session>().record_drop(paths.clone());
-            }
-            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             hoplodex_lib::commands::databases::get_chooser_state,

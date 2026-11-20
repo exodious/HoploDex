@@ -1,4 +1,4 @@
-# PDF surface, window controls and WebKit's sandbox
+# PDF surface, window controls, drops and WebKit's sandbox
 
 _Part of the [development docs](../../DEVELOPMENT.md)._
 
@@ -71,6 +71,31 @@ failed. Two unit tests in `window_controls` say which builds install the filters
 E2E build does (`cargo test --profile e2e --features e2e --manifest-path
 src-tauri/Cargo.toml window_controls`) and a plain debug build does not (the
 default `cargo test`).
+
+## Drop check
+
+A file drop reaches `add_photo_from_path` and `add_document_from_path` only if
+the main web view's native drop recorded it, and a drag that starts in the app
+is refused (`src-tauri/src/drops/`, [File drops](../architecture/frontend.md)).
+E2E sends its drops itself, so only this check shows a real one. One script per
+OS builds `src-tauri/examples/drop_check.rs` without the `e2e` feature and
+drives it with real input (`real_input.{py,swift,ps1}`'s `drag`): a file
+dragged from another process's window must be attachable, and links dragged
+out of the page, out of a second web view and back in from outside the window
+must not be (the example's header lists every case). Run it on every OS before
+a pull request that touches `drops/` or how drops are recorded, and whenever
+the web view engine is updated:
+
+- **Linux:** `scripts/dev-container.sh scripts/drop-check.sh`, under Xvfb with
+  XTest input and throwaway `HOME` and `XDG_*` folders.
+- **macOS:** `scripts/macos/drop-check.sh`, from a Mac with the tart VM set up,
+  as the PDF surface check runs.
+- **Windows:** `powershell -ExecutionPolicy Bypass -File
+  scripts\windows\drop-check.ps1`, in the signed-in desktop session (over SSH,
+  through `scripts\windows\gui.ps1`), at 100% scaling.
+
+Logs and screenshots go to `e2e/screenshots-out/drop-check/`. Exit codes: 0
+passed, 1 no window, 3 usage, 4 a check failed.
 
 ## WebKit's sandbox on a Linux host
 

@@ -14,6 +14,10 @@
 #   real_input.ps1 vkey HEX         press a virtual key by its code (A6 is
 #                                        Browser Back, A7 Forward, A8 Refresh),
 #                                        which SendKeys has no name for
+#   real_input.ps1 drag X1 Y1 X2 Y2 [VX VY]
+#                                        press the left button at X1 Y1, drag
+#                                        to X2 Y2 in steps (by way of VX VY)
+#                                        and release there
 #   real_input.ps1 xbutton X Y back|forward
 #                                        the mouse's back or forward button
 #   real_input.ps1 shot FILE        screenshot of the whole screen (PNG)
@@ -71,6 +75,28 @@ public static class SurfaceInput {
         Move(x, y);
         mouse_event(right ? 0x0008u : 0x0002u, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(60);
         mouse_event(right ? 0x0010u : 0x0004u, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(80);
+    }
+
+    // An absolute move as input (MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE), which
+    // OLE's drag loop follows; SetCursorPos alone isn't a mouse event.
+    static void Glide(int x, int y) {
+        int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+        mouse_event(0x8001u, x * 65535 / (w - 1), y * 65535 / (h - 1), 0, UIntPtr.Zero);
+    }
+    public static void Drag(int[] p) {
+        var legs = new List<int[]>();
+        if (p.Length == 6) { legs.Add(new[] { p[0], p[1], p[4], p[5] }); legs.Add(new[] { p[4], p[5], p[2], p[3] }); }
+        else legs.Add(new[] { p[0], p[1], p[2], p[3] });
+        Move(p[0], p[1]); Glide(p[0], p[1]); Thread.Sleep(80);
+        mouse_event(0x0002u, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(200);
+        foreach (var l in legs)
+            for (int i = 1; i <= 30; i++) {
+                Glide(l[0] + (l[2] - l[0]) * i / 30, l[1] + (l[3] - l[1]) * i / 30);
+                Thread.Sleep(30);
+            }
+        // Rest over the target, so it sees the drag before the release.
+        Thread.Sleep(500); Glide(p[2] + 1, p[3] + 1); Thread.Sleep(300);
+        mouse_event(0x0004u, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(300);
     }
 
     // XBUTTON1 is back, XBUTTON2 forward (MOUSEEVENTF_XDOWN 0x80, XUP 0x100).
@@ -142,6 +168,7 @@ switch ($Command) {
         [System.Windows.Forms.SendKeys]::SendWait($Rest[0])
     }
     'vkey' { [SurfaceInput]::VKey([Convert]::ToByte($Rest[0], 16)) }
+    'drag' { [SurfaceInput]::Drag([int[]]($Rest | ForEach-Object { [int]$_ })) }
     'xbutton' { [SurfaceInput]::XButton([int]$Rest[0], [int]$Rest[1], $Rest[2] -eq 'back') }
     'scroll' { [SurfaceInput]::Scroll([int]$Rest[0], [int]$Rest[1], [int]$Rest[2]) }
     'shot' { [SurfaceInput]::Shot($Rest[0]) }
@@ -172,7 +199,7 @@ switch ($Command) {
         if ($script:pressed) { 'pressed' } else { 'not found' }
     }
     default {
-        [Console]::Error.WriteLine('usage: bounds PID | move X Y | click X Y | rclick X Y | scroll X Y N | key KEYS | vkey HEX | xbutton X Y back|forward | shot FILE | text PID | press PID NAME')
+        [Console]::Error.WriteLine('usage: bounds PID | move X Y | click X Y | rclick X Y | drag X1 Y1 X2 Y2 [VX VY] | scroll X Y N | key KEYS | vkey HEX | xbutton X Y back|forward | shot FILE | text PID | press PID NAME')
         exit 2
     }
 }

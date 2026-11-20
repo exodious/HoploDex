@@ -5,7 +5,7 @@ Read only the part your change touches.
 | To change | Read | Old section name |
 |---|---|---|
 | The boundary between frontend and backend, or an error code | [IPC boundary](architecture/ipc.md) | "IPC boundary" |
-| The frontend, or how a file drop arrives | [Frontend](architecture/frontend.md) | "Frontend", "File drops" |
+| The frontend, or how a file drop arrives (`src-tauri/src/drops/`) | [Frontend](architecture/frontend.md) | "Frontend", "File drops" |
 
 **Backend layering** (`src-tauri/src/`):
 
