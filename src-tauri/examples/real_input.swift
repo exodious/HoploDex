@@ -26,6 +26,10 @@
 //                              the same key, posted to the PID's process
 //                                   alone (CGEvent.postToPid), so no other app
 //                                   can receive it
+//   real_input drag X1 Y1 X2 Y2 [VX VY]
+//                              press the left button at X1 Y1, drag to
+//                                   X2 Y2 in steps (by way of VX VY) and
+//                                   release there
 //   real_input xbutton X Y back|forward
 //                                   the mouse's back or forward button
 //                                   (buttons 3 and 4)
@@ -98,6 +102,31 @@ case "clickt":
     post(.mouseMoved, x, y); post(.leftMouseDown, x, y)
     print(Int64(Date().timeIntervalSince1970 * 1000))
     post(.leftMouseUp, x, y)
+case "drag":
+    let points = args[2...].map { Double($0)! }
+    let (x1, y1, x2, y2) = (points[0], points[1], points[2], points[3])
+    var legs = [(x1, y1, x2, y2)]
+    if points.count == 6 { legs = [(x1, y1, points[4], points[5]), (points[4], points[5], x2, y2)] }
+    post(.mouseMoved, x1, y1); post(.leftMouseDown, x1, y1)
+    usleep(200_000)
+    for (ax, ay, bx, by) in legs {
+        for i in 1...30 {
+            let t = Double(i) / 30
+            let event = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged,
+                                mouseCursorPosition: CGPoint(x: ax + (bx - ax) * t, y: ay + (by - ay) * t),
+                                mouseButton: .left)!
+            event.post(tap: .cghidEventTap)
+            usleep(30_000)
+        }
+    }
+    // Rest over the target, so it sees the drag before the release.
+    usleep(500_000)
+    let rest = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged,
+                       mouseCursorPosition: CGPoint(x: x2 + 1, y: y2 + 1), mouseButton: .left)!
+    rest.post(tap: .cghidEventTap)
+    usleep(300_000)
+    post(.leftMouseUp, x2 + 1, y2 + 1)
+    usleep(300_000)
 case "xbutton":
     let (x, y) = (Double(args[2])!, Double(args[3])!)
     // Mouse buttons 3 and 4 (a CGMouseButton has no name for them): the events

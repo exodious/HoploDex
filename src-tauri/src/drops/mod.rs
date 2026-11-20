@@ -12,6 +12,10 @@
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(windows)]
+mod windows;
 
 use tauri::{Builder, DragDropEvent, Manager, Runtime, Webview, WebviewEvent, WebviewWindow};
 
@@ -52,7 +56,11 @@ pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<
         linux::refuse_app_drags();
         Ok(())
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    return macos::refuse_app_drags(window);
+    #[cfg(windows)]
+    return windows::refuse_app_drags(window);
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         let _ = window;
         Ok(())

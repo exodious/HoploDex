@@ -283,7 +283,20 @@ windows-sys = { version = "0.61", features = [
 # The PDF surface's settings and events (007 research.md §6-§10). The versions
 # wry uses.
 webview2-com = "0.38.2"
-windows = { version = "0.61.3", features = ["Win32_Foundation"] }
+# The drop target filter that refuses a page's drag (`drops::windows`): OLE's
+# drop target, the clipboard format Chromium marks it with, and the web
+# view's windows.
+windows = { version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_UI_WindowsAndMessaging",
+] }
+# `#[implement]`, for that filter's COM object, names it. Promoted from
+# transitive, at the version already in Cargo.lock.
+windows-core = "0.61.2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -7,6 +7,8 @@
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+pub(crate) use macos::wry_web_view_class;
 #[cfg(windows)]
 mod windows;
 

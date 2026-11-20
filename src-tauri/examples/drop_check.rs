@@ -269,6 +269,23 @@ fn screenshot(path: &Path) {
     }
 }
 
+/// Prints the app's own drop lines (`drops`), so the log shows each refusal.
+struct Capture;
+
+impl log::Log for Capture {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        if record.module_path().unwrap_or("").contains("drops") {
+            eprintln!("CHECK app: {}", record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
 /// Logs the drag events Tauri delivers, so the log shows what reached it.
 fn log_drag(source: &str, label: &str, event: &DragDropEvent) {
     match event {
@@ -402,7 +419,14 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
     let planted = options.scratch.join("planted.pdf");
     let mut check = Check { session, shared, input, failures: Vec::new() };
     let main = bounds(&app, drops::MAIN_WINDOW, scale);
-    let other = bounds(&app, "other", scale);
+    #[allow(unused_mut)]
+    let mut other = bounds(&app, "other", scale);
+    // macOS places a child web view from the window's frame, title bar
+    // included, not its content area.
+    #[cfg(target_os = "macos")]
+    {
+        other.y -= title_bar;
+    }
     eprintln!("CHECK main web view at {main:?}, second web view at {other:?}");
     // The main web view's area away from where the second one is laid over it
     // (macOS and Windows) or beside it (Linux).
@@ -418,16 +442,16 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
     // Out of the window (above it, on the screen's edge) and back.
     let outside = (main_link.0, 5);
     check.app_drag("the main page, out and back", main_link, open, Some(outside), &planted);
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         // A window of the app's own process holding the planted file, as a
-        // file manager offers one: not a web view, so WebKit asks it for the
-        // drag's data as it asks another app.
+        // file manager offers one: a page's drag that WebKit kept to itself
+        // above reached nothing, so this shows the refusal at work on a drag
+        // that does reach wry, with its source in the process.
         let (send, receive) = std::sync::mpsc::channel();
         let file = planted.display().to_string();
         app.run_on_main_thread(move || {
-            let window = source_window(&file, IN_APP_SOURCE_AT.0 as i32, IN_APP_SOURCE_AT.1 as i32);
-            std::mem::forget(window);
+            in_app_source(&file, IN_APP_SOURCE_AT);
             let _ = send.send(());
         })
         .unwrap();
@@ -447,9 +471,90 @@ fn run(app: AppHandle<Wry>, shared: Arc<Shared>, session: Session, options: Opti
     }
 }
 
-/// Where the Linux check's in-process source window goes, screen pixels.
-#[cfg(target_os = "linux")]
+/// Where the in-process source window goes, in the input command's units.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const IN_APP_SOURCE_AT: (i64, i64) = (40, 780);
+
+/// Shows a window of this process at `at` holding `file` to drag, kept for
+/// the process's life. On the main thread.
+#[cfg(target_os = "linux")]
+fn in_app_source(file: &str, at: (i64, i64)) {
+    std::mem::forget(source_window(file, at.0 as i32, at.1 as i32));
+}
+
+/// Shows a window of this process at `at` (points from the screen's top
+/// left) holding `file` to drag, kept for the process's life: a borderless
+/// window whose view starts a drag of the file's URL. On the main thread.
+#[cfg(target_os = "macos")]
+fn in_app_source(file: &str, at: (i64, i64)) {
+    use objc2::{
+        msg_send,
+        rc::{Allocated, Retained},
+        runtime::{AnyClass, AnyObject, ClassBuilder, Sel},
+        sel,
+    };
+    use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize, NSString, NSURL};
+
+    static FILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let _ = FILE.set(file.to_owned());
+
+    unsafe extern "C-unwind" fn mouse_dragged(this: &AnyObject, _: Sel, event: &AnyObject) {
+        let url = NSURL::fileURLWithPath(&NSString::from_str(FILE.get().unwrap()));
+        // SAFETY: AppKit's public classes and methods, with their arguments.
+        unsafe {
+            let item: Allocated<AnyObject> =
+                msg_send![AnyClass::get(c"NSDraggingItem").unwrap(), alloc];
+            let item: Retained<AnyObject> = msg_send![item, initWithPasteboardWriter: &*url];
+            let frame = NSRect::new(NSPoint::new(40.0, 40.0), NSSize::new(80.0, 80.0));
+            let () =
+                msg_send![&*item, setDraggingFrame: frame, contents: std::ptr::null::<AnyObject>()];
+            let items = NSArray::from_retained_slice(&[item]);
+            let _: *mut AnyObject =
+                msg_send![this, beginDraggingSessionWithItems: &*items, event: event, source: this];
+        }
+    }
+    /// `draggingSession:sourceOperationMaskForDraggingContext:`: copy.
+    unsafe extern "C-unwind" fn operations(
+        _: &AnyObject,
+        _: Sel,
+        _: &AnyObject,
+        _: isize,
+    ) -> usize {
+        1
+    }
+
+    // SAFETY: a new NSView subclass with two methods of the signatures
+    // AppKit calls them with, then AppKit's public window methods.
+    unsafe {
+        let mut builder =
+            ClassBuilder::new(c"DropCheckSource", AnyClass::get(c"NSView").unwrap()).unwrap();
+        builder
+            .add_method(sel!(mouseDragged:), mouse_dragged as unsafe extern "C-unwind" fn(_, _, _));
+        builder.add_method(
+            sel!(draggingSession:sourceOperationMaskForDraggingContext:),
+            operations as unsafe extern "C-unwind" fn(_, _, _, _) -> _,
+        );
+        let class = builder.register();
+        let screen: *mut AnyObject = msg_send![AnyClass::get(c"NSScreen").unwrap(), mainScreen];
+        let screen: NSRect = msg_send![screen, frame];
+        let rect = NSRect::new(
+            NSPoint::new(at.0 as f64, screen.size.height - at.1 as f64 - 160.0),
+            NSSize::new(160.0, 160.0),
+        );
+        let window: Allocated<AnyObject> = msg_send![AnyClass::get(c"NSWindow").unwrap(), alloc];
+        // Borderless (0), buffered (2).
+        let window: Retained<AnyObject> = msg_send![window, initWithContentRect: rect, styleMask: 0usize, backing: 2usize, defer: false];
+        let view: Allocated<AnyObject> = msg_send![class, alloc];
+        let bounds = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(160.0, 160.0));
+        let view: Retained<AnyObject> = msg_send![view, initWithFrame: bounds];
+        let () = msg_send![&*window, setReleasedWhenClosed: false];
+        let () = msg_send![&*window, setContentView: &*view];
+        // Floating (3), over the main window.
+        let () = msg_send![&*window, setLevel: 3isize];
+        let () = msg_send![&*window, makeKeyAndOrderFront: std::ptr::null::<AnyObject>()];
+        std::mem::forget(window);
+    }
+}
 
 /// `--drag-source FILE X Y` on Linux: a window of its own process at X Y
 /// holding FILE to drag, as a file manager offers one.
@@ -518,11 +623,18 @@ fn main() {
         eprintln!("--input and --source are required: the check is driven with real input");
         usage();
     }
+    log::set_logger(&Capture).expect("no logger yet");
+    log::set_max_level(log::LevelFilter::Info);
     let temp = scratch.is_none().then(|| tempfile::tempdir().unwrap());
     let scratch = scratch.unwrap_or_else(|| temp.as_ref().unwrap().path().to_path_buf());
     std::fs::create_dir_all(&scratch).unwrap();
-    // The paths a drop names are the real ones (macOS's /var is /private/var).
+    // The paths a drop names are the real ones (macOS's /var is /private/var),
+    // without Windows' verbatim prefix, which a drop's paths don't have.
     let scratch = scratch.canonicalize().unwrap();
+    let scratch = match scratch.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(plain) => PathBuf::from(plain),
+        None => scratch,
+    };
     let out = out.unwrap_or_else(|| {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../e2e/screenshots-out/drop-check")
     });

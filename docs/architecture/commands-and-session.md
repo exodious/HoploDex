@@ -67,7 +67,8 @@ database, and `cancel_upgrade` drops the slot or stops that backup.
 
 `session/grants.rs` holds what the user handed the app outside the page, for
 the open session only: the paths of files dropped onto the main window
-(recorded by `main.rs`'s `on_window_event`, kept two minutes) and the files and
+(recorded from the main web view's `DragDrop` event by `drops::register`, kept
+two minutes; a drag that starts in the app is refused, `drops::refuse_app_drags`) and the files and
 folder picked in a chooser Rust opened, under tokens (`choose_import_files`,
 `choose_export_folder`). `add_photo_from_path` and `add_document_from_path`
 take a drop once (`take_drop`); `import_collection` and `export_collection`

@@ -102,11 +102,19 @@ Design tokens are in `src/styles/tokens.css`. Money values are **whole dollars**
 
 **File drops** arrive as filesystem paths through Tauri's native drag-drop event
 (`listenForFileDrops`). They go to the `add_*_from_path` commands, which read
-only a path the main window's `DragDrop` event recorded in Rust for the open
-session (`session::grants`, from `main.rs`'s `on_window_event`): at most two
-minutes after the drop, and once. Any other path the page sends is refused with
+only a path the main web view's `DragDrop` event recorded in Rust for the open
+session (`session::grants`, from `drops::register`'s `on_webview_event`; the
+main web view is a child of its window, so the window's own `DragDrop` never
+fires): at most two minutes after the drop, and once. Any other path the page sends is refused with
 a fixed `VALIDATION_ERROR` before the file is looked at, so the page can't
-name a file the user didn't drop. `read_attachment_file` judges the opened file's size
+name a file the user didn't drop. A drag that starts in the app itself (out of
+the page, or out of the PDF surface) is not a drop of the user's files, and
+`drops::refuse_app_drags` keeps it from reaching the recorder with a path:
+on Linux by the drag's source widget being in the process, on macOS by its
+`draggingSource`, on Windows by Chromium's mark on a page's drag data. The
+drop check (`scripts/drop-check.sh`, `scripts/macos/drop-check.sh`,
+`scripts/windows/drop-check.ps1`) drags a file from another app and links out
+of the page with real input, in a build without the `e2e` feature. `read_attachment_file` judges the opened file's size
 before reading any of it, its type before the rest (a document's from its name
 and first bytes, `document_types::classify_header`; a photo's from its first
 bytes alone, `photo::photo_type`), and reads no more than the size it admitted.
@@ -122,8 +130,9 @@ never typed: the page gets a token for each answer and shows its path
 tokens. An import or export that finishes uses them up; one that fails leaves
 them, so the dialog can try again. Don't add a path field back, or a command
 that takes a file or folder the page names. An E2E build answers the chooser
-from a queue (`answerChooser` in `e2e/support/ui.ts`) and records the
-`tauri://drag-drop` events the specs send as drops.
+from a queue (`answerChooser` in `e2e/support/ui.ts`) and hands the
+`tauri://drag-drop` events the specs send to `drops::record`, the recorder a
+real drop goes through.
 
 WebKitGTK gives HTML5 drops no `File`, so leave `dragDropEnabled` at its default
 and don't switch to HTML5 file drops.

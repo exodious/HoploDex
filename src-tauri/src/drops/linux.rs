@@ -61,7 +61,9 @@ unsafe extern "C" fn empty_app_drag(
                 && !data.is_null()
                 && !gtk::ffi::gtk_drag_get_source_widget(context).is_null()
             {
-                blank_uri_list(data);
+                if blank_uri_list(data) {
+                    log::info!("a drag that started in the app was not taken as a drop");
+                }
             }
         }
     }
@@ -69,7 +71,7 @@ unsafe extern "C" fn empty_app_drag(
     gtk::glib::ffi::GTRUE
 }
 
-/// Overwrites a `text/uri-list`'s bytes with `#`: every line a comment, so
+/// Overwrites a `text/uri-list`'s bytes with `#`, and says whether it did: every line a comment, so
 /// `gtk_selection_data_get_uris` finds none. In place, because GTK frees the
 /// buffer after the emission: replacing it (`gtk_selection_data_set`) frees
 /// it twice.
@@ -78,13 +80,13 @@ unsafe extern "C" fn empty_app_drag(
 ///
 /// `data` is the selection data of a `drag-data-received` emission in
 /// progress, whose buffer GTK allocated and owns for the emission.
-unsafe fn blank_uri_list(data: *mut gtk::ffi::GtkSelectionData) {
+unsafe fn blank_uri_list(data: *mut gtk::ffi::GtkSelectionData) -> bool {
     // SAFETY: as the caller promises; `length` bytes from `bytes` are the
     // buffer's (GTK adds a terminating NUL past them).
     unsafe {
         let uri_list = gtk::gdk::ffi::gdk_atom_intern_static_string(c"text/uri-list".as_ptr());
         if gtk::ffi::gtk_selection_data_get_data_type(data) != uri_list {
-            return;
+            return false;
         }
         let length = gtk::ffi::gtk_selection_data_get_length(data);
         let bytes = gtk::ffi::gtk_selection_data_get_data(data).cast_mut();
@@ -92,6 +94,8 @@ unsafe fn blank_uri_list(data: *mut gtk::ffi::GtkSelectionData) {
             && !bytes.is_null()
         {
             std::ptr::write_bytes(bytes, b'#', length);
+            return true;
         }
+        false
     }
 }

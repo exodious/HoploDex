@@ -577,14 +577,13 @@ fn main() {
                 log::warn!("could not emit {name}: {err}");
             }
         })
-        .on_window_event(|window, event| match event {
+        .on_window_event(|window, event| {
             // Closing the window is a request: unsaved changes are asked
             // about first, and the database is closed normally.
-            WindowEvent::CloseRequested { api, .. } => {
+            if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 request_quit(window.app_handle());
             }
-            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             hoplodex_lib::commands::databases::get_chooser_state,
