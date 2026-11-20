@@ -1250,6 +1250,13 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     const left = after.prepare("SELECT count(*) AS n FROM autofill WHERE value = ?").get(earlier);
     after.close();
     expect(left).toEqual({ n: 0 });
+    // Nor are its bytes left in the file's free pages or its journal.
+    for (const file of webDataFiles()) {
+      expect({ file, holdsEarlier: fs.readFileSync(file).includes(earlier) }).toEqual({
+        file,
+        holdsEarlier: false,
+      });
+    }
     await relaunch();
   });
 });
