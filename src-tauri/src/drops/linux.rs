@@ -60,10 +60,9 @@ unsafe extern "C" fn empty_app_drag(
             if !context.is_null()
                 && !data.is_null()
                 && !gtk::ffi::gtk_drag_get_source_widget(context).is_null()
+                && blank_uri_list(data)
             {
-                if blank_uri_list(data) {
-                    log::info!("a drag that started in the app was not taken as a drop");
-                }
+                log::info!("a drag that started in the app was not taken as a drop");
             }
         }
     }
