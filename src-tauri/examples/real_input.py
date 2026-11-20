@@ -12,6 +12,8 @@ the mouse's back and forward buttons, which that one lacks.
     real_input.py key Control_L+s X keysyms, + for a chord
     real_input.py xbutton X Y back|forward
                                          the mouse's side buttons (8 and 9)
+    real_input.py drag X1 Y1 X2 Y2  press the left button at X1 Y1, move to
+                                         X2 Y2 in steps and release there
 """
 
 import importlib.util
@@ -76,6 +78,31 @@ def main(args):
         def act(display):
             move(display, x, y)
             button(display, number)
+
+        with_display(act)
+    elif command == "drag" and len(args) == 5:
+        x1, y1, x2, y2 = (int(v) for v in args[1:])
+
+        def act(display):
+            move(display, x1, y1)
+            xtst.XTestFakeButtonEvent(display, 1, True, 0)
+            x11.XFlush(display)
+            time.sleep(0.2)
+            steps = 30
+            for i in range(1, steps + 1):
+                xtst.XTestFakeMotionEvent(
+                    display, -1, x1 + (x2 - x1) * i // steps, y1 + (y2 - y1) * i // steps, 0
+                )
+                x11.XFlush(display)
+                time.sleep(0.03)
+            # Rest over the target, so it sees the drag before the release.
+            time.sleep(0.5)
+            xtst.XTestFakeMotionEvent(display, -1, x2 + 1, y2 + 1, 0)
+            x11.XFlush(display)
+            time.sleep(0.3)
+            xtst.XTestFakeButtonEvent(display, 1, False, 0)
+            x11.XFlush(display)
+            time.sleep(0.3)
 
         with_display(act)
     elif command == "key" and len(args) == 2:

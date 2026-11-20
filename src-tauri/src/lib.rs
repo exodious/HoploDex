@@ -9,6 +9,7 @@ pub mod app_dirs;
 pub mod commands;
 pub mod commands_list;
 pub mod db;
+pub mod drops;
 pub mod logging;
 pub mod models;
 pub mod platform;
