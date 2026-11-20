@@ -12,9 +12,10 @@ use std::sync::Once;
 
 use gtk::glib::gobject_ffi;
 
-/// Installs the hook, once per process.
-pub fn refuse_app_drags() {
+/// Installs the hook, once per process, and then lets drops be recorded.
+pub fn refuse_app_drags() -> Result<(), String> {
     static HOOK: Once = Once::new();
+    let mut result = Err("installed already".to_string());
     HOOK.call_once(|| {
         // SAFETY: GTK is initialised (a window exists) and this runs on its
         // thread; the signal is GtkWidget's own, and the hook lives for the
@@ -25,7 +26,7 @@ pub fn refuse_app_drags() {
                 gtk::ffi::gtk_widget_get_type(),
             );
             if id == 0 {
-                log::error!("drag-data-received not found: drags from the app are not refused");
+                result = Err("GtkWidget has no drag-data-received signal".into());
                 return;
             }
             gobject_ffi::g_signal_add_emission_hook(
@@ -36,7 +37,10 @@ pub fn refuse_app_drags() {
                 None,
             );
         }
+        super::refusing();
+        result = Ok(());
     });
+    result
 }
 
 /// `drag-data-received(widget, context, x, y, data, info, time)`: empties

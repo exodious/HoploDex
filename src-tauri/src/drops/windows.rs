@@ -31,8 +31,8 @@ use windows::{
 };
 
 /// Puts the filter in front of wry's drop target on every window of the main
-/// web view, on the main thread. Fails if wry's target is on none of them,
-/// since a drop would then go unfiltered.
+/// web view, on the main thread, and then lets drops be recorded. Fails, and
+/// no drop is recorded, if wry's target is on none of them.
 pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
     let (done, result) = std::sync::mpsc::channel::<Result<usize, String>>();
     window.with_webview(move |platform| {
@@ -44,7 +44,10 @@ pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<
     })?;
     match result.recv_timeout(std::time::Duration::from_secs(10)) {
         Ok(Ok(0)) => Err(std::io::Error::other("no drop target to filter").into()),
-        Ok(Ok(_)) => Ok(()),
+        Ok(Ok(_)) => {
+            super::refusing();
+            Ok(())
+        }
         Ok(Err(why)) => Err(std::io::Error::other(why).into()),
         Err(_) => Err(std::io::Error::other("the drop filter was not set up in time").into()),
     }

@@ -723,6 +723,7 @@ fn main() {
             if options.refusal {
                 drops::refuse_app_drags(&main)?;
             } else {
+                drops::record_without_refusal();
                 eprintln!("CHECK note: without drops::refuse_app_drags");
             }
             // A second web view in the window, as the PDF surface is one.

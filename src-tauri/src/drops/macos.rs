@@ -23,13 +23,16 @@ use objc2::{
 };
 use tauri::{Runtime, WebviewWindow};
 
-/// Installs the replacement on the main web view's class, once per process.
+/// Installs the replacement on the main web view's class, once per process,
+/// on the main thread, and then lets drops be recorded. Until it is in place
+/// (or if it can't be) no drop is recorded.
 pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
     window.with_webview(|platform| {
         static ONCE: Once = Once::new();
-        ONCE.call_once(|| {
-            if let Err(err) = install(platform.inner()) {
-                log::error!("drags from the app are not refused: {err}");
+        ONCE.call_once(|| match install(platform.inner()) {
+            Ok(()) => super::refusing(),
+            Err(err) => {
+                log::error!("drags from the app can't be refused, so no drop is recorded: {err}")
             }
         });
     })

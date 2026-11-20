@@ -8,7 +8,9 @@
 //! window's. A drag that starts in the app itself, in the page or in another
 //! of its web views, is not a drop of the user's files: each OS's module
 //! keeps such a drag from reaching the recorder with a path
-//! ([`refuse_app_drags`]).
+//! ([`refuse_app_drags`]). Until that refusal is in place no drop is recorded,
+//! so a refusal that can't be installed leaves the files to the button, never
+//! drops unfiltered.
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -16,6 +18,8 @@ mod linux;
 mod macos;
 #[cfg(windows)]
 mod windows;
+
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{Builder, DragDropEvent, Manager, Runtime, Webview, WebviewEvent, WebviewWindow};
 
@@ -34,10 +38,32 @@ pub fn record(session: &Session, label: &str, event: &DragDropEvent) {
     }
 }
 
+/// Whether drags from the app are refused (each OS's module sets it once its
+/// refusal is installed), and so whether drops are recorded.
+static REFUSING: AtomicBool = AtomicBool::new(false);
+
+fn refusing() {
+    REFUSING.store(true, Ordering::SeqCst);
+}
+
 fn on_webview_event<R: Runtime>(webview: &Webview<R>, event: &WebviewEvent) {
     if let WebviewEvent::DragDrop(drop) = event {
+        if !REFUSING.load(Ordering::SeqCst) {
+            if matches!(drop, DragDropEvent::Drop { .. }) {
+                log::warn!("a drop was not recorded: drags from the app aren't refused");
+            }
+            return;
+        }
         record(&webview.state::<Session>(), webview.label(), drop);
     }
+}
+
+/// Records drops without [`refuse_app_drags`]: only for the drop check's
+/// `--no-refusal`, which shows what the refusal stops. Never call it in the
+/// app.
+#[doc(hidden)]
+pub fn record_without_refusal() {
+    refusing();
 }
 
 /// Adds the drop recorder to the app. Recorded before the page hears of the
@@ -47,14 +73,14 @@ pub fn register<R: Runtime>(builder: Builder<R>) -> Builder<R> {
 }
 
 /// Keeps a drag that starts in the app from reaching the recorder with a
-/// path, on every web view of the process. Called once from `setup()`, after
-/// the main window exists.
+/// path, on every web view of the process, and from then on records drops.
+/// Called once from `setup()`, after the main window exists. On an error no
+/// drop is recorded.
 pub fn refuse_app_drags<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
     #[cfg(target_os = "linux")]
     {
         let _ = window;
-        linux::refuse_app_drags();
-        Ok(())
+        linux::refuse_app_drags().map_err(|why| std::io::Error::other(why).into())
     }
     #[cfg(target_os = "macos")]
     return macos::refuse_app_drags(window);
