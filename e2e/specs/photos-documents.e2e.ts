@@ -11,7 +11,11 @@ import {
   back,
   browser,
   clickButton,
+  dropFiles,
   expect,
+  invokeCommand,
+  invokeFailure,
+  scratchDocuments,
   settle,
 } from "../support/ui";
 import { openFirearm, rowThumbnail } from "../support/ui";
@@ -194,6 +198,38 @@ describe("001 US4 - Attach Photos and Documents (was us4-photos-documents)", () 
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // Code scanning alert paths/cwe-73 on add_document_from_path (amended 2026-11-19 to
+  // 001 FR-010): the backend reads only a file the user dropped onto the window, once,
+  // whatever path the page names. The file is in the sandbox, which the run removes.
+  it("attaches only a file the user dropped, and only once (001 FR-010)", async () => {
+    const dir = path.join(scratchDocuments(), "drops");
+    fs.mkdirSync(dir, { recursive: true });
+    const statement = path.join(dir, "statement.txt");
+    fs.writeFileSync(statement, "never dropped onto HoploDex");
+    const listed = (await invokeCommand("list_firearms", { input: { query: "" } })) as {
+      groups: { firearms: { id: number }[] }[];
+    };
+    const owner = { kind: "firearm", id: listed.groups[0].firearms[0].id };
+    const attach = () => invokeFailure("add_document_from_path", { owner, path: statement });
+
+    expect(await attach()).toMatchObject({ code: "VALIDATION_ERROR" });
+    // The same answer for a file that isn't there: nothing tells the page which exist.
+    const missing = await invokeFailure("add_document_from_path", {
+      owner,
+      path: path.join(dir, "missing.txt"),
+    });
+    expect(missing).toEqual(await attach());
+    await expect($(".hd-doc__name=statement.txt")).not.toExist();
+
+    await dropFiles([statement]);
+    await $(".hd-doc__name=statement.txt").waitForExist({
+      timeout: 10000,
+      timeoutMsg: "the dropped file was never attached",
+    });
+    expect(await attach()).toMatchObject({ code: "VALIDATION_ERROR" });
+    await expect($$(".hd-doc__name=statement.txt")).toBeElementsArrayOfSize(1);
   });
 
   // 001 US4-5: no decrypted copy outlives the session (001 FR-035, SC-010).

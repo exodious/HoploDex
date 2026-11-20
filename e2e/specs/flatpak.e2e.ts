@@ -65,7 +65,7 @@ import {
   terminateApp,
   uninstallApp,
 } from "../support/flatpak";
-import { importFile, tally } from "../support/importExport";
+import { chooseExportFolder, chooseImportFiles, importFile, tally } from "../support/importExport";
 import { writeTableWorkbook } from "../support/spreadsheets";
 import {
   $,
@@ -460,7 +460,7 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     fs.mkdirSync(exportFolder(), { recursive: true });
     await goTo("Collection");
     await clickButton("Export");
-    await fill("Save to folder", exportFolder());
+    await chooseExportFolder(exportFolder());
     await clickButton("Export");
     await $(".hd-outcome__headline*=Exported").waitForExist({
       timeout: 30000,
@@ -1223,7 +1223,7 @@ describe("011 US2 - The Database's Protections Hold Inside the Sandbox", () => {
     const made = spawnSync("mkfifo", [slowSpreadsheet()]);
     if (made.status !== 0) throw new Error(`mkfifo failed: ${made.stderr}`);
     await clickButton("Import");
-    await fill("Spreadsheet file", slowSpreadsheet());
+    await chooseImportFiles(slowSpreadsheet());
     await clickButton("Import", { settles: false });
 
     await browser.waitUntil(

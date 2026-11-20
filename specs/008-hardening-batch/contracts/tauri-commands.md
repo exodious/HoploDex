@@ -98,6 +98,8 @@ changes are left exactly as they were, and no backup carries them.
 
 ### `import_collection` (amended: FR-006 to FR-009; research.md §8, §9, §11)
 
+_Amended 2026-11-19: the input became `{ fileTokens: string[] }`; see [001's `import_collection`](../../001-firearms-inventory/contracts/tauri-commands.md#import_collection)._
+
 Input and `ImportResult` are unchanged. The backend now:
 1. registers the `Import` operation (as before);
 2. **reads the file or files in the import helper, without holding the

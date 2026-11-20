@@ -18,6 +18,7 @@ use crate::models::firearm::{
 use crate::models::record::{MountedEntry, RecordKind, RecordLabel, RecordRef};
 use crate::services::attachments::safe_basename;
 use crate::services::cartridges::{CaliberSource, derive_caliber};
+use crate::services::chooser::{Chooser, Pick};
 use crate::services::entry_text::{EntryField, check_entry_text};
 use crate::services::import_reader::read_files;
 use crate::services::mounts::{self, MountGraph};
@@ -29,6 +30,7 @@ use crate::services::spreadsheet::{
     parse_whole_dollars, scaled_to_string, write_accessory_csv, write_firearm_csv, write_workbook,
 };
 use crate::services::suggestions::{FieldVocabulary, SheetSpellings, snap_for_import};
+use crate::session::grants::PickKind;
 use crate::session::operations::{OperationGuard, Operations};
 use crate::session::scoped::ScopedSession;
 use crate::session::{Session, SessionId};
@@ -1994,6 +1996,89 @@ pub mod ops {
         }
     }
 
+    /// Runs `import` on the files the user picked for it: the answers to
+    /// `choose_import_files` held under `tokens` for session `id` (code
+    /// scanning alert `paths/cwe-73` on `add_document_from_path`). A token
+    /// that isn't one is refused with a fixed `VALIDATION_ERROR` before any
+    /// file is looked at. A file's format is its extension's, as the chooser
+    /// offered them.
+    ///
+    /// A pick is used up by an import that finishes. One that fails imports
+    /// nothing, and puts the picks back, so the dialog's files can be imported
+    /// again (008 contracts/ui.md §2).
+    pub fn import_chosen_files<T>(
+        session: &Session,
+        id: SessionId,
+        tokens: &[String],
+        import: impl FnOnce(Vec<ImportFile>) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let mut taken = Vec::new();
+        let result = tokens
+            .iter()
+            .map(|token| {
+                let file_path = session.take_pick(id, PickKind::ImportFile, token)?;
+                taken.push((token.clone(), file_path.clone()));
+                let xlsx = file_path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"));
+                let format = if xlsx { SpreadsheetFormat::Xlsx } else { SpreadsheetFormat::Csv };
+                Ok(ImportFile { file_path, format })
+            })
+            .collect::<Result<Vec<_>, CommandError>>()
+            .and_then(|files| {
+                check_files(&files)?;
+                import(files)
+            });
+        if result.is_err() {
+            for (token, path) in taken {
+                session.put_back_pick(id, PickKind::ImportFile, token, path);
+            }
+        }
+        result
+    }
+
+    /// Runs `export` on the folder the user picked for it: the answer to
+    /// `choose_export_folder` held under `token` for session `id` (code
+    /// scanning alert `paths/cwe-73` on `export_collection_stoppable`). A
+    /// token that isn't one is refused with a fixed `VALIDATION_ERROR`. The
+    /// folder must be absolute and exist, as `backups::check_chosen_folder`
+    /// asks of the upgrade's: an export never makes it. Inside a Flatpak one
+    /// out of reach is `LOCATION_OUT_OF_REACH` first (011 FR-004).
+    ///
+    /// A pick is used up by an export that finishes. One that fails or is
+    /// stopped leaves nothing behind (`export_collection_stoppable`) and puts
+    /// the pick back, so the dialog's folder can be tried again.
+    pub fn export_to_chosen_folder<T>(
+        session: &Session,
+        id: SessionId,
+        token: &str,
+        reach: &Reach,
+        export: impl FnOnce(&Path) -> Result<T, CommandError>,
+    ) -> Result<T, CommandError> {
+        let folder = session.take_pick(id, PickKind::ExportFolder, token)?;
+        let result = (|| {
+            if !folder.is_absolute() {
+                return Err(no_such_folder());
+            }
+            let reached = reach.check(&folder, Need::WriteFolder)?;
+            if !reached.is_dir() {
+                return Err(no_such_folder());
+            }
+            export(&reached)
+        })();
+        if result.is_err() {
+            session.put_back_pick(id, PickKind::ExportFolder, token.to_owned(), folder);
+        }
+        result
+    }
+
+    fn no_such_folder() -> CommandError {
+        CommandError::new(
+            "VALIDATION_ERROR",
+            "That folder isn't there any more. Choose the folder to export to again.",
+        )
+    }
+
     /// 006 FR-022: the files of an import, checked before any is read: at least
     /// one, and at most two (a firearm table and an accessory table).
     pub fn check_files(files: &[ImportFile]) -> Result<(), CommandError> {
@@ -2423,7 +2508,8 @@ pub mod ops {
 #[serde(rename_all = "camelCase")]
 pub struct ExportCollectionInput {
     pub format: String,
-    pub destination_folder: String,
+    /// What `choose_export_folder` returned: the folder itself stays in Rust.
+    pub folder_token: String,
     #[serde(default = "default_scope")]
     pub scope: String,
     pub filter: Option<ListFirearmsInput>,
@@ -2456,6 +2542,71 @@ pub struct GetExportScopeInput {
     pub filter: Option<ListFirearmsInput>,
 }
 
+/// A file or folder the user picked: the token a command takes it by, and its
+/// path for the dialog to show.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChosenPath {
+    pub token: String,
+    pub path: String,
+}
+
+/// Shows the OS's chooser for `pick` on a blocking thread, since it waits for
+/// the user, and holds what was picked for this session.
+async fn choose(
+    session: &ScopedSession,
+    chooser: Arc<dyn Chooser>,
+    pick: Pick,
+    kind: PickKind,
+) -> Result<Vec<ChosenPath>, CommandError> {
+    if !session.is_current() {
+        return Err(CommandError::database_closed());
+    }
+    let picked =
+        tauri::async_runtime::spawn_blocking(move || chooser.pick(pick)).await.map_err(|_| {
+            // Not the error's text: it can carry a panic's message.
+            log::error!("the chooser's thread failed");
+            CommandError::new("INTERNAL_ERROR", "The chooser couldn't be shown.")
+        })?;
+    // A lock or close while the chooser was open ends what it was for.
+    if !session.is_current() {
+        return Err(CommandError::database_closed());
+    }
+    picked
+        .into_iter()
+        .map(|path| {
+            let shown = path.to_string_lossy().into_owned();
+            let token = session.session.hold_pick(session.id, kind, path)?;
+            Ok(ChosenPath { token, path: shown })
+        })
+        .collect()
+}
+
+/// Asks the user for the spreadsheets to import, in the OS's chooser, and
+/// holds them for `import_collection` (code scanning alert `paths/cwe-73` on
+/// `add_document_from_path`). Empty when the user cancels.
+#[tauri::command]
+pub async fn choose_import_files(
+    session: ScopedSession,
+    chooser: tauri::State<'_, Arc<dyn Chooser>>,
+) -> Result<Vec<ChosenPath>, CommandError> {
+    choose(&session, chooser.inner().clone(), Pick::ImportFiles, PickKind::ImportFile).await
+}
+
+/// Asks the user for the folder to export to, in the OS's chooser, and holds
+/// it for `export_collection` (code scanning alert `paths/cwe-73` on
+/// `export_collection_stoppable`). `None` when the user cancels.
+#[tauri::command]
+pub async fn choose_export_folder(
+    session: ScopedSession,
+    chooser: tauri::State<'_, Arc<dyn Chooser>>,
+) -> Result<Option<ChosenPath>, CommandError> {
+    let chosen =
+        choose(&session, chooser.inner().clone(), Pick::ExportFolder, PickKind::ExportFolder)
+            .await?;
+    Ok(chosen.into_iter().next())
+}
+
 #[tauri::command]
 pub async fn get_export_scope(
     input: GetExportScopeInput,
@@ -2474,42 +2625,46 @@ pub async fn export_collection(
     if !session.is_current() {
         return Err(CommandError::database_closed());
     }
-    // Registered, so a sleep stops it and the idle clock pauses meanwhile.
-    let operation = session.session.operations().begin(OperationKind::Export, None)?;
-    session.read(|conn| {
-        let format = parse_format(&input.format)?;
-        let records = ops::export_records(conn, &input.scope, input.filter.as_ref())?;
+    let format = parse_format(&input.format)?;
+    ops::export_to_chosen_folder(
+        &session.session,
+        session.id,
+        &input.folder_token,
+        &reach,
+        |folder| {
+            // Registered, so a sleep stops it and the idle clock pauses meanwhile.
+            let operation = session.session.operations().begin(OperationKind::Export, None)?;
+            session.read(|conn| {
+                let records = ops::export_records(conn, &input.scope, input.filter.as_ref())?;
 
-        let base_name = format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-        ops::export_collection_stoppable(
-            conn,
-            Path::new(&input.destination_folder),
-            &base_name,
-            format,
-            &records,
-            &mut |processed, total| {
-                let _ =
-                    app.emit("export_collection:progress", ProgressPayload { processed, total });
-            },
-            &|| operation.is_cancelled(),
-            &reach,
-        )
-    })
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ImportFileInput {
-    pub file_path: String,
-    pub format: String,
+                let base_name =
+                    format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+                ops::export_collection_stoppable(
+                    conn,
+                    folder,
+                    &base_name,
+                    format,
+                    &records,
+                    &mut |processed, total| {
+                        let _ = app.emit(
+                            "export_collection:progress",
+                            ProgressPayload { processed, total },
+                        );
+                    },
+                    &|| operation.is_cancelled(),
+                    &reach,
+                )
+            })
+        },
+    )
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportCollectionInput {
     /// One file, or two: the firearm table and the accessory table
-    /// (006 FR-022).
-    pub files: Vec<ImportFileInput>,
+    /// (006 FR-022), as the tokens `choose_import_files` returned for them.
+    pub file_tokens: Vec<String>,
 }
 
 /// What `import_collection:progress` reports (008 contracts/tauri-commands.md):
@@ -2541,79 +2696,70 @@ pub async fn import_collection(
     if !session.is_current() {
         return Err(CommandError::database_closed());
     }
-    // Registered, so a sleep stops it and the idle clock pauses meanwhile.
-    let operation = session.session.operations().begin(OperationKind::Import, None)?;
-    // The reading is the phase `cancel_import` may stop.
-    operation.set_user_stoppable(true);
-    let files = input
-        .files
-        .iter()
-        .map(|file| {
-            Ok(ImportFile {
-                file_path: PathBuf::from(&file.file_path),
-                format: parse_format(&file.format)?,
-            })
-        })
-        .collect::<Result<Vec<_>, CommandError>>()?;
-    ops::check_files(&files)?;
-    let helper_exe = std::env::current_exe().map_err(|err| {
-        log::error!("could not find the import reader's program: {err}");
-        CommandError::new("INTERNAL_ERROR", "The import reader could not be started.")
-    })?;
-    // Phase one: the files are read in the import helper without the
-    // session's lock, so a lock goes ahead at once and ends the reading
-    // (008 research.md §11). Only the user's stop is `OPERATION_STOPPED`; a
-    // sleep's or the session's ending is `DATABASE_CLOSED`.
-    let mut last_percent = None;
-    let mut last_file = String::new();
-    let tables = ops::read_import_files(
-        &helper_exe,
-        &files,
-        &operation,
-        &|| session.is_current(),
-        &mut |file, processed, total| {
-            // At most once per percent: a big file reports far oftener. The
-            // first report of each file always goes, so the dialog names it.
-            let percent = (processed * 100).checked_div(total);
-            if processed < total && percent == last_percent && file == last_file {
-                return;
-            }
-            last_percent = percent;
-            if file != last_file {
-                last_file = file.to_owned();
-            }
-            let _ = app.emit(
-                "import_collection:progress",
-                ImportProgressPayload {
-                    phase: ImportPhase::Reading,
-                    file: file.to_owned(),
-                    processed,
-                    total,
-                },
-            );
-        },
-        &reach,
-    )?;
-    operation.set_user_stoppable(false);
-    // Phase two: the rows are saved under the session's lock, as before.
-    ops::import_in_session(
-        &session.session,
-        session.id,
-        tables,
-        &mut |processed, total| {
-            let _ = app.emit(
-                "import_collection:progress",
-                ImportProgressPayload {
-                    phase: ImportPhase::Importing,
-                    file: String::new(),
-                    processed: processed as u64,
-                    total: total as u64,
-                },
-            );
-        },
-        &|| operation.is_cancelled(),
-        &|imported| operation.record_done(imported),
-    )
+    ops::import_chosen_files(&session.session, session.id, &input.file_tokens, |files| {
+        // Registered, so a sleep stops it and the idle clock pauses meanwhile.
+        let operation = session.session.operations().begin(OperationKind::Import, None)?;
+        // The reading is the phase `cancel_import` may stop.
+        operation.set_user_stoppable(true);
+        let helper_exe = std::env::current_exe().map_err(|err| {
+            log::error!("could not find the import reader's program: {err}");
+            CommandError::new("INTERNAL_ERROR", "The import reader could not be started.")
+        })?;
+        // Phase one: the files are read in the import helper without the
+        // session's lock, so a lock goes ahead at once and ends the reading
+        // (008 research.md §11). Only the user's stop is `OPERATION_STOPPED`; a
+        // sleep's or the session's ending is `DATABASE_CLOSED`.
+        let mut last_percent = None;
+        let mut last_file = String::new();
+        let tables = ops::read_import_files(
+            &helper_exe,
+            &files,
+            &operation,
+            &|| session.is_current(),
+            &mut |file, processed, total| {
+                // At most once per percent: a big file reports far oftener. The
+                // first report of each file always goes, so the dialog names it.
+                let percent = (processed * 100).checked_div(total);
+                if processed < total && percent == last_percent && file == last_file {
+                    return;
+                }
+                last_percent = percent;
+                if file != last_file {
+                    last_file = file.to_owned();
+                }
+                let _ = app.emit(
+                    "import_collection:progress",
+                    ImportProgressPayload {
+                        phase: ImportPhase::Reading,
+                        file: file.to_owned(),
+                        processed,
+                        total,
+                    },
+                );
+            },
+            &reach,
+        )?;
+        operation.set_user_stoppable(false);
+        // Phase two: the rows are saved under the session's lock, as before.
+        ops::import_in_session(
+            &session.session,
+            session.id,
+            tables,
+            &mut |processed, total| {
+                let _ = app.emit(
+                    "import_collection:progress",
+                    ImportProgressPayload {
+                        phase: ImportPhase::Importing,
+                        file: String::new(),
+                        processed: processed as u64,
+                        total: total as u64,
+                    },
+                );
+            },
+            &|| operation.is_cancelled(),
+            &|imported| operation.record_done(imported),
+        )
+    })
 }
 
 /// Stops the running import if it is still reading its files (008 research.md

@@ -1,6 +1,9 @@
 pub mod attachments;
+#[cfg(windows)]
+pub mod autofill;
 pub mod backups;
 pub mod cartridges;
+pub mod chooser;
 pub mod consent;
 pub mod crash_reports;
 pub mod disk_space;

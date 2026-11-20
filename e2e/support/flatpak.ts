@@ -797,6 +797,7 @@ export async function startFlatpakRun(options: StartRunOptions): Promise<Flatpak
   process.env.HOPLODEX_E2E_CONSENT_LOG = path.join(files, "consent.log");
   process.env.HOPLODEX_E2E_PASSPHRASES = path.join(files, "passphrases.queue");
   process.env.HOPLODEX_E2E_PASSPHRASE_LOG = path.join(files, "passphrase.log");
+  process.env.HOPLODEX_E2E_CHOOSER = path.join(files, "chooser.queue");
   return run;
 }
 
@@ -1155,6 +1156,7 @@ const APP_PASSTHROUGH = [
 /** The `HOPLODEX_E2E_*` variables the `e2e` build reads besides the four
  * folders (src-tauri/src), which this process's sandbox setup has set. */
 const APP_E2E_VARIABLES = [
+  "HOPLODEX_E2E_CHOOSER",
   "HOPLODEX_E2E_CONSENT",
   "HOPLODEX_E2E_CONSENT_LOG",
   "HOPLODEX_E2E_PASSPHRASES",

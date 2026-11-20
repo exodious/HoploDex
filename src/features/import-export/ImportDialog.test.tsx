@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { CommandFailure } from "../../services/tauriClient";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
@@ -22,8 +21,24 @@ vi.mock("@tauri-apps/api/event", () => ({
     return Promise.resolve(() => events.handlers.delete(name));
   },
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./importExportService");
+
+/** The chooser the backend opens answers with `paths`, each with a token. */
+function picks(...paths: string[]) {
+  vi.mocked(importExportService.chooseImportFiles).mockResolvedValueOnce(
+    paths.map((path) => ({ token: `token:${path}`, path })),
+  );
+}
+
+async function choose(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Choose a file…" }));
+}
+
+/** Picks `path` in the backend's chooser. */
+async function chooseFile(user: ReturnType<typeof userEvent.setup>, path: string) {
+  picks(path);
+  await choose(user);
+}
 
 const collection = { refresh: vi.fn().mockResolvedValue(undefined) } as unknown as CollectionState;
 
@@ -71,7 +86,7 @@ async function importTheFile(user: ReturnType<typeof userEvent.setup>) {
       <ImportDialog open onOpenChange={vi.fn()} />
     </CollectionContext.Provider>,
   );
-  await user.type(screen.getByLabelText(/Spreadsheet file/), "/tmp/import.csv");
+  await chooseFile(user, "/tmp/import.csv");
   await user.click(screen.getByRole("button", { name: "Import" }));
   await screen.findByText(/matches a firearm|match firearms/);
 }
@@ -226,7 +241,7 @@ describe("ImportDialog warnings (002 US4-6, FR-009)", () => {
         <ImportDialog open onOpenChange={vi.fn()} />
       </CollectionContext.Provider>,
     );
-    await user.type(screen.getByLabelText(/Spreadsheet file/), "/tmp/import.csv");
+    await chooseFile(user, "/tmp/import.csv");
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     expect(await screen.findByRole("heading", { name: "Warnings" })).toBeInTheDocument();
@@ -248,7 +263,7 @@ describe("ImportDialog warnings (002 US4-6, FR-009)", () => {
         <ImportDialog open onOpenChange={vi.fn()} />
       </CollectionContext.Provider>,
     );
-    await user.type(screen.getByLabelText(/Spreadsheet file/), "/tmp/import.csv");
+    await chooseFile(user, "/tmp/import.csv");
     await user.click(screen.getByRole("button", { name: "Import" }));
     await screen.findByRole("button", { name: "Done" });
 
@@ -270,7 +285,7 @@ describe("ImportDialog report of derived and matched values (004 US4, FR-025, FR
         <ImportDialog open onOpenChange={vi.fn()} />
       </CollectionContext.Provider>,
     );
-    await user.type(screen.getByLabelText(/Spreadsheet file/), "/tmp/import.csv");
+    await chooseFile(user, "/tmp/import.csv");
     await user.click(screen.getByRole("button", { name: "Import" }));
     await screen.findByRole("button", { name: "Done" });
     return user;
@@ -415,18 +430,8 @@ describe("ImportDialog files and the two tables (006 US5)", () => {
     );
   }
 
-  /** The picker returns what the user selected, as the dialog plugin does
-   * when it is asked for several files. */
-  function picks(...paths: string[]) {
-    vi.mocked(openDialog).mockResolvedValueOnce(paths);
-  }
-
-  async function choose(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole("button", { name: "Choose…" }));
-  }
-
   beforeEach(() => {
-    vi.mocked(openDialog).mockReset();
+    vi.mocked(importExportService.chooseImportFiles).mockReset();
     vi.mocked(importExportService.importCollection).mockReset();
     vi.mocked(importExportService.resolveImportConflicts).mockReset();
   });
@@ -439,14 +444,29 @@ describe("ImportDialog files and the two tables (006 US5)", () => {
     ).toBeInTheDocument();
   });
 
-  it("lets the picker select more than one file", async () => {
+  // Code scanning alert paths/cwe-73: the files are only ever the answers to the
+  // chooser the backend opens, sent back as their tokens.
+  it("asks the backend's chooser for the files, with no field to type a path into", async () => {
     const user = userEvent.setup();
     picks(FIREARMS);
     renderDialog();
 
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("No file chosen")).toBeInTheDocument();
     await choose(user);
 
-    expect(openDialog).toHaveBeenCalledWith(expect.objectContaining({ multiple: true }));
+    expect(importExportService.chooseImportFiles).toHaveBeenCalledWith(SCOPE);
+    expect(screen.getByText("1 file chosen")).toBeInTheDocument();
+  });
+
+  it("asks for a file before importing", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    expect(await screen.findByText("Choose the spreadsheet to import.")).toBeInTheDocument();
+    expect(importExportService.importCollection).not.toHaveBeenCalled();
   });
 
   it("lists the chosen files and imports them together, each with its format", async () => {
@@ -465,10 +485,7 @@ describe("ImportDialog files and the two tables (006 US5)", () => {
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     expect(importExportService.importCollection).toHaveBeenCalledWith(SCOPE, {
-      files: [
-        { filePath: FIREARMS, format: "csv" },
-        { filePath: ACCESSORIES, format: "xlsx" },
-      ],
+      fileTokens: [`token:${FIREARMS}`, `token:${ACCESSORIES}`],
     });
   });
 
@@ -493,25 +510,12 @@ describe("ImportDialog files and the two tables (006 US5)", () => {
 
     await choose(user);
 
-    expect(screen.getByRole("button", { name: "Choose…" })).toBeDisabled();
-    expect(screen.getByLabelText(/Spreadsheet file/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Choose a file…" })).toBeDisabled();
     expect(screen.getByText(/Two files chosen, the most one import takes/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: `Remove ${ACCESSORIES}` }));
 
-    expect(screen.getByRole("button", { name: "Choose…" })).toBeEnabled();
-    expect(screen.getByLabelText(/Spreadsheet file/)).toBeEnabled();
-  });
-
-  it("counts a typed path as one of the two files", async () => {
-    const user = userEvent.setup();
-    picks(FIREARMS);
-    renderDialog();
-
-    await choose(user);
-    await user.type(screen.getByLabelText(/Spreadsheet file/), "/data/typed.csv");
-
-    expect(screen.getByRole("button", { name: "Choose…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Choose a file…" })).toBeEnabled();
   });
 
   it("adds nothing, and says so, when a pick would make more than two files", async () => {
@@ -543,7 +547,7 @@ describe("ImportDialog files and the two tables (006 US5)", () => {
   it("keeps the selection when the picker is cancelled", async () => {
     const user = userEvent.setup();
     picks(FIREARMS);
-    vi.mocked(openDialog).mockResolvedValueOnce(null);
+    picks();
     renderDialog();
 
     await choose(user);
@@ -918,9 +922,9 @@ describe("ImportDialog reading the files (008 US2)", () => {
         settle = { resolve, reject };
       }),
     );
-    vi.mocked(openDialog).mockResolvedValueOnce([FILE]);
+    picks(FILE);
     renderDialog();
-    await user.click(screen.getByRole("button", { name: "Choose…" }));
+    await choose(user);
     await user.click(screen.getByRole("button", { name: "Import" }));
     await screen.findByRole("progressbar");
     return { user, settle };
@@ -928,7 +932,7 @@ describe("ImportDialog reading the files (008 US2)", () => {
 
   beforeEach(() => {
     events.handlers.clear();
-    vi.mocked(openDialog).mockReset();
+    vi.mocked(importExportService.chooseImportFiles).mockReset();
     vi.mocked(importExportService.importCollection).mockReset();
     vi.mocked(importExportService.cancelImport).mockReset().mockResolvedValue(null);
   });
@@ -947,9 +951,9 @@ describe("ImportDialog reading the files (008 US2)", () => {
   it("names the file being read as it changes, when two are read together", async () => {
     const user = userEvent.setup();
     vi.mocked(importExportService.importCollection).mockReturnValue(new Promise(() => {}));
-    vi.mocked(openDialog).mockResolvedValueOnce(["/data/firearms.csv", "C:\\data\\parts.csv"]);
+    picks("/data/firearms.csv", "C:\\data\\parts.csv");
     renderDialog();
-    await user.click(screen.getByRole("button", { name: "Choose…" }));
+    await choose(user);
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     // Until the backend names one, the first file chosen: they are read in order.

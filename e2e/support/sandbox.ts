@@ -145,6 +145,10 @@ export function isolateAppData(options: { fixedDir?: string } = {}): string {
   // fill (ui.ts, `answerPassphrase`), and logs each prompt here.
   process.env.HOPLODEX_E2E_PASSPHRASES = path.join(root, "passphrases.queue");
   process.env.HOPLODEX_E2E_PASSPHRASE_LOG = path.join(root, "passphrase.log");
+  // Nor can it pick in the native file and folder choosers the import and
+  // export open from Rust (code scanning alerts paths/cwe-73): an E2E build
+  // answers them from this queue, which the specs fill (ui.ts, `answerChooser`).
+  process.env.HOPLODEX_E2E_CHOOSER = path.join(root, "chooser.queue");
   // The troubleshooting log stays off, so no run gets its notice on the chooser
   // or writes its file: the journeys that want it clear this and relaunch
   // (013 plan.md "Test Levels").

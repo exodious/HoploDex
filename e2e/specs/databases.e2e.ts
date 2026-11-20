@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { budgetsChecked } from "../support/budgets";
 import {
   $,
@@ -1172,5 +1173,97 @@ describe("013 US2 - The log is designed to hold nothing sensitive", () => {
     expect(text).toMatch(/\[DEBUG\] creating a database at \S*\*\.hoplodex/);
     expect(text).toMatch(/\[DEBUG\] opening a document in another app/);
     expect(text).toMatch(/\[DEBUG\] closing the database/);
+  });
+});
+
+// 003 US1's "nothing stored anywhere on the machine", for what is typed into a record
+// (code scanning alert plaintext-lifetime/cwe-312): WebView2's general autofill kept
+// it, serial numbers included, unencrypted in its profile's `Web Data`, past the lock,
+// the close and the record itself. The other OSes' web views keep no such store, so
+// this is Windows only. At the end of the file, since it quits the app.
+describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
+  /** Quits the app as the user would, and waits for it to end and for WebView2's
+   * browser process, which outlives it a little, to let go of `Web Data`; returns
+   * that file. Nothing is unsaved, so it quits at once: the request isn't followed
+   * by a settle, as `requestQuit`'s is, which would find no app. A clean quit lets
+   * WebView2 write its profile. */
+  async function quitCleanly(): Promise<string> {
+    await browser.execute(() => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__;
+      void internals.invoke("plugin:event|emit", { event: "app:quit-requested", payload: {} });
+    });
+    await waitForAppToQuit(30000);
+    const store = webDataFiles().find((file) => path.basename(file) === "Web Data");
+    if (!store) throw new Error("the main web view's profile has no Web Data");
+    // An exclusive lock is had only once no other process holds the file.
+    const released = new DatabaseSync(store, { timeout: 30000 });
+    released.exec("BEGIN EXCLUSIVE; ROLLBACK");
+    released.close();
+    return store;
+  }
+
+  /** The main web view's `Web Data` files: its autofill store and its journal. */
+  function webDataFiles(): string[] {
+    const profile = path.join(
+      process.env.HOPLODEX_E2E_CACHE_HOME!,
+      "io.github.exodious.HoploDex",
+      "main-webview",
+    );
+    return fs
+      .readdirSync(profile, { recursive: true, encoding: "utf-8" })
+      .filter((file) => path.basename(file).startsWith("Web Data"))
+      .map((file) => path.join(profile, file));
+  }
+
+  it("leaves no typed serial number in WebView2's Web Data after a clean quit", async function () {
+    if (process.platform !== "win32") return this.skip();
+    const serial = `AUTOFILL-${randomBytes(4).toString("hex").toUpperCase()}`;
+    await createDatabase({ name: "Autofill" });
+    await addFirearm({
+      make: "AutofillMake",
+      model: "AutofillModel",
+      serial,
+      caliber: "9mm",
+      type: "Handgun",
+    });
+    const store = await quitCleanly();
+
+    const files = webDataFiles();
+    console.log(`autofill: ${files.length} Web Data files in the main web view's profile`);
+    for (const file of files) {
+      expect({ file, holdsSerial: fs.readFileSync(file).includes(serial) }).toEqual({
+        file,
+        holdsSerial: false,
+      });
+    }
+
+    // What an earlier version's autofill saved goes at the next start: a value
+    // planted as it would have saved it is gone after a start and a clean quit.
+    const earlier = `EARLIER-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const planted = new DatabaseSync(store);
+    planted
+      .prepare(
+        "INSERT INTO autofill (name, value, value_lower, date_created, date_last_used, count) VALUES (?, ?, ?, ?, ?, 1)",
+      )
+      .run("serialNumber", earlier, earlier.toLowerCase(), 1_700_000_000, 1_700_000_000);
+    planted.close();
+    await relaunch();
+    await quitCleanly();
+    const after = new DatabaseSync(store, { readOnly: true });
+    const left = after.prepare("SELECT count(*) AS n FROM autofill WHERE value = ?").get(earlier);
+    after.close();
+    expect(left).toEqual({ n: 0 });
+    // Nor are its bytes left in the file's free pages or its journal.
+    for (const file of webDataFiles()) {
+      expect({ file, holdsEarlier: fs.readFileSync(file).includes(earlier) }).toEqual({
+        file,
+        holdsEarlier: false,
+      });
+    }
+    await relaunch();
   });
 });

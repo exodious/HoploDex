@@ -56,6 +56,10 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
             aria-invalid={error ? true : undefined}
             aria-describedby={describedBy}
             aria-required={required || undefined}
+            // A record's values are never offered back or kept by the web
+            // view's autofill (WebView2 kept them unencrypted; code scanning
+            // alert plaintext-lifetime/cwe-312). main.rs turns it off too.
+            autoComplete="off"
             {...props}
           />
           {trailing}

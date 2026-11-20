@@ -12,8 +12,16 @@ import type { ExportScope } from "./types";
 /** The scope a mocked service receives: the test render's. */
 const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
 vi.mock("@tauri-apps/api/event", () => ({ listen: () => Promise.resolve(() => {}) }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./importExportService");
+
+/** Picks `path` in the chooser the backend opens, which answers with a token. */
+async function chooseFolder(user: ReturnType<typeof userEvent.setup>, path: string) {
+  vi.mocked(importExportService.chooseExportFolder).mockResolvedValueOnce({
+    token: `token:${path}`,
+    path,
+  });
+  await user.click(screen.getByRole("button", { name: "Choose a folder…" }));
+}
 
 const browse = { query: "", groupBy: undefined, includeDisposed: false, view: "list" } as const;
 
@@ -85,7 +93,7 @@ describe("ExportDialog disclosure (Constitution V: what leaves the device, and w
     const user = userEvent.setup();
     await renderDialog();
 
-    await user.type(screen.getByLabelText(/Save to folder/), "/home/sam/Documents/backups");
+    await chooseFolder(user, "/home/sam/Documents/backups");
 
     const note = screen.getByRole("note");
     expect(note).toHaveTextContent("/home/sam/Documents/backups");
@@ -99,13 +107,11 @@ describe("ExportDialog disclosure (Constitution V: what leaves the device, and w
   it("follows the folder as it changes", async () => {
     const user = userEvent.setup();
     await renderDialog();
-    const folder = screen.getByLabelText(/Save to folder/);
 
-    await user.type(folder, "/tmp/a");
+    await chooseFolder(user, "/tmp/a");
     expect(screen.getByRole("note")).toHaveTextContent("/tmp/a");
 
-    await user.clear(folder);
-    await user.type(folder, "/tmp/b");
+    await chooseFolder(user, "/tmp/b");
     expect(screen.getByRole("note")).toHaveTextContent("/tmp/b");
     expect(screen.getByRole("note")).not.toHaveTextContent("/tmp/a");
   });
@@ -265,7 +271,7 @@ describe("ExportDialog with accessories (006 US5)", () => {
     });
     await renderDialog();
 
-    await user.type(screen.getByLabelText(/Save to folder/), "/out");
+    await chooseFolder(user, "/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     expect(await screen.findByText("/out/hoplodex-export-20261001-120000.csv")).toBeInTheDocument();
@@ -286,13 +292,77 @@ describe("ExportDialog with accessories (006 US5)", () => {
     });
     await renderDialog();
 
-    await user.type(screen.getByLabelText(/Save to folder/), "/out");
+    await chooseFolder(user, "/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     expect(
       await screen.findByText("/out/hoplodex-export-20261001-120000.xlsx"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/-accessories\.csv/)).not.toBeInTheDocument();
+  });
+});
+
+// Code scanning alert paths/cwe-73 on export_collection_stoppable: the folder is
+// only ever the answer to the chooser the backend opens, sent back as its token.
+describe("ExportDialog folder from the backend's chooser", () => {
+  it("has no field to type a folder into, and asks for one before exporting", async () => {
+    const user = userEvent.setup();
+    await renderDialog();
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("No folder chosen")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(await screen.findByText("Choose the folder to save the export in.")).toBeInTheDocument();
+    expect(importExportService.exportCollection).not.toHaveBeenCalled();
+  });
+
+  it("asks the backend for the folder and sends only its token", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.exportCollection).mockResolvedValue({
+      spreadsheetPath: "/out/a.csv",
+      accessorySpreadsheetPath: null,
+      photosFolderPath: "/out/a_photos",
+      exportedFirearmCount: 1,
+      exportedAccessoryCount: 0,
+      exportedPhotoCount: 0,
+    });
+    await renderDialog();
+
+    await chooseFolder(user, "/out");
+    expect(importExportService.chooseExportFolder).toHaveBeenCalledWith(SCOPE);
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(importExportService.exportCollection).toHaveBeenCalledWith(SCOPE, {
+      format: "csv",
+      folderToken: "token:/out",
+      scope: "all",
+      filter: undefined,
+    });
+  });
+
+  it("keeps the folder when the chooser is cancelled", async () => {
+    const user = userEvent.setup();
+    await renderDialog();
+    await chooseFolder(user, "/out");
+
+    vi.mocked(importExportService.chooseExportFolder).mockResolvedValueOnce(null);
+    await user.click(screen.getByRole("button", { name: "Choose a folder…" }));
+
+    expect(screen.getByRole("note")).toHaveTextContent("/out");
+  });
+
+  it("keeps the folder after a failed export, for another try", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.exportCollection).mockRejectedValue(
+      new CommandFailure({ code: "DISK_FULL", message: "The disk is full." }),
+    );
+    await renderDialog();
+    await chooseFolder(user, "/out");
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The disk is full.");
+    expect(screen.getByRole("note")).toHaveTextContent("/out");
   });
 });
 
@@ -316,7 +386,7 @@ describe("ExportDialog refused as out of reach (011 US1-8, 011 FR-004)", () => {
     );
     await renderDialog();
 
-    await user.type(screen.getByLabelText(/Save to folder/), "/srv/out");
+    await chooseFolder(user, "/srv/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
@@ -341,7 +411,7 @@ describe("ExportDialog exporting the current results (001 US5, filtered export)"
     const user = userEvent.setup();
     vi.mocked(importExportService.exportCollection).mockResolvedValue(exported);
     await renderDialog(filtered);
-    await user.type(screen.getByLabelText(/Save to folder/), "/out");
+    await chooseFolder(user, "/out");
     await user.click(await screen.findByRole("radio", { name: /Current results/ }));
 
     await user.click(screen.getByRole("button", { name: "Export" }));
@@ -350,7 +420,7 @@ describe("ExportDialog exporting the current results (001 US5, filtered export)"
     expect(importExportService.exportCollection).toHaveBeenCalledTimes(1);
     expect(importExportService.exportCollection).toHaveBeenCalledWith(SCOPE, {
       format: "csv",
-      destinationFolder: "/out",
+      folderToken: "token:/out",
       scope: "filtered",
       filter: { query: "glock", includeDisposed: false },
     });
@@ -360,14 +430,14 @@ describe("ExportDialog exporting the current results (001 US5, filtered export)"
     const user = userEvent.setup();
     vi.mocked(importExportService.exportCollection).mockResolvedValue(exported);
     await renderDialog(filtered);
-    await user.type(screen.getByLabelText(/Save to folder/), "/out");
+    await chooseFolder(user, "/out");
 
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await screen.findByText("/out/hoplodex-export-20261001-120000.csv");
     expect(importExportService.exportCollection).toHaveBeenCalledWith(SCOPE, {
       format: "csv",
-      destinationFolder: "/out",
+      folderToken: "token:/out",
       scope: "all",
       filter: undefined,
     });

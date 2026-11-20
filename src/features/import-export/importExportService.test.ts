@@ -20,14 +20,14 @@ describe("importExportService", () => {
 
   it("sends each command with the session", async () => {
     await importExportService.getExportScope(scope, { scope: "all" });
+    await importExportService.chooseExportFolder(scope);
     await importExportService.exportCollection(scope, {
       format: "csv",
-      destinationFolder: "/tmp",
+      folderToken: "f1",
       scope: "all",
     });
-    await importExportService.importCollection(scope, {
-      files: [{ filePath: "/a.csv", format: "csv" }],
-    });
+    await importExportService.chooseImportFiles(scope);
+    await importExportService.importCollection(scope, { fileTokens: ["t1"] });
     await importExportService.resolveImportConflicts(scope, {
       importSessionId: "import-1",
       resolutions: [],
@@ -35,16 +35,14 @@ describe("importExportService", () => {
 
     expect(backend.invoke.mock.calls).toEqual([
       ["get_export_scope", { input: { scope: "all" } }, { session: 17 }],
+      ["choose_export_folder", undefined, { session: 17 }],
       [
         "export_collection",
-        { input: { format: "csv", destinationFolder: "/tmp", scope: "all" } },
+        { input: { format: "csv", folderToken: "f1", scope: "all" } },
         { session: 17 },
       ],
-      [
-        "import_collection",
-        { input: { files: [{ filePath: "/a.csv", format: "csv" }] } },
-        { session: 17 },
-      ],
+      ["choose_import_files", undefined, { session: 17 }],
+      ["import_collection", { input: { fileTokens: ["t1"] } }, { session: 17 }],
       [
         "resolve_import_conflicts",
         { input: { importSessionId: "import-1", resolutions: [] } },
@@ -62,7 +60,9 @@ describe("importExportService", () => {
   it("refuses once the scope has ended, without sending", async () => {
     const ended = createSessionScope(18);
     ended.end();
-    await expect(importExportService.importCollection(ended, { files: [] })).rejects.toMatchObject({
+    await expect(
+      importExportService.importCollection(ended, { fileTokens: [] }),
+    ).rejects.toMatchObject({
       code: "DATABASE_CLOSED",
     });
     expect(backend.invoke).not.toHaveBeenCalled();

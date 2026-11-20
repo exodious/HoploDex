@@ -67,6 +67,8 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
             .join(" ")}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
+          // As TextField: never kept by the web view's autofill.
+          autoComplete="off"
           {...props}
           onChange={handleChange}
         />

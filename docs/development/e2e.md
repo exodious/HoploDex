@@ -77,6 +77,15 @@ as one minute (default 60). The harness sets it to 3 for
 the notice and the settings still say "1 minute". The scaling's unit tests
 (`session/idle.rs`) run in the default Rust test run.
 
+No WebDriver can pick in a native chooser or drop a file from the desktop, so an
+`e2e` build answers the import's and export's choosers from the queue file
+`HOPLODEX_E2E_CHOOSER` names (`answerChooser`, and `chooseImportFiles` and
+`chooseExportFolder` in `e2e/support/importExport.ts`), and records the paths of
+the `tauri://drag-drop` events a spec sends (`dropFiles`) as the window's
+handler records a real drop. The backend reads only those, so a spec that
+calls `add_*_from_path` or the import and export commands with a path of its
+own is refused.
+
 The `flatpak-check` feature builds on `e2e` for the Flatpak check alone
 (`scripts/flatpak/checkManifest.mjs` turns it on; the `e2e` suite, the `.deb`
 and every other build never do). It keeps the WebDriver server and the

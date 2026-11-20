@@ -6,6 +6,7 @@
 
 pub mod clock;
 pub mod fingerprint;
+pub mod grants;
 pub mod idle;
 pub mod lifecycle;
 pub mod operations;
@@ -314,6 +315,9 @@ pub struct SessionInner {
     /// The database an open last found marked open on another computer, and
     /// that computer's name, for the take-over dialog's words.
     open_elsewhere: Mutex<Option<(PathBuf, String)>>,
+    /// The files dropped onto the main window and the chooser answers not yet
+    /// used, each bound to the session it arrived in ([`grants`]).
+    grants: Mutex<grants::Grants>,
 }
 
 /// A checked backup and its passphrase, waiting for the restore's
@@ -430,6 +434,7 @@ impl Session {
             backup_check: Mutex::new(None),
             backup_check_drops: AtomicU64::new(0),
             open_elsewhere: Mutex::new(None),
+            grants: Mutex::default(),
         }))
     }
 
@@ -540,6 +545,71 @@ impl SessionInner {
 
     /// Notes that an open or an upgrade found `path` (as `Reach::check`
     /// returned it) marked open on `machine_name`.
+    /// Records the files of a drop onto the main window for the open session
+    /// (code scanning alert `paths/cwe-73` on `add_document_from_path`). With
+    /// nothing open there is nothing to attach them to, and they are not kept.
+    pub fn record_drop(&self, paths: Vec<PathBuf>) {
+        let id = self.current_id();
+        if id == SessionId::NONE {
+            return;
+        }
+        let now = self.clock.now();
+        self.grants().record_drop(id, paths, now);
+    }
+
+    /// Takes one drop of `path` in session `id`: refused with a fixed
+    /// `VALIDATION_ERROR` unless the user dropped that file in this session
+    /// moments ago, before anything looks at the file.
+    pub fn take_drop(&self, id: SessionId, path: &Path) -> Result<PathBuf, CommandError> {
+        let now = self.clock.now();
+        self.grants().take_drop(id, path, now)
+    }
+
+    /// Holds what the user picked in a chooser Rust opened for session `id`,
+    /// and returns the token the page answers with.
+    pub fn hold_pick(
+        &self,
+        id: SessionId,
+        kind: grants::PickKind,
+        path: PathBuf,
+    ) -> Result<String, CommandError> {
+        let token = db::random_hex(16).map_err(|err| {
+            log::error!("could not make a chooser token: {err}");
+            CommandError::new("INTERNAL_ERROR", "Something went wrong. Please try again.")
+        })?;
+        Ok(self.grants().hold_pick(id, kind, path, token))
+    }
+
+    /// Takes the chooser answer held under `token` for session `id`: refused
+    /// with a fixed `VALIDATION_ERROR` when there is none.
+    pub fn take_pick(
+        &self,
+        id: SessionId,
+        kind: grants::PickKind,
+        token: &str,
+    ) -> Result<PathBuf, CommandError> {
+        self.grants().take_pick(id, kind, token)
+    }
+
+    /// Puts back a chooser answer [`take_pick`](Self::take_pick) took for an
+    /// operation that then failed, under the same token, while session `id`
+    /// is still the open one.
+    pub fn put_back_pick(
+        &self,
+        id: SessionId,
+        kind: grants::PickKind,
+        token: String,
+        path: PathBuf,
+    ) {
+        if self.current_id() == id {
+            self.grants().hold_pick(id, kind, path, token);
+        }
+    }
+
+    fn grants(&self) -> MutexGuard<'_, grants::Grants> {
+        self.grants.lock().expect("session mutex poisoned")
+    }
+
     pub fn note_open_elsewhere(&self, path: &Path, machine_name: &str) {
         *self.open_elsewhere.lock().expect("session mutex poisoned") =
             Some((path.to_owned(), machine_name.to_owned()));
@@ -865,6 +935,7 @@ impl SessionInner {
         self.idle.stop();
         *self.open_path.lock().expect("session mutex poisoned") = None;
         self.prompts.dismiss_bound();
+        self.grants().clear();
         let dropped = {
             let mut slot = self.backup_check.lock().expect("session mutex poisoned");
             self.backup_check_drops.fetch_add(1, Ordering::SeqCst);

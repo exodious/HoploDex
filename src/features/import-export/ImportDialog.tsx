@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionScope } from "../session/sessionScope";
 import { withIdlePaused } from "../session/useIdleActivity";
 import {
@@ -11,7 +10,6 @@ import {
   Icon,
   ProgressBar,
   SegmentedControl,
-  TextField,
   useToast,
 } from "../../components";
 import { CommandFailure, listen } from "../../services/tauriClient";
@@ -28,8 +26,10 @@ import {
 } from "../mounts/recordCounts";
 import { recordKey } from "../mounts/recordKey";
 import { accessoryNameText } from "../mounts/recordNames";
+import { ChosenPathField } from "./ChosenPathField";
 import * as importExportService from "./importExportService";
 import type {
+  ChosenPath,
   ConflictAction,
   ImportConflict,
   ImportProgress,
@@ -37,7 +37,6 @@ import type {
   ImportTable,
   RowError,
   SnappedValue,
-  SpreadsheetFormat,
 } from "./types";
 import "./importExport.css";
 
@@ -127,10 +126,6 @@ function rowCounts(rows: { table: ImportTable }[]): RecordCounts {
   return { firearms: rows.length - accessories, accessories };
 }
 
-function formatForPath(filePath: string): SpreadsheetFormat {
-  return filePath.toLowerCase().endsWith(".xlsx") ? "xlsx" : "csv";
-}
-
 /** The last part of a path, whichever separator it uses. */
 function baseName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || filePath;
@@ -191,10 +186,10 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const sessionScope = useSessionScope();
   const { refresh } = useCollection();
   const notify = useToast();
-  // The files picked (one, or the firearm and accessory files together), and
-  // a path typed by hand, which counts as one more.
-  const [files, setFiles] = useState<string[]>([]);
-  const [typedPath, setTypedPath] = useState("");
+  // The files picked in the backend's chooser (one, or the firearm and
+  // accessory files together), by the tokens the import takes them by. An
+  // import that finishes uses them up; one that fails leaves them chosen.
+  const [files, setFiles] = useState<ChosenPath[]>([]);
   const [fileError, setFileError] = useState<string | undefined>();
   const [importing, setImporting] = useState(false);
   // While importing: the files are being read (the user may stop that), then
@@ -217,26 +212,22 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
     return listen<ImportProgress>("import_collection:progress", setProgress);
   }, [importing]);
 
-  const chosenFiles = [...files, ...(typedPath.trim() ? [typedPath.trim()] : [])];
-  const full = chosenFiles.length >= MAX_IMPORT_FILES;
+  const full = files.length >= MAX_IMPORT_FILES;
 
   async function chooseFile() {
-    const selected = await withIdlePaused(() =>
-      openDialog({
-        multiple: true,
-        title: "Import spreadsheet",
-        filters: [{ name: "Spreadsheet", extensions: ["csv", "xlsx"] }],
-      }),
-    );
-    const picked = (Array.isArray(selected) ? selected : selected ? [selected] : []).filter(
-      (path): path is string => typeof path === "string",
-    );
+    let picked: ChosenPath[];
+    try {
+      picked = await withIdlePaused(() => importExportService.chooseImportFiles(sessionScope));
+    } catch (e) {
+      setFileError(e instanceof CommandFailure ? e.message : "The file couldn't be chosen.");
+      return;
+    }
     if (picked.length === 0) return;
     // A second pick adds to the first. A pick that would take the import
     // past its two files adds nothing and says so (006 contracts/ui-accessories.md
     // §11, issue #56).
-    const added = picked.filter((path) => !files.includes(path));
-    if (chosenFiles.length + added.length > MAX_IMPORT_FILES) {
+    const added = picked.filter((chosen) => !files.some((file) => file.path === chosen.path));
+    if (files.length + added.length > MAX_IMPORT_FILES) {
       setFileError(TOO_MANY_FILES);
       return;
     }
@@ -246,7 +237,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
 
   async function handleImport(event: FormEvent) {
     event.preventDefault();
-    if (chosenFiles.length === 0) {
+    if (files.length === 0) {
       setFileError("Choose the spreadsheet to import.");
       return;
     }
@@ -255,7 +246,7 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
     setImporting(true);
     try {
       const imported = await importExportService.importCollection(sessionScope, {
-        files: chosenFiles.map((filePath) => ({ filePath, format: formatForPath(filePath) })),
+        fileTokens: files.map((file) => file.token),
       });
       setResult(imported);
       await refresh();
@@ -330,44 +321,38 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
     return (
       <form className="hd-dialog__form" onSubmit={handleImport} noValidate>
         <div className="hd-dialog__body hd-io-body">
-          <TextField
+          <ChosenPathField
             label="Spreadsheet file"
-            required
-            value={typedPath}
-            onChange={(e) => {
-              setTypedPath(e.target.value);
-              setFileError(undefined);
-            }}
+            value={
+              files.length === 0 ? (
+                <span className="hd-io-chosen__none">No file chosen</span>
+              ) : (
+                <span className="hd-io-chosen__none">
+                  {count(files.length, "file chosen", "files chosen")}
+                </span>
+              )
+            }
+            chooseLabel="Choose a file…"
+            onChoose={() => void chooseFile()}
             error={fileError}
-            spellCheck={false}
-            // Two chosen files leave no room for a typed one.
-            disabled={files.length >= MAX_IMPORT_FILES}
+            disabled={full || importing}
             hint={
               full
                 ? "Two files chosen, the most one import takes. Remove one to choose another."
                 : "Choose one file, or the firearm and accessory files together. Rows that match a firearm or accessory you already have are held for you to decide on."
             }
-            trailing={
-              <button
-                type="button"
-                className="hd-input__text-action"
-                onClick={chooseFile}
-                disabled={full}
-              >
-                Choose…
-              </button>
-            }
           />
           {files.length > 0 && (
             <ul className="hd-io-files" aria-label="Files to import">
-              {files.map((path) => (
+              {files.map(({ path }) => (
                 <li key={path}>
                   <span className="hd-io-files__path">{path}</span>
                   <button
                     type="button"
                     className="hd-input__text-action"
                     aria-label={`Remove ${path}`}
-                    onClick={() => setFiles((current) => current.filter((p) => p !== path))}
+                    disabled={importing}
+                    onClick={() => setFiles((current) => current.filter((f) => f.path !== path))}
                   >
                     Remove
                   </button>
@@ -380,7 +365,10 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
               <ProgressBar
                 label="Reading progress"
                 value={progress}
-                caption={readingCaption(chosenFiles, progress)}
+                caption={readingCaption(
+                  files.map((file) => file.path),
+                  progress,
+                )}
               />
             ) : (
               <ProgressBar label="Import progress" value={progress} unit="rows" />

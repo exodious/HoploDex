@@ -221,9 +221,9 @@ paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,
 `e2e/specs/flatpak.e2e.ts`, `e2e/support/flatpak.ts`,
 `src-tauri/src/platform/linux.rs`, `src-tauri/src/platform/core_dumps.rs`,
 `src-tauri/src/main.rs`, `src-tauri/src/app_dirs.rs`,
-`src-tauri/src/session/lifecycle.rs`; under
+`src-tauri/src/session/lifecycle.rs`, `src-tauri/src/session/grants.rs`; under
 `src-tauri/src/services/`: `sandbox.rs`, `keyring.rs`, `file_swap.rs`,
-`backups.rs`, `scratch.rs`, `helper/`, `import_reader/`, `preview/helper.rs`,
+`backups.rs`, `scratch.rs`, `chooser.rs`, `helper/`, `import_reader/`, `preview/helper.rs`,
 `preview/sandbox_probe.rs`; under `src-tauri/src/commands/`: `databases.rs`,
 `backups.rs`, `import_export.rs`, `documents.rs`, `photos.rs`; and
 `src/features/media/useFileDrop.ts`.
