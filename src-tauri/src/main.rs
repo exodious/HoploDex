@@ -440,10 +440,10 @@ fn main() {
             app.manage::<Arc<dyn Consent>>(Arc::new(DialogConsent::new(app.handle().clone())));
             #[cfg(feature = "e2e")]
             app.manage::<Arc<dyn Consent>>(Arc::new(E2eConsent));
-            // The choosers for the import's files and the export's folder,
-            // whose answers only Rust sees (code scanning alerts `paths/cwe-73`
-            // on `import_collection` and `export_collection`). An E2E build
-            // answers from the spec's queue.
+            // The choosers for the import's files, the export's folder and the
+            // databases' and backups' folders, whose answers only Rust sees
+            // (code scanning alerts `paths/cwe-73` on `import_collection` and
+            // `export_collection`). An E2E build answers from the spec's queue.
             #[cfg(not(feature = "e2e"))]
             app.manage::<Arc<dyn Chooser>>(Arc::new(NativeChooser::new(app.handle().clone())));
             #[cfg(feature = "e2e")]

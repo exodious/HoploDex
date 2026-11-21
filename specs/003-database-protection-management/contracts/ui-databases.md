@@ -168,6 +168,9 @@ collection data, top-bar tabs or counts are shown.
   file…** (a native open dialog filtered to `*.hoplodex`, with an "All files"
   choice). The chosen file becomes the selected row and asks for its
   passphrase.
+  _Amended 2026-11-21: the open dialog is opened by the backend
+  (`choose_database_file`), which keeps its answer, so a file on a server opens
+  from it ([contracts](tauri-commands.md#open_database-))._
 - **No databases known** (first run): the list is replaced by a short
   welcome: "HoploDex keeps your collection in an encrypted database file
   that only your passphrase opens." with the two page actions as large
@@ -225,6 +228,11 @@ A `Dialog` (`size="lg"`), titled "Create a database". Fields, in the usual
    **Choose…** button (native folder picker). The default is
    `suggested.folder`. Help shows the resulting path: "Saved as
    <folder>/<name>.hoplodex".
+   _Amended 2026-11-21: the folder has no text box. It shows the suggested folder, or
+   the one picked with **Choose a folder…**, which opens the system's folder
+   chooser from the backend (`choose_database_folder`); the page sends only
+   the picked folder's token ([contracts](tauri-commands.md#create_database-)).
+   A refusal of the folder lands on the field, and the focus on its button._
 3. **Passphrase**: `PassphraseField` with `strength`.
 4. **Confirm passphrase**: `PassphraseField`.
 5. **Backups** (read-only disclosure, FR-024), a short panel: "Backups are on.
@@ -320,7 +328,10 @@ _Amended 2026-10-13: **Save** stays disabled until something differs from what i
   after it
   _Amended 2026-10-13: it is a `NumberField` with up and down buttons ("Increase Keep the latest", "Decrease Keep the latest") and ArrowUp / ArrowDown, from 1 to 100; typing still works, and "Enter a whole number of backups." and the backend's range still apply (#35)._
 - **Location**: shows the resolved path and "(next to the database)" for
-  the default, plus **Change…** (folder picker) and **Use the default**. An
+  the default, plus **Change…** (folder picker) and **Use the default**.
+  _Amended 2026-11-21: **Change…** opens the system's folder chooser from the backend
+  (`choose_backup_folder`); the page sends the picked folder's token, or
+  `current` for the saved location ([contracts](tauri-commands.md#update_backup_settings))._ An
   unavailable custom location shows "Not available on this computer" (FR-027).
   A changed location is saved with **Save**, and its backups dealt with
   then (below).

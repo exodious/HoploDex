@@ -759,7 +759,9 @@ export async function dialogFieldError(label: string): Promise<string | null> {
       (l) => l.textContent?.trim() === label,
     ) as HTMLLabelElement | undefined;
     const field = labelEl && document.getElementById(labelEl.htmlFor);
-    if (!field || field.getAttribute("aria-invalid") !== "true") return null;
+    // A chosen path shows in an <output>, which takes no aria-invalid.
+    const invalid = field?.tagName === "OUTPUT" || field?.getAttribute("aria-invalid") === "true";
+    if (!field || !invalid) return null;
     for (const id of (field.getAttribute("aria-describedby") ?? "").split(" ")) {
       const el = document.getElementById(id);
       if (el?.classList.contains("hd-field__error")) return el.textContent?.trim() ?? "";
@@ -849,6 +851,25 @@ export function answerChooser(...paths: string[]) {
   fs.appendFileSync(queue, `${JSON.stringify(paths)}\n`);
 }
 
+/** Picks `folder` in the chooser the open dialog's "Choose a folder…" opens
+ * (the backend's, answered from the queue), and waits for the dialog to show
+ * it. */
+export async function chooseFolder(folder: string, button = "Choose a folder…") {
+  answerChooser(folder);
+  await clickButton(button);
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (wanted: string) =>
+          [...document.querySelectorAll('[role="dialog"] *')].some(
+            (el) => el.children.length === 0 && el.textContent?.trim() === wanted,
+          ),
+        folder,
+      ),
+    { timeout: 10000, timeoutMsg: `the dialog never showed the chosen ${folder}` },
+  );
+}
+
 /** What the passphrase dialog logged, a JSON object a line: `asked` (its
  * title, message, primary button and fields), `shown` (the real dialog has
  * the focus in its first field), `retry` (the refusal under a field),
@@ -873,12 +894,13 @@ export function passphraseTitles(): string[] {
     .map((line) => (line.asked as { title: string }).title);
 }
 
-/** Creates a database from the chooser by typing its location, and waits
- * for its (empty) collection. Defaults: "Test", in the sandbox's suggested
- * folder, with {@link E2E_PASSPHRASE}, which the native dialog's stand-in
- * answers with, the acknowledgement ticked. */
+/** Creates a database from the chooser, and waits for its (empty)
+ * collection. Defaults: "Test", in the suggested folder (the sandbox's
+ * Documents/HoploDex), with {@link E2E_PASSPHRASE}, which the native dialog's
+ * stand-in answers with, the acknowledgement ticked. A `folder` is picked in
+ * the chooser the backend opens. */
 export async function createDatabase({
-  folder = `${scratchDocuments()}/HoploDex`,
+  folder,
   name = "Test",
   passphrase = E2E_PASSPHRASE,
 }: { folder?: string; name?: string; passphrase?: string } = {}) {
@@ -886,7 +908,7 @@ export async function createDatabase({
   await clickButton("Create a new database…");
   await $('[role="dialog"]').waitForExist();
   await fill("Name", name);
-  await fill("Folder", folder);
+  if (folder !== undefined) await chooseFolder(folder);
   answerPassphrase(passphrase);
   await clickButton("Create database…");
   await waitForCollection();

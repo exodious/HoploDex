@@ -78,6 +78,7 @@ import {
   chooseMenuItem,
   chooserNames,
   chooserSays,
+  chooseFolder,
   clickButton,
   clickEl,
   createDatabase,
@@ -762,13 +763,13 @@ describe("011 US1 - A Linux User Installs HoploDex as a Flatpak and Keeps Their 
     await switchDatabase();
   });
 
-  it("011 US1-8, 011 SC-003: a typed location outside what the Flatpak reaches, /srv or /mnt, is refused on the folder field, and nothing is written there", async function () {
+  it("011 US1-8, 011 SC-003: a picked location outside what the Flatpak reaches, /srv or /mnt, is refused on the folder field, and nothing is written there", async function () {
     this.timeout(120000);
     for (const outside of NOT_GRANTED) {
       await clickButton("Create a new database…");
       await $('[role="dialog"]').waitForExist();
       await fill("Name", "Nowhere");
-      await fill("Folder", outside);
+      await chooseFolder(outside);
       // Refused before the passphrase is asked for: nothing is queued.
       await clickButton("Create database…");
       await browser.waitUntil(

@@ -7,11 +7,11 @@ import {
   addFirearm,
   browser,
   choose,
+  chooseFolder,
   chooseMenuItem,
   clickButton,
   clickEl,
   createDatabase,
-  invokeCommand,
   expect,
   goTo,
   listedNames,
@@ -64,18 +64,18 @@ async function restorable(): Promise<number> {
   return count;
 }
 
-/** Makes `elsewhere` the backup location, doing `existingBackups` with the
- * backups at the old one. The folder is chosen in the OS's own dialog, which
- * WebDriver can't reach (Tauri's IPC can't be stubbed in the page either),
- * so the command it leads to is sent directly; a lock and an unlock then
- * show the settings as saved. */
-async function useElsewhere(existingBackups?: "move" | "leave") {
-  await invokeCommand("update_backup_settings", {
-    enabled: true,
-    keepCount: 5,
-    location: { kind: "custom", path: elsewhere },
-    ...(existingBackups ? { existingBackups } : {}),
-  });
+/** Makes `elsewhere` the backup location in the database settings, picked
+ * in the chooser the backend opens, moving the backups at the old one there;
+ * a lock and an unlock then show the settings as saved. */
+async function moveToElsewhere() {
+  await chooseMenuItem("button.hd-db-menu", "Database settings…");
+  await $('[role="dialog"]').waitForExist();
+  await chooseFolder(elsewhere, "Change…");
+  await clickButton("Save");
+  await $("h2=Backups at the old location").waitForExist();
+  await choose("Move them to the new location");
+  await clickButton("Change location");
+  await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 20000 });
   await closeDatabase();
   await unlock(E2E_PASSPHRASE);
 }
@@ -194,10 +194,10 @@ describe("003 US3 - Automatic Backups and Restoring From One (was us8-backups)",
   it("moves the backups to the new location (003 FR-026, US3-4a)", async () => {
     // Open, with both backups in the default folder: the journey above.
     expect(backupFiles()).toHaveLength(2);
-    // Setting the new location with its choice sent directly, as the folder
-    // picker is the OS's own; the way back is through the settings dialog.
+    // The new location is picked in the chooser the backend opens, which the
+    // E2E build answers from its queue.
     fs.mkdirSync(elsewhere, { recursive: true });
-    await useElsewhere("move");
+    await moveToElsewhere();
     const made = backupFiles(elsewhere);
     expect(made.length).toBeGreaterThanOrEqual(2);
     expect(backupFiles()).toEqual([]);

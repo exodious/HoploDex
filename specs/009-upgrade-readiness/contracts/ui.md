@@ -79,6 +79,9 @@ backup somewhere else?" shows:
   `upgrade_database { awaitingId, backupFolder }`, and §2's progress follows.
   A refusal there shows this dialog again, naming the chosen folder.
   Dismissing the picker leaves this dialog up.
+  _Amended 2026-11-21: the picker is the system's folder chooser opened from the
+  backend (`choose_upgrade_backup_folder`), and the folder is sent as its token
+  (`backupFolderToken`) ([contracts](tauri-commands.md#upgrade_database-fr-011-to-fr-017))._
 - **Cancel** sends `cancel_upgrade` and returns to the chooser.
 
 ## 4. The upgrade failed (FR-015)

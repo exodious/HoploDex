@@ -5,15 +5,16 @@ import { createDatabase, dialogHeightWhenOpened, listedNames } from "../support/
 import { scratchDocuments, search } from "../support/ui";
 import { chooseExportFolder, chooseImportFiles, importFile, tally } from "../support/importExport";
 import { writeSheetsWorkbook } from "../support/spreadsheets";
+import { logLines } from "../support/documentPreview";
 
 /**
  * End-to-end coverage of 001 US5's acceptance scenarios (001 spec.md),
  * driven against the real built app through its embedded WebDriver server.
  *
- * The folder and file fields accept typed paths (not only native pickers)
- * specifically so this spec can drive them — native OS file dialogs run
- * outside the webview and can't be automated through WebDriver. See
- * e2e/support/ui.ts for why interactions go through page JS.
+ * The folder and file are picked in the native choosers the backend opens,
+ * which run outside the web view; an E2E build answers them from a queue the
+ * spec fills (e2e/support/importExport.ts). See e2e/support/ui.ts for why
+ * interactions go through page JS.
  */
 
 /** The spreadsheet's columns, in order (001 contracts/spreadsheet-format.md). */
@@ -180,6 +181,54 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     await search("NotPickedE2E");
     expect(await listedNames()).toEqual([]);
     await search("");
+  });
+
+  it("asks in the native confirmation, naming the folder and the records, before an export to a network folder", async () => {
+    // An E2E build takes this folder to be on a network share (sandbox.ts).
+    const share = path.join(process.env.HOPLODEX_E2E_NETWORK_FOLDER!, "Exports");
+    fs.mkdirSync(share, { recursive: true });
+    const asked = logLines("HOPLODEX_E2E_CONSENT_LOG").length;
+
+    await clickButton("Export");
+    await chooseExportFolder(share);
+    await clickButton("Export");
+
+    // Answered "Export" by the E2E build (HOPLODEX_E2E_CONSENT), so it is written.
+    await $(".hd-outcome__headline*=Exported").waitForExist({
+      timeout: 15000,
+      timeoutMsg: "export never finished",
+    });
+    const consent = logLines("HOPLODEX_E2E_CONSENT_LOG");
+    expect(consent).toHaveLength(asked + 1);
+    expect(consent.at(-1)).toContain("Export to a network folder?");
+    expect(consent.at(-1)).toContain(`“${share}” is on another computer.`);
+    expect(consent.at(-1)).toMatch(/HoploDex will write \d+ records? there/);
+    expect(fs.readdirSync(share).some((f) => f.endsWith(".csv"))).toBe(true);
+    await clickButton("Done");
+
+    // A folder on this computer asks nothing.
+    await clickButton("Export");
+    await chooseExportFolder(fs.mkdtempSync(path.join(scratchDocuments(), "local-")));
+    await clickButton("Export");
+    await $(".hd-outcome__headline*=Exported").waitForExist({ timeout: 15000 });
+    expect(logLines("HOPLODEX_E2E_CONSENT_LOG")).toHaveLength(asked + 1);
+    await clickButton("Done");
+  });
+
+  it("takes a new backup location only as a folder picked in the chooser", async () => {
+    const folder = fs.mkdtempSync(path.join(scratchDocuments(), "not-picked-"));
+    const refused = await invokeFailure("update_backup_settings", {
+      enabled: true,
+      keepCount: 5,
+      location: { kind: "chosen", token: folder },
+    });
+    expect(refused).toMatchObject({ code: "VALIDATION_ERROR" });
+    const typed = await invokeFailure("update_backup_settings", {
+      enabled: true,
+      keepCount: 5,
+      location: { kind: "custom", path: folder },
+    });
+    expect(typed).not.toBeNull();
   });
 
   // 008 US2 (008 spec.md FR-006 to FR-008; 008 contracts/ui.md §2).
