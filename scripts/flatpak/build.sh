@@ -146,13 +146,15 @@ step "flatpak-builder-lint: the manifest, with flatpak/linter-exceptions.json (0
 "${linter[@]}" --exceptions --user-exceptions "$exceptions" manifest "$manifest"
 echo "flatpak-builder-lint manifest: ok"
 
-# The repository is linted as Flathub's pipeline would lint it, except for two
+# The repository is linted as Flathub's pipeline would lint it, except for three
 # screenshot rules. Flathub's pipeline mirrors the metainfo's screenshots (it builds
 # with --mirror-screenshots-url, which downloads each address); the addresses are at
 # the release's tag (011 research.md §13), which does not exist while the release is
-# being made, so a local build cannot mirror them. These two are added here, for the
-# repository only, and the recorded exceptions in the committed file stay at two.
-screenshot_rules='["appstream-missing-screenshots","appstream-screenshots-not-mirrored-in-ostree"]'
+# being made, so a local build cannot mirror them (and Flathub's linter also reports
+# them unmirrored as appstream-external-screenshot-url).
+# These three are added here, for the repository only, and the recorded exceptions in
+# the committed file stay at two.
+screenshot_rules='["appstream-missing-screenshots","appstream-screenshots-not-mirrored-in-ostree","appstream-external-screenshot-url"]'
 repo_exceptions="$state/linter-exceptions-repo.json"
 node -e '
   const fs = require("node:fs");
@@ -165,7 +167,7 @@ node -e '
 ' "$exceptions" "$repo_exceptions" "$screenshot_rules"
 
 # The linter runs in its own sandbox, which does not see the state volume.
-step "flatpak-builder-lint: the repository, with those exceptions and the screenshot mirror's two"
+step "flatpak-builder-lint: the repository, with those exceptions and the screenshot mirror's three"
 flatpak run --filesystem="$state:ro" --command=flatpak-builder-lint org.flatpak.Builder \
   --exceptions --user-exceptions "$repo_exceptions" repo "$local_repo"
 echo "flatpak-builder-lint repo: ok"

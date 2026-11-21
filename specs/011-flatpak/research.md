@@ -250,6 +250,7 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     only, in a file it writes under the state volume; the committed file stays at
     two (`manifest.test.ts`). A submission to Flathub gets the screenshots
     mirrored by its own pipeline (§19, item 7).
+    _Amended 2026-11-21: the repository lint also sets aside `appstream-external-screenshot-url`, which Flathub's linter raised against the same unmirrored addresses in the v0.1.0 release run, so `build.sh` adds three screenshot rules, not two; the committed file still holds two._
     _Amended 2026-10-19 (011 T078): checked against what was built.
     `flatpak/io.github.exodious.HoploDex.yml`'s `finish-args` are this table's
     rows, in this order (twelve arguments: the `/media`, `/run/media` and `/mnt`
@@ -1278,6 +1279,7 @@ _Amended 2026-10-19 (011 T078): checked against what was built._
   `appstream-screenshots-not-mirrored-in-ostree` because a local build can't
   mirror the tag-based addresses (§4). Flathub's pipeline does mirror them
   (`--mirror-screenshots-url`), so a submission needs neither._
+  _Amended 2026-11-21: the repository lint also sets aside `appstream-external-screenshot-url`, which Flathub's linter raised against the same unmirrored addresses in the v0.1.0 release run, so `build.sh` adds three screenshot rules, not two; the committed file still holds two._
 
 ## §20 Residual risks for the release security review (#21)
 
