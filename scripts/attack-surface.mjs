@@ -39,6 +39,7 @@ export const PRODUCTION = [
   "src-tauri/Cargo.toml",
   "src-tauri/tauri.conf.json",
   "src-tauri/tauri.bundle.conf.json",
+  "src-tauri/tauri.linux-packages.conf.json",
   "src-tauri/packaging/**",
   "src-tauri/capabilities/**",
   "src-tauri/vendor/**",

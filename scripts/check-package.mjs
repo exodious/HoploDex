@@ -5,26 +5,39 @@
 // workflow run it on what they built.
 //
 //   node scripts/check-package.mjs deb  FILE   dpkg-deb -c: the program, the
-//                                              notices and apport's ignore entry (#166)
-//   node scripts/check-package.mjs rpm  FILE   rpm -qlp: the program and the notices
+//                                              notices, the launcher entry and
+//                                              apport's ignore entry (#166)
+//   node scripts/check-package.mjs rpm  FILE   rpm -qlp: the program, the notices
+//                                              and the launcher entry
 //   node scripts/check-package.mjs nsis FILE   7z l: the program and the notices
 //   node scripts/check-package.mjs dmg  FILE   (macOS) mounts it read-only: the
 //                                              .app's notices and its own (ad-hoc)
 //                                              signature (codesign --verify)
 //
-// Each takes one or more files. Node, so it runs the same on every OS. No
-// dependencies of its own.
+// Each takes one or more files. With `--rename` (the CI package jobs), each
+// file that passes is then renamed to its release name, `releaseName`'s
+// HoploDex-<version>-<arch>[-setup].<ext> (#209). Node, so it runs the same on
+// every OS. No dependencies of its own.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The paths each kind's listing must hold, as `listing` normalises them. */
 export const REQUIRED = {
-  deb: ["usr/bin/hoplodex", "usr/lib/HoploDex/NOTICES.txt", "etc/apport/blacklist.d/hoplodex"],
-  rpm: ["usr/bin/hoplodex", "usr/lib/HoploDex/NOTICES.txt"],
+  deb: [
+    "usr/bin/hoplodex",
+    "usr/lib/hoplodex/NOTICES.txt",
+    "usr/share/applications/hoplodex.desktop",
+    "etc/apport/blacklist.d/hoplodex",
+  ],
+  rpm: [
+    "usr/bin/hoplodex",
+    "usr/lib/hoplodex/NOTICES.txt",
+    "usr/share/applications/hoplodex.desktop",
+  ],
   nsis: ["hoplodex.exe", "NOTICES.txt"],
   dmg: ["HoploDex.app/Contents/MacOS/hoplodex", "HoploDex.app/Contents/Resources/NOTICES.txt"],
 };
@@ -58,6 +71,35 @@ export function listing(kind, out) {
 export function missing(kind, paths) {
   const have = new Set(paths);
   return REQUIRED[kind].filter((p) => !have.has(p));
+}
+
+/** The architecture in each kind's Tauri file name, and its spelling in ours. */
+const TAURI_NAME = {
+  deb: /_(amd64|arm64)\.deb$/,
+  rpm: /\.(x86_64|aarch64)\.rpm$/,
+  nsis: /_(x64|arm64)-setup\.exe$/,
+  dmg: /_(x64|aarch64)\.dmg$/,
+};
+const ARCH = {
+  amd64: "x86_64",
+  x64: "x86_64",
+  x86_64: "x86_64",
+  arm64: "aarch64",
+  aarch64: "aarch64",
+};
+const EXT = { deb: ".deb", rpm: ".rpm", nsis: "-setup.exe", dmg: ".dmg" };
+
+/**
+ * The release's name for a package Tauri built, one pattern for every file
+ * (the Flatpak's, from scripts/flatpak/build.sh, too): HoploDex-<version>-
+ * <x86_64|aarch64>, then `-setup.exe`, `.dmg`, `.deb` or `.rpm` (#209).
+ * Throws on a name that isn't this version's Tauri name for that kind.
+ */
+export function releaseName(kind, file, version) {
+  const base = path.basename(file);
+  const arch = base.includes(version) && TAURI_NAME[kind]?.exec(base)?.[1];
+  if (!arch) throw new Error(`${base} isn't Tauri's ${kind} for ${version}`);
+  return `HoploDex-${version}-${ARCH[arch]}${EXT[kind]}`;
 }
 
 function run(cmd, args) {
@@ -94,10 +136,14 @@ function checkDmg(file) {
   }
 }
 
-function main([kind, ...files]) {
+function main(args) {
+  const rename = args[0] === "--rename";
+  const [kind, ...files] = rename ? args.slice(1) : args;
   if (!(kind in REQUIRED) || !files.length) {
-    throw new Error("usage: check-package.mjs deb|rpm|nsis|dmg FILE...");
+    throw new Error("usage: check-package.mjs [--rename] deb|rpm|nsis|dmg FILE...");
   }
+  const conf = new URL("../src-tauri/tauri.conf.json", import.meta.url);
+  const { version } = JSON.parse(readFileSync(conf, "utf8"));
   for (const file of files) {
     const problems =
       kind === "dmg" ? checkDmg(file) : missing(kind, listing(kind, LIST[kind](file)));
@@ -106,6 +152,11 @@ function main([kind, ...files]) {
       process.exitCode = 1;
     } else {
       console.log(`Checked ${file}: ${REQUIRED[kind].join(", ")}`);
+      if (rename) {
+        const to = path.join(path.dirname(file), releaseName(kind, file, version));
+        renameSync(file, to);
+        console.log(`Renamed it ${to}`);
+      }
     }
   }
 }

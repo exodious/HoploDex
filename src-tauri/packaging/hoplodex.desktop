@@ -1,0 +1,17 @@
+# The launcher entry in the .deb and .rpm (src-tauri/tauri.linux-packages.conf.json):
+# Tauri's own template with the name kept as HoploDex, since those packages are
+# built with productName "hoplodex" for their package name (#209).
+[Desktop Entry]
+Categories={{categories}}
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}}
+StartupWMClass={{exec}}
+Icon={{icon}}
+Name=HoploDex
+Terminal=false
+Type=Application
+{{#if mime_type}}
+MimeType={{mime_type}}
+{{/if}}

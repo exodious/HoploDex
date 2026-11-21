@@ -32,7 +32,10 @@ hardened runtime on (`signingIdentity: "-"`, RELEASING.md's "Signing"); in the m
 `.dmg` with `CI=true`, which skips `bundle_dmg.sh`'s Finder layout step: it
 needs Automation access that the VM's session doesn't have, and fails
 ("failed to run bundle_dmg.sh") without it. `node scripts/check-package.mjs deb|rpm|nsis|dmg <file>`
-checks a built package.
+checks a built package, and with `--rename` first renames it to its release name
+(RELEASING.md). `npm run bundle:linux` also passes
+`src-tauri/tauri.linux-packages.conf.json`, which makes the `.deb` and `.rpm`
+package `hoplodex` (Tauri would make it `hoplo-dex`).
 
 The `.deb` and `.rpm` declare every runtime dependency in `bundle.linux`'s
 `deb.depends` and `rpm.depends` (#208): Tauri builds them without
