@@ -192,8 +192,9 @@ surface or CWE is a new alert: treat it as a move (below).
 5. **Review** (shared steps 2–5); `introduced` doesn't apply. Mark each
    finding whose code is in a supported version (`SECURITY.md`'s "Supported
    versions"; `git show <tag>:<path>` has it) *advisory required*: its fix
-   goes through a draft private advisory's temporary fork, not a public PR, and you print what the
-   advisory needs (affected and patched versions, the description).
+   goes through a draft private advisory's temporary fork, not a public PR,
+   and you print what the advisory needs (affected and patched versions, the
+   description).
 6. **Build and upload.** `build … --mode release --commit <commit> --carry
    <scratch>/open.json [--fixed <n>,…]`, then `upload --release --ref <ref>`.
 7. **Gate.** `gate` (with `--ref` for a release branch) counts open critical
