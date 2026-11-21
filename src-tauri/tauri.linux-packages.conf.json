@@ -4,7 +4,6 @@
   "bundle": {
     "linux": {
       "deb": {
-        "provides": ["hoplo-dex"],
         "conflicts": ["hoplo-dex"],
         "replaces": ["hoplo-dex"],
         "desktopTemplate": "packaging/hoplodex.desktop"
