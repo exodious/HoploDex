@@ -35,10 +35,11 @@ after fixes made in response to a review of `<reviewed commit>`.
 - **A pull request upload carries only what the pull request adds or
   changes.** A weakness already at the merge base, or a copy of one, is
   *pre-existing*: tell the operator, and never upload it against the pull
-  request. Before 0.1.0 (no `v*` tag) it may become an ordinary issue, or wait
-  for the release review; after, it is a draft private security advisory,
-  whose text you print for the operator to file. The script refuses a pr-mode
-  finding without `"introduced": true`.
+  request. While no version is supported (`SECURITY.md`'s "Supported
+  versions" lists none) it may become an ordinary issue, or wait for the
+  release review; when it is in a supported version, it is a draft private
+  security advisory, whose text you print for the operator to file. The
+  script refuses a pr-mode finding without `"introduced": true`.
 - Reviewers and verifiers are `security-reviewer` subagents: read-only, no
   shell, no network. If the agent type isn't offered (a session can miss an
   agent file added after it started), use a read-only agent (`Explore`)
@@ -188,10 +189,10 @@ surface or CWE is a new alert: treat it as a move (below).
      diff `<reviewed>..<commit>` on the surfaces `touched --base <reviewed>`
      names, with its surface check as in pr mode. Not a second whole review
      (constitution 1.5.0).
-5. **Review** (shared steps 2–5); `introduced` doesn't apply. After 0.1.0,
-   mark each finding whose code is in the latest release (`git show
-   <tag>:<path>` has it) *advisory required*: its fix goes through a draft
-   private advisory's temporary fork, not a public PR, and you print what the
+5. **Review** (shared steps 2–5); `introduced` doesn't apply. Mark each
+   finding whose code is in a supported version (`SECURITY.md`'s "Supported
+   versions"; `git show <tag>:<path>` has it) *advisory required*: its fix
+   goes through a draft private advisory's temporary fork, not a public PR, and you print what the
    advisory needs (affected and patched versions, the description).
 6. **Build and upload.** `build … --mode release --commit <commit> --carry
    <scratch>/open.json [--fixed <n>,…]`, then `upload --release --ref <ref>`.

@@ -265,6 +265,7 @@ alerts, shows only in its log.
 
 ## After a release
 
-A vulnerability in a released version goes through a private security
-advisory, never a public issue or pull request, until a fixed release is out
-([SECURITY.md](SECURITY.md)).
+A vulnerability in a supported version, one [SECURITY.md](SECURITY.md)'s
+"Supported versions" lists, goes through a private security advisory, never a
+public issue or pull request, until a fixed release is out. Until a version
+is listed there, fixes go through ordinary public pull requests.

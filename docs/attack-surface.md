@@ -19,7 +19,7 @@ Rules for the list:
 
 1. **The list never carries an open finding.** What a review finds goes to
    code scanning, or to a private security advisory when it is in code a
-   release already contains. An entry names what to review, never an unfixed
+   supported version (`SECURITY.md`) contains. An entry names what to review, never an unfixed
    weakness: "X lacks Y" is a finding, not an **Ask**.
 2. **A risk enters Accepted only once it has been accepted**, with a link to
    where that was recorded: a feature's `research.md` section, or a code

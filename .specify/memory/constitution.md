@@ -1,39 +1,34 @@
 <!--
 Sync Impact Report
-Version change: 1.5.0 → 1.6.0
-Bump rationale: MINOR. Materially changed guidance in Principle III: its WCAG
-2.1 AA baseline is removed. The principle is neither removed nor redefined
-(one design system, one confirmation pattern), and nothing that met 1.5.0
-falls short of 1.6.0, so the change is not backward-incompatible.
-Modified principles:
-  - III. User Experience Consistency: "The interface MUST meet WCAG 2.1 AA
-    accessibility as a baseline" is removed. In its place, a SHOULD with no
-    testing obligation: no conformance target and no screen reader checks,
-    but changes keep the labels, roles and keyboard operation the shared
-    components provide, so a screen reader is not shut out. The app has no
-    audio or text-to-speech of its own, so a screen reader is the case the
-    baseline was really about.
-Modified sections: none
+Version change: 1.6.0 → 1.7.0
+Bump rationale: MINOR. Materially changed guidance in Development Workflow &
+Quality Gates: the private security advisory route now applies to supported
+versions, not to every released one. No principle is removed or redefined.
+Modified principles: none
+Modified sections:
+  - Development Workflow & Quality Gates: the private advisory route (and the
+    bar on describing a vulnerability in a public issue or pull request
+    first) applies only to a version SECURITY.md's "Supported versions"
+    section lists as supported. Until a version is listed there, findings MAY
+    be tracked as ordinary issues and fixed through ordinary public pull
+    requests. Listing one is the maintainer's decision that HoploDex has
+    users, and switches the advisory route on. SECURITY.md still directs
+    reporters to private vulnerability reporting. The PR-review sentence that
+    routed a finding in released code to a private advisory now names a
+    supported version instead.
 Added sections: none
 Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md: ✅ no change (its Constitution Check
-    is filled from this file; it never named WCAG)
-  - .specify/templates/spec-template.md, tasks-template.md,
-    checklist-template.md: ✅ no change (none names WCAG or a screen reader
-    check)
-  - CLAUDE.md: ✅ no change (it never named WCAG)
-  - DEVELOPMENT.md: ✅ the upgrade-phase hold no longer cites a screen-reader
-    check
-  - .claude/skills/speckit-orchestrate/SKILL.md: ✅ a screen reader is no
-    longer the example of a manual task
-  - specs/004–010: ✅ a dated amendment note beside each screen reader check
-    deferred to issue 48; their Constitution Check rows are left as the
-    record of what 1.5.0 and earlier required
+  - .specify/templates/*: ✅ no change (none names security advisories)
+  - SECURITY.md: ✅ "Supported versions" lists none yet and no longer says
+    there has been no release (0.1.0 was released 2026-11-21); "What happens
+    next" says which reports become advisories
+  - CLAUDE.md, RELEASING.md ("After a release"), docs/attack-surface.md (list
+    rule 1), .claude/skills/ai-security-review/SKILL.md: ✅ the advisory
+    route names a supported version
 Follow-up TODOs:
-  - Issue 48 (the deferred screen reader checks) is closed by the amending
-    pull request; issue 37 loses its "Screen reader checks" section and
-    issue 36's M4 no longer points at them
+  - scripts/ai-security-review.mjs's release gate still fails on any draft
+    or triage advisory; whether that changes is a separate decision
 -->
 
 # HoploDex Constitution
@@ -210,7 +205,7 @@ scanning alert at error level or of high severity or above; the repository
 ruleset enforces this. An AI-assisted security review of a pull request's diff
 is optional. When one is run, its findings about code the pull request adds or
 changes MUST be uploaded to code scanning against that pull request, and a
-vulnerability it notices in code a release already contains is handled as a
+vulnerability it notices in code a supported version contains is handled as a
 private advisory, as below.
 
 Before every release, an AI-assisted security review of the whole codebase at
@@ -238,12 +233,15 @@ Handling Constraints above. The review MAY use Anthropic or another AI vendor.
 It sends source code, never collection data, to that vendor, which is
 consistent with Principle V.
 
-Before the first release, security findings MAY also be tracked as ordinary
-issues. After a release, a vulnerability that affects a released version MUST
+A version is supported once the "Supported versions" section of the
+repository's SECURITY.md lists it; listing one is the maintainer's decision
+that HoploDex has users. A vulnerability that affects a supported version MUST
 be handled through a private repository security advisory that records the
 affected and patched versions, and MUST NOT be described in a public issue or
-pull request before a fixed release is available. The repository's
-SECURITY.md MUST direct reporters to private vulnerability reporting.
+pull request before a fixed release is available. Any other security finding,
+one in released code included, MAY also be tracked as an ordinary issue and
+fixed through an ordinary public pull request. The repository's SECURITY.md
+MUST direct reporters to private vulnerability reporting.
 
 Before every release, the license checks the tools cannot make MUST also be
 done by hand, and the release MUST include its third-party license notices.
@@ -265,4 +263,4 @@ request MUST be checked against this constitution during review; unjustified
 complexity or violations MUST be resolved or explicitly documented before
 merge.
 
-**Version**: 1.6.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-04
+**Version**: 1.7.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-21
