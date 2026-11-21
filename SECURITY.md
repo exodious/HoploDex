@@ -21,16 +21,20 @@ problem instead.
 
 ## What happens next
 
-The report stays private while it's looked into and fixed. Once a release
-with the fix is available, the vulnerability is published as a GitHub
-security advisory naming the affected and fixed versions, crediting you if
-you'd like that. HoploDex is maintained by one person, so there's no fixed
-response time, but every report is read.
+The report stays private while it's looked into. If it affects a supported
+version (below), it stays private while it's fixed, and once a release with
+the fix is available the vulnerability is published as a GitHub security
+advisory naming the affected and fixed versions, crediting you if you'd like
+that. Otherwise it's fixed through an ordinary public pull request. HoploDex
+is maintained by one person, so there's no fixed response time, but every
+report is read.
 
 ## Supported versions
 
-HoploDex hasn't had its first release yet. Once it has, security fixes go into
-the latest release.
+No version is supported yet. HoploDex 0.1.0 is released, and security fixes
+go into the next release through ordinary public pull requests. A version
+listed here as supported gets its vulnerabilities fixed privately and
+published as security advisories.
 
 ## Scope
 
