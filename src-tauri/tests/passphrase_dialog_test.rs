@@ -24,8 +24,9 @@ use hoplodex_lib::services::passphrase_dialog::{
     self, Answer, Asked, DialogWindow, Event, Field, PassphraseDialog, Request, Retry, Shape, Step,
 };
 use hoplodex_lib::services::sandbox::Reach;
+use hoplodex_lib::session::grants::PickKind;
 use hoplodex_lib::session::scoped::Target;
-use hoplodex_lib::session::{Session, lifecycle};
+use hoplodex_lib::session::{Session, SessionId, lifecycle};
 use support::{
     ManualClock, TEST_PASSPHRASE, TestEvents, other_machine, passphrase, test_session_at,
 };
@@ -735,4 +736,136 @@ fn opening_to_remember_says_so_in_the_dialog() {
     let asked = &script.asked()[0];
     assert_eq!(asked.primary, "Open and remember");
     assert!(asked.message.contains(ops::REMEMBER_FACTS), "{}", asked.message);
+}
+
+// --- Locations only Rust holds ------------------------------------------------
+
+impl World {
+    /// `folder`, as `choose_database_folder`'s chooser answers it with nothing
+    /// open.
+    fn picked_folder(&self, folder: &std::path::Path) -> String {
+        self.session
+            .hold_pick(SessionId::NONE, PickKind::DatabaseFolder, folder.to_owned())
+            .unwrap()
+    }
+
+    fn create_chosen(
+        &self,
+        script: &Arc<Scripted>,
+        token: Option<&str>,
+        suggested: &std::path::Path,
+    ) -> Result<(), hoplodex_lib::commands::CommandError> {
+        let dialog = ScriptedDialog(Arc::clone(script));
+        ops::create_database_chosen(
+            &self.session,
+            &self.machine,
+            &dialog,
+            token,
+            suggested,
+            "Fresh",
+            &Reach::Unconfined,
+        )
+        .map(|_| ())
+    }
+}
+
+#[test]
+fn a_new_database_goes_only_in_a_folder_picked_in_the_chooser_rust_opened_once() {
+    let world = World::new();
+    let picked = world.dir.path().join("Picked");
+    let suggested = world.dir.path().join("Suggested");
+    let other_kind =
+        world.session.hold_pick(SessionId::NONE, PickKind::ExportFolder, picked.clone()).unwrap();
+    let script = Scripted::answering([Some((NEW, None)), Some((NEW, None))]);
+
+    for token in [picked.to_string_lossy().into_owned(), "0123abcd".to_owned(), other_kind] {
+        let refused = world.create_chosen(&script, Some(&token), &suggested).unwrap_err();
+        assert_eq!(refused.code, "VALIDATION_ERROR");
+    }
+    assert!(script.asked().is_empty(), "refused before the passphrase is asked for");
+
+    let token = world.picked_folder(&picked);
+    world.create_chosen(&script, Some(&token), &suggested).unwrap();
+    assert!(picked.join("Fresh.hoplodex").is_file());
+    assert!(!suggested.exists());
+    world.close();
+    // Used up.
+    assert_eq!(
+        world.create_chosen(&script, Some(&token), &suggested).unwrap_err().code,
+        "VALIDATION_ERROR"
+    );
+}
+
+#[test]
+fn without_a_picked_folder_a_new_database_goes_in_the_suggested_one() {
+    let world = World::new();
+    let suggested = world.dir.path().join("Suggested");
+    let script = Scripted::answering([Some((NEW, None))]);
+
+    world.create_chosen(&script, None, &suggested).unwrap();
+
+    assert!(suggested.join("Fresh.hoplodex").is_file());
+}
+
+#[test]
+fn a_create_that_fails_leaves_its_picked_folder_to_try_again() {
+    let world = World::new();
+    let picked = world.dir.path().join("Picked");
+    let token = world.picked_folder(&picked);
+    let script = Scripted::answering([None, Some((NEW, None))]);
+
+    let cancelled = world.create_chosen(&script, Some(&token), &picked).unwrap_err();
+    assert_eq!(cancelled.code, "PASSPHRASE_CANCELLED");
+    world.create_chosen(&script, Some(&token), &picked).unwrap();
+
+    assert!(picked.join("Fresh.hoplodex").is_file());
+}
+
+/// A path that starts with two slashes is a server's on Windows; on Linux and
+/// macOS the same spelling names this computer's own file, so the rule can be
+/// shown on a real database here.
+#[cfg(unix)]
+#[test]
+fn a_server_path_opens_only_from_the_chooser_rust_opened_or_the_recent_list() {
+    let world = World::new();
+    world.create_closed();
+    ops::remove_recent_database(&world.machine, &world.path_text());
+    let spelled = format!("/{}", world.path_text());
+    let open = |script: &Arc<Scripted>| {
+        ops::open_database_requested(
+            &world.session,
+            &world.machine,
+            &ScriptedDialog(Arc::clone(script)),
+            &spelled,
+            false,
+            false,
+            false,
+        )
+        .map(|_| ())
+    };
+    let script = Scripted::answering([None, Some((TEST_PASSPHRASE, None))]);
+
+    let refused = open(&script).unwrap_err();
+    assert_eq!(refused.code, "VALIDATION_ERROR");
+    assert!(script.asked().is_empty(), "refused before anything looks at it");
+
+    world
+        .session
+        .hold_pick(SessionId::NONE, PickKind::DatabaseFile, spelled.clone().into())
+        .unwrap();
+    // A cancelled open leaves the pick to try again.
+    assert_eq!(open(&script).unwrap_err().code, "PASSPHRASE_CANCELLED");
+    open(&script).unwrap();
+    assert!(world.session.is_open());
+    world.close();
+
+    // The recent list holds it now.
+    let again = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    open(&again).unwrap();
+    world.close();
+    ops::known_location(&world.machine, &spelled).unwrap();
+    assert_eq!(
+        ops::known_location(&world.machine, r"\\server\share\Mine.hoplodex").unwrap_err().code,
+        "VALIDATION_ERROR"
+    );
 }

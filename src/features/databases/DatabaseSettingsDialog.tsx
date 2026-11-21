@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { withIdlePaused } from "../session/useIdleActivity";
 import {
   Button,
@@ -159,10 +158,7 @@ function SettingsForm({
   const saved = status.settings.backups;
   const defaultFolder = joinPath(folderOf(status.path), "HoploDex backups");
   const savedLocation = (): ShownLocation => ({
-    input:
-      saved.location.kind === "default"
-        ? { kind: "default" }
-        : { kind: "custom", path: saved.location.path },
+    input: saved.location.kind === "default" ? { kind: "default" } : { kind: "current" },
     path: saved.location.path,
     available: saved.location.available,
     unavailableReason: saved.location.unavailableReason,
@@ -198,16 +194,23 @@ function SettingsForm({
   const [leftBehind, setLeftBehind] = useState<string | null>(null);
 
   async function chooseFolder() {
-    const chosen = await withIdlePaused(() =>
-      openFolderDialog({
-        directory: true,
-        multiple: false,
-        title: "Choose where to keep this database's backups",
-        defaultPath: location.available ? location.path : undefined,
-      }),
-    );
-    if (typeof chosen !== "string") return;
-    setLocation({ input: { kind: "custom", path: chosen }, path: chosen, available: true });
+    let chosen;
+    try {
+      // The backend opens the chooser and keeps its answer: the page sends only its token.
+      chosen = await withIdlePaused(() => databasesService.chooseBackupFolder(scope));
+    } catch (e) {
+      setErrors((current) => ({
+        ...current,
+        location: e instanceof CommandFailure ? e.message : "The folder couldn't be chosen.",
+      }));
+      return;
+    }
+    if (!chosen) return;
+    setLocation({
+      input: { kind: "chosen", token: chosen.token },
+      path: chosen.path,
+      available: true,
+    });
     setErrors((current) => ({ ...current, location: undefined }));
   }
 
@@ -368,10 +371,9 @@ function SettingsForm({
   const settingsDirty =
     enabled !== saved.enabled ||
     keepCount.trim() !== String(saved.keepCount) ||
-    location.input.kind !== savedInput.kind ||
-    (location.input.kind === "custom" &&
-      savedInput.kind === "custom" &&
-      location.input.path !== savedInput.path) ||
+    // A folder picked again where the saved one is changes nothing.
+    (location.input.kind !== savedInput.kind &&
+      !(savedInput.kind === "current" && location.path === saved.location.path)) ||
     lock.idleEnabled !== savedLock.idleEnabled ||
     lock.idleMinutes !== savedLock.idleMinutes ||
     lock.onScreenLock !== savedLock.onScreenLock;

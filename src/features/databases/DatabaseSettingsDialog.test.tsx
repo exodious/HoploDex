@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
-import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { ToastProvider } from "../../components";
 import { formatBytes } from "../../lib/bytes";
 import { CommandFailure } from "../../services/tauriClient";
@@ -20,7 +19,11 @@ import type {
 } from "./types";
 
 const SCOPE = expect.objectContaining({ id: TEST_SESSION_ID });
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+
+/** `path`, as the chooser the backend opens answers: the page gets a token. */
+function picked(path: string) {
+  return { token: `token for ${path}`, path };
+}
 vi.mock("./databasesService");
 // The "Documents" fieldset reads and writes this computer's setting through the
 // documents store (src/features/media/documentOpening.ts), over these two
@@ -109,7 +112,7 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     vi.mocked(databasesService.onBackupsDeleteProgress)
       .mockReset()
       .mockReturnValue(() => {});
-    vi.mocked(openFolderDialog).mockReset();
+    vi.mocked(databasesService.chooseBackupFolder).mockReset();
   });
 
   it("shows the backup settings, with the default location next to the database", () => {
@@ -161,7 +164,9 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     const user = userEvent.setup();
     const message =
       "This copy of HoploDex is a Flatpak, and it can only reach the HoploDex folder in your Documents folder (/home/sam/Documents/HoploDex) and removable drives, so it can't use /srv/hoplodex-backups. Move the file into /home/sam/Documents/HoploDex or onto a removable drive, or give HoploDex access to /srv/hoplodex-backups by running: flatpak override --user --filesystem=/srv/hoplodex-backups io.github.exodious.HoploDex and then restarting HoploDex.";
-    vi.mocked(openFolderDialog).mockResolvedValue("/srv/hoplodex-backups");
+    vi.mocked(databasesService.chooseBackupFolder).mockResolvedValue(
+      picked("/srv/hoplodex-backups"),
+    );
     vi.mocked(databasesService.updateBackupSettings).mockRejectedValue(
       new CommandFailure({
         code: "VALIDATION_ERROR",
@@ -241,7 +246,7 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
 
   it("chooses a folder, then saves the settings", async () => {
     const user = userEvent.setup();
-    vi.mocked(openFolderDialog).mockResolvedValue("/media/usb/Backups");
+    vi.mocked(databasesService.chooseBackupFolder).mockResolvedValue(picked("/media/usb/Backups"));
     vi.mocked(databasesService.updateBackupSettings).mockResolvedValue({
       settings: settings({ kind: "custom", path: "/media/usb/Backups", available: true }),
       existingBackups: null,
@@ -260,7 +265,7 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(SCOPE, {
       enabled: false,
       keepCount: 12,
-      location: { kind: "custom", path: "/media/usb/Backups" },
+      location: { kind: "chosen", token: picked("/media/usb/Backups").token },
     });
     await waitFor(() => expect(props.onSaved).toHaveBeenCalled());
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
@@ -341,7 +346,7 @@ describe("DatabaseSettingsDialog: Keep the latest and the backups switch (issue 
     vi.mocked(databasesService.updateLockSettings)
       .mockReset()
       .mockResolvedValue(settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }));
-    vi.mocked(openFolderDialog).mockReset();
+    vi.mocked(databasesService.chooseBackupFolder).mockReset();
   });
 
   it("steps the number kept with the up and down buttons, and saves it", async () => {
@@ -958,7 +963,7 @@ describe("DatabaseSettingsDialog: changing the location (003 contracts/ui-databa
     vi.mocked(databasesService.onBackupsDeleteProgress)
       .mockReset()
       .mockReturnValue(() => {});
-    vi.mocked(openFolderDialog).mockReset().mockResolvedValue(USB);
+    vi.mocked(databasesService.chooseBackupFolder).mockReset().mockResolvedValue(picked(USB));
   });
 
   /** Chooses the USB folder and a new number kept, then saves. */
@@ -992,7 +997,7 @@ describe("DatabaseSettingsDialog: changing the location (003 contracts/ui-databa
     expect(databasesService.updateBackupSettings).toHaveBeenLastCalledWith(SCOPE, {
       enabled: true,
       keepCount: 12,
-      location: { kind: "custom", path: USB },
+      location: { kind: "chosen", token: picked(USB).token },
       existingBackups: "move",
     });
     expect(databasesService.updateLockSettings).toHaveBeenCalled();

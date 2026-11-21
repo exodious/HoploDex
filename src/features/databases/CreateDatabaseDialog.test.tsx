@@ -3,9 +3,17 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
 import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
+import * as databasesService from "./databasesService";
 import type { CreateDatabaseInput } from "./types";
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+// The folder is picked in the chooser the backend opens, which keeps the answer.
+vi.mock("./databasesService", () => ({ chooseDatabaseFolder: vi.fn() }));
+
+function picks(path: string | null) {
+  vi.mocked(databasesService.chooseDatabaseFolder).mockResolvedValue(
+    path === null ? null : { token: `token for ${path}`, path },
+  );
+}
 
 const suggested = { folder: "/home/sam/Documents/HoploDex", name: "My collection" };
 
@@ -64,9 +72,20 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     expect(note).toHaveTextContent("keeping the latest 5");
     expect(note).toHaveTextContent("When “My collection” locks or HoploDex quits after a change");
 
-    await user.clear(screen.getByLabelText("Folder"));
-    await user.type(screen.getByLabelText("Folder"), "/mnt/usb");
+    picks("/mnt/usb");
+    await user.click(screen.getByRole("button", { name: "Choose a folder…" }));
     expect(note).toHaveTextContent("/mnt/usb/HoploDex backups");
+    expect(screen.getByText("Saved as /mnt/usb/My collection.hoplodex")).toBeInTheDocument();
+  });
+
+  it("has no text box for the folder: it is only picked in the chooser", async () => {
+    const user = userEvent.setup();
+    renderDialog(onCreate);
+    expect(screen.queryByRole("textbox", { name: "Folder" })).not.toBeInTheDocument();
+
+    picks(null);
+    await user.click(screen.getByRole("button", { name: "Choose a folder…" }));
+    expect(screen.getByLabelText("Folder")).toHaveTextContent("/home/sam/Documents/HoploDex");
   });
 
   // Amended 2026-11-04 (003 FR-007): the passphrase, its confirmation, the
@@ -82,18 +101,28 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     expect(createButton()).toBeEnabled();
   });
 
-  it("sends the name and folder, which the backend checks before it asks", async () => {
+  it("sends the name and no folder for the suggested one, which the backend checks before it asks", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);
     await user.click(createButton());
 
+    expect(onCreate).toHaveBeenCalledExactlyOnceWith({ name: "My collection" });
+  });
+
+  it("sends a picked folder by its token", async () => {
+    const user = userEvent.setup();
+    renderDialog(onCreate);
+    picks("/mnt/usb");
+    await user.click(screen.getByRole("button", { name: "Choose a folder…" }));
+    await user.click(createButton());
+
     expect(onCreate).toHaveBeenCalledExactlyOnceWith({
-      folder: "/home/sam/Documents/HoploDex",
+      folderToken: "token for /mnt/usb",
       name: "My collection",
     });
   });
 
-  it("refuses an empty name or folder itself, without asking", async () => {
+  it("refuses an empty name itself, without asking", async () => {
     const user = userEvent.setup();
     renderDialog(onCreate);
     await user.clear(screen.getByLabelText("Name"));
@@ -131,7 +160,7 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
     expect(pending).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
     expect(screen.getByLabelText("Name")).toBeDisabled();
-    expect(screen.getByLabelText("Folder")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Choose a folder…" })).toBeDisabled();
 
     finish();
     expect(await screen.findByRole("button", { name: "Create database…" })).toBeInTheDocument();
@@ -199,15 +228,17 @@ describe("CreateDatabaseDialog (003 contracts/ui-databases.md §2)", () => {
       }),
     );
     renderDialog(onCreate);
-    await user.clear(screen.getByLabelText("Folder"));
-    await user.type(screen.getByLabelText("Folder"), "/srv/hoplodex-check");
+    picks("/srv/hoplodex-check");
+    await user.click(screen.getByRole("button", { name: "Choose a folder…" }));
     await user.click(createButton());
 
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.getByLabelText("Folder")).toHaveAccessibleDescription(
       expect.stringContaining(message),
     );
-    await waitFor(() => expect(screen.getByLabelText("Folder")).toHaveFocus());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Choose a folder…" })).toHaveFocus(),
+    );
     expect(screen.getByRole("dialog", { name: "Create a database" })).toBeInTheDocument();
   });
 

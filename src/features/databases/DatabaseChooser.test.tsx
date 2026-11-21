@@ -481,21 +481,14 @@ describe("DatabaseChooser (003 US2)", () => {
   it("opens another database file chosen with the native dialog (003 US2-2)", async () => {
     const user = userEvent.setup();
     const other = "/media/usb/Club armory.hoplodex";
-    vi.mocked(openFileDialog).mockResolvedValue(other);
+    // The backend opens the chooser and keeps the answer.
+    vi.mocked(databasesService.chooseDatabaseFile).mockResolvedValue({ token: "t1", path: other });
     const session = renderChooser();
 
     await user.click(await screen.findByRole("button", { name: "Open another database file…" }));
 
-    expect(openFileDialog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        multiple: false,
-        directory: false,
-        filters: [
-          { name: "HoploDex databases", extensions: ["hoplodex"] },
-          { name: "All files", extensions: ["*"] },
-        ],
-      }),
-    );
+    expect(databasesService.chooseDatabaseFile).toHaveBeenCalledOnce();
+    expect(openFileDialog).not.toHaveBeenCalled();
     const field = await findOpen("Club armory");
     await waitFor(() => expect(field).toHaveFocus());
     // Nothing is known about a file this computer hasn't opened (003 FR-040).
@@ -506,12 +499,12 @@ describe("DatabaseChooser (003 US2)", () => {
 
   it("a cancelled file dialog changes nothing", async () => {
     const user = userEvent.setup();
-    vi.mocked(openFileDialog).mockResolvedValue(null);
+    vi.mocked(databasesService.chooseDatabaseFile).mockResolvedValue(null);
     renderChooser();
 
     await user.click(await screen.findByRole("button", { name: "Open another database file…" }));
 
-    await waitFor(() => expect(openFileDialog).toHaveBeenCalled());
+    await waitFor(() => expect(databasesService.chooseDatabaseFile).toHaveBeenCalled());
     expect(openOf("Main collection")).toBeInTheDocument();
     const list = screen.getByRole("list", { name: "Recent databases" });
     expect(within(list).getAllByRole("listitem")).toHaveLength(2);
@@ -1556,22 +1549,26 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
       return { ...opened, upgradeDatabase, asked };
     }
 
-    it("upgrades with the folder the OS picker returns", async () => {
-      vi.mocked(openFileDialog).mockResolvedValue("/mnt/usb/Backups");
+    it("upgrades with the folder picked in the chooser the backend opens, by its token", async () => {
+      vi.mocked(databasesService.chooseUpgradeBackupFolder).mockResolvedValue({
+        token: "t1",
+        path: "/mnt/usb/Backups",
+      });
       const { user, upgradeDatabase, asked } = await askedForAFolder();
 
       await user.click(within(asked).getByRole("button", { name: "Choose a folder…" }));
 
-      expect(openFileDialog).toHaveBeenCalledWith(
-        expect.objectContaining({ directory: true, multiple: false }),
-      );
+      expect(databasesService.chooseUpgradeBackupFolder).toHaveBeenCalledWith(7);
       await waitFor(() => expect(upgradeDatabase).toHaveBeenCalledTimes(2));
-      expect(upgradeDatabase).toHaveBeenLastCalledWith(7, "/mnt/usb/Backups");
+      expect(upgradeDatabase).toHaveBeenLastCalledWith(7, "t1");
       expect(databasesService.cancelUpgrade).not.toHaveBeenCalled();
     });
 
     it("asks again, naming the chosen folder, when that one is refused too", async () => {
-      vi.mocked(openFileDialog).mockResolvedValue("/mnt/usb/Backups");
+      vi.mocked(databasesService.chooseUpgradeBackupFolder).mockResolvedValue({
+        token: "t1",
+        path: "/mnt/usb/Backups",
+      });
       const upgradeDatabase = vi
         .fn()
         .mockRejectedValueOnce(
@@ -1597,12 +1594,12 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
     });
 
     it("stays up when the picker is dismissed", async () => {
-      vi.mocked(openFileDialog).mockResolvedValue(null);
+      vi.mocked(databasesService.chooseUpgradeBackupFolder).mockResolvedValue(null);
       const { user, upgradeDatabase, asked } = await askedForAFolder();
 
       await user.click(within(asked).getByRole("button", { name: "Choose a folder…" }));
 
-      await waitFor(() => expect(openFileDialog).toHaveBeenCalled());
+      await waitFor(() => expect(databasesService.chooseUpgradeBackupFolder).toHaveBeenCalled());
       expect(
         screen.getByRole("dialog", { name: "Save the backup somewhere else?" }),
       ).toBeInTheDocument();

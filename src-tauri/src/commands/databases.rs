@@ -16,18 +16,20 @@ use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::models::database::DocumentOpeningChanged;
 use crate::models::database::{
-    BackupLocationInput, BackupSettingsInput, BackupSettingsSaved, ChooserState, CloseOutcome,
-    CloseReason, CollectionSettings, DatabaseStatus, Draft, ExistingBackupsChoice, IdlePauseReason,
+    BackupLocationChoice, BackupSettingsSaved, ChooserState, CloseOutcome, CloseReason,
+    CollectionSettings, DatabaseStatus, Draft, ExistingBackupsChoice, IdlePauseReason,
     LockSettingsInput, NoteKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
     RecentRemoved,
 };
 use crate::models::document_opening::DocumentOpening;
+use crate::services::chooser::{Chooser, ChosenPath, Pick, choose};
 use crate::services::consent::Consent;
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase_dialog::PassphraseDialog;
 use crate::services::sandbox::Reach;
-use crate::session::Session;
+use crate::session::grants::PickKind;
 use crate::session::scoped::{ScopedSession, Target};
+use crate::session::{Session, SessionId};
 
 pub mod ops {
     use std::fs;
@@ -43,13 +45,14 @@ pub mod ops {
     use crate::db;
     use crate::models::database::DocumentOpeningChanged;
     use crate::models::database::{
-        BackupLocation, BackupLocationKind, BackupSettings, BackupSettingsInput,
-        BackupSettingsSaved, BackupSummary, ChooserState, CloseOutcome, CloseReason,
-        CollectionSettings, DatabaseNotes, DatabaseStatus, Draft, ExistingBackupsChoice,
-        ExistingBackupsOutcome, IdlePauseReason, LeftBehind, LockSettings, LockSettingsInput,
-        NoteKind, OperationKind, PassphraseSaved, PendingAction, PendingResolved, RecentDatabase,
-        RecentRemoved, SuggestedLocation, UnavailableReason, validate_backup_settings_input,
-        validate_create_database_input, validate_create_location, validate_lock_settings_input,
+        BackupLocation, BackupLocationChoice, BackupLocationInput, BackupLocationKind,
+        BackupSettings, BackupSettingsInput, BackupSettingsSaved, BackupSummary, ChooserState,
+        CloseOutcome, CloseReason, CollectionSettings, DatabaseNotes, DatabaseStatus, Draft,
+        ExistingBackupsChoice, ExistingBackupsOutcome, IdlePauseReason, LeftBehind, LockSettings,
+        LockSettingsInput, NoteKind, OperationKind, PassphraseSaved, PendingAction,
+        PendingResolved, RecentDatabase, RecentRemoved, SuggestedLocation, UnavailableReason,
+        validate_backup_settings_input, validate_create_database_input, validate_create_location,
+        validate_lock_settings_input,
     };
     use crate::models::document_opening::DocumentOpening;
     use crate::services::backups::{self, LocationProblem, MoveJob};
@@ -62,6 +65,7 @@ pub mod ops {
         self, Asked, Field, PassphraseDialog, Request, Retry, Shape, Step,
     };
     use crate::services::sandbox::{Need, Reach};
+    use crate::session::grants::{PickKind, is_server_or_device, not_a_local_path, not_picked};
     use crate::session::operations::Operations;
     use crate::session::scoped::Target;
     use crate::session::{OpenDatabase, Session, SessionId};
@@ -464,10 +468,79 @@ pub mod ops {
         remember: bool,
         take_over: bool,
     ) -> Result<DatabaseStatus, CommandError> {
-        if use_saved && !take_over {
-            return open_database(session, machine, path, Unlock::Saved, false, session.reach());
+        let picked = picked_server_path(session, machine, path)?;
+        let result = if use_saved && !take_over {
+            open_database(session, machine, path, Unlock::Saved, false, session.reach())
+        } else {
+            open_database_typed(session, machine, dialog, path, remember, take_over)
+        };
+        if result.is_err()
+            && let Some(token) = picked
+        {
+            session.put_back_pick(SessionId::NONE, PickKind::DatabaseFile, token, path.into());
         }
-        open_database_typed(session, machine, dialog, path, remember, take_over)
+        result
+    }
+
+    /// Lets a database path the page names through unless it names a server
+    /// or a device: such a path is taken only from the recent list, which Rust
+    /// keeps, or as the user's own pick in `choose_database_file`, which this
+    /// takes (and returns the token of, to put back if the open fails). The
+    /// refusal comes before anything looks at the path.
+    fn picked_server_path(
+        session: &Session,
+        machine: &MachineSettings,
+        path: &str,
+    ) -> Result<Option<String>, CommandError> {
+        if known_location(machine, path).is_ok() {
+            return Ok(None);
+        }
+        session
+            .take_pick_at(SessionId::NONE, PickKind::DatabaseFile, Path::new(path))
+            .map(Some)
+            .map_err(|_| not_a_local_path())
+    }
+
+    /// Refuses a database path the page names that names a server or a
+    /// device (`\\server\share`, `\\?\`, `\\.\`) unless it is on the recent
+    /// list as a database that opened there: an entry the page re-located
+    /// (`locate_database`) doesn't count until it has.
+    pub fn known_location(machine: &MachineSettings, path: &str) -> Result<(), CommandError> {
+        let path = Path::new(path);
+        let opened_here = || machine.recent_entry(path).is_some_and(|entry| !entry.located);
+        if !is_server_or_device(path) || opened_here() {
+            return Ok(());
+        }
+        Err(not_a_local_path())
+    }
+
+    /// [`create_database_typed`] in the folder the user picked in
+    /// `choose_database_folder`, held under `folder_token` while nothing is
+    /// open, or, without one, in `suggested`, the folder `chooser_state`
+    /// suggests. A token that isn't a held answer is refused with a fixed
+    /// `VALIDATION_ERROR` before anything is looked at. A create that fails
+    /// puts the answer back, so the dialog can try again with it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_database_chosen(
+        session: &Session,
+        machine: &MachineSettings,
+        dialog: &dyn PassphraseDialog,
+        folder_token: Option<&str>,
+        suggested: &Path,
+        name: &str,
+        reach: &Reach,
+    ) -> Result<DatabaseStatus, CommandError> {
+        let Some(token) = folder_token else {
+            let folder = suggested.to_string_lossy();
+            return create_database_typed(session, machine, dialog, &folder, name, reach);
+        };
+        let folder = session.take_pick(SessionId::NONE, PickKind::DatabaseFolder, token)?;
+        let result =
+            create_database_typed(session, machine, dialog, &folder.to_string_lossy(), name, reach);
+        if result.is_err() {
+            session.put_back_pick(SessionId::NONE, PickKind::DatabaseFolder, token.into(), folder);
+        }
+        result
     }
 
     /// Creates `<folder>/<name>.hoplodex` with a passphrase chosen in the
@@ -572,13 +645,13 @@ pub mod ops {
         session: &Session,
         machine: &MachineSettings,
         awaiting_id: u64,
-        backup_folder: Option<&str>,
+        backup_folder: Option<&Path>,
     ) -> Result<DatabaseStatus, CommandError> {
         let upgraded = crate::session::upgrade::upgrade_database(
             session,
             machine,
             awaiting_id,
-            backup_folder.map(Path::new),
+            backup_folder,
         )?;
         if let Some(passphrase) = &upgraded.save_passphrase
             && let Some(path) = session.open_path()
@@ -587,6 +660,28 @@ pub mod ops {
             save_for(machine, &path, &id, passphrase);
         }
         database_status(session, machine)
+    }
+
+    /// [`upgrade_database`] with the backup in the folder the user picked in
+    /// `choose_upgrade_backup_folder` for the database waiting under
+    /// `awaiting_id`, held under `folder_token`, or, without one, at its
+    /// backup location. A token that isn't a held answer for that database is
+    /// refused with a fixed `VALIDATION_ERROR`. The answer is used once:
+    /// after a backup that couldn't be made there, the user picks again.
+    pub fn upgrade_database_chosen(
+        session: &Session,
+        machine: &MachineSettings,
+        awaiting_id: u64,
+        folder_token: Option<&str>,
+    ) -> Result<DatabaseStatus, CommandError> {
+        let folder = match folder_token {
+            Some(token) => {
+                let id = SessionId::from_request(awaiting_id).ok_or_else(not_picked)?;
+                Some(session.take_pick(id, PickKind::UpgradeBackupFolder, token)?)
+            }
+            None => None,
+        };
+        upgrade_database(session, machine, awaiting_id, folder.as_deref())
     }
 
     /// `cancel_upgrade` (009 FR-010, FR-016): drops the database waiting under
@@ -916,6 +1011,66 @@ pub mod ops {
     /// (011 FR-004, 011 US1-8). The stored location is the host path of a
     /// Documents-portal one that is within reach. A location left as it was
     /// is not checked: saving the other settings writes nothing there.
+    /// [`update_backup_settings`] with the location the settings dialog chose:
+    /// the default, the one saved now, or the folder the user picked in
+    /// `choose_backup_folder` for session `id`, held under its token. A token
+    /// that isn't a held answer is refused with a fixed `VALIDATION_ERROR`.
+    /// A save that fails, or waits for the question about the backups at the
+    /// old location, puts the answer back, so the dialog can send it again.
+    pub fn update_backup_settings_chosen(
+        session: &Session,
+        id: SessionId,
+        machine: &MachineSettings,
+        choice: BackupSettingsChoice,
+        reach: &Reach,
+    ) -> Result<BackupSettingsSaved, CommandError> {
+        let mut picked = None;
+        let location = match choice.location {
+            BackupLocationChoice::Default => BackupLocationInput::Default,
+            BackupLocationChoice::Current => {
+                let stored: String = session.inspect(id, |open| {
+                    open.conn
+                        .query_row("SELECT backup_location FROM collection_settings", [], |row| {
+                            row.get(0)
+                        })
+                        .map_err(CommandError::from_db)
+                })?;
+                if stored == "default" {
+                    BackupLocationInput::Default
+                } else {
+                    BackupLocationInput::Custom { path: stored }
+                }
+            }
+            BackupLocationChoice::Chosen { token } => {
+                let folder = session.take_pick(id, PickKind::BackupFolder, &token)?;
+                let path = folder.to_string_lossy().into_owned();
+                picked = Some((token, folder));
+                BackupLocationInput::Custom { path }
+            }
+        };
+        let input = BackupSettingsInput {
+            enabled: choice.enabled,
+            keep_count: choice.keep_count,
+            location,
+            existing_backups: choice.existing_backups,
+        };
+        let result = update_backup_settings(session, id, machine, &input, reach);
+        if result.is_err()
+            && let Some((token, folder)) = picked
+        {
+            session.put_back_pick(id, PickKind::BackupFolder, token, folder);
+        }
+        result
+    }
+
+    /// What `update_backup_settings` is sent.
+    pub struct BackupSettingsChoice {
+        pub enabled: bool,
+        pub keep_count: i64,
+        pub location: BackupLocationChoice,
+        pub existing_backups: Option<ExistingBackupsChoice>,
+    }
+
     pub fn update_backup_settings(
         session: &Session,
         id: SessionId,
@@ -1219,18 +1374,30 @@ pub async fn get_chooser_state(
 
 /// Asks for the passphrase in the native dialog, which blocks until it is
 /// answered, so not on an async thread (amended 2026-11-04).
+/// The folder is the one `choose_database_folder` held under `folder_token`,
+/// or, without one, the suggested folder.
 #[tauri::command]
 pub async fn create_database(
-    folder: String,
+    folder_token: Option<String>,
     name: String,
     app: AppHandle,
 ) -> Result<DatabaseStatus, CommandError> {
+    let suggested =
+        ops::suggested_folder(app_dirs::document_dir(&app).ok(), app_dirs::home_dir(&app).ok());
     tauri::async_runtime::spawn_blocking(move || {
         let session = app.state::<Session>();
         let machine = app.state::<MachineSettings>();
         let reach = app.state::<Arc<Reach>>();
         let dialog = app.state::<Arc<dyn PassphraseDialog>>();
-        ops::create_database_typed(&session, &machine, &**dialog, &folder, &name, &reach)
+        ops::create_database_chosen(
+            &session,
+            &machine,
+            &**dialog,
+            folder_token.as_deref(),
+            &suggested,
+            &name,
+            &reach,
+        )
     })
     .await
     .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not create it: {e}")))?
@@ -1270,11 +1437,96 @@ pub async fn open_database(
 #[tauri::command]
 pub async fn upgrade_database(
     awaiting_id: u64,
-    backup_folder: Option<String>,
+    backup_folder_token: Option<String>,
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<DatabaseStatus, CommandError> {
-    ops::upgrade_database(&session, &machine, awaiting_id, backup_folder.as_deref())
+    ops::upgrade_database_chosen(&session, &machine, awaiting_id, backup_folder_token.as_deref())
+}
+
+/// Asks the user, in the OS's chooser Rust opens, for the folder a new
+/// database goes in, and holds it for `create_database` while nothing is open.
+/// `None` when the user cancels.
+#[tauri::command]
+pub async fn choose_database_folder(
+    session: State<'_, Session>,
+    chooser: State<'_, Arc<dyn Chooser>>,
+) -> Result<Option<ChosenPath>, CommandError> {
+    let nothing_open = || session.current_id() == SessionId::NONE;
+    let chosen = choose(
+        &session,
+        SessionId::NONE,
+        nothing_open,
+        chooser.inner().clone(),
+        Pick::DatabaseFolder,
+        PickKind::DatabaseFolder,
+    )
+    .await?;
+    Ok(chosen.into_iter().next())
+}
+
+/// Asks the user, in the OS's chooser Rust opens, for a database file, and
+/// holds it while nothing is open, so `open_database` takes it even where it
+/// takes no path the page names (a server's or a device's). `None` when the
+/// user cancels.
+#[tauri::command]
+pub async fn choose_database_file(
+    session: State<'_, Session>,
+    chooser: State<'_, Arc<dyn Chooser>>,
+) -> Result<Option<ChosenPath>, CommandError> {
+    let nothing_open = || session.current_id() == SessionId::NONE;
+    let chosen = choose(
+        &session,
+        SessionId::NONE,
+        nothing_open,
+        chooser.inner().clone(),
+        Pick::DatabaseFile,
+        PickKind::DatabaseFile,
+    )
+    .await?;
+    Ok(chosen.into_iter().next())
+}
+
+/// Asks the user, in the OS's chooser Rust opens, for the folder of the one
+/// backup made before upgrading the database waiting under `awaiting_id`, and
+/// holds it for `upgrade_database`. `None` when the user cancels.
+#[tauri::command]
+pub async fn choose_upgrade_backup_folder(
+    awaiting_id: u64,
+    session: State<'_, Session>,
+    chooser: State<'_, Arc<dyn Chooser>>,
+) -> Result<Option<ChosenPath>, CommandError> {
+    let id = SessionId::from_request(awaiting_id).ok_or_else(CommandError::database_closed)?;
+    let chosen = choose(
+        &session,
+        id,
+        || session.is_awaiting(id),
+        chooser.inner().clone(),
+        Pick::UpgradeBackupFolder,
+        PickKind::UpgradeBackupFolder,
+    )
+    .await?;
+    Ok(chosen.into_iter().next())
+}
+
+/// Asks the user, in the OS's chooser Rust opens, for the open database's new
+/// backup location, and holds it for `update_backup_settings`. `None` when
+/// the user cancels.
+#[tauri::command]
+pub async fn choose_backup_folder(
+    session: ScopedSession,
+    chooser: State<'_, Arc<dyn Chooser>>,
+) -> Result<Option<ChosenPath>, CommandError> {
+    let chosen = choose(
+        &session.session,
+        session.id,
+        || session.is_current(),
+        chooser.inner().clone(),
+        Pick::BackupFolder,
+        PickKind::BackupFolder,
+    )
+    .await?;
+    Ok(chosen.into_iter().next())
 }
 
 #[tauri::command]
@@ -1323,6 +1575,7 @@ pub async fn remove_recent_database(
     path: String,
     machine: State<'_, MachineSettings>,
 ) -> Result<RecentRemoved, CommandError> {
+    ops::known_location(&machine, &path)?;
     Ok(ops::remove_recent_database(&machine, &path))
 }
 
@@ -1370,6 +1623,9 @@ pub async fn forget_saved_passphrase(
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseSaved, CommandError> {
+    if let Some(path) = &path {
+        ops::known_location(&machine, path)?;
+    }
     let target = Target::from_request(path.as_deref(), request.headers())?;
     ops::forget_saved_passphrase(&session, &machine, target)
 }
@@ -1391,17 +1647,17 @@ pub async fn dismiss_note(note: NoteKind, session: ScopedSession) -> Result<(), 
 pub async fn update_backup_settings(
     enabled: bool,
     keep_count: i64,
-    location: BackupLocationInput,
+    location: BackupLocationChoice,
     existing_backups: Option<ExistingBackupsChoice>,
     session: ScopedSession,
     machine: State<'_, MachineSettings>,
     reach: State<'_, Arc<Reach>>,
 ) -> Result<BackupSettingsSaved, CommandError> {
-    ops::update_backup_settings(
+    ops::update_backup_settings_chosen(
         &session.session,
         session.id,
         &machine,
-        &BackupSettingsInput { enabled, keep_count, location, existing_backups },
+        ops::BackupSettingsChoice { enabled, keep_count, location, existing_backups },
         &reach,
     )
 }

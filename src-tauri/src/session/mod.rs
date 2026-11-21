@@ -591,6 +591,24 @@ impl SessionInner {
         self.grants().take_pick(id, kind, token)
     }
 
+    /// Takes the chooser answer held for session `id` whose path is `path`,
+    /// and returns its token: refused with a fixed `VALIDATION_ERROR` when
+    /// there is none.
+    pub fn take_pick_at(
+        &self,
+        id: SessionId,
+        kind: grants::PickKind,
+        path: &Path,
+    ) -> Result<String, CommandError> {
+        self.grants().take_pick_at(id, kind, path)
+    }
+
+    /// Whether the database waiting for the upgrade question is the one
+    /// under `id`.
+    pub fn is_awaiting(&self, id: SessionId) -> bool {
+        self.awaiting().as_ref().is_some_and(|waiting| waiting.id == id)
+    }
+
     /// Puts back a chooser answer [`take_pick`](Self::take_pick) took for an
     /// operation that then failed, under the same token, while session `id`
     /// is still the open one.

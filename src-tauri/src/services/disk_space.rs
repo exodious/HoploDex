@@ -124,6 +124,88 @@ fn volume_of(dir: &Path) -> Option<Volume> {
     }
 }
 
+/// Whether the folder `dir` is on another computer: a network share. On
+/// Windows a `\\server\share` path or a drive letter mapped to one; on Linux
+/// an NFS, SMB, AFS, Ceph, Coda or 9P mount (not FUSE, which is as often a
+/// local disk); on macOS a volume not marked local. A folder that can't be
+/// looked at is not.
+pub fn is_on_network(dir: &Path) -> bool {
+    // The E2E build's stand-in for a share, which no test machine mounts.
+    // Never in a release build (`scripts/check-no-webdriver.mjs`).
+    #[cfg(feature = "e2e")]
+    if let Some(share) = std::env::var_os("HOPLODEX_E2E_NETWORK_FOLDER")
+        && dir.starts_with(share)
+    {
+        return true;
+    }
+    on_network(dir)
+}
+
+#[cfg(target_os = "linux")]
+fn on_network(dir: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    const NETWORK: [u32; 9] = [
+        0x6969,      // NFS
+        0x517B,      // SMB
+        0xFF53_4D42, // CIFS
+        0xFE53_4D42, // SMB2
+        0x5346_414F, // AFS
+        0x6B41_4653, // kAFS
+        0x00C3_6400, // Ceph
+        0x7375_7245, // Coda
+        0x0102_1997, // 9P
+    ];
+    let Ok(path) = std::ffi::CString::new(dir.as_os_str().as_bytes()) else { return false };
+    let mut stat = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: `path` is NUL-terminated and `stat` is written by a call that
+    // returns 0, and only read then.
+    if unsafe { libc::statfs(path.as_ptr(), stat.as_mut_ptr()) } != 0 {
+        return false;
+    }
+    let kind = unsafe { stat.assume_init() }.f_type;
+    #[allow(clippy::unnecessary_cast)] // `f_type`'s type differs between targets.
+    NETWORK.contains(&(kind as u32))
+}
+
+#[cfg(target_os = "macos")]
+fn on_network(dir: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(path) = std::ffi::CString::new(dir.as_os_str().as_bytes()) else { return false };
+    let mut stat = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: as on Linux.
+    if unsafe { libc::statfs(path.as_ptr(), stat.as_mut_ptr()) } != 0 {
+        return false;
+    }
+    unsafe { stat.assume_init() }.f_flags & libc::MNT_LOCAL as u32 == 0
+}
+
+#[cfg(windows)]
+fn on_network(dir: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Component, Prefix};
+    use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+    const DRIVE_REMOTE: u32 = 4;
+    let letter = match dir.components().next() {
+        Some(Component::Prefix(prefix)) => match prefix.kind() {
+            Prefix::UNC(..) | Prefix::VerbatimUNC(..) => return true,
+            Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => letter,
+            _ => return false,
+        },
+        _ => return false,
+    };
+    let root: Vec<u16> = std::ffi::OsString::from(format!("{}:\\", letter as char))
+        .encode_wide()
+        .chain([0])
+        .collect();
+    // SAFETY: `root` is a NUL-terminated wide string that outlives the call.
+    unsafe { GetDriveTypeW(root.as_ptr()) == DRIVE_REMOTE }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn on_network(_dir: &Path) -> bool {
+    false
+}
+
 type FakeSpace = Box<dyn Fn(&Path) -> Option<u64>>;
 
 thread_local! {
@@ -154,5 +236,24 @@ pub mod testing {
 
     pub(super) fn faked(dir: &Path) -> Option<u64> {
         FAKE_SPACE.with(|fake| fake.borrow().as_ref().and_then(|space| space(dir)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_folder_on_this_computers_own_disk_is_not_on_the_network() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_on_network(dir.path()));
+        assert!(!is_on_network(&dir.path().join("not made")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_share_is_on_the_network() {
+        assert!(is_on_network(Path::new(r"\\server\share\Exports")));
+        assert!(is_on_network(Path::new(r"\\?\UNC\server\share\Exports")));
     }
 }

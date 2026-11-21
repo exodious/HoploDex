@@ -11,6 +11,7 @@ import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
 import * as databasesService from "./databasesService";
 import { backupProblemOf } from "./backupProblem";
 import type { BackupProblem } from "./backupProblem";
+import type { ChosenPath } from "../import-export/types";
 import { databaseNameOf } from "./paths";
 import { RecentDatabaseRow } from "./RecentDatabaseRow";
 import { CataloguePlate } from "./plate/CataloguePlate";
@@ -227,7 +228,7 @@ interface Upgrade {
    * offered. */
   stage: "question" | "running" | "folder";
   /** The folder chosen for this one backup, once there is one. */
-  chosenFolder?: string;
+  chosenFolder?: ChosenPath;
   problem?: BackupProblem;
 }
 
@@ -408,7 +409,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
 
   /** Backs up, then upgrades, the waiting database, in the backup location or
    * in `folder`, chosen for this one backup (009 FR-011, FR-012). */
-  async function startUpgrade(folder?: string) {
+  async function startUpgrade(folder?: ChosenPath) {
     if (!upgrade) return;
     const { row, awaitingId } = upgrade;
     // The progress dialog listens before the request goes out, so the first
@@ -421,10 +422,10 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
     );
     try {
       // On success the session replaces this screen with the collection.
-      if (folder) await session.upgradeDatabase(awaitingId, folder);
+      if (folder) await session.upgradeDatabase(awaitingId, folder.token);
       else await session.upgradeDatabase(awaitingId);
     } catch (error) {
-      const tried = folder ?? upgrade.backupFolder;
+      const tried = folder?.path ?? upgrade.backupFolder;
       const problem = backupProblemOf(error, tried);
       if (problem) {
         // The database still waits.
@@ -535,15 +536,19 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
   }
 
   async function openAnotherFile() {
-    const chosen = await withIdlePaused(() =>
-      openFileDialog({
-        multiple: false,
-        directory: false,
-        title: "Open a database file",
-        filters: DATABASE_FILTERS,
-      }),
-    );
-    if (typeof chosen !== "string") return;
+    // The backend opens the chooser and keeps its answer, so it takes the
+    // file's path from the page even where it takes no other (a server's).
+    let picked: ChosenPath | null;
+    try {
+      picked = await withIdlePaused(() => databasesService.chooseDatabaseFile());
+    } catch (error) {
+      setAnnouncement(
+        error instanceof CommandFailure ? error.message : "The file couldn't be chosen.",
+      );
+      return;
+    }
+    if (!picked) return;
+    const chosen = picked.path;
     if (!rows.some((row) => row.path === chosen)) {
       setPicked((current) => [
         { path: chosen, name: databaseNameOf(chosen), available: true, passphraseSaved: false },
@@ -746,6 +751,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                       <UpgradeFolderDialog
                         problem={upgrade.problem}
                         name={upgrade.row.name}
+                        awaitingId={upgrade.awaitingId}
                         onChoose={(folder) => void startUpgrade(folder)}
                         onCancel={cancelUpgrade}
                       />

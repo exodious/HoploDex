@@ -518,6 +518,19 @@ pub enum BackupLocationInput {
     },
 }
 
+/// Where backups go, as the settings dialog sends it: never a folder's path,
+/// which only Rust holds (`choose_backup_folder`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum BackupLocationChoice {
+    /// A "HoploDex backups" folder next to the database.
+    Default,
+    /// The location saved now, as it is.
+    Current,
+    /// The folder the user picked in `choose_backup_folder`, by its token.
+    Chosen { token: String },
+}
+
 /// `update_lock_settings`'s input (003 FR-034, FR-038).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]

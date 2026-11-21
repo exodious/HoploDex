@@ -13,6 +13,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::commands::databases::PROBE_DIR;
+use crate::commands::databases::ops::known_location;
 use crate::models::database::{
     BackupList, BackupsDeleted, CheckedBackup, DatabaseStatus, PassphraseChanged,
 };
@@ -55,6 +56,7 @@ pub mod ops {
     use crate::services::scratch;
     use crate::services::secure_delete::{self, WipeControl, Wiped};
     use crate::session::fingerprint::FingerprintCheck;
+    use crate::session::grants::{is_server_or_device, not_a_local_path};
     use crate::session::lifecycle;
     use crate::session::operations::OperationGuard;
     use crate::session::scoped::Target;
@@ -273,6 +275,18 @@ pub mod ops {
         backup_path: &str,
         target: Target<'_>,
     ) -> Result<CheckingBackup, CommandError> {
+        // A backup on a server or a device is taken only from the folder Rust
+        // keeps for the database's backups, where the dialog lists them from.
+        if is_server_or_device(Path::new(backup_path)) {
+            let folder = match target {
+                Target::Open(id) => session
+                    .inspect(id, |open| Ok(backup_settings(&open.conn, &open.path)?.folder))?,
+                Target::At(path) => cached_backups_of(machine, Path::new(path))?.0,
+            };
+            if Path::new(backup_path).parent() != Some(folder.as_path()) {
+                return Err(not_a_local_path());
+            }
+        }
         let backup = session.reach().check(Path::new(backup_path), Need::ReadFile)?;
         let (database_path, expected_id) = match target {
             Target::Open(id) => (session.inspect(id, |open| Ok(open.path.clone()))?, None),
@@ -1416,6 +1430,9 @@ pub async fn list_backups(
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<BackupList, CommandError> {
+    if let Some(path) = &database_path {
+        known_location(&machine, path)?;
+    }
     let target = Target::from_request(database_path.as_deref(), request.headers())?;
     ops::list_backups(&session, &machine, target)
 }
@@ -1436,6 +1453,9 @@ pub async fn check_backup(
         Target::Open(id) => Some(id),
         Target::At(_) => None,
     };
+    if let Some(path) = &database_path {
+        known_location(&app.state::<MachineSettings>(), path)?;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let session = app.state::<Session>();
         let machine = app.state::<MachineSettings>();
@@ -1461,6 +1481,9 @@ pub async fn restore_backup(
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<DatabaseStatus, CommandError> {
+    if let Some(path) = &database_path {
+        known_location(&machine, path)?;
+    }
     // The open database is restored only in the session the request names.
     let target = Target::from_request(database_path.as_deref(), request.headers())?;
     let check_id = SessionId::from_request(check_id).unwrap_or(SessionId::NONE);

@@ -232,7 +232,9 @@ export interface ChooserState {
 /** Where a new database goes. Its passphrase, and the 003 FR-004
  * acknowledgement, are asked for in the native dialog. */
 export interface CreateDatabaseInput {
-  folder: string;
+  /** The folder picked in `choose_database_folder`'s chooser, by its token;
+   * without one, the suggested folder. */
+  folderToken?: string;
   name: string;
 }
 
@@ -259,7 +261,12 @@ export interface BackupsDeleted {
 }
 
 /** Where backups go, as `update_backup_settings` takes it. */
-export type BackupLocationInput = { kind: "default" } | { kind: "custom"; path: string };
+export type BackupLocationInput =
+  | { kind: "default" }
+  /** The location saved now, as it is. */
+  | { kind: "current" }
+  /** A folder picked in `choose_backup_folder`'s chooser, by its token. */
+  | { kind: "chosen"; token: string };
 
 /** What to do with the backups at the old location when it changes
  * (003 FR-026). */

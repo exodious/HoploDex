@@ -61,6 +61,7 @@ describe("databasesService", () => {
       () => databasesService.restoreBackup(scope, 5, undefined, true),
     ],
     ["change_passphrase", undefined, () => databasesService.changePassphrase(scope)],
+    ["choose_backup_folder", undefined, () => databasesService.chooseBackupFolder(scope)],
     [
       "delete_all_backups",
       { confirmed: true },
@@ -81,8 +82,15 @@ describe("databasesService", () => {
     ],
     [
       "create_database",
-      { folder: "/f", name: "N" },
-      () => databasesService.createDatabase({ folder: "/f", name: "N" }),
+      { folderToken: "t1", name: "N" },
+      () => databasesService.createDatabase({ folderToken: "t1", name: "N" }),
+    ],
+    ["choose_database_folder", undefined, () => databasesService.chooseDatabaseFolder()],
+    ["choose_database_file", undefined, () => databasesService.chooseDatabaseFile()],
+    [
+      "choose_upgrade_backup_folder",
+      { awaitingId: 7 },
+      () => databasesService.chooseUpgradeBackupFolder(7),
     ],
     ["drop_backup_check", { checkId: 5 }, () => databasesService.dropBackupCheck(5)],
     ["remove_recent_database", { path: "/a" }, () => databasesService.removeRecentDatabase("/a")],
@@ -107,12 +115,12 @@ describe("databasesService", () => {
       { backupPath: "/b", databasePath: "/a" },
       () => databasesService.checkBackup(null, "/b", "/a"),
     ],
-    // 009 contracts/tauri-commands.md: all three are unscoped.
+    // 009 contracts/tauri-commands.md: all of these are unscoped.
     ["upgrade_database", { awaitingId: 7 }, () => databasesService.upgradeDatabase(7)],
     [
       "upgrade_database",
-      { awaitingId: 7, backupFolder: "/mnt/usb/Backups" },
-      () => databasesService.upgradeDatabase(7, "/mnt/usb/Backups"),
+      { awaitingId: 7, backupFolderToken: "t1" },
+      () => databasesService.upgradeDatabase(7, "t1"),
     ],
     ["cancel_upgrade", { awaitingId: 7 }, () => databasesService.cancelUpgrade(7)],
   ])("sends %s with no session", async (command, args, call) => {

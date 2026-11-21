@@ -1,10 +1,10 @@
 //! The native confirmation's text and the session's consent rule
 //! (007 research.md §16, §17; 007 contracts/ui-document-preview.md §4).
 //!
-//! Handing a document to another app is decided by the user in a native
-//! dialog that Rust shows, with text Rust builds from the stored file name, so
-//! a compromised web view can neither answer it nor put another name in front
-//! of the user. [`Consent`] is the seam: the app's [`DialogConsent`] shows the
+//! Handing a document to another app, or an export to a network folder, is
+//! decided by the user in a native dialog that Rust shows, with text Rust
+//! builds from the stored file name or the chosen folder, so a compromised web
+//! view can neither answer it nor put another name in front of the user. [`Consent`] is the seam: the app's [`DialogConsent`] shows the
 //! dialog, an E2E build's `E2eConsent` answers from the environment, and the
 //! tests' fake records what it was asked.
 
@@ -36,6 +36,13 @@ pub enum ConsentRequest {
     /// Choosing "Open in another app" as this computer's setting
     /// (`set_document_opening`).
     Setting,
+    /// An export to a folder on a network share (`export_collection`).
+    NetworkExport {
+        /// The folder, as the chooser gave it.
+        folder: String,
+        /// The firearms and accessories the export holds.
+        records: usize,
+    },
 }
 
 /// The longest file name the dialog's title shows, in characters.
@@ -61,6 +68,15 @@ impl ConsentRequest {
                 format!("Open \u{201C}{}\u{201D} in another app?", display_name(name))
             }
             Self::Setting => "Open documents in another app?".to_owned(),
+            Self::NetworkExport { .. } => "Export to a network folder?".to_owned(),
+        }
+    }
+
+    /// The button that says yes.
+    pub fn confirm_label(&self) -> &'static str {
+        match self {
+            Self::NetworkExport { .. } => "Export",
+            Self::Document { .. } | Self::Setting => "Open in another app",
         }
     }
 
@@ -86,6 +102,18 @@ impl ConsentRequest {
                  this computer.\n\n{bullets}\n\nYou'll be asked once each time a database is \
                  opened or unlocked."
             ),
+            Self::NetworkExport { folder, records } => {
+                let records = match records {
+                    1 => "1 record".to_owned(),
+                    n => format!("{n} records"),
+                };
+                format!(
+                    "\u{201C}{}\u{201D} is on another computer. HoploDex will write {records} \
+                     there, unprotected: anyone who can read that folder can open the export, \
+                     including whoever runs the computer that shares it.",
+                    display_name(folder)
+                )
+            }
         }
     }
 }
@@ -146,7 +174,7 @@ impl<R: tauri::Runtime> Consent for DialogConsent<R> {
             .title(request.title())
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Open in another app".to_owned(),
+                request.confirm_label().to_owned(),
                 "Cancel".to_owned(),
             ));
         if let Some(window) = self.app.get_window("main") {
@@ -165,8 +193,8 @@ impl<R: tauri::Runtime> Consent for DialogConsent<R> {
 }
 
 /// The E2E build's stand-in for the dialog, which no WebDriver can click:
-/// `HOPLODEX_E2E_CONSENT=open` answers "Open in another app", anything else
-/// (or nothing) "Cancel", and each request's title is appended to the file
+/// `HOPLODEX_E2E_CONSENT=open` answers yes, anything else (or nothing)
+/// "Cancel", and each request's title and text, on one line, is appended to the file
 /// named by `HOPLODEX_E2E_CONSENT_LOG`, for the specs to read. Never in a
 /// release build (`scripts/check-no-webdriver.mjs`).
 #[cfg(feature = "e2e")]
@@ -178,11 +206,11 @@ impl Consent for E2eConsent {
         use std::io::Write;
 
         if let Some(log) = std::env::var_os("HOPLODEX_E2E_CONSENT_LOG") {
-            let written = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(log)
-                .and_then(|mut file| writeln!(file, "{}", request.title()));
+            let written = std::fs::OpenOptions::new().create(true).append(true).open(log).and_then(
+                |mut file| {
+                    writeln!(file, "{} {}", request.title(), request.body().replace('\n', " "))
+                },
+            );
             if let Err(err) = written {
                 log::warn!("could not write the consent log: {err}");
             }

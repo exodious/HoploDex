@@ -797,7 +797,7 @@ fn upgrade_database_stops_when_the_before_backup_location_is_out_of_reach() {
         &world.boxed,
         &world.machine,
         awaiting_id,
-        Some(&text(&chosen)),
+        Some(chosen.as_path()),
     )
     .unwrap_err();
     assert_backup_out_of_reach(&refused, &chosen);
@@ -1445,7 +1445,7 @@ fn a_portal_folder_outside_reach_is_accepted_as_the_upgrades_chosen_folder() {
         &world.boxed,
         &world.machine,
         awaiting_id,
-        Some(&text(&chosen)),
+        Some(chosen.as_path()),
     )
     .unwrap_err();
 

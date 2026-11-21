@@ -38,6 +38,16 @@ pub enum PickKind {
     ImportFile,
     /// The folder to export to (`choose_export_folder`).
     ExportFolder,
+    /// The folder a new database goes in (`choose_database_folder`).
+    DatabaseFolder,
+    /// The open database's new backup location (`choose_backup_folder`).
+    BackupFolder,
+    /// The folder for the one backup before an upgrade
+    /// (`choose_upgrade_backup_folder`), held under the waiting database's id.
+    UpgradeBackupFolder,
+    /// A database file to open (`choose_database_file`), taken by its path,
+    /// since the chooser's list shows and opens it by path.
+    DatabaseFile,
 }
 
 struct Dropped {
@@ -74,6 +84,26 @@ pub fn not_dropped() -> CommandError {
 /// The fixed refusal of a token that isn't a held chooser answer.
 pub fn not_picked() -> CommandError {
     CommandError::new("VALIDATION_ERROR", "Choose it again: that choice is no longer available.")
+}
+
+/// Whether `path` names a server or a device rather than a place on this
+/// computer's own drives: `\\server\share`, `\\?\`, `\\.\` and their
+/// forward-slash spellings. Only a location Rust holds (a chooser answer, the
+/// recent list, a folder it derived) may take that form; one the page names
+/// is refused before anything looks at it, since even a look reaches the
+/// server. Checked by spelling, on every OS, so it is the same everywhere.
+pub fn is_server_or_device(path: &Path) -> bool {
+    let text = path.as_os_str().to_string_lossy();
+    let mut start = text.chars();
+    matches!((start.next(), start.next()), (Some('\\' | '/'), Some('\\' | '/')))
+}
+
+/// The fixed refusal of a server or device path the page named.
+pub fn not_a_local_path() -> CommandError {
+    CommandError::new(
+        "VALIDATION_ERROR",
+        "HoploDex takes a network or device location only when you choose it. Choose it again.",
+    )
 }
 
 impl Grants {
@@ -128,6 +158,21 @@ impl Grants {
             .iter()
             .position(|p| p.session == session && p.kind == kind && p.token == token);
         found.map(|at| self.picks.remove(at).path).ok_or_else(not_picked)
+    }
+
+    /// Takes the answer for `session` and `kind` whose path is `path`, and
+    /// returns its token.
+    pub fn take_pick_at(
+        &mut self,
+        session: SessionId,
+        kind: PickKind,
+        path: &Path,
+    ) -> Result<String, CommandError> {
+        let found = self
+            .picks
+            .iter()
+            .position(|p| p.session == session && p.kind == kind && p.path == path);
+        found.map(|at| self.picks.remove(at).token).ok_or_else(not_picked)
     }
 
     /// Forgets everything: the session ended.
@@ -215,6 +260,44 @@ mod tests {
             Path::new("/out")
         );
         assert!(grants.take_pick(id(1), PickKind::ExportFolder, &token).is_err());
+    }
+
+    #[test]
+    fn a_pick_is_taken_by_its_path_once() {
+        let mut grants = Grants::default();
+        grants.hold_pick(id(1), PickKind::DatabaseFile, "/d/a.hoplodex".into(), "t1".into());
+        assert!(
+            grants.take_pick_at(id(1), PickKind::DatabaseFile, Path::new("/d/b.hoplodex")).is_err()
+        );
+        assert!(
+            grants.take_pick_at(id(2), PickKind::DatabaseFile, Path::new("/d/a.hoplodex")).is_err()
+        );
+        assert!(
+            grants.take_pick_at(id(1), PickKind::ExportFolder, Path::new("/d/a.hoplodex")).is_err()
+        );
+        assert!(
+            grants.take_pick_at(id(1), PickKind::DatabaseFile, Path::new("/d/a.hoplodex")).is_ok()
+        );
+        assert!(
+            grants.take_pick_at(id(1), PickKind::DatabaseFile, Path::new("/d/a.hoplodex")).is_err()
+        );
+    }
+
+    #[test]
+    fn server_and_device_paths_are_told_by_their_spelling() {
+        for path in [
+            r"\\server\share\a.hoplodex",
+            r"\\?\C:\a.hoplodex",
+            r"\\?\UNC\server\share",
+            r"\\.\PhysicalDrive0",
+            "//server/share/a.hoplodex",
+            r"/\server\share",
+        ] {
+            assert!(is_server_or_device(Path::new(path)), "{path}");
+        }
+        for path in [r"C:\Users\a.hoplodex", "/home/a/a.hoplodex", r"\Users\a", "a", ""] {
+            assert!(!is_server_or_device(Path::new(path)), "{path}");
+        }
     }
 
     #[test]
