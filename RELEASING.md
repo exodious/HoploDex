@@ -152,7 +152,8 @@ request like any other; then start again from the new commit.
    "Release-only tests", says, or with `release.mjs checks`, which also runs
    the migration tests. Everything else the release needs tested, on every OS,
    the workflow's [dry run](#the-release-workflow) runs before the tag: E2E, the
-   packages, both Flatpak checks, `npm run audit` and `import_largest_test`.
+   packages, both Flatpak checks, `npm run audit`, `import_largest_test` and
+   the surface checks.
 7. **The AI security review** (constitution, "Development Workflow & Quality
    Gates"). Run `/ai-security-review release <commit>` on the commit you will
    tag. It reviews the whole codebase against `docs/attack-surface.md` and
@@ -210,8 +211,9 @@ On the tag, `release.yml` runs:
   `test:flatpak -- --fresh-install` against the `.flatpak` the run built.
 - **Release checks:** `npm run audit` and `import_largest_test`.
 - **Surface checks** on each OS: the PDF surface check (on macOS also with
-  WebKit's PDF HUD on) and the window controls check
-  ([PDF surface, window controls](docs/development/surface-checks.md)).
+  WebKit's PDF HUD on), the window controls check and the drop check, its
+  app part included on macOS and Windows
+  ([PDF surface, window controls, drops](docs/development/surface-checks.md)).
 - **Draft the release,** only when every job above passed: `SHA256SUMS`, the
   packages and the checksums kept together as the run's `release` artifact,
   and a draft release (a pre-release for a suffixed tag) with every file

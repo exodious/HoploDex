@@ -13,8 +13,8 @@
 #   against the shipping profile on all three OSes, both Flatpak checks, and
 #   the package jobs, which keep the Windows NSIS installer, the macOS .dmg, the
 #   Linux .deb and .rpm (built on ubuntu-24.04) and the Flatpak as artifacts.
-# - Here only: the dependency audit, import_largest_test, and the PDF surface
-#   and window controls checks on each OS.
+# - Here only: the dependency audit, import_largest_test, and the PDF surface,
+#   window controls and drop checks on each OS.
 #
 # A tag with a pre-release suffix (`v0.1.0-rc.1`) drafts a GitHub pre-release.
 # The draft stays a draft, never marked latest, until a person publishes it.
@@ -145,6 +145,9 @@ jobs:
       - name: Window controls check
         if: success() || failure()
         run: scripts/window-controls-check.sh
+      - name: Drop check
+        if: success() || failure()
+        run: scripts/drop-check.sh
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -171,6 +174,9 @@ jobs:
       - name: Window controls check
         if: success() || failure()
         run: powershell -ExecutionPolicy Bypass -File scripts\windows\window-controls-check.ps1
+      - name: Drop check
+        if: success() || failure()
+        run: powershell -ExecutionPolicy Bypass -File scripts\windows\drop-check.ps1
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -188,6 +194,7 @@ jobs:
     env:
       HOPLODEX_PDF_CHECK_IN_VM: "1"
       HOPLODEX_WINDOW_CHECK_IN_VM: "1"
+      HOPLODEX_DROP_CHECK_IN_VM: "1"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -207,6 +214,9 @@ jobs:
       - name: Window controls check
         if: success() || failure()
         run: scripts/macos/window-controls-check.sh
+      - name: Drop check
+        if: success() || failure()
+        run: scripts/macos/drop-check.sh
       - if: always()
         uses: actions/upload-artifact@v7
         with:
