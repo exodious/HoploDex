@@ -26,16 +26,18 @@
 //      give it back (the drop is attachable);
 //   2. drags a link out of the page itself, whose drag carries a `file://`
 //      URI list naming another file, and drops it on the main web view: the
-//      session must never hold that file (a drag that starts in the page is
-//      not a drop of the user's files);
+//      session must never hold that file, and the drop must never reach the
+//      recorder at all (a drag that starts in the page is not a drop of the
+//      user's files);
 //   3. does the same from a second web view in the main window, as the PDF
 //      surface is one, onto the main web view, from outside the window and
 //      back, and (Linux and macOS) from a window of the check's own process,
 //      a drag that does reach wry;
 //   4. drops another file from the other app, which must still be attachable.
 // It fails (exit 4, one "CHECK FAIL" line each) if the native drop isn't
-// attachable, if a drag from the app is, or if a drag from the app never
-// started (so that part proved nothing).
+// attachable, if a drag from the app is or reaches the recorder as a drop,
+// or if a drag from the app never started (so that part proved nothing).
+// app_drop_check.rs drops onto the app's own page.
 //
 // Exit codes:
 //   0  passed
@@ -272,6 +274,10 @@ fn screenshot(path: &Path) {
 /// How many drags the app's refusal logged as refused.
 static REFUSALS: AtomicUsize = AtomicUsize::new(0);
 
+/// How many drops Tauri delivered to the main web view, with or without
+/// paths: what the recorder is handed.
+static MAIN_DROPS: AtomicUsize = AtomicUsize::new(0);
+
 /// Prints the app's own drop lines (`drops`), so the log shows each refusal.
 struct Capture;
 
@@ -300,6 +306,9 @@ fn log_drag(source: &str, label: &str, event: &DragDropEvent) {
             eprintln!("CHECK tauri {source} {label}: enter {paths:?}")
         }
         DragDropEvent::Drop { paths, .. } => {
+            if source == "webview" && label == drops::MAIN_WINDOW {
+                MAIN_DROPS.fetch_add(1, Ordering::SeqCst);
+            }
             eprintln!("CHECK tauri {source} {label}: drop {paths:?}")
         }
         DragDropEvent::Leave => eprintln!("CHECK tauri {source} {label}: leave"),
@@ -370,6 +379,7 @@ impl Check {
         reaches_wry: bool,
     ) {
         let refusals = REFUSALS.load(Ordering::SeqCst);
+        let main_drops = MAIN_DROPS.load(Ordering::SeqCst);
         // Only a page reports its drag's start.
         let page = what.contains("page") || what.contains("web view");
         let starts = self.shared.drag_starts.load(Ordering::SeqCst);
@@ -391,6 +401,11 @@ impl Check {
                 "a drag from {what} was recorded as a drop: {} is attachable",
                 planted.display()
             ));
+        } else if MAIN_DROPS.load(Ordering::SeqCst) > main_drops {
+            // A drop with no file attaches nothing, but it reached the
+            // recorder: WebView2 gives a page's link drag no file list, so
+            // without the refusal this is all that shows it (#207).
+            self.fail(format!("the drag from {what} reached the recorder as a drop"));
         } else if started {
             eprintln!("CHECK the drag from {what} was not recorded");
         }

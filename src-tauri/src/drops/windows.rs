@@ -15,7 +15,7 @@ use std::cell::Cell;
 use tauri::{Runtime, WebviewWindow};
 use windows::{
     Win32::{
-        Foundation::{HWND, LPARAM, POINTL},
+        Foundation::{HWND, LPARAM, POINTL, S_OK},
         System::{
             Com::{DVASPECT_CONTENT, FORMATETC, IDataObject, TYMED_HGLOBAL},
             DataExchange::RegisterClipboardFormatW,
@@ -180,7 +180,10 @@ fn from_a_page(data: Option<&IDataObject>) -> bool {
             lindex: -1,
             tymed: TYMED_HGLOBAL.0 as u32,
         };
-        data.QueryGetData(&query).is_ok()
+        // Only S_OK says the data has the format. File Explorer's data
+        // object answers S_FALSE, a success code, for a format it lacks
+        // (#207).
+        data.QueryGetData(&query) == S_OK
     }
 }
 
@@ -249,5 +252,79 @@ impl IDropTarget_Impl for AppDragFilter_Impl {
         }
         // SAFETY: forwarding OLE's own arguments.
         unsafe { self.inner.Drop(data.as_ref(), keys, *point, effect) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use windows::Win32::{
+        Foundation::HGLOBAL,
+        System::{
+            Com::{STGMEDIUM, STGMEDIUM_0},
+            Memory::{GMEM_MOVEABLE, GlobalAlloc},
+            Ole::OleInitialize,
+        },
+        UI::Shell::SHCreateDataObject,
+    };
+
+    use super::*;
+
+    /// The shell's own data object, the kind File Explorer drags.
+    fn shell_data_object() -> IDataObject {
+        // SAFETY: OLE on this thread, then an empty data object.
+        unsafe {
+            let _ = OleInitialize(None);
+            SHCreateDataObject(None, None, None::<&IDataObject>).expect("SHCreateDataObject")
+        }
+    }
+
+    // A drag from File Explorer is a drop of the user's files: its data
+    // object answers S_FALSE, not an error, for the mark it doesn't have
+    // (#207).
+    #[test]
+    fn a_drag_from_explorer_is_not_a_pages() {
+        let data = shell_data_object();
+        let format = unsafe { RegisterClipboardFormatW(w!("chromium/x-renderer-taint")) };
+        let query = FORMATETC {
+            cfFormat: format as u16,
+            ptd: std::ptr::null_mut(),
+            dwAspect: DVASPECT_CONTENT.0,
+            lindex: -1,
+            tymed: TYMED_HGLOBAL.0 as u32,
+        };
+        // SAFETY: asking a live data object about a format.
+        let answer = unsafe { data.QueryGetData(&query) };
+        assert!(answer.is_ok() && answer != S_OK, "the shell answers {answer:?}");
+        assert!(!from_a_page(Some(&data)));
+    }
+
+    #[test]
+    fn a_drag_carrying_the_mark_is_a_pages() {
+        let data = shell_data_object();
+        let format = unsafe { RegisterClipboardFormatW(w!("chromium/x-renderer-taint")) };
+        let query = FORMATETC {
+            cfFormat: format as u16,
+            ptd: std::ptr::null_mut(),
+            dwAspect: DVASPECT_CONTENT.0,
+            lindex: -1,
+            tymed: TYMED_HGLOBAL.0 as u32,
+        };
+        // SAFETY: a one-byte block handed to the data object, which frees it
+        // (`fRelease`).
+        unsafe {
+            let block: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, 1).unwrap();
+            let medium = STGMEDIUM {
+                tymed: TYMED_HGLOBAL.0 as u32,
+                u: STGMEDIUM_0 { hGlobal: block },
+                pUnkForRelease: std::mem::ManuallyDrop::new(None),
+            };
+            data.SetData(&query, &medium, true).unwrap();
+        }
+        assert!(from_a_page(Some(&data)));
+    }
+
+    #[test]
+    fn no_data_is_not_a_pages() {
+        assert!(!from_a_page(None));
     }
 }

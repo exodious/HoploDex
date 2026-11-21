@@ -365,6 +365,9 @@ windows-sys = { version = "0.61", features = [
     # (tests/import_reader_test.rs).
     "Win32_System_ProcessStatus",
 ] }
+# The shell's own data object, the kind File Explorer drags, for the drop
+# filter's tests (`drops::windows`, #207).
+windows = { version = "0.61.3", features = ["Win32_UI_Shell", "Win32_UI_Shell_Common"] }
 
 # Debug and test builds keep line tables, so panics and backtraces still name
 # the file and line, but not full debug info, and none for dependencies. Full
