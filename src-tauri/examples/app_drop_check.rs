@@ -2,7 +2,8 @@
 // one firearm, has a photo and a document dropped onto that firearm's page
 // from the OS's file manager, with real input, and then must hold both. The
 // app is any build without the `e2e` feature, as a release ships it: the
-// installed one, or `cargo build --profile e2e --features custom-protocol`.
+// installed one, or `npm run build` then
+// `cargo build --release --features custom-protocol`, as both scripts build it.
 // drop_check.rs proves the refusal of the app's own drags on a page of its
 // own; this proves what a user does on the real page.
 //
