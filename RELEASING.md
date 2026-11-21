@@ -23,8 +23,9 @@ Every file follows one pattern, `HoploDex-<version>-<x86_64|aarch64>`, then
 the package jobs, and `scripts/flatpak/build.sh` names the Flatpak. Tauri
 names the `.deb` and `.rpm` package after `productName` in kebab case, so
 `scripts/build-appimage.sh` builds them with
-`src-tauri/tauri.linux-packages.conf.json`, whose `productName` is `hoplodex`,
-which also makes them replace 0.1.0's `hoplo-dex` package.
+`src-tauri/tauri.linux-packages.conf.json`, whose `productName` is `hoplodex`
+and whose `conflicts`/`replaces` (`.deb`) and `obsoletes` (`.rpm`) make them
+replace 0.1.0's `hoplo-dex` package.
 
 Every package carries `NOTICES.txt` as a file of its own, beside the program
 (`src-tauri/tauri.bundle.conf.json` for the Tauri bundles; the Flatpak's
