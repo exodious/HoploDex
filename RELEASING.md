@@ -206,7 +206,7 @@ On the tag, `release.yml` runs:
   (`HOPLODEX_E2E_PROFILE=release`) on all three, macOS's counting too; the
   packages, each checked by `scripts/check-package.mjs` (`NOTICES.txt` beside
   the program; in the `.deb`, apport's ignore entry; in the `.dmg`, the `.app`'s
-  signature) and kept as the run's artifacts; and the Flatpak, with `test:flatpak` and then
+  signature), the `.deb` and `.rpm` installed on clean Ubuntu and Fedora images with only what they declare (`scripts/check-linux-install.sh`), and kept as the run's artifacts; and the Flatpak, with `test:flatpak` and then
   `test:flatpak -- --fresh-install` against the `.flatpak` the run built.
 - **Release checks:** `npm run audit` and `import_largest_test`.
 - **Surface checks** on each OS: the PDF surface check (on macOS also with

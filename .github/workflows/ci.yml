@@ -402,6 +402,19 @@ jobs:
         run: |
           node scripts/check-package.mjs deb src-tauri/target/release/bundle/deb/*.deb
           node scripts/check-package.mjs rpm src-tauri/target/release/bundle/rpm/*.rpm
+      # Each package on clean images of the releases it supports, with only
+      # what it declares (#208): every library must resolve, and each one the
+      # binary links must be declared, so none works only where the base
+      # system happens to have it.
+      - name: Install the .deb and .rpm on clean systems
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          for image in fedora:44 fedora:45; do
+            scripts/check-linux-install.sh "docker.io/library/$image" src-tauri/target/release/bundle/rpm/*.rpm
+          done
+          for image in ubuntu:24.04 ubuntu:26.04; do
+            scripts/check-linux-install.sh "docker.io/library/$image" src-tauri/target/release/bundle/deb/*.deb
+          done
       # Two artifacts: from one with both paths, the release workflow's draft
       # job would get the deb/ and rpm/ folders instead of a flat list of files.
       - name: Keep the .deb
