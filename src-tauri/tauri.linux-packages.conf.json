@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "hoplodex",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "conflicts": ["hoplo-dex"],
+        "replaces": ["hoplo-dex"],
+        "desktopTemplate": "packaging/hoplodex.desktop"
+      },
+      "rpm": {
+        "obsoletes": ["hoplo-dex"],
+        "desktopTemplate": "packaging/hoplodex.desktop"
+      }
+    }
+  }
+}

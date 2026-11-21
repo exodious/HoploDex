@@ -7,7 +7,12 @@
 #   scripts/build-appimage.sh --bundles appimage  only the AppImage
 #
 # Arguments are passed to `tauri build`, after src-tauri/tauri.bundle.conf.json,
-# which puts NOTICES.txt in each bundle (#19).
+# which puts NOTICES.txt in each bundle (#19), and
+# src-tauri/tauri.linux-packages.conf.json. Tauri names the .deb and .rpm
+# package after productName in kebab case, which made "HoploDex" `hoplo-dex`
+# (#209); that overlay builds the Linux bundles as productName "hoplodex", so
+# the package is `hoplodex`, replacing 0.1.0's `hoplo-dex`. The window title,
+# the launcher's name and the data folder (from the identifier) don't change.
 #
 # Why: linuxdeploy copies libwayland-*, libxkbcommon, libxcb-* and friends
 # from the build machine into the AppImage, and they shadow the host's copies.
@@ -42,7 +47,7 @@ export LINUXDEPLOY_EXCLUDED_LIBRARIES
 check=$(mktemp -d)
 trap 'rm -rf "$check"' EXIT
 touch "$check/started"
-npx tauri build --config src-tauri/tauri.bundle.conf.json "$@"
+npx tauri build --config src-tauri/tauri.bundle.conf.json --config src-tauri/tauri.linux-packages.conf.json "$@"
 # The E2E-only WebDriver server must never ship (#29).
 node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
 

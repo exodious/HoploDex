@@ -5,25 +5,29 @@ Which systems this release supports, and which package is for which, is in
 
 ## Install
 
-**Windows:** run the setup `.exe`. It isn't signed with a paid certificate, so
-Windows may say "Windows protected your PC": choose **More info**, then
-**Run anyway**. A computer in S mode runs only Microsoft Store apps, so it has
-to leave S mode first: **Settings › System › Activation**, then **Switch out
-of S mode**, which opens the Microsoft Store. It is free, and can't be undone.
+**Windows:** run `HoploDex-{{app_version}}-x86_64-setup.exe`. It isn't
+signed with a paid certificate, so Windows may say "Windows protected your
+PC": choose **More info**, then **Run anyway**. A computer in S mode runs only
+Microsoft Store apps, so it has to leave S mode first: **Settings › System ›
+Activation**, then **Switch out of S mode**, which opens the Microsoft Store.
+It is free, and can't be undone.
 
-**macOS (Apple silicon):** open the `.dmg` and drag HoploDex to Applications.
-It isn't notarized by Apple, so the first time you open it macOS says it can't
-check it: choose **Done**, then in **System Settings › Privacy & Security**
-find the message about HoploDex and choose **Open Anyway**.
+**macOS (Apple silicon):** open `HoploDex-{{app_version}}-aarch64.dmg` and
+drag HoploDex to Applications. It isn't notarized by Apple, so the first time
+you open it macOS says it can't check it: choose **Done**, then in **System
+Settings › Privacy & Security** find the message about HoploDex and choose
+**Open Anyway**.
 
-**Linux, the Flatpak:** `flatpak install --user HoploDex-<version>-x86_64.flatpak`,
+**Linux, the Flatpak:** `flatpak install --user HoploDex-{{app_version}}-x86_64.flatpak`,
 or open the file with your software centre. This adds Flathub if it isn't set
 up and fetches the GNOME runtime. A newer version installs the same way, over
 the old one, keeping everything. `flatpak update` updates the runtime but not
 a HoploDex installed from a file.
 
-**Linux, the `.deb`** (Ubuntu): `sudo apt install ./<the .deb>`.
-**The `.rpm`** (Fedora): `sudo dnf install ./<the .rpm>`.
+**Linux, the `.deb`** (Ubuntu): `sudo apt install ./HoploDex-{{app_version}}-x86_64.deb`.
+**The `.rpm`** (Fedora): `sudo dnf install ./HoploDex-{{app_version}}-x86_64.rpm`.
+Either installs the package `hoplodex` (`sudo apt remove hoplodex`,
+`sudo dnf remove hoplodex`), which replaces 0.1.0's `hoplo-dex`.
 
 ## Checksums
 

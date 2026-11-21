@@ -11,11 +11,21 @@ What a release publishes, all for x86-64 except the `.dmg`:
 
 | Package | Built by |
 |---|---|
-| The Windows NSIS installer, the setup `.exe` (no MSI) | ci.yml's Packages (Windows) |
-| The macOS `.dmg` for Apple silicon, which carries the `.app` (no separate `.app`) | ci.yml's Packages (macOS) |
-| The Linux `.deb` and `.rpm`, built on `ubuntu-24.04` | ci.yml's Packages (Linux) |
+| The Windows NSIS installer, `HoploDex-<version>-x86_64-setup.exe` (no MSI) | ci.yml's Packages (Windows) |
+| The macOS `.dmg` for Apple silicon, `HoploDex-<version>-aarch64.dmg`, which carries the `.app` (no separate `.app`) | ci.yml's Packages (macOS) |
+| The Linux `.deb` and `.rpm`, `HoploDex-<version>-x86_64.deb` and `.rpm`, built on `ubuntu-24.04`; the package they install is `hoplodex` | ci.yml's Packages (Linux) |
 | The Flatpak, `HoploDex-<version>-x86_64.flatpak` | ci.yml's Flatpak |
 | `SHA256SUMS`, every file's SHA-256 | release.yml |
+
+Every file follows one pattern, `HoploDex-<version>-<x86_64|aarch64>`, then
+`-setup.exe`, `.dmg`, `.deb`, `.rpm` or `.flatpak` (#209):
+`scripts/check-package.mjs --rename` gives the Tauri packages their names in
+the package jobs, and `scripts/flatpak/build.sh` names the Flatpak. Tauri
+names the `.deb` and `.rpm` package after `productName` in kebab case, so
+`scripts/build-appimage.sh` builds them with
+`src-tauri/tauri.linux-packages.conf.json`, whose `productName` is `hoplodex`
+and whose `conflicts`/`replaces` (`.deb`) and `obsoletes` (`.rpm`) make them
+replace 0.1.0's `hoplo-dex` package.
 
 Every package carries `NOTICES.txt` as a file of its own, beside the program
 (`src-tauri/tauri.bundle.conf.json` for the Tauri bundles; the Flatpak's
@@ -206,7 +216,7 @@ On the tag, `release.yml` runs:
   (`HOPLODEX_E2E_PROFILE=release`) on all three, macOS's counting too; the
   packages, each checked by `scripts/check-package.mjs` (`NOTICES.txt` beside
   the program; in the `.deb`, apport's ignore entry; in the `.dmg`, the `.app`'s
-  signature), the `.deb` and `.rpm` installed on clean Ubuntu and Fedora images with only what they declare (`scripts/check-linux-install.sh`), and kept as the run's artifacts; and the Flatpak, with `test:flatpak` and then
+  signature), the `.deb` and `.rpm` installed on clean Ubuntu and Fedora images with only what they declare (`scripts/check-linux-install.sh`), renamed to their release names and kept as the run's artifacts; and the Flatpak, with `test:flatpak` and then
   `test:flatpak -- --fresh-install` against the `.flatpak` the run built.
 - **Release checks:** `npm run audit` and `import_largest_test`.
 - **Surface checks** on each OS: the PDF surface check (on macOS also with
@@ -216,7 +226,8 @@ On the tag, `release.yml` runs:
   packages and the checksums kept together as the run's `release` artifact,
   and a draft release (a pre-release for a suffixed tag) with every file
   attached, the Flatpak included. Its notes are `.github/release-notes.md`,
-  with the version and tag filled in.
+  with the version and tag filled in (`{{app_version}}`, in the file names, is
+  the version without a release candidate's suffix).
 
 A failed job can be re-run from the run's page; the draft is opened when they
 all pass, and a re-run replaces the draft's files. The workflow never

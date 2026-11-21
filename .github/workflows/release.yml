@@ -247,7 +247,8 @@ jobs:
 
       # The notes are .github/release-notes.md with the version and tag filled
       # in as data, never as part of a program, and for a pre-release the
-      # release-candidate note first.
+      # release-candidate note first. The file names carry the app's version,
+      # the tag's without its suffix (#209).
       - name: Open the draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -259,9 +260,10 @@ jobs:
               echo "**This is a release candidate, for testing.** Try it on a copy of your collection."
               echo
             fi
-            VERSION="$version" node -e 'const fs = require("node:fs");
+            VERSION="$version" APP_VERSION="${version%%-*}" node -e 'const fs = require("node:fs");
               process.stdout.write(fs.readFileSync(".github/release-notes.md", "utf8")
-                .replaceAll("{{version}}", process.env.VERSION).replaceAll("{{tag}}", process.env.TAG));'
+                .replaceAll("{{version}}", process.env.VERSION).replaceAll("{{app_version}}", process.env.APP_VERSION)
+                .replaceAll("{{tag}}", process.env.TAG));'
           } > "$RUNNER_TEMP/notes.md"
           prerelease=()
           [[ "$TAG" == *-* ]] && prerelease=(--prerelease)

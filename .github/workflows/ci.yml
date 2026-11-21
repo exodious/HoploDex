@@ -396,12 +396,13 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: npm run bundle:linux -- --bundles deb,rpm
       # The notices beside the program, and in the .deb apport's ignore entry
-      # at the path it installs the app at (#166).
+      # at the path it installs the app at (#166). Then each takes its release
+      # name, HoploDex-<version>-x86_64.deb and .rpm (#209).
       - name: Check the .deb and .rpm
         if: steps.scope.outputs.run == 'true'
         run: |
-          node scripts/check-package.mjs deb src-tauri/target/release/bundle/deb/*.deb
-          node scripts/check-package.mjs rpm src-tauri/target/release/bundle/rpm/*.rpm
+          node scripts/check-package.mjs --rename deb src-tauri/target/release/bundle/deb/*.deb
+          node scripts/check-package.mjs --rename rpm src-tauri/target/release/bundle/rpm/*.rpm
       # Each package on clean images of the releases it supports, with only
       # what it declares (#208): every library must resolve, and each one the
       # binary links must be declared, so none works only where the base
@@ -458,11 +459,12 @@ jobs:
       - name: Check the shipped binary
         if: steps.scope.outputs.run == 'true'
         run: node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex.exe
-      # 7-Zip is on the runner image.
+      # 7-Zip is on the runner image. Then it takes its release name,
+      # HoploDex-<version>-x86_64-setup.exe (#209).
       - name: Check the installer
         if: steps.scope.outputs.run == 'true'
         shell: bash
-        run: node scripts/check-package.mjs nsis src-tauri/target/release/bundle/nsis/*-setup.exe
+        run: node scripts/check-package.mjs --rename nsis src-tauri/target/release/bundle/nsis/*-setup.exe
       - name: Keep the installer
         if: inputs.release
         uses: actions/upload-artifact@v7
@@ -495,10 +497,11 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: node scripts/check-no-webdriver.mjs src-tauri/target/release/hoplodex
       # The .app in the .dmg: its notices and its own ad-hoc signature (no
-      # Developer ID, #19).
+      # Developer ID, #19). Then it takes its release name,
+      # HoploDex-<version>-aarch64.dmg (#209).
       - name: Check the .dmg
         if: steps.scope.outputs.run == 'true'
-        run: node scripts/check-package.mjs dmg src-tauri/target/release/bundle/dmg/*.dmg
+        run: node scripts/check-package.mjs --rename dmg src-tauri/target/release/bundle/dmg/*.dmg
       - name: Keep the .dmg
         if: inputs.release
         uses: actions/upload-artifact@v7
