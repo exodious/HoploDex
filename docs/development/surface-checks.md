@@ -107,11 +107,10 @@ page. On Windows the files come from File Explorer
 (`examples/explorer_source.ps1`), whose drag data isn't the stand-in source's
 (it answers `S_FALSE` for a format it lacks); on macOS from
 `drag_source.swift`, since the refusal there asks for the drag's source, not
-its data. A Windows build without `e2e` keeps its settings in the user's real
-`%APPDATA%\io.github.exodious.HoploDex`, so run it as a user who doesn't use
-HoploDex: the script refuses if that folder exists (unless an earlier run of
-the check left it) and deletes it afterwards. macOS gives the app a `HOME` of
-its own. Linux has no second part: the dev container's Xvfb session has no
+its data. On Windows, run it as a user who doesn't use HoploDex: a build
+without `e2e` keeps its settings in the user's real `%APPDATA%`
+([test isolation](test-isolation.md) says how the script guards them). Linux
+has no second part: the dev container's Xvfb session has no
 accessibility bus to find the page's controls with.
 
 Logs and screenshots go to `e2e/screenshots-out/drop-check/`. Exit codes: 0
