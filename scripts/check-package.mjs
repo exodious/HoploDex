@@ -73,33 +73,31 @@ export function missing(kind, paths) {
   return REQUIRED[kind].filter((p) => !have.has(p));
 }
 
-/** The architecture in each kind's Tauri file name, and its spelling in ours. */
-const TAURI_NAME = {
-  deb: /_(amd64|arm64)\.deb$/,
-  rpm: /\.(x86_64|aarch64)\.rpm$/,
-  nsis: /_(x64|arm64)-setup\.exe$/,
-  dmg: /_(x64|aarch64)\.dmg$/,
+/**
+ * Each kind's Tauri file-name ending for the one architecture a release ships
+ * it for, and the ending of our name for it.
+ */
+const SUFFIX = {
+  deb: ["_amd64.deb", "x86_64.deb"],
+  rpm: [".x86_64.rpm", "x86_64.rpm"],
+  nsis: ["_x64-setup.exe", "x86_64-setup.exe"],
+  dmg: ["_aarch64.dmg", "aarch64.dmg"],
 };
-const ARCH = {
-  amd64: "x86_64",
-  x64: "x86_64",
-  x86_64: "x86_64",
-  arm64: "aarch64",
-  aarch64: "aarch64",
-};
-const EXT = { deb: ".deb", rpm: ".rpm", nsis: "-setup.exe", dmg: ".dmg" };
 
 /**
  * The release's name for a package Tauri built, one pattern for every file
  * (the Flatpak's, from scripts/flatpak/build.sh, too): HoploDex-<version>-
  * <x86_64|aarch64>, then `-setup.exe`, `.dmg`, `.deb` or `.rpm` (#209).
- * Throws on a name that isn't this version's Tauri name for that kind.
+ * Throws on a name that isn't this version's Tauri name for that kind, the
+ * architecture a release ships it for included.
  */
 export function releaseName(kind, file, version) {
   const base = path.basename(file);
-  const arch = base.includes(version) && TAURI_NAME[kind]?.exec(base)?.[1];
-  if (!arch) throw new Error(`${base} isn't Tauri's ${kind} for ${version}`);
-  return `HoploDex-${version}-${ARCH[arch]}${EXT[kind]}`;
+  const [tauri, ours] = SUFFIX[kind] ?? [];
+  if (!tauri || !base.includes(version) || !base.endsWith(tauri)) {
+    throw new Error(`${base} isn't Tauri's ${kind} for ${version}`);
+  }
+  return `HoploDex-${version}-${ours}`;
 }
 
 function run(cmd, args) {

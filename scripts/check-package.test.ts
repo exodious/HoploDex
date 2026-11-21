@@ -57,6 +57,13 @@ describe("release names (#209)", () => {
     );
   });
 
+  it("refuses an architecture a release doesn't ship that kind for", () => {
+    expect(() => releaseName("deb", "hoplodex_0.2.0_arm64.deb", "0.2.0")).toThrow();
+    expect(() => releaseName("rpm", "hoplodex-0.2.0-1.aarch64.rpm", "0.2.0")).toThrow();
+    expect(() => releaseName("nsis", "HoploDex_0.2.0_arm64-setup.exe", "0.2.0")).toThrow();
+    expect(() => releaseName("dmg", "HoploDex_0.2.0_x64.dmg", "0.2.0")).toThrow();
+  });
+
   it("refuses another version, another kind or a name it doesn't know", () => {
     expect(() => releaseName("deb", "hoplodex_0.1.0_amd64.deb", "0.2.0")).toThrow();
     expect(() => releaseName("rpm", "hoplodex_0.2.0_amd64.deb", "0.2.0")).toThrow();
