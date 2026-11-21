@@ -72,7 +72,9 @@ foreach ($a in $ps + "$Root\src-tauri\examples\real_input.ps1") { $inputFlags +=
 
 # Runs one part's example and logs its stderr; returns its exit code.
 function Invoke-Part([string]$Exe, [string[]]$Arguments, [string]$Log) {
-    $p = Start-Process -FilePath $Exe -PassThru -NoNewWindow -RedirectStandardError "$Log.stderr" -ArgumentList $Arguments
+    # Start-Process joins the arguments with spaces, unquoted.
+    $quoted = $Arguments | ForEach-Object { '"' + (($_ -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }
+    $p = Start-Process -FilePath $Exe -PassThru -NoNewWindow -RedirectStandardError "$Log.stderr" -ArgumentList $quoted
     # Windows PowerShell 5.1 reads a null ExitCode unless the process's handle
     # was taken while it ran.
     $null = $p.Handle

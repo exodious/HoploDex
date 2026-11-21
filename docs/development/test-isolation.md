@@ -102,5 +102,16 @@ of it:
   directory that is new, empty or holds the `.hoplodex-sandbox` marker it
   left there, refuses anything inside the real data, config or documents
   directory, and never touches the keyring.
+- The drop check's app part (`src-tauri/examples/app_drop_check.rs`) runs a
+  build without the `e2e` feature, so it can't move the app's directories.
+  On Windows (`scripts/windows/drop-check.ps1`) the app keeps its settings in
+  the user's own `%APPDATA%\io.github.exodious.HoploDex`, so run it as a user
+  who doesn't use HoploDex: the script refuses to run if that folder is there,
+  unless an earlier run left it (its `.drop-check` mark) with no
+  `machine.json` in it, and deletes only a folder it made. The app's web view
+  data and caches go to the user's `%LOCALAPPDATA%\io.github.exodious.HoploDex`
+  as usual. On macOS (`scripts/macos/drop-check.sh`) the app gets a `HOME` of
+  its own in the check's scratch folder. Its database and files are in a fresh
+  scratch folder on both.
 - The [development container](dev-container.md) has
   none of the host's app data at all.
