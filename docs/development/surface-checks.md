@@ -113,6 +113,11 @@ without `e2e` keeps its settings in the user's real `%APPDATA%`
 has no second part: the dev container's Xvfb session has no
 accessibility bus to find the page's controls with.
 
+The release workflow runs it on each OS, in `release.yml`'s surface jobs on
+GitHub's runners, so every release and dry run shows drops attaching and
+in-app drags refused there; the Windows runner's user has no HoploDex
+settings, so its app part runs.
+
 Logs and screenshots go to `e2e/screenshots-out/drop-check/`. Exit codes: 0
 passed, 1 no window (or, in the app part, no database or no way to the
 firearm's page), 3 usage, 4 a check failed, 5 (Windows) the settings folder
