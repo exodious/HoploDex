@@ -82,7 +82,8 @@ OS builds `src-tauri/examples/drop_check.rs` without the `e2e` feature and
 drives it with real input (`real_input.{py,swift,ps1}`'s `drag`): a file
 dragged from another process's window must be attachable, and links dragged
 out of the page, out of a second web view and back in from outside the window
-must not be (the example's header lists every case). Run it on every OS before
+must not be, nor reach the recorder as a drop at all (the example's header
+lists every case). Run it on every OS before
 a pull request that touches `drops/` or how drops are recorded, and whenever
 the web view engine is updated:
 
@@ -91,11 +92,31 @@ the web view engine is updated:
 - **macOS:** `scripts/macos/drop-check.sh`, from a Mac with the tart VM set up,
   as the PDF surface check runs.
 - **Windows:** `powershell -ExecutionPolicy Bypass -File
-  scripts\windows\drop-check.ps1`, in the signed-in desktop session (over SSH,
-  through `scripts\windows\gui.ps1`), at 100% scaling.
+  scripts\windows\drop-check.ps1 [-App EXE]`, in the signed-in desktop session
+  (over SSH, through `scripts\windows\gui.ps1`), at 100% scaling.
+
+On Windows and macOS the script then runs a second part,
+`src-tauri/examples/app_drop_check.rs` (#207): the app itself, as a release
+builds it (`npm run build`, then `cargo build --release --features
+custom-protocol`), or the one `-App` (Windows) or `DROP_CHECK_APP` (macOS)
+names, such as an installed one. It opens a database of one firearm, presses
+its way to that firearm's page through the accessibility tree (UI Automation,
+or AppKit's), drags a `.jpg` and a `.pdf` there, closes the app and reads the
+database back: both must be attached. Only this part drops onto the app's own
+page. On Windows the files come from File Explorer
+(`examples/explorer_source.ps1`), whose drag data isn't the stand-in source's
+(it answers `S_FALSE` for a format it lacks); on macOS from
+`drag_source.swift`, since the refusal there asks for the drag's source, not
+its data. On Windows, run it as a user who doesn't use HoploDex: a build
+without `e2e` keeps its settings in the user's real `%APPDATA%`
+([test isolation](test-isolation.md) says how the script guards them). Linux
+has no second part: the dev container's Xvfb session has no
+accessibility bus to find the page's controls with.
 
 Logs and screenshots go to `e2e/screenshots-out/drop-check/`. Exit codes: 0
-passed, 1 no window, 3 usage, 4 a check failed.
+passed, 1 no window (or, in the app part, no database or no way to the
+firearm's page), 3 usage, 4 a check failed, 5 (Windows) the settings folder
+is someone's.
 
 ## WebKit's sandbox on a Linux host
 

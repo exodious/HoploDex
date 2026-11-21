@@ -26,6 +26,8 @@
 //                              the same key, posted to the PID's process
 //                                   alone (CGEvent.postToPid), so no other app
 //                                   can receive it
+//   real_input type TEXT       type TEXT into the frontmost app, one
+//                                   character at a time
 //   real_input drag X1 Y1 X2 Y2 [VX VY]
 //                              press the left button at X1 Y1, drag to
 //                                   X2 Y2 in steps (by way of VX VY) and
@@ -156,6 +158,16 @@ case "find":
         found = true
     }
     if !found { exit(1) }
+case "type":
+    for unit in args[2].utf16 {
+        for down in [true, false] {
+            let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)!
+            event.flags = []
+            event.keyboardSetUnicodeString(stringLength: 1, unicodeString: [unit])
+            event.post(tap: .cghidEventTap)
+            usleep(30_000)
+        }
+    }
 case "key", "key-to":
     // "key" posts to the session, so the frontmost app gets it, whichever
     // that is when it arrives; "key-to" posts to one process, so no other app

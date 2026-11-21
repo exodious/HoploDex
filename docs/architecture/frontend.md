@@ -111,9 +111,13 @@ name a file the user didn't drop. A drag that starts in the app itself (out of
 the page, or out of the PDF surface) is not a drop of the user's files, and
 `drops::refuse_app_drags` keeps it from reaching the recorder with a path:
 on Linux by the drag's source widget being in the process, on macOS by its
-`draggingSource`, on Windows by Chromium's mark on a page's drag data. The
+`draggingSource`, on Windows by Chromium's mark on a page's drag data (only a
+data object that answers `S_OK` has it: File Explorer's answers `S_FALSE` for
+a format it lacks, #207). The
 [drop check](../development/surface-checks.md#drop-check) drags a file from another app and links out
-of the page with real input, in a build without the `e2e` feature. `read_attachment_file` judges the opened file's size
+of the page with real input, in a build without the `e2e` feature, and on
+Windows (from File Explorer) and macOS drops a photo and a PDF onto the app's
+own record page. `read_attachment_file` judges the opened file's size
 before reading any of it, its type before the rest (a document's from its name
 and first bytes, `document_types::classify_header`; a photo's from its first
 bytes alone, `photo::photo_type`), and reads no more than the size it admitted.
