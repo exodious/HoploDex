@@ -370,6 +370,8 @@ and never committed: Flathub's pipeline mirrors the metainfo's screenshots
 (addresses at the release's tag, which does not exist while the release is
 made), and a local build can't (research.md §4)._
 
+_Amended 2026-11-21: the repository lint also sets aside `appstream-external-screenshot-url`, which Flathub's linter raised against the same unmirrored addresses in the v0.1.0 release run, so `build.sh` adds three screenshot rules, not two; the committed file still holds two._
+
 ### `flathub.json`
 
 `{ "only-arches": ["x86_64"] }` (FR-025).

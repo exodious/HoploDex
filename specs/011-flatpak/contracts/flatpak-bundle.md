@@ -144,6 +144,7 @@ _Amended 2026-10-19 (011 T078): what the steps do that the table leaves out._
   `appstream-screenshots-not-mirrored-in-ostree`, which `build.sh` adds in a
   file under the state volume (the screenshots' addresses are at the release's
   tag, so a local build can't mirror them; research.md §4)._
+  _Amended 2026-11-21: the repository lint also sets aside `appstream-external-screenshot-url`, which Flathub's linter raised against the same unmirrored addresses in the v0.1.0 release run, so `build.sh` adds three screenshot rules, not two; the committed file still holds two._
 - _The notices comparison builds `NOTICES.txt` outside the Flatpak with the same
   lockfiles and fails if it differs from the bundle's, apart from the copyright
   years line (FR-019)._
