@@ -176,7 +176,7 @@ _Amended 2026-11-21: **Input**: `{ awaitingId: number; backupFolderToken?: strin
 
 ### `check_backup` (FR-019)
 
-_Amended 2026-11-21: a `backupPath` that names a server or a device (`\\server\share`, `\\?\`, `\\.\`, or the same with forward slashes) is checked only when it is in the backup folder the backend keeps for the database (the open one's, or the recent entry's for `databasePath`), where the dialog lists backups from; otherwise `VALIDATION_ERROR`, before anything looks at it. `databasePath` follows 003's rule for `open_database`'s path._
+_Amended 2026-11-21: a `backupPath` that names a server or a device (`\\server\share`, `\\?\`, `\\.\`, `\??\`, or the same with forward slashes) is checked only when it is in the backup folder the backend keeps for the database (the open one's, or the recent entry's for `databasePath`), where the dialog lists backups from; otherwise `VALIDATION_ERROR`, before anything looks at it. `databasePath` follows 003's rule for `open_database`'s path._
 
 - **Input**: `{ backupPath: string; passphrase: string; databasePath?: string }`.
 - **Output**: `{ upgradeTo: string | null }`: the version the backup will be
