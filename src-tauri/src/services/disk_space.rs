@@ -124,11 +124,12 @@ fn volume_of(dir: &Path) -> Option<Volume> {
     }
 }
 
-/// Whether the folder `dir` is on another computer: a network share. On
+/// Whether the folder `dir` may be on another computer: a network share. On
 /// Windows a `\\server\share` path or a drive letter mapped to one; on Linux
-/// an NFS, SMB, AFS, Ceph, Coda or 9P mount (not FUSE, which is as often a
-/// local disk); on macOS a volume not marked local. A folder that can't be
-/// looked at is not.
+/// an NFS, SMB, AFS, Ceph, Coda or 9P mount, or any FUSE mount, since that is
+/// how gvfs, kio-fuse, sshfs and the Flatpak document portal reach a share;
+/// on macOS a volume not marked local. A folder that can't be looked at is
+/// not.
 pub fn is_on_network(dir: &Path) -> bool {
     // The E2E build's stand-in for a share, which no test machine mounts.
     // Never in a release build (`scripts/check-no-webdriver.mjs`).
@@ -141,10 +142,11 @@ pub fn is_on_network(dir: &Path) -> bool {
     on_network(dir)
 }
 
+/// Whether a Linux filesystem of type `kind` (`statfs`'s `f_type`) may be on
+/// another computer.
 #[cfg(target_os = "linux")]
-fn on_network(dir: &Path) -> bool {
-    use std::os::unix::ffi::OsStrExt;
-    const NETWORK: [u32; 9] = [
+fn network_kind(kind: u32) -> bool {
+    const NETWORK: [u32; 10] = [
         0x6969,      // NFS
         0x517B,      // SMB
         0xFF53_4D42, // CIFS
@@ -154,7 +156,14 @@ fn on_network(dir: &Path) -> bool {
         0x00C3_6400, // Ceph
         0x7375_7245, // Coda
         0x0102_1997, // 9P
+        0x6573_5546, // FUSE
     ];
+    NETWORK.contains(&kind)
+}
+
+#[cfg(target_os = "linux")]
+fn on_network(dir: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
     let Ok(path) = std::ffi::CString::new(dir.as_os_str().as_bytes()) else { return false };
     let mut stat = std::mem::MaybeUninit::<libc::statfs>::uninit();
     // SAFETY: `path` is NUL-terminated and `stat` is written by a call that
@@ -164,7 +173,7 @@ fn on_network(dir: &Path) -> bool {
     }
     let kind = unsafe { stat.assume_init() }.f_type;
     #[allow(clippy::unnecessary_cast)] // `f_type`'s type differs between targets.
-    NETWORK.contains(&(kind as u32))
+    network_kind(kind as u32)
 }
 
 #[cfg(target_os = "macos")]
@@ -248,6 +257,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(!is_on_network(dir.path()));
         assert!(!is_on_network(&dir.path().join("not made")));
+    }
+
+    /// The magic numbers are the kernel's (`include/uapi/linux/magic.h`).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_fuse_or_network_mount_may_be_on_another_computer_and_a_local_disk_is_not() {
+        for remote in [0x6573_5546, 0x6969, 0xFF53_4D42] {
+            assert!(network_kind(remote), "{remote:#x}");
+        }
+        for local in [0xEF53, 0x0102_1994, 0x9123_683E, 0x5846_5342, 0x794C_7630] {
+            assert!(!network_kind(local), "{local:#x}");
+        }
     }
 
     #[cfg(windows)]

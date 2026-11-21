@@ -132,6 +132,9 @@ collection data, top-bar tabs or counts are shown.
   at launch, or the database just closed or locked (FR-033).
   - **Unavailable** rows (file missing) are dimmed with "Not found at this
     location" and offer **Locate…** (file picker) and **Remove from list**.
+    _Amended 2026-11-21: **Locate…**'s file picker is opened by the backend
+    (`choose_database_file`), which keeps its answer, so a file on a server
+    can be located ([contracts](tauri-commands.md#locate_database))._
   - Every row offers **Remove from list** in its overflow, with the note "The
     database file is not deleted." (FR-012, US2-5).
 - **Selected row, what this computer knows** (FR-040): below the name and

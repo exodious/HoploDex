@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use crate::commands::CommandError;
 use crate::commands::accessories::ops as accessory_ops;
@@ -2631,53 +2631,57 @@ pub async fn export_collection(
     input: ExportCollectionInput,
     app: tauri::AppHandle,
     session: ScopedSession,
-    reach: tauri::State<'_, Arc<Reach>>,
-    consent: tauri::State<'_, Arc<dyn Consent>>,
 ) -> Result<ExportResult, CommandError> {
     if !session.is_current() {
         return Err(CommandError::database_closed());
     }
     let format = parse_format(&input.format)?;
-    ops::export_to_chosen_folder(
-        &session.session,
-        session.id,
-        &input.folder_token,
-        &reach,
-        |folder| {
-            ops::confirm_export_folder(
-                &session.session,
-                session.id,
-                &**consent,
-                folder,
-                disk_space::is_on_network(folder),
-                &input.scope,
-                input.filter.as_ref(),
-            )?;
-            // Registered, so a sleep stops it and the idle clock pauses meanwhile.
-            let operation = session.session.operations().begin(OperationKind::Export, None)?;
-            session.read(|conn| {
-                let records = ops::export_records(conn, &input.scope, input.filter.as_ref())?;
-
-                let base_name =
-                    format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-                ops::export_collection_stoppable(
-                    conn,
+    tauri::async_runtime::spawn_blocking(move || {
+        let reach = app.state::<Arc<Reach>>();
+        let consent = app.state::<Arc<dyn Consent>>();
+        ops::export_to_chosen_folder(
+            &session.session,
+            session.id,
+            &input.folder_token,
+            &reach,
+            |folder| {
+                ops::confirm_export_folder(
+                    &session.session,
+                    session.id,
+                    &**consent,
                     folder,
-                    &base_name,
-                    format,
-                    &records,
-                    &mut |processed, total| {
-                        let _ = app.emit(
-                            "export_collection:progress",
-                            ProgressPayload { processed, total },
-                        );
-                    },
-                    &|| operation.is_cancelled(),
-                    &reach,
-                )
-            })
-        },
-    )
+                    disk_space::is_on_network(folder),
+                    &input.scope,
+                    input.filter.as_ref(),
+                )?;
+                // Registered, so a sleep stops it and the idle clock pauses meanwhile.
+                let operation = session.session.operations().begin(OperationKind::Export, None)?;
+                session.read(|conn| {
+                    let records = ops::export_records(conn, &input.scope, input.filter.as_ref())?;
+
+                    let base_name =
+                        format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+                    ops::export_collection_stoppable(
+                        conn,
+                        folder,
+                        &base_name,
+                        format,
+                        &records,
+                        &mut |processed, total| {
+                            let _ = app.emit(
+                                "export_collection:progress",
+                                ProgressPayload { processed, total },
+                            );
+                        },
+                        &|| operation.is_cancelled(),
+                        &reach,
+                    )
+                })
+            },
+        )
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not export: {e}")))?
 }
 
 #[derive(Debug, Clone, Deserialize)]

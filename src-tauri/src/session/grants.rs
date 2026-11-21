@@ -87,15 +87,19 @@ pub fn not_picked() -> CommandError {
 }
 
 /// Whether `path` names a server or a device rather than a place on this
-/// computer's own drives: `\\server\share`, `\\?\`, `\\.\` and their
-/// forward-slash spellings. Only a location Rust holds (a chooser answer, the
-/// recent list, a folder it derived) may take that form; one the page names
-/// is refused before anything looks at it, since even a look reaches the
-/// server. Checked by spelling, on every OS, so it is the same everywhere.
+/// computer's own drives: `\\server\share`, `\\?\`, `\\.\`, the NT
+/// namespace's `\??\` and their forward-slash spellings. Only a location Rust
+/// holds (a chooser answer, the recent list, a folder it derived) may take
+/// that form; one the page names is refused before anything looks at it,
+/// since even a look reaches the server. Checked by spelling, on every OS, so it is the same everywhere.
 pub fn is_server_or_device(path: &Path) -> bool {
     let text = path.as_os_str().to_string_lossy();
     let mut start = text.chars();
-    matches!((start.next(), start.next()), (Some('\\' | '/'), Some('\\' | '/')))
+    match (start.next(), start.next(), start.next(), start.next()) {
+        (Some('\\' | '/'), Some('\\' | '/'), ..) => true,
+        (Some('\\' | '/'), Some('?'), Some('?'), Some('\\' | '/')) => true,
+        _ => false,
+    }
 }
 
 /// The fixed refusal of a server or device path the page named.
@@ -292,10 +296,15 @@ mod tests {
             r"\\.\PhysicalDrive0",
             "//server/share/a.hoplodex",
             r"/\server\share",
+            r"\??\UNC\server\share\a.hoplodex",
+            r"\??\PhysicalDrive0",
+            "/??/UNC/server/share/a.hoplodex",
         ] {
             assert!(is_server_or_device(Path::new(path)), "{path}");
         }
-        for path in [r"C:\Users\a.hoplodex", "/home/a/a.hoplodex", r"\Users\a", "a", ""] {
+        for path in
+            [r"C:\Users\a.hoplodex", "/home/a/a.hoplodex", r"\Users\a", "/??", "/?/a", "a", ""]
+        {
             assert!(!is_server_or_device(Path::new(path)), "{path}");
         }
     }

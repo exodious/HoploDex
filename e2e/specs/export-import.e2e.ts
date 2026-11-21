@@ -183,7 +183,7 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     await search("");
   });
 
-  it("asks in the native confirmation, naming the folder and the records, before an export to a network folder", async () => {
+  it("asks in the native confirmation, naming the folder and the records, before an export to a folder that may be on another computer", async () => {
     // An E2E build takes this folder to be on a network share (sandbox.ts).
     const share = path.join(process.env.HOPLODEX_E2E_NETWORK_FOLDER!, "Exports");
     fs.mkdirSync(share, { recursive: true });
@@ -200,8 +200,8 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     });
     const consent = logLines("HOPLODEX_E2E_CONSENT_LOG");
     expect(consent).toHaveLength(asked + 1);
-    expect(consent.at(-1)).toContain("Export to a network folder?");
-    expect(consent.at(-1)).toContain(`“${share}” is on another computer.`);
+    expect(consent.at(-1)).toContain("Export to another computer?");
+    expect(consent.at(-1)).toContain(`“${share}” may be on another computer.`);
     expect(consent.at(-1)).toMatch(/HoploDex will write \d+ records? there/);
     expect(fs.readdirSync(share).some((f) => f.endsWith(".csv"))).toBe(true);
     await clickButton("Done");

@@ -1,12 +1,13 @@
 //! The native confirmation's text and the session's consent rule
 //! (007 research.md §16, §17; 007 contracts/ui-document-preview.md §4).
 //!
-//! Handing a document to another app, or an export to a network folder, is
-//! decided by the user in a native dialog that Rust shows, with text Rust
-//! builds from the stored file name or the chosen folder, so a compromised web
-//! view can neither answer it nor put another name in front of the user. [`Consent`] is the seam: the app's [`DialogConsent`] shows the
-//! dialog, an E2E build's `E2eConsent` answers from the environment, and the
-//! tests' fake records what it was asked.
+//! Handing a document to another app, or an export to a folder that may be on
+//! another computer, is decided by the user in a native dialog that Rust
+//! shows, with text Rust builds from the stored file name or the chosen
+//! folder, so a compromised web view can neither answer it nor put another
+//! name in front of the user. [`Consent`] is the seam: the app's
+//! [`DialogConsent`] shows the dialog, an E2E build's `E2eConsent` answers
+//! from the environment, and the tests' fake records what it was asked.
 
 use crate::models::document_opening::DocumentOpening;
 
@@ -36,7 +37,8 @@ pub enum ConsentRequest {
     /// Choosing "Open in another app" as this computer's setting
     /// (`set_document_opening`).
     Setting,
-    /// An export to a folder on a network share (`export_collection`).
+    /// An export to a folder that may be on another computer
+    /// (`export_collection`).
     NetworkExport {
         /// The folder, as the chooser gave it.
         folder: String,
@@ -68,7 +70,7 @@ impl ConsentRequest {
                 format!("Open \u{201C}{}\u{201D} in another app?", display_name(name))
             }
             Self::Setting => "Open documents in another app?".to_owned(),
-            Self::NetworkExport { .. } => "Export to a network folder?".to_owned(),
+            Self::NetworkExport { .. } => "Export to another computer?".to_owned(),
         }
     }
 
@@ -108,7 +110,7 @@ impl ConsentRequest {
                     n => format!("{n} records"),
                 };
                 format!(
-                    "\u{201C}{}\u{201D} is on another computer. HoploDex will write {records} \
+                    "\u{201C}{}\u{201D} may be on another computer. HoploDex will write {records} \
                      there, unprotected: anyone who can read that folder can open the export, \
                      including whoever runs the computer that shares it.",
                     display_name(folder)

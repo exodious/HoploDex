@@ -869,3 +869,59 @@ fn a_server_path_opens_only_from_the_chooser_rust_opened_or_the_recent_list() {
         "VALIDATION_ERROR"
     );
 }
+
+/// Locate… takes a server or device path only as the chooser Rust opened
+/// answered it, and uses that answer up; the entry then opens from the recent
+/// list without another pick (code scanning alert #85). Spelled as on Linux
+/// and macOS, as above.
+#[cfg(unix)]
+#[test]
+fn a_server_path_is_located_only_from_the_chooser_rust_opened() {
+    let world = World::new();
+    world.create_closed();
+    let found = world.dir.path().join("found").join("Mine.hoplodex");
+    std::fs::create_dir_all(found.parent().unwrap()).unwrap();
+    std::fs::rename(world.path(), &found).unwrap();
+    let spelled = format!("/{}", found.to_string_lossy());
+    let locate = || {
+        ops::locate_database(
+            &world.session,
+            &world.machine,
+            &world.path_text(),
+            &spelled,
+            &Reach::Unconfined,
+        )
+    };
+
+    assert_eq!(locate().unwrap_err().code, "VALIDATION_ERROR");
+    assert!(world.machine.recent_entry(&world.path()).is_some(), "the entry is where it was");
+
+    world
+        .session
+        .hold_pick(SessionId::NONE, PickKind::DatabaseFile, spelled.clone().into())
+        .unwrap();
+    let located = locate().unwrap();
+    assert_eq!(located.path, spelled);
+    assert!(located.available);
+    assert!(
+        world
+            .session
+            .take_pick_at(SessionId::NONE, PickKind::DatabaseFile, std::path::Path::new(&spelled))
+            .is_err(),
+        "the pick is used up"
+    );
+
+    let script = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    ops::open_database_requested(
+        &world.session,
+        &world.machine,
+        &ScriptedDialog(Arc::clone(&script)),
+        &spelled,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
+    assert!(world.session.is_open());
+    world.close();
+}

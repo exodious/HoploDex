@@ -135,9 +135,9 @@ shows its path (`ChosenPathField` in the import, export and create dialogs),
 and the commands take the tokens. One that finishes uses them up; one that
 fails leaves them, so the dialog can try again (the upgrade picks again). The
 settings dialog sends `current` for the saved location. **Open another database
-file…** uses `choose_database_file` and opens the picked path. Don't add a path
-field back, or a command that takes a file or folder the page names. Only
-**Locate…** still uses the page's own file dialog (`locate_database`). An E2E build answers the chooser
+file…** and **Locate…** use `choose_database_file` and send the picked path
+(`open_database`, `locate_database`). Don't add a path field back, or a command
+that takes a file or folder the page names. An E2E build answers the chooser
 from a queue (`answerChooser` in `e2e/support/ui.ts`) and hands the
 `tauri://drag-drop` events the specs send to `drops::record`, the recorder a
 real drop goes through.

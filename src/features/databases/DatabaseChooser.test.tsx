@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { formatBytes } from "../../lib/bytes";
 import { formatDateTime, formatRecentDay, formatRecentMoment } from "../../lib/dates";
 import { CommandFailure } from "../../services/tauriClient";
@@ -12,7 +11,6 @@ import * as databasesService from "./databasesService";
 import { setTroubleshootingLog } from "../app/troubleshootingLog";
 import type { ChooserState, RecentDatabase, UpgradeProgress } from "./types";
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./databasesService");
 vi.mock("../app/troubleshootingLog");
 
@@ -280,7 +278,7 @@ describe("DatabaseChooser (003 US2)", () => {
       .mockReset()
       .mockResolvedValue({ removed: true });
     vi.mocked(databasesService.locateDatabase).mockReset();
-    vi.mocked(openFileDialog).mockReset();
+    vi.mocked(databasesService.chooseDatabaseFile).mockReset();
   });
 
   function failing(code: string, details?: Record<string, unknown>) {
@@ -384,7 +382,7 @@ describe("DatabaseChooser (003 US2)", () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ recent: [main, { ...shared, available: false }] }),
     );
-    vi.mocked(openFileDialog).mockResolvedValue(found);
+    vi.mocked(databasesService.chooseDatabaseFile).mockResolvedValue({ token: "t1", path: found });
     vi.mocked(databasesService.locateDatabase).mockResolvedValue({ ...shared, path: found });
     renderChooser();
 
@@ -406,7 +404,7 @@ describe("DatabaseChooser (003 US2)", () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ recent: [main, { ...shared, available: false }] }),
     );
-    vi.mocked(openFileDialog).mockResolvedValue(found);
+    vi.mocked(databasesService.chooseDatabaseFile).mockResolvedValue({ token: "t1", path: found });
     vi.mocked(databasesService.locateDatabase).mockRejectedValue(
       new CommandFailure({
         code: "LOCATION_OUT_OF_REACH",
@@ -434,7 +432,7 @@ describe("DatabaseChooser (003 US2)", () => {
     vi.mocked(databasesService.getChooserState).mockResolvedValue(
       chooserState({ recent: [main, { ...shared, available: false }] }),
     );
-    vi.mocked(openFileDialog).mockResolvedValue(picked);
+    vi.mocked(databasesService.chooseDatabaseFile).mockResolvedValue({ token: "t1", path: picked });
     vi.mocked(databasesService.locateDatabase).mockResolvedValue({ ...shared, path: located });
     renderChooser();
 
@@ -488,7 +486,6 @@ describe("DatabaseChooser (003 US2)", () => {
     await user.click(await screen.findByRole("button", { name: "Open another database file…" }));
 
     expect(databasesService.chooseDatabaseFile).toHaveBeenCalledOnce();
-    expect(openFileDialog).not.toHaveBeenCalled();
     const field = await findOpen("Club armory");
     await waitFor(() => expect(field).toHaveFocus());
     // Nothing is known about a file this computer hasn't opened (003 FR-040).
@@ -1253,7 +1250,7 @@ describe("DatabaseChooser and an upgrade (009 US3)", () => {
         sendProgress = handler;
         return () => {};
       });
-    vi.mocked(openFileDialog).mockReset();
+    vi.mocked(databasesService.chooseDatabaseFile).mockReset();
   });
 
   /** Opens "Main collection" with a database that waits for its upgrade. */

@@ -228,7 +228,7 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-04: **Input**: `{ path: string; useSavedPassphrase?: boolean; rememberPassphrase?: boolean; takeOver?: boolean }`, with no `passphrase`. Without `useSavedPassphrase`, the native passphrase dialog asks for it ("Open <name>", or "Take over <name>?" naming the computer the last open found it open on when `takeOver` is set), stays up while each passphrase is tried, and asks again under its field for a wrong one. Cancel before any try is `PASSPHRASE_CANCELLED`; after a wrong passphrase it is that `PASSPHRASE_INCORRECT`, with `backupsAvailable` as before._
 
-  _Amended 2026-11-21: a `path` that names a server or a device (`\\server\share`, `\\?\`, `\\.\`, or the same with forward slashes) is opened only when it is on the recent list as a database that opened there, or when the user picked it in the new unscoped command `choose_database_file` (no input; the system's file chooser opened from Rust while nothing is open, returning `{ token: string; path: string } | null`). Otherwise it is `VALIDATION_ERROR`, before anything looks at the path. "Open another database file…" uses `choose_database_file` for every file, and sends its `path`; a failed open leaves the pick for another try._
+  _Amended 2026-11-21: a `path` that names a server or a device (`\\server\share`, `\\?\`, `\\.\`, `\??\`, or the same with forward slashes) is opened only when it is on the recent list, or when the user picked it in the new unscoped command `choose_database_file` (no input; the system's file chooser opened from Rust while nothing is open, returning `{ token: string; path: string } | null`). Otherwise it is `VALIDATION_ERROR`, before anything looks at the path. "Open another database file…" uses `choose_database_file` for every file, and sends its `path`; a failed open leaves the pick for another try. The same holds for `databasePath` in `list_backups`, `check_backup` and `restore_backup`._
 
   _Amended 2026-11-06: `takeOver` always asks in the native dialog, even with `useSavedPassphrase`, which it then ignores: typing the passphrase is the take-over's confirmation (FR-032), so the page can't skip it. A marker with a blank machine name reads as "another computer", in the message and in `machineName`._
 
@@ -236,12 +236,11 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
 - Also deletes the saved keyring passphrase for it (FR-018). Never touches the file.
 
-  _Amended 2026-11-21: a `path` that names a server or a device is taken only when it is on the recent list as a database that opened there, as for `open_database`; otherwise `VALIDATION_ERROR`. The same holds for `databasePath` in `list_backups`, `check_backup` and `restore_backup`, and for `forget_saved_passphrase`'s `path`._
-
 ### `locate_database`
 - **Input**: `{ path: string; newPath: string }` → **Output**: `RecentDatabase`
 - Replaces an unavailable entry's path (FR-012) and keeps its other fields, except `leftModifiedAt`, which is forgotten: the file found may be a copy (FR-040).
   _Amended 2026-10-09 ([#62](https://github.com/exodious/HoploDex/issues/62)): the entry is also marked located (in `machine.json`, not in `RecentDatabase`) until the database opens at the new path. Until then `restore_backup` won't replace the file there, since nothing yet shows it is the database the entry's id and backup folder were cached from._
+  _Amended 2026-11-21: a `newPath` that names a server or a device is taken only when the user picked it in `choose_database_file`, which uses that pick up; otherwise it is `VALIDATION_ERROR`, before anything looks at the path. **Locate…** uses `choose_database_file` for every file, and an entry located there opens from the recent list._
 
 ---
 

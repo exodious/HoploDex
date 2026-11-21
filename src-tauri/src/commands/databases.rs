@@ -502,13 +502,11 @@ pub mod ops {
     }
 
     /// Refuses a database path the page names that names a server or a
-    /// device (`\\server\share`, `\\?\`, `\\.\`) unless it is on the recent
-    /// list as a database that opened there: an entry the page re-located
-    /// (`locate_database`) doesn't count until it has.
+    /// device (`\\server\share`, `\\?\`, `\\.\`, `\??\`) unless it is on the
+    /// recent list, which takes such a path only from the user's own pick.
     pub fn known_location(machine: &MachineSettings, path: &str) -> Result<(), CommandError> {
         let path = Path::new(path);
-        let opened_here = || machine.recent_entry(path).is_some_and(|entry| !entry.located);
-        if !is_server_or_device(path) || opened_here() {
+        if !is_server_or_device(path) || machine.recent_entry(path).is_some() {
             return Ok(());
         }
         Err(not_a_local_path())
@@ -866,14 +864,24 @@ pub mod ops {
     }
 
     /// Points an unavailable recent entry at where the user found its file
-    /// (003 FR-012), keeping everything else about it.
+    /// (003 FR-012), keeping everything else about it. A `new_path` that names
+    /// a server or a device is taken only as the user's own pick in
+    /// `choose_database_file`, which this takes, and is refused before
+    /// anything looks at it otherwise.
     pub fn locate_database(
+        session: &Session,
         machine: &MachineSettings,
         path: &str,
         new_path: &str,
         reach: &Reach,
     ) -> Result<RecentDatabase, CommandError> {
-        let new_path = reach.check(Path::new(new_path), Need::DatabaseFolder)?;
+        let new_path = Path::new(new_path);
+        if is_server_or_device(new_path) {
+            session
+                .take_pick_at(SessionId::NONE, PickKind::DatabaseFile, new_path)
+                .map_err(|_| not_a_local_path())?;
+        }
+        let new_path = reach.check(new_path, Need::DatabaseFolder)?;
         machine
             .locate_recent(Path::new(path), &new_path)
             .map(|entry| recent_database(entry, reach))
@@ -1575,7 +1583,6 @@ pub async fn remove_recent_database(
     path: String,
     machine: State<'_, MachineSettings>,
 ) -> Result<RecentRemoved, CommandError> {
-    ops::known_location(&machine, &path)?;
     Ok(ops::remove_recent_database(&machine, &path))
 }
 
@@ -1583,10 +1590,11 @@ pub async fn remove_recent_database(
 pub async fn locate_database(
     path: String,
     new_path: String,
+    session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
     reach: State<'_, Arc<Reach>>,
 ) -> Result<RecentDatabase, CommandError> {
-    ops::locate_database(&machine, &path, &new_path, &reach)
+    ops::locate_database(&session, &machine, &path, &new_path, &reach)
 }
 
 /// Where the page-1 probe of a passphrase check goes (003 research.md §1a).
@@ -1623,9 +1631,6 @@ pub async fn forget_saved_passphrase(
     session: State<'_, Session>,
     machine: State<'_, MachineSettings>,
 ) -> Result<PassphraseSaved, CommandError> {
-    if let Some(path) = &path {
-        ops::known_location(&machine, path)?;
-    }
     let target = Target::from_request(path.as_deref(), request.headers())?;
     ops::forget_saved_passphrase(&session, &machine, target)
 }

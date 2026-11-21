@@ -104,8 +104,8 @@ insurance status, valuation, attachment storage, secure delete,
 - and for 007 `document_types` (the one allowlist: `classify` checks a file's
   content at attach, preview and open), `consent` (`Consent`, `needs_consent`,
   the native confirmation's text before a document goes to another app, and
-  before an export to a network folder, which `disk_space::is_on_network`
-  tells) and
+  before an export to a folder that may be on another computer, which
+  `disk_space::is_on_network` tells: a network or FUSE mount on Linux) and
   `preview/` ([Document preview](preview.md));
 - `chooser` (`Chooser`: the native file and folder choosers Rust opens for the
   import, the export, a new database's folder, a database file, the backup
