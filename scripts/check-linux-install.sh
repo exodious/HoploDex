@@ -13,8 +13,8 @@
 #   scripts/check-linux-install.sh IMAGE PACKAGE
 #
 # e.g. fedora:45 with the .rpm, ubuntu:24.04 with the .deb. Runs the image
-# with docker, or podman where docker isn't installed (CONTAINER_ENGINE
-# picks one), and calls itself inside it with --inside.
+# with docker, or podman where docker isn't installed, and calls itself
+# inside it with --inside.
 set -eu
 
 if [ "${1:-}" != --inside ]; then
@@ -22,7 +22,7 @@ if [ "${1:-}" != --inside ]; then
   image=$1
   pkg=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
   self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
-  engine=${CONTAINER_ENGINE:-$(command -v docker >/dev/null && echo docker || echo podman)}
+  engine=$(command -v docker >/dev/null && echo docker || echo podman)
   exec "$engine" run --rm \
     -v "$pkg:/check/$(basename "$pkg"):ro" -v "$self:/check/check.sh:ro" \
     "$image" sh /check/check.sh --inside "/check/$(basename "$pkg")"
