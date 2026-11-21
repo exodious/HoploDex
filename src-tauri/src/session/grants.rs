@@ -95,11 +95,11 @@ pub fn not_picked() -> CommandError {
 pub fn is_server_or_device(path: &Path) -> bool {
     let text = path.as_os_str().to_string_lossy();
     let mut start = text.chars();
-    match (start.next(), start.next(), start.next(), start.next()) {
-        (Some('\\' | '/'), Some('\\' | '/'), ..) => true,
-        (Some('\\' | '/'), Some('?'), Some('?'), Some('\\' | '/')) => true,
-        _ => false,
-    }
+    matches!(
+        (start.next(), start.next(), start.next(), start.next()),
+        (Some('\\' | '/'), Some('\\' | '/'), ..)
+            | (Some('\\' | '/'), Some('?'), Some('?'), Some('\\' | '/'))
+    )
 }
 
 /// The fixed refusal of a server or device path the page named.
