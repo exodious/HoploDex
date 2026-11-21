@@ -34,6 +34,21 @@ needs Automation access that the VM's session doesn't have, and fails
 ("failed to run bundle_dmg.sh") without it. `node scripts/check-package.mjs deb|rpm|nsis|dmg <file>`
 checks a built package.
 
+The `.deb` and `.rpm` declare every runtime dependency in `bundle.linux`'s
+`deb.depends` and `rpm.depends` (#208): Tauri builds them without
+`dpkg-shlibdeps` or `rpmbuild`, so nothing adds a library on its own, and it
+appends only WebKitGTK and GTK. The `.rpm` names each library the binary links
+by its soname (`libcrypto.so.3()(64bit)`), so one package resolves on Fedora 44
+(`openssl-libs`) and 45 (`openssl3-libs`); the `.deb` names the packages
+`dpkg-shlibdeps -O` gives on `ubuntu-24.04`, the build host, whose glibc sets
+the floor. Both add `xdg-utils`, for the `xdg-open` that opens a document in
+another app outside the Flatpak. A Secret Service provider isn't declared,
+since HoploDex works without one. When the binary links a new library, add it
+to both lists. `scripts/check-linux-install.sh <image> <package>` installs a
+package on a clean container image (docker, or podman) and fails if a library
+is missing or a linked one isn't declared; CI runs it on Fedora 44 and 45 and
+Ubuntu 24.04 and 26.04.
+
 `npm run build` also writes the third-party notices, `dist/notices.json` and
 `dist/NOTICES.txt`, for the build's target, and fails when they can't be made
 (see [License notices](licenses.md#license-notices)). Run it before `test:e2e` or
