@@ -42,6 +42,7 @@ mod document_types_test;
 mod entry_suggestions_test;
 mod entry_text_test;
 mod export_test;
+mod feature_guards_test;
 mod file_swap_test;
 mod firearm_lifecycle_test;
 mod fts_search_test;

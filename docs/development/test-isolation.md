@@ -70,7 +70,10 @@ of it:
   `e2e` feature, which includes `mock-keyring`, an in-memory keyring for saved
   passphrases, since a headless session can't unlock a real one. The harness keeps it in
   `keyring.json` in the sandbox (`HOPLODEX_E2E_KEYRING_FILE`) so a remembered
-  passphrase survives a relaunch. A computer without a keyring is tested in
+  passphrase survives a relaunch. `services/keyring.rs` won't compile
+  `mock-keyring` with Tauri's `custom-protocol` unless `e2e` brings it, and
+  the variable's name is one of the markers `scripts/check-no-webdriver.mjs`
+  looks for in a shipped binary. A computer without a keyring is tested in
   Rust and Vitest, not in E2E (`tests/keyring_test.rs`,
   `DatabaseChooser.test.tsx`, `DatabaseSettingsDialog.test.tsx`).
 - A sandbox is a `hoplodex-e2e-XXXXXX` directory in the system's temp

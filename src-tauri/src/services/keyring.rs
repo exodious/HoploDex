@@ -29,6 +29,19 @@ const USER_PREFIX: &str = "passphrase:";
 /// keyring answers at all.
 const PROBE_USER: &str = "passphrase:availability-check";
 
+// `mock-keyring` swaps the OS keyring for an in-memory store that
+// `HOPLODEX_E2E_KEYRING_FILE` can load from a plain file, so it must never
+// reach a build that holds a user's saved passphrases. `e2e` brings it with
+// the rest of an E2E build, which `scripts/check-no-webdriver.mjs` keeps out of
+// shipped ones; alone it is for `cargo test` builds. `not(dev)` is
+// tauri-build's: Tauri's `custom-protocol` is on, which `tauri build` turns on
+// directly, without the app's own `custom-protocol` feature.
+#[cfg(all(feature = "mock-keyring", not(feature = "e2e"), not(dev)))]
+compile_error!(
+    "the `mock-keyring` feature is for `cargo test` and E2E builds only: never with \
+     `custom-protocol` (the app's or Tauri's) unless `e2e` brings it"
+);
+
 /// Every store's entry is keyring-core's: the `keyring` crate's own `Entry` is a
 /// wrapper that, on its first use, makes the Secret Service the default store,
 /// which a Flatpak must never reach (011 FR-006).
