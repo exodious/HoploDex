@@ -47,19 +47,11 @@ fn parse_csp(csp: &Value) -> BTreeMap<String, Vec<String>> {
     directives
 }
 
-/// Sources that stay on the device: the app's own origin, inline data, the
-/// local asset and IPC protocols. Anything else (a wildcard, a bare
-/// `http:`/`https:`/`ws:`, or a remote host) is a way out.
-const LOCAL_SOURCES: &[&str] = &[
-    "'self'",
-    "'none'",
-    "data:",
-    "blob:",
-    "asset:",
-    "ipc:",
-    "http://asset.localhost",
-    "http://ipc.localhost",
-];
+/// Sources that stay on the device: the app's own origin, inline data and the
+/// IPC protocol. Anything else (a wildcard, a bare `http:`/`https:`/`ws:`, a
+/// remote host, or the asset protocol, which is off) is a way out.
+const LOCAL_SOURCES: &[&str] =
+    &["'self'", "'none'", "data:", "blob:", "ipc:", "http://ipc.localhost"];
 
 /// The dev server the frontend is served from under `tauri dev`.
 const DEV_SERVER_SOURCES: &[&str] = &["http://localhost:1420", "ws://localhost:1420"];

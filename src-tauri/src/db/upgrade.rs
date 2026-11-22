@@ -55,10 +55,12 @@ use crate::services::machine_settings::MachineIdentity;
 
 // `upgrade-test-steps` compiles in forced failures and test-only steps, so it
 // must never reach a build that opens a user's files (009 research.md §14).
-#[cfg(all(feature = "upgrade-test-steps", any(feature = "custom-protocol", feature = "e2e")))]
+// `not(dev)` is tauri-build's: Tauri's `custom-protocol` is on, which `tauri
+// build` turns on directly, without the app's own `custom-protocol` feature.
+#[cfg(all(feature = "upgrade-test-steps", any(not(dev), feature = "e2e")))]
 compile_error!(
     "the `upgrade-test-steps` feature is for `cargo test` builds only: never with `custom-protocol` \
-     or `e2e`"
+     (the app's or Tauri's) or `e2e`"
 );
 
 /// Calls the test hooks registered for a `Point` on the database in a

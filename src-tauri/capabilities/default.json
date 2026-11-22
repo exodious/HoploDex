@@ -4,9 +4,9 @@
   "description": "Capabilities for the main HoploDex web view (named by webview: a window's capabilities reach every web view in it, including the PDF surface)",
   "webviews": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-set-title",
-    "dialog:default",
     "allow-get-chooser-state",
     "allow-create-database",
     "allow-open-database",

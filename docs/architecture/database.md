@@ -21,8 +21,10 @@ open marker.
 
 `db::upgrade::testing` (forced failures, test-only steps) exists only with
 `upgrade-test-steps`, which `test-kdf` turns on and the release
-`performance_test` needs alone, and which `custom-protocol` and `e2e` refuse to
-compile with.
+`performance_test` needs alone, and which Tauri's `custom-protocol` and `e2e`
+refuse to compile with. `tauri build` turns on Tauri's `custom-protocol` without
+the app's own feature, so both guards test tauri-build's `dev` cfg, which is
+set only while it is off.
 
 A policy's name is unique ignoring A-Z case and surrounding spaces
 (`insurance::ops` refuses with `fieldErrors.name`; `idx_insurance_policies_name`

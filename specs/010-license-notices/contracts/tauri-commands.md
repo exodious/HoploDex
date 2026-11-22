@@ -36,6 +36,9 @@ unchanged, and `acl_manifest_test.rs` has nothing new to check.
   mapping between them, compile on every OS and are unit-tested there.
 - **Permissions**: listening needs `core:event:allow-listen`, which
   `core:default` already grants. No capability changes.
+  _Amended 2026-11-21: the capability no longer grants `core:default`; it names
+  `core:event:allow-listen` itself (`src-tauri/capabilities/default.json`,
+  `docs/architecture/startup-and-platform.md`)._
 - **Frontend**: `sessionService.onAboutRequested(handler)` wraps `listen`, and
   `src/test/setup.ts`'s `listen` mock covers it in Vitest.
 

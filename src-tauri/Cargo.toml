@@ -26,8 +26,11 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [features]
-# Enabled for production/E2E builds so the app loads bundled frontendDist
-# assets via Tauri's custom protocol instead of the devUrl dev server.
+# Enabled for the Flatpak's and the E2E builds (plain `cargo build`) so the
+# app loads bundled frontendDist assets via Tauri's custom protocol instead of
+# the devUrl dev server. `tauri build` turns on `tauri/custom-protocol` itself,
+# without this feature, so a guard against shipped builds tests `not(dev)`
+# (tauri-build's cfg for Tauri's feature being off), not this one.
 custom-protocol = ["tauri/custom-protocol"]
 # Enabled for E2E builds and the keyring tests only. Swaps the OS-native
 # keyring (Secret Service/Keychain/Credential Manager), which holds a
@@ -63,7 +66,7 @@ flatpak-check = ["e2e"]
 # with 1,000 PBKDF2 iterations instead of the pinned 1,000,000
 # (db/cipher.rs's `test_kdf`), which took three quarters of the tests' CPU. A
 # file made by such a build opens in no other build. db/cipher.rs refuses to
-# compile it with `custom-protocol` or `e2e` or without debug assertions, and
+# compile it with Tauri's `custom-protocol` or `e2e` or without debug assertions, and
 # the app (main.rs), examples/human_seed.rs and portable_fixture.rs refuse to
 # run with it.
 test-kdf = ["upgrade-test-steps"]
@@ -71,7 +74,7 @@ test-kdf = ["upgrade-test-steps"]
 # steps, forced failures and interruptions at named points of an upgrade
 # (`db::upgrade::testing`), applied only to databases in a folder a test
 # registers. `test-kdf` turns it on; the release `performance_test` uses it
-# alone. db/upgrade.rs refuses to compile it with `custom-protocol` or `e2e`,
+# alone. db/upgrade.rs refuses to compile it with Tauri's `custom-protocol` or `e2e`,
 # so no shipped or E2E build has it, and the app (main.rs) and the examples
 # refuse to run with it.
 upgrade-test-steps = []

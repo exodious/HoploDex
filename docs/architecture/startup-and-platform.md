@@ -10,7 +10,11 @@ _Part of the [architecture docs](../architecture.md)._
 A new command must also go in `commands_list.rs`'s `COMMANDS` (which `build.rs`
 turns into the app's ACL manifest) and `capabilities/default.json` as
 `allow-<command>`, for the main web view only; `tests/acl_manifest_test.rs`
-fails when the three differ.
+fails when the three differ. Of Tauri's own permissions the capability grants
+only what the page uses, `core:event:allow-listen`, `core:event:allow-unlisten`
+and `core:window:allow-set-title`, and no plugin's default set; the same test
+fails when that list changes. An E2E build adds `core:event:allow-emit` at run
+time (`e2e-emit` in `setup()`), since the specs send events from the page.
 
 It installs `allocator.rs`'s `Wiping` around `System` as the global allocator of
 every process the executable runs, the helpers' included: each freed block (and
