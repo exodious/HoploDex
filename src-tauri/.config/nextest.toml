@@ -15,3 +15,10 @@ performance = { max-threads = 1 }
 filter = 'binary(performance_test)'
 test-group = 'performance'
 threads-required = 'num-cpus'
+
+# The feature guard test runs a whole `cargo check` that, from a cold
+# `target/feature-guards`, keeps every core busy for most of a minute, which
+# would push the timed tests beside it (the import reader's) past their limits.
+[[profile.default.overrides]]
+filter = 'test(/^feature_guards_test::/)'
+threads-required = 'num-cpus'
