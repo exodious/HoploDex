@@ -51,7 +51,7 @@ PBKDF2 iterations instead of the pinned 1,000,000, which was three quarters of
 the Rust tests' CPU; every other cipher setting and every code path is the
 app's. The tests pass without it too, only slower. A file a `test-kdf` build
 makes opens in no other build, so the feature is for the tests alone:
-`db/cipher.rs` won't compile it with `custom-protocol` or `e2e` or without
+`db/cipher.rs` won't compile it with Tauri's `custom-protocol` or `e2e` or without
 debug assertions (so never in a release, E2E or shipped build), and
 the app itself (`cargo run`, `tauri dev`), `human_seed` and `portable_fixture` refuse to run with it, though the tests still start the binary's helpers. `test_kdf_startup_test` checks the app's refusal; it starts the app in a sandbox, since a `test-kdf` build, like an E2E build, takes its directories only from the `HOPLODEX_E2E_*` variables (`app_dirs.rs`). `portability_test`
 keys with the pinned KDF whatever the build (`cipher::test_kdf::use_real_kdf`,

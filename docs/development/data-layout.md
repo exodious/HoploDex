@@ -50,7 +50,7 @@ every test program runs the same text: `testing::PHOTOS_REBUILD` (a rebuild of
 a table that others link to, changing a `CHECK` and recreating its indexes and
 triggers) and `testing::HISTORY_UID_FILL` (a rebuild that adds a required
 unique `uid`, filled in SQL). The feature does not compile with
-`custom-protocol` or `e2e`, and the app and the examples refuse to run with it,
+Tauri's `custom-protocol` (on in every packaged build) or `e2e`, and the app and the examples refuse to run with it,
 so no shipped or E2E build has the hooks. An `e2e` build instead appends one
 step of its own, `9000_e2e_upgrade_check`, which makes a database it creates
 newer than the stored 0.1.0 one, so the E2E suite can open that and meet the

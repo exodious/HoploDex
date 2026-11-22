@@ -54,7 +54,7 @@ and peer review catch that.
 
 - **Code:** `src-tauri/src/main.rs` (`generate_handler!`); `src-tauri/src/lib.rs`; `src-tauri/src/commands_list.rs` (`COMMANDS`, `UNSCOPED_COMMANDS`); `src-tauri/build.rs` (the ACL manifest, generated into `permissions/`); `src-tauri/capabilities/**`; `src-tauri/src/commands/**`; `src-tauri/src/models/**`; `src-tauri/src/session/scoped.rs`; `src-tauri/src/session/operations.rs`; `src-tauri/src/services/mod.rs`; `src-tauri/src/services/cartridges/**`; `src-tauri/src/services/disk_space.rs`; `src-tauri/src/services/entry_text.rs`; `src-tauri/src/services/insurance_status.rs`; `src-tauri/src/services/mounts.rs`; `src-tauri/src/services/registration.rs`; `src-tauri/src/services/valuation.rs`; `src/services/tauriClient.ts`; `src-tauri/tests/acl_manifest_test.rs`; `src-tauri/tests/session_scope_test.rs`
 - **Ask:**
-  - Do the three command lists (`generate_handler!`, `COMMANDS`, the capabilities) agree, and does every `allow-<command>` belong only to the `main` web view, never the PDF surface? Is `core:default` or `dialog:default` broader than the app needs? Does the opener plugin have no permission at all?
+  - Do the three command lists (`generate_handler!`, `COMMANDS`, the capabilities) agree, and does every `allow-<command>` belong only to the `main` web view, never the PDF surface? Of Tauri's own permissions, does the capability grant only `core:event:allow-listen` and `core:event:allow-unlisten` (any event the backend or Tauri sends, file drops included) and `core:window:allow-set-title` (a compromised page can set the main window's title to anything), with no plugin's default set, no `dialog:` permission and none for the opener plugin? Is `core:event:allow-emit` granted only by an `e2e` build's `e2e-emit` capability (`main.rs`), so a shipped page can't send itself events that pass for the backend's or Tauri's (a quit request, a drop)?
   - For every command: is each argument checked in Rust (length, range, enum, an id belonging to the open session) as if the web view were hostile?
   - Is `UNSCOPED_COMMANDS` minimal? It holds `get_chooser_state`, `create_database`, `choose_database_folder`, `choose_database_file`, `open_database`, `upgrade_database`, `choose_upgrade_backup_folder`, `cancel_upgrade`, `remove_recent_database`, `locate_database`, `get_database_status`, `quit_application`, `quit_listener_ready`, `note_activity`, `set_idle_paused`, `skip_backup`, `cancel_import`, `get_document_opening`, `set_document_opening`, `get_troubleshooting_log`, `set_troubleshooting_log`, `show_troubleshooting_log`, `restore_backup`, `check_backup`, `drop_backup_check`, `list_backups` and `forget_saved_passphrase`. Does `quit_listener_ready` only ever raise the flag that says the page listens for a quit, which `request_quit` acts on only while no database is open? Does `drop_backup_check` only ever drop a held check, by its id, and does `restore_backup` restore only the backup its `checkId` held, into the target that check was for? Do the ones that can act on the open database (`restore_backup`, `list_backups`, `check_backup`, `forget_saved_passphrase`) check `session::scoped::Target` themselves?
   - Can `set_document_opening` (unscoped) turn on opening without asking without `services::consent`'s native dialog?
@@ -63,13 +63,14 @@ and peer review catch that.
   - Can `confirmedWarnings` skip a check that protects data? (`LOCATION_OUT_OF_REACH` must never be overridable.)
   - Do errors forward only `CommandError` codes and never a raw database error (`CommandError::from_db`)?
   - Regression: #64 (import conflicts bound to the database that made them).
-- **Since:** 001; ACL manifest 007; scoping 008; three unscoped commands 009; choosers 2026-11-19; database and upgrade choosers 2026-11-21.
+- **Since:** 001; ACL manifest 007; scoping 008; three unscoped commands 009; choosers 2026-11-19; database and upgrade choosers 2026-11-21; Tauri's permissions narrowed 2026-11-21.
 
 ## webview-config: CSP, navigation and browser controls
 
 - **Code:** `src-tauri/tauri.conf.json` (`app.security.csp`); `src-tauri/tests/csp_test.rs`; `src-tauri/src/main.rs` (the main window, built in `setup()`); `src-tauri/src/app_menu.rs`; `src-tauri/src/services/main_navigation.rs`; `src-tauri/src/services/crash_reports.rs` (`web_view_environment`, `main_browser_args`, `WRY_DEFAULT_ARGS`); `src-tauri/src/services/autofill.rs`; `src-tauri/src/window_controls/**`; `src/features/app/browserControls.ts`; `src/main.tsx`; `src/components/TextField.tsx`; `src/components/TextArea.tsx`; `src-tauri/examples/window_controls_check.rs`; `scripts/window-controls-check.sh`; `scripts/macos/window-controls-check.sh`; `scripts/windows/window-controls-check.ps1`
 - **Ask:**
-  - Is there no `unsafe-inline` or `unsafe-eval` for scripts? The CSP allows `asset:` and `http://asset.localhost` in `img-src`, but the asset protocol is off (no `assetProtocol`, no `protocol-asset` feature, no `convertFileSrc`). Should those sources go?
+  - Is there no `unsafe-inline` or `unsafe-eval` for scripts? Is `img-src` held to `'self' data: blob:`, with no `asset:` or `http://asset.localhost`, while the asset protocol is off (no `assetProtocol`, no `protocol-asset` feature, no `convertFileSrc`)?
+  - `devCsp` allows `'unsafe-inline'` scripts, which `tauri dev`'s Vite server needs (`@vitejs/plugin-react` injects its refresh preamble inline). Tauri applies `devCsp` only to a build without its `custom-protocol` (one that loads the page from `devUrl`): does every build that bundles the page, shipped or E2E, get `csp` instead?
   - Can any top-level navigation or new window leave the app's origin (#73)? Does Windows' filter act only on document requests, so IPC works and nothing else loads?
   - In release builds, are dev tools, reload, history, print, save, find and view-source off, and is only the context-menu allowlist left?
   - Does `src/` have no HTML sink (`dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`) outside tests? Is everything the page shows from a database, a spreadsheet, a file name or `notices.json` rendered as text?
@@ -82,7 +83,7 @@ and peer review catch that.
   - On Linux and Windows, only the page's guard stops the mouse's side buttons.
   - Linux's `Custom` spelling items are unverified.
 - **Rerun:** the window controls check on each OS.
-- **Since:** 001; CSP and navigation fixes #87; browser controls 008.
+- **Since:** 001; CSP and navigation fixes #87; browser controls 008; asset sources dropped 2026-11-21.
 
 ## paths: filesystem locations from the web view
 
@@ -295,8 +296,8 @@ and peer review catch that.
   - Should the markers in `check-no-webdriver.mjs` cover every E2E-only `HOPLODEX_E2E_*` name in the backend?
   - Are the E2E chooser (`E2eChooser`, which answers every chooser Rust opens from a queue file), the stand-in share (`HOPLODEX_E2E_NETWORK_FOLDER`, which only makes an export there ask) and the listener that hands the page's own `tauri://drag-drop` events to `drops::record` as drops (`main.rs`) built only with `e2e`? Either in a shipped build would let the page choose what the backend reads or writes.
   - Does anything stop a shipped build with `mock-keyring` alone, beside `custom-protocol`?
-  - Do `test-kdf` and `upgrade-test-steps` still refuse `custom-protocol` and `e2e` at compile time?
-- **Since:** #29, #76; seams 007, #76, 009; `test-kdf` #105; chooser and drop seams 2026-11-19; network share seam 2026-11-21.
+  - Do `test-kdf` and `upgrade-test-steps` still refuse `custom-protocol` and `e2e` at compile time? `tauri build` turns on Tauri's `custom-protocol` alone, not the app's, so the guards test `not(dev)` (tauri-build's cfg for it): does every packaged build still fail to compile with either feature?
+- **Since:** #29, #76; seams 007, #76, 009; `test-kdf` #105; chooser and drop seams 2026-11-19; network share seam 2026-11-21; guards test `not(dev)` 2026-11-21.
 
 ## unsafe-ffi: unsafe Rust and platform FFI
 

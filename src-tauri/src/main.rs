@@ -455,6 +455,13 @@ fn main() {
             #[cfg(feature = "e2e")]
             {
                 use tauri::Listener;
+                // The specs send those events (and the quit request) from the
+                // page, which a shipped build's capability doesn't allow.
+                app.add_capability(
+                    tauri::ipc::CapabilityBuilder::new("e2e-emit")
+                        .webview("main")
+                        .permission("core:event:allow-emit"),
+                )?;
                 let session = app.state::<Session>().inner().clone();
                 app.listen_any("tauri://drag-drop", move |event| {
                     #[derive(serde::Deserialize)]

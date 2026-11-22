@@ -4,12 +4,14 @@
 //! are retargeted, so pressing one doesn't end the sheet: the dialog stays up,
 //! busy, while the backend tries what was typed.
 //!
-//! Each field's text is read into a buffer that is wiped straight after,
-//! through `getCharacters:range:`. Reading `stringValue()` of the field being
-//! edited, as each change and pause does, makes AppKit commit the field
-//! editor's text into the cell as a new `NSString`, and AppKit frees those
-//! copies unwiped: what it keeps is its own (docs/attack-surface.md,
-//! `key-passphrase`). Everything here runs on the main thread. The dialog's state is
+//! At each change, pause and press, each field's text is read into a buffer
+//! that is wiped straight after, through `getCharacters:range:`. Reading
+//! `stringValue()` of the field being edited, as those reads and the Show
+//! toggle (which passes it straight to the other field) do, makes AppKit commit
+//! the field editor's text into the cell as new `NSString`s, which AppKit frees
+//! without wiping. Only AppKit could wipe them, and the owner accepted that
+//! (003 research.md §1, amended 2026-11-19; docs/attack-surface.md,
+//! `key-passphrase`, Accepted). Everything here runs on the main thread. The dialog's state is
 //! kept in a thread-local map by its id; the [`DialogWindow`] the caller gets
 //! posts its `retry` and `close` there.
 

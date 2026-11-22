@@ -87,7 +87,7 @@ fn commands_handler_and_capability_name_the_same_commands() {
     problems.extend(missing("generate_handler!", &listed, &registered));
     problems.extend(missing("capabilities/default.json", &permissions, &allowed));
     // A plain `allow-…` permission is an app command's; plugins' are prefixed
-    // (`core:`, `dialog:`).
+    // (`core:`).
     problems.extend(missing("COMMANDS and generate_handler!", &allowed, &permissions));
     problems.extend(missing("capabilities/default.json", &registered_permissions, &allowed));
     assert!(problems.is_empty(), "the command lists disagree:\n  {}", problems.join("\n  "));
@@ -113,15 +113,19 @@ fn every_capability_is_for_the_main_web_view_alone() {
     }
 }
 
+/// The page's only uses of Tauri's own commands: listening for events (the
+/// backend's, and Tauri's file drops) and setting the window's title. No
+/// `core:default` or `dialog:default`, which grant far more; an E2E build adds
+/// `core:event:allow-emit` at run time for its specs (main.rs).
 #[test]
-fn the_plugin_defaults_are_granted_in_one_capability_only() {
-    for plugin_default in ["core:default", "dialog:default"] {
-        let granted: Vec<String> = capabilities()
-            .into_iter()
-            .filter(|(_, c)| permission_names(c).iter().any(|p| p == plugin_default))
-            .map(|(path, _)| path)
-            .collect();
-        assert_eq!(granted.len(), 1, "{plugin_default} appears in {granted:?}");
-        assert!(granted[0].ends_with("default.json"), "{plugin_default} is in {}", granted[0]);
+fn the_page_gets_only_the_plugin_permissions_it_uses() {
+    let mut granted = BTreeSet::new();
+    for (_, capability) in capabilities() {
+        granted.extend(permission_names(&capability).into_iter().filter(|p| p.contains(':')));
     }
+    let expected: BTreeSet<String> =
+        ["core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-set-title"]
+            .map(String::from)
+            .into();
+    assert_eq!(granted, expected, "the capabilities' plugin permissions changed");
 }

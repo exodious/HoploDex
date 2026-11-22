@@ -11,14 +11,13 @@ use rusqlite::{Connection, ffi};
 use crate::services::passphrase::Passphrase;
 
 // `test-kdf` makes every database a build keys unreadable to every other
-// build, so it must never reach one that opens a user's files.
-#[cfg(all(
-    feature = "test-kdf",
-    any(feature = "custom-protocol", feature = "e2e", not(debug_assertions))
-))]
+// build, so it must never reach one that opens a user's files. `not(dev)` is
+// tauri-build's: Tauri's `custom-protocol` is on, which `tauri build` turns on
+// directly, without the app's own `custom-protocol` feature.
+#[cfg(all(feature = "test-kdf", any(not(dev), feature = "e2e", not(debug_assertions))))]
 compile_error!(
-    "the `test-kdf` feature is for `cargo test` builds only: never with `custom-protocol` or `e2e`, \
-     and never without debug assertions (a release, E2E or shipped build)"
+    "the `test-kdf` feature is for `cargo test` builds only: never with `custom-protocol` (the app's \
+     or Tauri's) or `e2e`, and never without debug assertions (a release, E2E or shipped build)"
 );
 
 /// `(pragma, value)` in the order they are applied. Changing any of them
