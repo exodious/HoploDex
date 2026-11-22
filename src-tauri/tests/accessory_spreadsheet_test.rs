@@ -296,7 +296,7 @@ fn dump(conn: &Connection) -> BTreeMap<String, BTreeMap<String, String>> {
              FROM {table} t"
         );
         let mut stmt = conn.prepare(&sql).unwrap();
-        let names: Vec<String> = stmt.column_names().iter().map(|n| n.to_string()).collect();
+        let names: Vec<String> = stmt.column_names().map(str::to_string).collect();
         let mut rows = stmt.query([]).unwrap();
         while let Some(row) = rows.next().unwrap() {
             let mut record = BTreeMap::new();

@@ -74,9 +74,10 @@ What they install, to set it up by hand instead:
   find `libcrypto-3-x64.dll` and exit before they serve (the log shows only
   "started --render-helper", a preview never appears, and an import says
   "could not read the file"). After changing `OPENSSL_DIR`,
-  `OPENSSL_LIB_DIR` or `OPENSSL_INCLUDE_DIR`, run
-  `cargo clean -p libsqlite3-sys`: its build script doesn't watch them, so
-  SQLCipher keeps the old link.
+  `OPENSSL_LIB_DIR` or `OPENSSL_INCLUDE_DIR`, libsqlite3-sys rebuilds
+  SQLCipher. It watches those variables, not the files they point to, so after
+  installing another OpenSSL into the same folder, run
+  `cargo clean -p libsqlite3-sys`, or SQLCipher keeps the old link.
 
   CI builds the OpenSSL the repository pins instead
   (`scripts/windows/vcpkg/vcpkg.json`, see
@@ -84,8 +85,7 @@ What they install, to set it up by hand instead:
   manifest unless you ask, so the commands above are unchanged. To build
   against the same OpenSSL as CI, bring `C:\vcpkg` up to date
   (`git -C C:\vcpkg pull`, so it holds the pinned commit), install the
-  manifest into a folder of its own, and point `OPENSSL_DIR` there (then
-  `cargo clean -p libsqlite3-sys`, as above):
+  manifest into a folder of its own, and point `OPENSSL_DIR` there:
 
   ```powershell
   C:\vcpkg\vcpkg install --x-manifest-root=scripts\windows\vcpkg --x-install-root=C:\hoplodex-openssl --triplet x64-windows-static-md

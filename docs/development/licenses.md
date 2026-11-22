@@ -244,13 +244,13 @@ generator strips.
   ```json
   {
     "name": "SQLCipher",
-    "version": "4.14.0 community",
+    "version": "4.20.0 community",
     "license": "BSD-3-Clause",
     "kind": "compiled-in",
     "os": ["linux", "macos", "windows"],
-    "carrier": { "crate": "libsqlite3-sys", "version": "0.38.1", "feature": "bundled-sqlcipher" },
-    "texts": ["package:sqlcipher/LICENSE"],
-    "reason": "libsqlite3-sys compiles the SQLCipher source it carries into the program; …"
+    "carrier": { "crate": "libsqlite3-sys", "version": "0.40.0", "feature": "bundled-sqlcipher" },
+    "texts": ["licenses/texts/sqlcipher/LICENSE.txt"],
+    "reason": "libsqlite3-sys compiles the SQLCipher amalgamation from its build dependency sqlcipher-src (420.0.0) into the program; …"
   }
   ```
 

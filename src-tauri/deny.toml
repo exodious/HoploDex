@@ -105,32 +105,6 @@ ignore = [
     #
     # Review by 2027-01-17.
     { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, no known vulnerability; direct, via rusqlite's chrono feature and zxcvbn" },
-    # SQLite before 3.54.0 can return uninitialized page-cache memory when it
-    # opens a database file with a sibling `-wal` file whose page size differs
-    # from the database's (RUSTSEC-2026-0459, CVE-2026-119375). HoploDex
-    # builds SQLCipher from source (rusqlite's `bundled-sqlcipher`).
-    #
-    # No fix to take yet: libsqlite3-sys 0.39 (rusqlite 0.41) bundles SQLite
-    # 3.54 only for its plain `bundled` build. Its `bundled-sqlcipher` build
-    # takes sqlcipher-src =419.0.6, which bundles SQLite 3.53.4, and there is
-    # no SQLCipher release on SQLite 3.54 yet.
-    #
-    # Exposure needs a database file and its `-wal`, both written by a less
-    # trusted party, such as a collection or backup from elsewhere. HoploDex
-    # opens the databases the user creates or picks with Open… (and their
-    # recent list), and a restore checks a copy it makes of the chosen backup
-    # file. It never puts a database in WAL mode itself, but that doesn't keep
-    # a `-wal` out: SQLite opens one it finds beside a database whatever the
-    # journal mode (`pagerOpenWalIfPresent`). SQLCipher decrypts and checks
-    # the HMAC of every page it reads, from the database or a `-wal` frame,
-    # with the database's key (`readDbPage`), so such a pair would have to come
-    # from someone who also knows its passphrase, and the user would have to
-    # open it with that passphrase. Checked 2026-11-19 in libsqlite3-sys
-    # 0.38.1's bundled sqlite3.c.
-    #
-    # Review by 2026-12-17, or sooner if a SQLCipher release on SQLite 3.54
-    # reaches libsqlite3-sys's `bundled-sqlcipher`.
-    { id = "RUSTSEC-2026-0459", reason = "bundled SQLite in SQLCipher before 3.54: no SQLCipher build with the fix yet; needs a database and its -wal from a less trusted party, opened with its passphrase" },
 ]
 
 # License audit. HoploDex is released under GPL-3.0-only, so every crate
@@ -168,3 +142,15 @@ allow = [
 # The list is the compatibility policy, not an inventory of what's in use.
 unused-allowed-license = "allow"
 confidence-threshold = 0.93
+# Licenses allowed only for one crate, each with its reason (constitution,
+# "Licensing").
+exceptions = [
+    # sqlcipher-src, a build dependency of libsqlite3-sys's `bundled-sqlcipher`,
+    # carries the SQLCipher amalgamation (BSD-3-Clause, with SQLite inside under
+    # its public-domain blessing) and libtomcrypt's sources (public domain or
+    # WTFPL, which the FSF lists as GPL-compatible). libsqlite3-sys 0.40 compiles
+    # only the amalgamation, with OpenSSL (Linux, Windows) or CommonCrypto
+    # (macOS) as SQLCipher's crypto provider, so no libtomcrypt code is in the
+    # app. SQLCipher and SQLite ship as entries in licenses/hand-recorded.json.
+    { crate = "sqlcipher-src", allow = ["blessing", "WTFPL"] },
+]

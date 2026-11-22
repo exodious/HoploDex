@@ -967,7 +967,8 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     await toggleDisclosure(sqlcipher!.name);
     const region = await $(`[role="region"][aria-label="${sqlcipher!.name} license text"]`);
     await region.waitForExist();
-    expect(await region.getText()).toContain("Zetetic LLC");
+    // SQLCipher 4.20.0's text spells it "ZETETIC LLC", 4.14.0's "Zetetic LLC".
+    expect(await region.getText()).toMatch(/Zetetic LLC/i);
     await toggleDisclosure(sqlcipher!.name);
 
     await filterBy("zzzz");

@@ -1,6 +1,6 @@
-Source: https://raw.githubusercontent.com/rusqlite/rusqlite/6d3c282dc5531a57eb4e22ece3207f00c95d0fb0/libsqlite3-sys/sqlcipher/sqlite3.c
+Source: https://raw.githubusercontent.com/LucaCappelletti94/sqlcipher-src/617c0cc9673cadddd1beefda6db47aa732d5a7ab/sqlcipher/sqlcipher.c
 SQLite is in the public domain. The notice at the top of its source code
-(lines 64 to 69 of sqlcipher/sqlite3.c in libsqlite3-sys 0.38.1) reads:
+(lines 64 to 69 of sqlcipher/sqlcipher.c in sqlcipher-src 420.0.0) reads:
 
 The author disclaims copyright to this source code.  In place of
 a legal notice, here is a blessing:

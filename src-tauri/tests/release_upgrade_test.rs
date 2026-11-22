@@ -180,7 +180,7 @@ fn read_tables(conn: &Connection) -> Tables {
     let mut tables = Tables::new();
     for name in names {
         let mut stmt = conn.prepare(&format!("SELECT * FROM \"{name}\"")).unwrap();
-        let columns: Vec<String> = stmt.column_names().into_iter().map(str::to_owned).collect();
+        let columns: Vec<String> = stmt.column_names().map(str::to_owned).collect();
         let mut rows: Vec<Row> = stmt
             .query_map([], |row| {
                 columns
