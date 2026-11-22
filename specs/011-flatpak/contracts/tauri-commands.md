@@ -94,6 +94,8 @@ location) is the host path.
 | `read_import_files`, `import_collection` | each file | `ReadFile` | `LOCATION_OUT_OF_REACH`, before the import helper starts |
 | `add_photo_from_path`, `add_document_from_path` (the chooser and drops) | the file | `ReadFile` | `LOCATION_OUT_OF_REACH`; for a drop, the record page's existing drop-error toast shows its message |
 
+_Amended 2026-11-21: `create_database`'s folder, `update_backup_settings`' new location and `upgrade_database`'s chosen folder are picked in choosers the backend opens and passed as tokens (003 and 009 contracts); the location each token holds is checked as the table says._
+
 _Amended 2026-10-19 (011 T078): the one place a backup folder is judged,
 `services/backups.rs`'s `check_location(folder, make_if_missing, &Reach)`, asks
 `Need::WriteFolder` before it makes the folder or writes its probe file, and

@@ -18,13 +18,14 @@ use hoplodex_lib::commands::databases::ops as databases;
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::db;
 use hoplodex_lib::models::database::{
-    BackupInfo, BackupLocationInput, BackupOutcome, BackupSettingsInput, BackupSettingsSaved,
-    CloseReason, ExistingBackupsChoice,
+    BackupInfo, BackupLocationChoice, BackupLocationInput, BackupOutcome, BackupSettingsInput,
+    BackupSettingsSaved, CloseReason, ExistingBackupsChoice,
 };
 use hoplodex_lib::services::backups;
 use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::{MachineSettings, UnfinishedBackupMove};
 use hoplodex_lib::services::sandbox::Reach;
+use hoplodex_lib::session::grants::PickKind;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{Session, lifecycle};
 use serde_json::{Value, json};
@@ -137,6 +138,35 @@ impl World {
             &BackupSettingsInput { enabled: true, keep_count, location, existing_backups },
             &Reach::Unconfined,
         )
+    }
+
+    /// `update_backup_settings` as the settings dialog sends it.
+    fn choose(
+        &self,
+        location: BackupLocationChoice,
+        existing_backups: Option<ExistingBackupsChoice>,
+    ) -> Result<BackupSettingsSaved, CommandError> {
+        databases::update_backup_settings_chosen(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            databases::BackupSettingsChoice {
+                enabled: true,
+                keep_count: 5,
+                location,
+                existing_backups,
+            },
+            &Reach::Unconfined,
+        )
+    }
+
+    /// `folder`, as the chooser `choose_backup_folder` opens answers it.
+    fn picked(&self, folder: &Path) -> BackupLocationChoice {
+        let token = self
+            .session
+            .hold_pick(self.session.current_id(), PickKind::BackupFolder, folder.to_owned())
+            .unwrap();
+        BackupLocationChoice::Chosen { token }
     }
 
     /// The saved location, resolved.
@@ -704,4 +734,85 @@ fn a_move_record_with_nothing_left_behind_leaves_no_notice() {
 
     assert_eq!(world.machine.unfinished_backup_move(), None);
     assert!(world.machine.take_notices().is_empty());
+}
+
+// --- The location the dialog sends --------------------------------------------
+
+#[test]
+fn a_new_location_is_only_a_folder_picked_in_the_chooser_rust_opened() {
+    let world = World::new();
+    lifecycle::create(&world.session, &world.machine, &world.path(), &passphrase()).unwrap();
+    let new = world.folder("elsewhere");
+    let other_kind = world
+        .session
+        .hold_pick(world.session.current_id(), PickKind::ExportFolder, new.clone())
+        .unwrap();
+
+    for token in [new.to_string_lossy().into_owned(), "0123abcd".to_owned(), other_kind] {
+        let refused = world.choose(BackupLocationChoice::Chosen { token }, None).unwrap_err();
+        assert_eq!(refused.code, "VALIDATION_ERROR");
+        assert_eq!(world.saved_folder(), world.default_folder(), "nothing was saved");
+    }
+
+    let picked = world.picked(&new);
+    world.choose(picked.clone(), None).unwrap();
+    assert_eq!(world.saved_folder(), new);
+    // Used up.
+    assert_eq!(world.choose(picked, None).unwrap_err().code, "VALIDATION_ERROR");
+}
+
+#[test]
+fn the_current_location_is_kept_without_the_page_naming_it() {
+    let world = World::new();
+    lifecycle::create(&world.session, &world.machine, &world.path(), &passphrase()).unwrap();
+    let new = world.folder("elsewhere");
+    world.choose(world.picked(&new), None).unwrap();
+
+    world.choose(BackupLocationChoice::Current, None).unwrap();
+    assert_eq!(world.saved_folder(), new);
+    world.choose(BackupLocationChoice::Default, None).unwrap();
+    world.choose(BackupLocationChoice::Current, None).unwrap();
+    assert_eq!(world.saved_folder(), world.default_folder());
+}
+
+#[test]
+fn a_picked_location_survives_the_question_about_the_old_backups_and_a_refusal() {
+    let world = World::new();
+    with_three_backups(&world);
+    let new = world.folder("elsewhere");
+    let picked = world.picked(&new);
+
+    let asked = world.choose(picked.clone(), None).unwrap_err();
+    assert_eq!(asked.code, "BACKUPS_AT_OLD_LOCATION");
+    let refused = databases::update_backup_settings_chosen(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        databases::BackupSettingsChoice {
+            enabled: true,
+            keep_count: 0,
+            location: picked.clone(),
+            existing_backups: Some(ExistingBackupsChoice::Leave),
+        },
+        &Reach::Unconfined,
+    )
+    .unwrap_err();
+    assert_eq!(refused.code, "VALIDATION_ERROR");
+
+    world.choose(picked.clone(), Some(ExistingBackupsChoice::Leave)).unwrap();
+    assert_eq!(world.saved_folder(), new);
+    assert_eq!(world.choose(picked, None).unwrap_err().code, "VALIDATION_ERROR");
+}
+
+#[test]
+fn a_picked_location_ends_with_its_session() {
+    let world = World::new();
+    lifecycle::create(&world.session, &world.machine, &world.path(), &passphrase()).unwrap();
+    let new = world.folder("elsewhere");
+    let picked = world.picked(&new);
+    world.close();
+    world.open();
+
+    assert_eq!(world.choose(picked, None).unwrap_err().code, "VALIDATION_ERROR");
+    assert_eq!(world.saved_folder(), world.default_folder());
 }

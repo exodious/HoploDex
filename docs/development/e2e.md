@@ -78,14 +78,18 @@ the notice and the settings still say "1 minute". The scaling's unit tests
 (`session/idle.rs`) run in the default Rust test run.
 
 No WebDriver can pick in a native chooser or drop a file from the desktop, so an
-`e2e` build answers the import's and export's choosers from the queue file
-`HOPLODEX_E2E_CHOOSER` names (`answerChooser`, and `chooseImportFiles` and
-`chooseExportFolder` in `e2e/support/importExport.ts`), and hands the paths of
+`e2e` build answers every chooser Rust opens (the import's, the export's, the
+databases' and the backups') from the queue file `HOPLODEX_E2E_CHOOSER` names
+(`answerChooser` and `chooseFolder` in `e2e/support/ui.ts`, `chooseImportFiles`
+and `chooseExportFolder` in `e2e/support/importExport.ts`), and hands the paths of
 the `tauri://drag-drop` events a spec sends (`dropFiles`) to `drops::record`,
 the recorder a real drop goes through; only the event's source differs. A real
 drop, in a build without `e2e`, is the [drop check](surface-checks.md#drop-check)'s to show. The backend reads only those, so a spec that
 calls `add_*_from_path` or the import and export commands with a path of its
-own is refused.
+own is refused. Nor does a test machine mount a network share: an `e2e` build
+takes a folder under `HOPLODEX_E2E_NETWORK_FOLDER` (the sandbox's
+`network-share`) to be on one, so an export there asks its native
+confirmation, which `HOPLODEX_E2E_CONSENT` answers.
 
 The `flatpak-check` feature builds on `e2e` for the Flatpak check alone
 (`scripts/flatpak/checkManifest.mjs` turns it on; the `e2e` suite, the `.deb`

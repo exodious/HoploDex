@@ -169,10 +169,8 @@ describe("SessionProvider (003 US1)", () => {
     await user.click(screen.getByRole("button", { name: "Create database…" }));
 
     expect(await screen.findByText("Collection shell")).toBeInTheDocument();
-    expect(databasesService.createDatabase).toHaveBeenCalledWith({
-      folder: "/home/sam/Documents/HoploDex",
-      name: "My collection",
-    });
+    // The suggested folder is the backend's own, so none is sent.
+    expect(databasesService.createDatabase).toHaveBeenCalledWith({ name: "My collection" });
   });
 
   it("picks up a database that is already open, as after a reload of the window", async () => {

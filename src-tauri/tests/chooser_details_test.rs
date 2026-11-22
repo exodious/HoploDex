@@ -192,6 +192,7 @@ fn a_located_file_starts_with_the_time_unknown() {
     fs::rename(world.path(), &found).unwrap();
 
     ops::locate_database(
+        &world.session,
         &world.machine,
         &world.path().to_string_lossy(),
         &found.to_string_lossy(),

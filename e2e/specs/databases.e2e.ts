@@ -8,10 +8,12 @@ import {
   $,
   E2E_PASSPHRASE,
   addFirearm,
+  answerChooser,
   answerPassphrase,
   attachFile,
   browser,
   chooseMenuItem,
+  chooseFolder,
   clickButton,
   createDatabase,
   dialogFieldError,
@@ -113,6 +115,43 @@ describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databa
   // answers here; its own rules (12 characters, matching, the acknowledgement,
   // the strength hint) are Rust's `passphrase_dialog::checks` and the real
   // dialog's, in passphrase-dialog.e2e.ts.
+  it("creates a database only in a folder picked in the chooser, and opens a server's path only from it", async () => {
+    await waitForChooser();
+    // Nothing is open, so no session is named (`invokeFailure` needs one).
+    const invokeFailure = (cmd: string, args: Record<string, unknown>) =>
+      browser.execute(
+        async (name: string, data: Record<string, unknown>) => {
+          const internals = (
+            window as unknown as {
+              __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> };
+            }
+          ).__TAURI_INTERNALS__;
+          try {
+            await internals.invoke(name, data);
+            return null;
+          } catch (error) {
+            return error as { code: string };
+          }
+        },
+        cmd,
+        args,
+      );
+    const notPicked = path.join(scratchDocuments(), "Not picked");
+    const created = await invokeFailure("create_database", {
+      folderToken: notPicked,
+      name: "Unpicked",
+    });
+    expect(created).toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(fs.existsSync(notPicked)).toBe(false);
+    const asked = passphraseTitles().length;
+    for (const server of ["\\\\server\\share\\Club.hoplodex", "//server/share/Club.hoplodex"]) {
+      const opened = await invokeFailure("open_database", { path: server });
+      expect(opened).toMatchObject({ code: "VALIDATION_ERROR" });
+    }
+    // Refused before anything was asked.
+    expect(passphraseTitles()).toHaveLength(asked);
+  });
+
   it("creates a database, keeps a firearm that only the right passphrase shows again (003 FR-003, FR-005, FR-006)", async () => {
     // A file already at the name asked for; the backend refuses the create.
     fs.mkdirSync(folder, { recursive: true });
@@ -121,7 +160,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase (was us7-databa
     await clickButton("Create a new database…");
     await $('[role="dialog"]').waitForExist();
     await fill("Name", "Taken");
-    await fill("Folder", folder);
+    await chooseFolder(folder);
     const asked = passphraseTitles().length;
     await clickButton("Create database…");
     await browser.waitUntil(async () => (await dialogFieldError("Name")) !== null, {
@@ -654,8 +693,6 @@ describe("009 US3 - A Beta Tester's Database Survives an Upgrade", () => {
       `You can save this one backup in a folder you choose instead, or cancel. “${strandedName}” isn't upgraded without a backup.`,
     );
     expect(await focusedButton()).toBe("Choose a folder…");
-    // Choosing a folder opens the OS's picker, which can't be driven here
-    // (UpgradeDialogs.test.tsx mocks it; upgrade_test.rs covers the command).
 
     await clickButton("Cancel");
     await $('[role="dialog"]').waitForExist({ reverse: true });
@@ -664,6 +701,35 @@ describe("009 US3 - A Beta Tester's Database Survives an Upgrade", () => {
     expect(fs.readFileSync(path.join(stranded.folder, "HoploDex backups"), "utf8")).toBe(
       "not a folder",
     );
+  });
+
+  it("saves the backup in a folder picked in the chooser the backend opens, then upgrades (009 FR-012)", async () => {
+    const picked = path.join(scratchDocuments(), "Picked for the upgrade");
+    fs.mkdirSync(picked, { recursive: true });
+    // Cancel above left it selected, and a selected row has no button to select it with.
+    if ((await selectedChooserRow()) !== strandedName) await selectChooserRow(strandedName);
+    await openUntilQuestion();
+    await clickButton("Upgrade");
+    await $('[role="dialog"]').waitForExist({ timeout: 10000 });
+    await settle();
+
+    answerChooser(picked);
+    await clickButton("Choose a folder…");
+
+    // The fixture's half-typed form is offered before the collection, as above.
+    await browser.waitUntil(
+      async () => (await dialogText('[role="dialog"]')).includes("Unsaved changes to"),
+      { timeout: 20000, timeoutMsg: "the upgrade never opened the database" },
+    );
+    await clickButton("Discard changes");
+    await $('[role="alertdialog"]').waitForExist();
+    await clickButton("Discard changes");
+    await waitForCollection();
+
+    const made = fs.readdirSync(picked).filter((name) => name.includes(" before "));
+    expect(made).toHaveLength(1);
+    expect(sha256Of(stranded.path)).not.toBe(stranded.sha256);
+    await switchDatabase();
   });
 });
 

@@ -13,6 +13,7 @@ import { shotScreen } from "../support/screenshots";
 import {
   $,
   browser,
+  chooseFolder,
   clickButton,
   expect,
   fill,
@@ -100,7 +101,7 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     await clickButton("Create a new database…");
     await $('[role="dialog"]').waitForExist();
     await fill("Name", NAME);
-    await fill("Folder", folder);
+    await chooseFolder(folder);
     const mark = logMark();
     await pressButton("Create database…");
 

@@ -121,6 +121,8 @@ only.
 
 ### `upgrade_database` (FR-011 to FR-017)
 
+_Amended 2026-11-21: **Input**: `{ awaitingId: number; backupFolderToken?: string }`, `backupFolder` gone. `backupFolderToken` is what the new unscoped command `choose_upgrade_backup_folder` returned: `{ awaitingId: number }`, it opens the system's folder chooser from Rust while that database waits and returns `{ token: string; path: string } | null`, holding the folder for that database. A token that isn't a held answer for it is `VALIDATION_ERROR`, before the database is taken; the folder is then checked as `backupFolder` was. The token is used once: after a refusal of its folder the user picks again._
+
 - **Input**: `{ awaitingId: number; backupFolder?: string }`.
   - `backupFolder` is a folder the user chose for this one backup (FR-012).
     It must be absolute, an existing directory, writable and roomy. It is
@@ -173,6 +175,8 @@ only.
 - An `awaitingId` that isn't current does nothing.
 
 ### `check_backup` (FR-019)
+
+_Amended 2026-11-21: a `backupPath` that names a server or a device (`\\server\share`, `\\?\`, `\\.\`, `\??\`, or the same with forward slashes) is checked only when it is in the backup folder the backend keeps for the database (the open one's, or the recent entry's for `databasePath`), where the dialog lists backups from; otherwise `VALIDATION_ERROR`, before anything looks at it. `databasePath` follows 003's rule for `open_database`'s path._
 
 - **Input**: `{ backupPath: string; passphrase: string; databasePath?: string }`.
 - **Output**: `{ upgradeTo: string | null }`: the version the backup will be

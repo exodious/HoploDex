@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "../../components";
 import { FieldFrame } from "../../components/Field";
 import { useFieldIds } from "../../components/fieldIds";
+import "./importExport.css";
 
 export interface ChosenPathFieldProps {
   label: string;
@@ -18,7 +19,8 @@ export interface ChosenPathFieldProps {
 /** A file or folder the user picks in the OS's chooser, which the backend
  * opens and keeps the answer of: the field shows what was picked and has no
  * text box, since a typed path is never taken (code scanning alerts
- * `paths/cwe-73`). The import's files and the export's folder both use it. */
+ * `paths/cwe-73`). The import's files, the export's folder and a new
+ * database's folder use it. */
 export function ChosenPathField({
   label,
   value,

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use hoplodex_lib::commands::CommandError;
+use hoplodex_lib::commands::backups::ops as backup_ops;
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops as import_export_ops;
@@ -19,9 +20,12 @@ use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
 use hoplodex_lib::drops;
 use hoplodex_lib::models::record::RecordRef;
+use hoplodex_lib::services::consent::{Consent, ConsentAnswer, ConsentRequest};
+use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use hoplodex_lib::session::grants::{DROP_LIFETIME, PickKind};
+use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::{OpenDatabase, Session, SessionId};
 use support::{ManualClock, TestDb, firearm, passphrase, sample_png_bytes, test_machine};
 use tempfile::TempDir;
@@ -396,4 +400,110 @@ fn an_import_answer_ends_with_its_session() {
     let token = world.session.hold_pick(world.id(), PickKind::ImportFile, path).unwrap();
     world.reopen();
     refused(import(&world, &[token], true));
+}
+
+/// Answers the network export's confirmation as told, and records what it
+/// was asked.
+struct Answering(ConsentAnswer, std::sync::Mutex<Vec<ConsentRequest>>);
+
+impl Consent for Answering {
+    fn ask(&self, request: ConsentRequest) -> ConsentAnswer {
+        self.1.lock().unwrap().push(request);
+        self.0
+    }
+}
+
+/// Exports through the held answer `token` as `export_collection` does, with
+/// the folder taken to be on a network share or not, and the confirmation
+/// answered as told; whether the export ran.
+fn export_confirmed(
+    world: &World,
+    token: &str,
+    on_network: bool,
+    consent: &Answering,
+) -> Result<bool, CommandError> {
+    import_export_ops::export_to_chosen_folder(
+        &world.session,
+        world.id(),
+        token,
+        &Reach::Unconfined,
+        |folder| {
+            import_export_ops::confirm_export_folder(
+                &world.session,
+                world.id(),
+                consent,
+                folder,
+                on_network,
+                "all",
+                None,
+            )?;
+            Ok(true)
+        },
+    )
+}
+
+#[test]
+fn an_export_to_a_network_folder_asks_first_naming_the_folder_and_the_records() {
+    let world = World::new();
+    let folder = world.files.path().to_owned();
+    let token =
+        world.session.hold_pick(world.id(), PickKind::ExportFolder, folder.clone()).unwrap();
+    let declined = Answering(ConsentAnswer::Cancel, Default::default());
+
+    let stopped = export_confirmed(&world, &token, true, &declined).unwrap_err();
+
+    assert_eq!(stopped.code, "OPERATION_STOPPED");
+    let asked = declined.1.lock().unwrap().clone();
+    assert_eq!(
+        asked,
+        [ConsentRequest::NetworkExport {
+            folder: folder.to_string_lossy().into_owned(),
+            records: 1
+        }]
+    );
+    let body = asked[0].body();
+    assert!(body.contains(&*folder.to_string_lossy()), "{body}");
+    assert!(body.contains("1 record "), "{body}");
+    assert_eq!(asked[0].confirm_label(), "Export");
+
+    // Declined, the folder is still chosen; confirmed, it is used up.
+    let confirmed = Answering(ConsentAnswer::Open, Default::default());
+    assert!(export_confirmed(&world, &token, true, &confirmed).unwrap());
+    assert_eq!(confirmed.1.lock().unwrap().len(), 1);
+    refused(export_confirmed(&world, &token, true, &confirmed));
+}
+
+#[test]
+fn an_export_to_this_computers_own_drives_asks_nothing() {
+    let world = World::new();
+    let token = world
+        .session
+        .hold_pick(world.id(), PickKind::ExportFolder, world.files.path().to_owned())
+        .unwrap();
+    let consent = Answering(ConsentAnswer::Cancel, Default::default());
+
+    assert!(export_confirmed(&world, &token, false, &consent).unwrap());
+    assert!(consent.1.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_backup_on_a_server_is_checked_only_from_the_databases_own_backup_folder() {
+    let world = World::new();
+    let config = tempfile::tempdir().unwrap();
+    let machine = MachineSettings::load(config.path()).unwrap();
+
+    for backup in
+        [r"\\server\share\Mine.hoplodex-backup", r"\\?\C:\Mine.hoplodex-backup", r"\\.\pipe\x"]
+    {
+        let err = backup_ops::check_backup(
+            &world.session,
+            &machine,
+            backup,
+            &support::passphrase(),
+            Target::Open(world.id()),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, "VALIDATION_ERROR", "{backup}: {err:?}");
+        assert!(err.message.contains("network or device"), "{backup}: {err:?}");
+    }
 }

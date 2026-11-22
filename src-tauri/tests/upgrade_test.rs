@@ -45,6 +45,7 @@ use hoplodex_lib::services::disk_space;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::sandbox::Reach;
 use hoplodex_lib::session::clock::Clock;
+use hoplodex_lib::session::grants::PickKind;
 use hoplodex_lib::session::scoped::Target;
 use hoplodex_lib::session::upgrade::testing as waiting;
 use hoplodex_lib::session::{Session, SessionId, lifecycle};
@@ -558,7 +559,7 @@ impl World {
     }
 
     fn upgrade(&self, id: u64, folder: Option<&str>) -> Result<DatabaseStatus, CommandError> {
-        databases::upgrade_database(&self.session, &self.machine, id, folder)
+        databases::upgrade_database(&self.session, &self.machine, id, folder.map(Path::new))
     }
 
     fn cancel(&self, id: u64) {
@@ -2330,4 +2331,34 @@ fn a_full_disk_during_the_upgrade_is_disk_full_naming_the_backup_made_before_it(
         assert!(!is_held(&world.path()), "chosen {chosen}: dropped");
         assert_eq!(applied_steps(&world.closed()), before_steps, "chosen {chosen}: rolled back");
     }
+}
+
+/// The folder for the one backup is only one the user picked in the chooser
+/// Rust opened for this waiting database, and it is used once.
+#[test]
+fn the_chosen_backup_folder_is_only_a_held_answer_for_the_waiting_database() {
+    let world = World::new();
+    world.older_database(Older::default());
+    let _scope = world.steps(&[STEP_A]);
+    let id = world.waiting();
+    let this_one = SessionId::from_request(id).unwrap();
+    let chosen = TempDir::new().unwrap();
+    let hold = |id: SessionId, kind: PickKind| {
+        world.session.hold_pick(id, kind, chosen.path().to_owned()).unwrap()
+    };
+    let another = hold(SessionId::from_request(id + 1).unwrap(), PickKind::UpgradeBackupFolder);
+    let other_kind = hold(this_one, PickKind::ExportFolder);
+    let upgrade = |token: &str| {
+        databases::upgrade_database_chosen(&world.session, &world.machine, id, Some(token))
+    };
+
+    for token in [text(chosen.path()), "0123abcd".to_owned(), another, other_kind] {
+        assert_eq!(upgrade(&token).unwrap_err().code, "VALIDATION_ERROR");
+    }
+    assert!(before_backups(chosen.path()).is_empty());
+
+    let token = hold(this_one, PickKind::UpgradeBackupFolder);
+    upgrade(&token).expect("the database still waited");
+    assert_eq!(before_backups(chosen.path()).len(), 1);
+    assert_eq!(upgrade(&token).unwrap_err().code, "VALIDATION_ERROR");
 }

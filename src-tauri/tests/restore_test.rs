@@ -565,6 +565,7 @@ fn issue_62_a_recent_entry_located_onto_another_file_does_not_authorize_it() {
     // The web view re-points Mine's entry, cached id and folder included,
     // at a file of its choosing.
     databases::locate_database(
+        &world.session,
         &world.machine,
         &world.path().to_string_lossy(),
         &stranger.to_string_lossy(),
@@ -589,6 +590,7 @@ fn issue_62_a_located_database_is_restorable_once_it_has_opened_there() {
     let moved = world.dir.path().join("Moved.hoplodex");
     fs::rename(world.path(), &moved).unwrap();
     databases::locate_database(
+        &world.session,
         &world.machine,
         &world.path().to_string_lossy(),
         &moved.to_string_lossy(),
@@ -1107,6 +1109,7 @@ fn check_backup_with_a_database_path_applies_the_damaged_restores_authorization(
 
     // An entry the web view re-located is refused until it has opened there.
     databases::locate_database(
+        &world.session,
         &world.machine,
         &world.path().to_string_lossy(),
         &stranger.to_string_lossy(),

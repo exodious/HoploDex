@@ -4,10 +4,11 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OptionalExtension, named_params};
 use serde::{Deserialize, Serialize};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use crate::commands::CommandError;
 use crate::commands::accessories::ops as accessory_ops;
+use crate::commands::documents::ops::IdlePause;
 use crate::commands::firearms::{DisposeWith, Disposition, ListFirearmsInput, ops as firearm_ops};
 use crate::commands::mounts::ops as mount_ops;
 use crate::models::accessory::{AccessoryInput, validate_accessory_input};
@@ -18,7 +19,9 @@ use crate::models::firearm::{
 use crate::models::record::{MountedEntry, RecordKind, RecordLabel, RecordRef};
 use crate::services::attachments::safe_basename;
 use crate::services::cartridges::{CaliberSource, derive_caliber};
-use crate::services::chooser::{Chooser, Pick};
+use crate::services::chooser::{Chooser, ChosenPath, Pick, choose};
+use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest};
+use crate::services::disk_space;
 use crate::services::entry_text::{EntryField, check_entry_text};
 use crate::services::import_reader::read_files;
 use crate::services::mounts::{self, MountGraph};
@@ -2072,6 +2075,40 @@ pub mod ops {
         result
     }
 
+    /// Asks in the native confirmation before an export goes to a folder on a
+    /// network share (`on_network`), naming the folder and how many records
+    /// the export holds; a Cancel exports nothing (`OPERATION_STOPPED`). An
+    /// export to this computer's own drives asks nothing.
+    #[allow(clippy::too_many_arguments)]
+    pub fn confirm_export_folder(
+        session: &Session,
+        id: SessionId,
+        consent: &dyn Consent,
+        folder: &Path,
+        on_network: bool,
+        scope: &str,
+        filter: Option<&ListFirearmsInput>,
+    ) -> Result<(), CommandError> {
+        if !on_network {
+            return Ok(());
+        }
+        let counted = session.read(id, |conn| get_export_scope(conn, scope, filter))?;
+        let request = ConsentRequest::NetworkExport {
+            folder: folder.to_string_lossy().into_owned(),
+            records: counted.firearm_count + counted.accessory_count,
+        };
+        let answer = {
+            let _paused = IdlePause::new(session);
+            consent.ask(request)
+        };
+        if answer == ConsentAnswer::Cancel {
+            let mut stopped = CommandError::operation_stopped(OperationKind::Export, None, None);
+            stopped.message = "Nothing was exported.".to_owned();
+            return Err(stopped);
+        }
+        Ok(())
+    }
+
     fn no_such_folder() -> CommandError {
         CommandError::new(
             "VALIDATION_ERROR",
@@ -2542,46 +2579,6 @@ pub struct GetExportScopeInput {
     pub filter: Option<ListFirearmsInput>,
 }
 
-/// A file or folder the user picked: the token a command takes it by, and its
-/// path for the dialog to show.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChosenPath {
-    pub token: String,
-    pub path: String,
-}
-
-/// Shows the OS's chooser for `pick` on a blocking thread, since it waits for
-/// the user, and holds what was picked for this session.
-async fn choose(
-    session: &ScopedSession,
-    chooser: Arc<dyn Chooser>,
-    pick: Pick,
-    kind: PickKind,
-) -> Result<Vec<ChosenPath>, CommandError> {
-    if !session.is_current() {
-        return Err(CommandError::database_closed());
-    }
-    let picked =
-        tauri::async_runtime::spawn_blocking(move || chooser.pick(pick)).await.map_err(|_| {
-            // Not the error's text: it can carry a panic's message.
-            log::error!("the chooser's thread failed");
-            CommandError::new("INTERNAL_ERROR", "The chooser couldn't be shown.")
-        })?;
-    // A lock or close while the chooser was open ends what it was for.
-    if !session.is_current() {
-        return Err(CommandError::database_closed());
-    }
-    picked
-        .into_iter()
-        .map(|path| {
-            let shown = path.to_string_lossy().into_owned();
-            let token = session.session.hold_pick(session.id, kind, path)?;
-            Ok(ChosenPath { token, path: shown })
-        })
-        .collect()
-}
-
 /// Asks the user for the spreadsheets to import, in the OS's chooser, and
 /// holds them for `import_collection` (code scanning alert `paths/cwe-73` on
 /// `add_document_from_path`). Empty when the user cancels.
@@ -2590,7 +2587,15 @@ pub async fn choose_import_files(
     session: ScopedSession,
     chooser: tauri::State<'_, Arc<dyn Chooser>>,
 ) -> Result<Vec<ChosenPath>, CommandError> {
-    choose(&session, chooser.inner().clone(), Pick::ImportFiles, PickKind::ImportFile).await
+    choose(
+        &session.session,
+        session.id,
+        || session.is_current(),
+        chooser.inner().clone(),
+        Pick::ImportFiles,
+        PickKind::ImportFile,
+    )
+    .await
 }
 
 /// Asks the user for the folder to export to, in the OS's chooser, and holds
@@ -2601,9 +2606,15 @@ pub async fn choose_export_folder(
     session: ScopedSession,
     chooser: tauri::State<'_, Arc<dyn Chooser>>,
 ) -> Result<Option<ChosenPath>, CommandError> {
-    let chosen =
-        choose(&session, chooser.inner().clone(), Pick::ExportFolder, PickKind::ExportFolder)
-            .await?;
+    let chosen = choose(
+        &session.session,
+        session.id,
+        || session.is_current(),
+        chooser.inner().clone(),
+        Pick::ExportFolder,
+        PickKind::ExportFolder,
+    )
+    .await?;
     Ok(chosen.into_iter().next())
 }
 
@@ -2620,43 +2631,57 @@ pub async fn export_collection(
     input: ExportCollectionInput,
     app: tauri::AppHandle,
     session: ScopedSession,
-    reach: tauri::State<'_, Arc<Reach>>,
 ) -> Result<ExportResult, CommandError> {
     if !session.is_current() {
         return Err(CommandError::database_closed());
     }
     let format = parse_format(&input.format)?;
-    ops::export_to_chosen_folder(
-        &session.session,
-        session.id,
-        &input.folder_token,
-        &reach,
-        |folder| {
-            // Registered, so a sleep stops it and the idle clock pauses meanwhile.
-            let operation = session.session.operations().begin(OperationKind::Export, None)?;
-            session.read(|conn| {
-                let records = ops::export_records(conn, &input.scope, input.filter.as_ref())?;
-
-                let base_name =
-                    format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-                ops::export_collection_stoppable(
-                    conn,
+    tauri::async_runtime::spawn_blocking(move || {
+        let reach = app.state::<Arc<Reach>>();
+        let consent = app.state::<Arc<dyn Consent>>();
+        ops::export_to_chosen_folder(
+            &session.session,
+            session.id,
+            &input.folder_token,
+            &reach,
+            |folder| {
+                ops::confirm_export_folder(
+                    &session.session,
+                    session.id,
+                    &**consent,
                     folder,
-                    &base_name,
-                    format,
-                    &records,
-                    &mut |processed, total| {
-                        let _ = app.emit(
-                            "export_collection:progress",
-                            ProgressPayload { processed, total },
-                        );
-                    },
-                    &|| operation.is_cancelled(),
-                    &reach,
-                )
-            })
-        },
-    )
+                    disk_space::is_on_network(folder),
+                    &input.scope,
+                    input.filter.as_ref(),
+                )?;
+                // Registered, so a sleep stops it and the idle clock pauses meanwhile.
+                let operation = session.session.operations().begin(OperationKind::Export, None)?;
+                session.read(|conn| {
+                    let records = ops::export_records(conn, &input.scope, input.filter.as_ref())?;
+
+                    let base_name =
+                        format!("hoplodex-export-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+                    ops::export_collection_stoppable(
+                        conn,
+                        folder,
+                        &base_name,
+                        format,
+                        &records,
+                        &mut |processed, total| {
+                            let _ = app.emit(
+                                "export_collection:progress",
+                                ProgressPayload { processed, total },
+                            );
+                        },
+                        &|| operation.is_cancelled(),
+                        &reach,
+                    )
+                })
+            },
+        )
+    })
+    .await
+    .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not export: {e}")))?
 }
 
 #[derive(Debug, Clone, Deserialize)]

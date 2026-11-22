@@ -87,6 +87,10 @@ pub const COMMANDS: &[&str] = &[
     "render_preview_page",
     "choose_import_files",
     "choose_export_folder",
+    "choose_database_folder",
+    "choose_database_file",
+    "choose_upgrade_backup_folder",
+    "choose_backup_folder",
     "get_export_scope",
     "export_collection",
     "import_collection",
@@ -96,7 +100,8 @@ pub const COMMANDS: &[&str] = &[
 
 // The commands that don't name the open session in a `HoploDex-Session` header
 // (008 research.md §2, contracts/tauri-commands.md "Every request names its
-// session"): the chooser's, the status that tells the frontend the id, the
+// session"): the chooser's, the choosers that pick with nothing open or for
+// the database waiting for the upgrade, the status that tells the frontend the id, the
 // ones that act on the running operation or on this computer, the held backup
 // check (`drop_backup_check`, which needs only its id), and the ones
 // that take a database path and need the header only when they work on the
@@ -107,8 +112,11 @@ pub const COMMANDS: &[&str] = &[
 pub const UNSCOPED_COMMANDS: &[&str] = &[
     "get_chooser_state",
     "create_database",
+    "choose_database_folder",
+    "choose_database_file",
     "open_database",
     "upgrade_database",
+    "choose_upgrade_backup_folder",
     "cancel_upgrade",
     "remove_recent_database",
     "locate_database",

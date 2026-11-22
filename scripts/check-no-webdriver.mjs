@@ -6,7 +6,8 @@
 // does (007: HOPLODEX_E2E_PDF_PREVIEW turns PDF preview off, and
 // HOPLODEX_E2E_CONSENT answers the native confirmation before a document goes
 // to another app, HOPLODEX_E2E_PASSPHRASES answers the native passphrase
-// dialog, and HOPLODEX_E2E_CHOOSER the import's and export's choosers), each held out of a shipped build by the same feature and
+// dialog, HOPLODEX_E2E_CHOOSER the native choosers, and
+// HOPLODEX_E2E_NETWORK_FOLDER stands in for a network share), each held out of a shipped build by the same feature and
 // checked by its name in the binary.
 //
 //   node scripts/check-no-webdriver.mjs            the dependency graph only
@@ -45,7 +46,11 @@ const markers = [
   },
   {
     name: "HOPLODEX_E2E_CHOOSER",
-    what: "the E2E stand-in that answers the import's and export's native choosers from a queue file",
+    what: "the E2E stand-in that answers the native file and folder choosers from a queue file",
+  },
+  {
+    name: "HOPLODEX_E2E_NETWORK_FOLDER",
+    what: "the E2E stand-in for a network share, which an export there asks about first",
   },
 ].map((marker) => ({ ...marker, bytes: Buffer.from(marker.name) }));
 

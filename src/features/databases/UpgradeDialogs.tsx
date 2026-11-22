@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { Button, ConfirmDialog, Dialog, ProgressBar } from "../../components";
 import { formatBytes } from "../../lib/bytes";
 import { withIdlePaused } from "../session/useIdleActivity";
 import * as databasesService from "./databasesService";
 import type { BackupProblem } from "./backupProblem";
+import type { ChosenPath } from "../import-export/types";
 import type { UpgradeProgress } from "./types";
 import { outOfReachText } from "./outOfReach";
 
@@ -169,18 +169,22 @@ export interface UpgradeFolderDialogProps {
   problem: BackupProblem;
   /** The database's name, without quotes. */
   name: string;
-  /** A folder was chosen for this one backup. */
-  onChoose: (folder: string) => void;
+  /** The waiting database the folder is for. */
+  awaitingId: number;
+  /** A folder was chosen for this one backup, in the chooser the backend
+   * opens and keeps the answer of. */
+  onChoose: (folder: ChosenPath) => void;
   /** **Cancel**, Escape or closing the dialog. */
   onCancel: () => void;
 }
 
 /** "Save the backup somewhere else?" (009 contracts/ui.md §3, FR-012), with
- * the same folder picker the settings dialog uses. Dismissing the picker
+ * the same folder chooser the settings dialog uses. Dismissing the chooser
  * leaves the dialog up. */
 export function UpgradeFolderDialog({
   problem,
   name,
+  awaitingId,
   onChoose,
   onCancel,
 }: UpgradeFolderDialogProps) {
@@ -193,13 +197,12 @@ export function UpgradeFolderDialog({
     setChoosing(true);
     try {
       const chosen = await withIdlePaused(() =>
-        openFileDialog({
-          directory: true,
-          multiple: false,
-          title: `Choose a folder for the backup of ${name}`,
-        }),
+        databasesService.chooseUpgradeBackupFolder(awaitingId),
       );
-      if (typeof chosen === "string") onChoose(chosen);
+      if (chosen) onChoose(chosen);
+    } catch {
+      // The database stopped waiting (a sleep or a screen lock), which
+      // closes this dialog as Cancel.
     } finally {
       setChoosing(false);
     }

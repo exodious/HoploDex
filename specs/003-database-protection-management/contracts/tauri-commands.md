@@ -215,6 +215,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-04: no command takes or returns a passphrase. **Input**: `{ folder: string; name: string }`. The name and folder are checked first (`VALIDATION_ERROR` with `fieldErrors.name` or `.folder`, `DATABASE_EXISTS`, `LOCATION_OUT_OF_REACH`); then the native passphrase dialog asks for the passphrase twice with the acknowledgement (`services::passphrase_dialog`), and `PASSPHRASE_CANCELLED` (new: "No passphrase was entered. Nothing has been changed.") answers its Cancel, with nothing made. The command runs on a blocking thread, since the dialog waits for the user._
 
+  _Amended 2026-11-21: **Input**: `{ folderToken?: string; name: string }`. `folderToken` is what the new unscoped command `choose_database_folder` returned: no input, it opens the system's folder chooser from Rust while nothing is open and returns `{ token: string; path: string } | null` (`null` when cancelled). Without a token the database goes in the suggested folder `get_chooser_state` reports, which the backend computes again. A token that isn't a held answer is `VALIDATION_ERROR` ("Choose it again: that choice is no longer available."), before the passphrase is asked for. A create that fails leaves the token for another try; one that succeeds uses it up._
+
 ### `open_database` 🔑
 - **Input**: `{ path: string; passphrase?: string; useSavedPassphrase?: boolean; rememberPassphrase?: boolean; takeOver?: boolean }`. Exactly one of `passphrase` or `useSavedPassphrase: true` is given.
 - **Output**: `DatabaseStatus`
@@ -226,6 +228,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-04: **Input**: `{ path: string; useSavedPassphrase?: boolean; rememberPassphrase?: boolean; takeOver?: boolean }`, with no `passphrase`. Without `useSavedPassphrase`, the native passphrase dialog asks for it ("Open <name>", or "Take over <name>?" naming the computer the last open found it open on when `takeOver` is set), stays up while each passphrase is tried, and asks again under its field for a wrong one. Cancel before any try is `PASSPHRASE_CANCELLED`; after a wrong passphrase it is that `PASSPHRASE_INCORRECT`, with `backupsAvailable` as before._
 
+  _Amended 2026-11-21: a `path` that names a server or a device (`\\server\share`, `\\?\`, `\\.\`, `\??\`, or the same with forward slashes) is opened only when it is on the recent list, or when the user picked it in the new unscoped command `choose_database_file` (no input; the system's file chooser opened from Rust while nothing is open, returning `{ token: string; path: string } | null`). Otherwise it is `VALIDATION_ERROR`, before anything looks at the path. "Open another database file…" uses `choose_database_file` for every file, and sends its `path`; a failed open leaves the pick for another try. The same holds for `databasePath` in `list_backups`, `check_backup` and `restore_backup`._
+
   _Amended 2026-11-06: `takeOver` always asks in the native dialog, even with `useSavedPassphrase`, which it then ignores: typing the passphrase is the take-over's confirmation (FR-032), so the page can't skip it. A marker with a blank machine name reads as "another computer", in the message and in `machineName`._
 
 ### `remove_recent_database`
@@ -236,6 +240,7 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 - **Input**: `{ path: string; newPath: string }` → **Output**: `RecentDatabase`
 - Replaces an unavailable entry's path (FR-012) and keeps its other fields, except `leftModifiedAt`, which is forgotten: the file found may be a copy (FR-040).
   _Amended 2026-10-09 ([#62](https://github.com/exodious/HoploDex/issues/62)): the entry is also marked located (in `machine.json`, not in `RecentDatabase`) until the database opens at the new path. Until then `restore_backup` won't replace the file there, since nothing yet shows it is the database the entry's id and backup folder were cached from._
+  _Amended 2026-11-21: a `newPath` that names a server or a device is taken only when the user picked it in `choose_database_file`, which uses that pick up; otherwise it is `VALIDATION_ERROR`, before anything looks at the path. **Locate…** uses `choose_database_file` for every file, and an entry located there opens from the recent list._
 
 ---
 
@@ -296,6 +301,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): s
 - **Output**: `{ settings: CollectionSettings; existingBackups: ExistingBackupsOutcome | null }` (`null` when the location did not change, or the old folder held no backups; `{ action: "leave" }` after `leave` for an old folder that couldn't be read, whose backups weren't counted)
 - **Errors**: `VALIDATION_ERROR` (`fieldErrors.keepCount`, `fieldErrors.location`); for a changed location, `BACKUPS_AT_OLD_LOCATION` or `OLD_BACKUP_LOCATION_UNAVAILABLE` when `existingBackups` is missing (or, for an unreadable old folder, is not `leave`); for `move`, `BACKUP_LOCATION_UNAVAILABLE` and `INSUFFICIENT_SPACE`, checked before anything is written; for `delete`, `BACKUPS_NOT_ALL_DELETED`; `OPERATION_IN_PROGRESS`; `OPERATION_STOPPED` (`move` or `delete` stopped by a sleep)
   _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#commands-that-check-reach): inside a Flatpak, a custom `location.path` that differs from the saved location is checked for reach before anything is written (an unchanged one writes nothing, so saving the other settings isn't stopped): `VALIDATION_ERROR` with `fieldErrors.location` set to the out-of-reach message, and for `move`, `BACKUP_LOCATION_UNAVAILABLE` with `reason: "outOfReach"` (011 FR-004)._
+
+  _Amended 2026-11-21: `location` is `{ kind: "default" } | { kind: "current" } | { kind: "chosen"; token: string }`: the page never names a folder. `current` keeps the saved location as it is. `token` is what the new scoped command `choose_backup_folder` returned: no input, it opens the system's folder chooser from Rust and returns `{ token: string; path: string } | null`, holding the folder for the open session. A token that isn't a held answer is `VALIDATION_ERROR`. A save that is refused, or that waits for `existingBackups` (`BACKUPS_AT_OLD_LOCATION`, `OLD_BACKUP_LOCATION_UNAVAILABLE`), leaves the token for the next call; one that saves uses it up._
 
 - A collection change (FR-025). Lowering `keepCount` does not delete anything straight away; the next successful backup rotates.
 - **A changed location** (FR-026, research §22) is one whose resolved folder differs from the current one's. With backups of this database in the old folder, nothing is saved until the user has chosen:

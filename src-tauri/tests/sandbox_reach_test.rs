@@ -18,8 +18,8 @@
 //!   name: &str, &Passphrase, acknowledged_unrecoverable: bool, &Reach)`;
 //! - `databases::open_database(&Session, &MachineSettings, path: &str, Unlock,
 //!   take_over: bool, &Reach)`;
-//! - `databases::locate_database(&MachineSettings, path: &str, new_path: &str,
-//!   &Reach)`;
+//! - `databases::locate_database(&Session, &MachineSettings, path: &str,
+//!   new_path: &str, &Reach)`;
 //! - `databases::chooser_state(&Session, &MachineSettings, documents:
 //!   Option<PathBuf>, home: Option<PathBuf>, &Reach)`;
 //! - `databases::update_backup_settings(&Session, SessionId, &MachineSettings,
@@ -592,6 +592,7 @@ fn locate_database_to_a_path_out_of_reach_is_refused() {
     let home = world.make_db(&world.home(), "Mine", true);
     for new_path in [world.outside().join("Moved.hoplodex"), world.ro().join("Moved.hoplodex")] {
         let refused = databases::locate_database(
+            &world.boxed,
             &world.machine,
             &text(&home),
             &text(&new_path),
@@ -797,7 +798,7 @@ fn upgrade_database_stops_when_the_before_backup_location_is_out_of_reach() {
         &world.boxed,
         &world.machine,
         awaiting_id,
-        Some(&text(&chosen)),
+        Some(chosen.as_path()),
     )
     .unwrap_err();
     assert_backup_out_of_reach(&refused, &chosen);
@@ -1445,7 +1446,7 @@ fn a_portal_folder_outside_reach_is_accepted_as_the_upgrades_chosen_folder() {
         &world.boxed,
         &world.machine,
         awaiting_id,
-        Some(&text(&chosen)),
+        Some(chosen.as_path()),
     )
     .unwrap_err();
 
@@ -1601,6 +1602,7 @@ fn unconfined_every_location_is_within_reach_and_nothing_changes() {
 
     // locate_database to `outside`.
     databases::locate_database(
+        &world.plain,
         &world.machine,
         &text(&read_only),
         &text(&world.outside().join("Located.hoplodex")),

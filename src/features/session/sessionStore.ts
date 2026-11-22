@@ -16,10 +16,10 @@ export interface SessionState {
    * when the dialog was cancelled) and leaves the chooser showing. */
   openDatabase: (path: string, options?: OpenOptions) => Promise<void>;
   /** Upgrades the database waiting under `awaitingId` (`UPGRADE_NEEDED`) and
-   * opens it, saving its backup in `backupFolder` when given instead of the
-   * backup location (009 FR-011, FR-012). Rejects with the command's
-   * `CommandFailure` and leaves the chooser showing. */
-  upgradeDatabase: (awaitingId: number, backupFolder?: string) => Promise<void>;
+   * opens it, saving its backup in the folder picked under `backupFolderToken`
+   * when given instead of the backup location (009 FR-011, FR-012). Rejects
+   * with the command's `CommandFailure` and leaves the chooser showing. */
+  upgradeDatabase: (awaitingId: number, backupFolderToken?: string) => Promise<void>;
   /** Creates a database, asking for its passphrase in the native dialog, and
    * opens it. */
   createDatabase: (input: CreateDatabaseInput) => Promise<void>;

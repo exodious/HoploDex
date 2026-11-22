@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { withIdlePaused } from "../session/useIdleActivity";
 import { Button, Dialog, Icon, TextField } from "../../components";
 import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { CommandFailure } from "../../services/tauriClient";
+import { ChosenPathField } from "../import-export/ChosenPathField";
+import * as databasesService from "./databasesService";
 import { joinPath } from "./paths";
 import { DEFAULT_SETTINGS } from "./settings";
+import type { ChosenPath } from "../import-export/types";
 import type { CreateDatabaseInput, SuggestedLocation } from "./types";
 import "../firearms/forms.css";
 import "./databases.css";
@@ -58,7 +60,9 @@ function CreateDatabaseForm({
   onCancel: () => void;
 }) {
   const [name, setName] = useState(suggested.name);
-  const [folder, setFolder] = useState(suggested.folder);
+  // The suggested folder until one is picked in the chooser the backend opens,
+  // whose answer it keeps: the page sends only its token.
+  const [folder, setFolder] = useState<ChosenPath | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -77,23 +81,23 @@ function CreateDatabaseForm({
     setErrors((current) => ({ ...current, [field]: undefined }));
   }
   const trimmedName = name.trim();
-  const trimmedFolder = folder.trim();
+  const folderPath = folder?.path ?? suggested.folder;
   const shownName = trimmedName || suggested.name;
-  const target = trimmedFolder ? joinPath(trimmedFolder, `${shownName}.hoplodex`) : null;
-  const backups = trimmedFolder ? joinPath(trimmedFolder, "HoploDex backups") : null;
+  const target = joinPath(folderPath, `${shownName}.hoplodex`);
+  const backups = joinPath(folderPath, "HoploDex backups");
 
   async function chooseFolder() {
-    const selected = await withIdlePaused(() =>
-      openFolderDialog({
-        directory: true,
-        multiple: false,
-        title: "Choose where to keep the database",
-        defaultPath: trimmedFolder || undefined,
-      }),
-    );
-    if (typeof selected === "string") {
-      setFolder(selected);
-      clearError("folder");
+    try {
+      const chosen = await withIdlePaused(() => databasesService.chooseDatabaseFolder());
+      if (chosen) {
+        setFolder(chosen);
+        clearError("folder");
+      }
+    } catch (e) {
+      setErrors((current) => ({
+        ...current,
+        folder: e instanceof CommandFailure ? e.message : "The folder couldn't be chosen.",
+      }));
     }
   }
 
@@ -101,7 +105,6 @@ function CreateDatabaseForm({
     event.preventDefault();
     const found: Errors = {};
     if (!trimmedName) found.name = "Enter a name.";
-    if (!trimmedFolder) found.folder = "Enter a folder.";
     setErrors(found);
     setServerError(null);
     if (Object.keys(found).length > 0) {
@@ -113,7 +116,7 @@ function CreateDatabaseForm({
     try {
       // The backend checks the name and folder, then asks for the
       // passphrase in the native dialog.
-      await onCreate({ folder: trimmedFolder, name: trimmedName });
+      await onCreate({ ...(folder ? { folderToken: folder.token } : {}), name: trimmedName });
     } catch (e) {
       if (e instanceof CommandFailure && e.code === "PASSPHRASE_CANCELLED") {
         // Cancelled in the dialog: nothing was made, and the form stays.
@@ -160,28 +163,14 @@ function CreateDatabaseForm({
           />
         </div>
         <div data-field="folder">
-          <TextField
+          <ChosenPathField
             label="Folder"
-            required
-            value={folder}
-            disabled={submitting}
-            spellCheck={false}
-            onChange={(e) => {
-              setFolder(e.target.value);
-              clearError("folder");
-            }}
-            hint={target ? `Saved as ${target}` : undefined}
+            value={folderPath}
+            chooseLabel="Choose a folder…"
+            onChoose={() => void chooseFolder()}
+            hint={`Saved as ${target}`}
             error={errors.folder}
-            trailing={
-              <button
-                type="button"
-                className="hd-input__text-action"
-                disabled={submitting}
-                onClick={() => void chooseFolder()}
-              >
-                Choose…
-              </button>
-            }
+            disabled={submitting}
           />
         </div>
         <section className="hd-privacy-note" role="note" aria-labelledby="create-db-backups">
@@ -192,13 +181,10 @@ function CreateDatabaseForm({
             </h3>
             <p>
               Backups are on. When “{shownName}” locks or HoploDex quits after a change, HoploDex
-              saves a copy in{" "}
-              <strong className="hd-privacy-note__path">
-                {backups ?? "the database's folder"}
-              </strong>
-              , at most once a day, keeping the latest {DEFAULT_SETTINGS.keepCount}. Each backup
-              holds the whole collection and opens with the passphrase you had when it was made. You
-              can change this in the database settings.
+              saves a copy in <strong className="hd-privacy-note__path">{backups}</strong>, at most
+              once a day, keeping the latest {DEFAULT_SETTINGS.keepCount}. Each backup holds the
+              whole collection and opens with the passphrase you had when it was made. You can
+              change this in the database settings.
             </p>
           </div>
         </section>

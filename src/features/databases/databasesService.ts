@@ -1,4 +1,5 @@
 import { CommandFailure, invoke, listen } from "../../services/tauriClient";
+import type { ChosenPath } from "../import-export/types";
 import type { SessionScope } from "../session/sessionScope";
 import type {
   BackupCheck,
@@ -32,6 +33,30 @@ export function getChooserState(): Promise<ChooserState> {
 
 export function createDatabase(input: CreateDatabaseInput): Promise<DatabaseStatus> {
   return invoke<DatabaseStatus>("create_database", { ...input });
+}
+
+/** Asks the user for a new database's folder in the OS's chooser, which the
+ * backend opens and keeps the answer of; null when the user cancels. */
+export function chooseDatabaseFolder(): Promise<ChosenPath | null> {
+  return invoke<ChosenPath | null>("choose_database_folder");
+}
+
+/** Asks the user for a database file to open, as `chooseDatabaseFolder` does;
+ * `openDatabase` then takes its path. */
+export function chooseDatabaseFile(): Promise<ChosenPath | null> {
+  return invoke<ChosenPath | null>("choose_database_file");
+}
+
+/** Asks the user for the open database's new backup location, as
+ * `chooseDatabaseFolder` does. */
+export function chooseBackupFolder(scope: SessionScope): Promise<ChosenPath | null> {
+  return scope.invoke<ChosenPath | null>("choose_backup_folder");
+}
+
+/** Asks the user for the folder of the one backup made before upgrading the
+ * database waiting under `awaitingId`, as `chooseDatabaseFolder` does. */
+export function chooseUpgradeBackupFolder(awaitingId: number): Promise<ChosenPath | null> {
+  return invoke<ChosenPath | null>("choose_upgrade_backup_folder", { awaitingId });
 }
 
 export interface OpenOptions {
@@ -182,15 +207,15 @@ export function dropBackupCheck(checkId: number): Promise<null> {
 
 /** Upgrades the database waiting under `awaitingId` (from `UPGRADE_NEEDED`)
  * after backing it up, in the backup location or, when that couldn't be used,
- * `backupFolder`; the database is then open (009 FR-011, FR-012). No session
- * exists yet, so none is named. */
+ * the folder picked in `chooseUpgradeBackupFolder`, by its token; the database
+ * is then open (009 FR-011, FR-012). No session exists yet, so none is named. */
 export function upgradeDatabase(
   awaitingId: number,
-  backupFolder?: string,
+  backupFolderToken?: string,
 ): Promise<DatabaseStatus> {
   return invoke<DatabaseStatus>("upgrade_database", {
     awaitingId,
-    ...(backupFolder ? { backupFolder } : {}),
+    ...(backupFolderToken ? { backupFolderToken } : {}),
   });
 }
 

@@ -470,6 +470,7 @@ fn locate_and_remove_through_the_commands() {
     fs::rename(&moved, &found).unwrap();
 
     let located = ops::locate_database(
+        &setup.session,
         &setup.machine,
         &moved.to_string_lossy(),
         &found.to_string_lossy(),
@@ -481,6 +482,7 @@ fn locate_and_remove_through_the_commands() {
     assert_eq!(located.name, "Moved");
     assert!(located.available);
     let missing = ops::locate_database(
+        &setup.session,
         &setup.machine,
         "/no/such.hoplodex",
         "/x.hoplodex",

@@ -126,12 +126,17 @@ A file from the picker is read in the web view, so the panel refuses one over
 its limit from `File.size` before reading it, and the backend checks the bytes
 it receives again.
 
-**The import's files and the export's folder** are picked in a chooser the
-backend opens (`choose_import_files`, `choose_export_folder`, `services::chooser`),
-never typed: the page gets a token for each answer and shows its path
-(`ChosenPathField`), and `import_collection` and `export_collection` take the
-tokens. An import or export that finishes uses them up; one that fails leaves
-them, so the dialog can try again. Don't add a path field back, or a command
+**The import's files, the export's folder, a new database's folder, the
+backup location and the upgrade's backup folder** are picked in a chooser the
+backend opens (`choose_import_files`, `choose_export_folder`,
+`choose_database_folder`, `choose_backup_folder`, `choose_upgrade_backup_folder`,
+`services::chooser`), never typed: the page gets a token for each answer and
+shows its path (`ChosenPathField` in the import, export and create dialogs),
+and the commands take the tokens. One that finishes uses them up; one that
+fails leaves them, so the dialog can try again (the upgrade picks again). The
+settings dialog sends `current` for the saved location. **Open another database
+file…** and **Locate…** use `choose_database_file` and send the picked path
+(`open_database`, `locate_database`). Don't add a path field back, or a command
 that takes a file or folder the page names. An E2E build answers the chooser
 from a queue (`answerChooser` in `e2e/support/ui.ts`) and hands the
 `tauri://drag-drop` events the specs send to `drops::record`, the recorder a
