@@ -389,8 +389,9 @@ pub fn clear_open_marker(conn: &Connection) -> rusqlite::Result<()> {
 /// Opens a copy that is to replace a database (a restore's, a passphrase
 /// change's) with the passphrase it should have, and proves it sound
 /// before anything is replaced (003 research.md §4): every page's HMAC
-/// (`cipher_integrity_check`), SQLite's own `integrity_check`, a HoploDex
-/// database, and no migration this build doesn't know. Returns the
+/// (`cipher_integrity_check`), then [`check_schema`] (a HoploDex database, no
+/// migration this build doesn't know, and only the schema its steps make),
+/// then SQLite's own `integrity_check`. Returns the
 /// connection so the caller can stamp the copy. Nothing else knows about
 /// the copy, so it is not locked exclusively.
 pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, OpenError> {
