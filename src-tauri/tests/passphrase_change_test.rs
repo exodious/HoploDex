@@ -316,6 +316,51 @@ fn progress_reports_copying_then_checking_then_replacing() {
     }
 }
 
+/// 001 FR-010 (amended 2026-11-21): a document over 31 MiB stored before the
+/// limits is copied with the rest, though no connection reads it.
+#[test]
+fn a_document_past_what_a_connection_reads_comes_across() {
+    use rusqlite::limits::Limit;
+
+    let world = World::new();
+    let past = i64::from(db::MAX_VALUE_BYTES) + 1;
+    world
+        .session
+        .write(world.session.current_id(), |conn| {
+            conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, 1_000_000_000).unwrap();
+            conn.execute(
+                "INSERT INTO document_attachments
+                     (uid, firearm_id, file_bytes, original_filename, mime_type, created_at)
+                 VALUES (?1, 1, zeroblob(?2), 'old scan.pdf', 'application/pdf', datetime('now'))",
+                rusqlite::params![support::uid(), past],
+            )
+            .map_err(CommandError::from_db)?;
+            conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, db::MAX_VALUE_BYTES).unwrap();
+            Ok(())
+        })
+        .unwrap();
+    let counts = world.row_counts();
+
+    world.change_to_new().unwrap();
+
+    world.close();
+    world.open_with(NEW_PASSPHRASE).unwrap();
+    assert_eq!(world.row_counts(), counts);
+    let stored = world
+        .session
+        .read(world.session.current_id(), |conn| {
+            conn.query_row(
+                "SELECT length(file_bytes) FROM document_attachments
+                 WHERE original_filename = 'old scan.pdf'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(CommandError::from_db)
+        })
+        .unwrap();
+    assert_eq!(stored, past);
+}
+
 // --- Refusals before anything is written ------------------------------------
 
 #[test]

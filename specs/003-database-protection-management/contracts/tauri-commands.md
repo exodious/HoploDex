@@ -346,6 +346,8 @@ sleep stops it (FR-037).
 
   _Amended 2026-11-04: **Input**: none. The native passphrase dialog asks for the current passphrase and the new one twice, checks the new one as it is typed, and checks the current one against the file while it waits, asking again under that field when it is wrong; `PASSPHRASE_CANCELLED` answers its Cancel. The copy starts once it has closed, so the first `copying` event comes after the current passphrase is checked._
 
+  _Amended 2026-11-21: a photo or document over 31 MiB stored before 001's limits, which no connection reads ([001 spec FR-007, FR-010](../../001-firearms-inventory/spec.md)), doesn't stop the change: the copy carries it unchanged, with the rest._
+
 ### `list_backups`
 - **Input**: `{ databasePath?: string }` (defaults to the open database; given for a damaged database that cannot be opened, research §8)
 - **Output**: `{ folder: string; available: boolean; backups: BackupInfo[] }` (newest first). `BackupInfo.madeAt` is the local time in the backup's name, without a zone (`2026-09-25T14:30:05`)

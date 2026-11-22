@@ -13,10 +13,12 @@ use crate::support;
 
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
+use hoplodex_lib::commands::import_export::ops as export_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::sandbox::Reach;
+use hoplodex_lib::services::spreadsheet::SpreadsheetFormat;
 use serde_json::json;
 use support::{TestDb, document_fixture, sample_png_bytes};
 
@@ -293,6 +295,23 @@ fn an_attachment_past_what_a_connection_reads_still_lists_and_only_it_fails_to_o
     // The others open.
     document_ops::get_document(&db.conn, documents[1].id).unwrap();
     photo_ops::get_photo(&db.conn, photos[0].id).unwrap();
+
+    // An export holding the photo fails as a whole, and leaves nothing.
+    let dest = tempfile::tempdir().unwrap();
+    let records = export_ops::export_records(&db.conn, "all", None).unwrap();
+    let err = export_ops::export_collection(
+        &db.conn,
+        dest.path(),
+        "export",
+        SpreadsheetFormat::Csv,
+        &records,
+        &mut |_, _| {},
+        &Reach::Unconfined,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_TOO_LARGE");
+    assert_eq!(err.details.as_deref(), Some(&limit));
+    assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0);
 
     document_ops::delete_document(&db.conn, big_document, true).unwrap();
     photo_ops::delete_photo(&db.conn, big_photo, true).unwrap();
