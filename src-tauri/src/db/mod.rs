@@ -461,18 +461,22 @@ pub(crate) fn check_schema(conn: &Connection, path: &Path) -> Result<(), OpenErr
         return Err(OpenError::PassphraseIncorrect);
     }
 
-    let mut steps =
-        conn.prepare("SELECT name FROM schema_migrations").map_err(OpenError::classify)?;
-    let applied: Vec<String> = steps
-        .query_map([], |row| row.get(0))
-        .and_then(Iterator::collect)
-        .map_err(OpenError::classify)?;
+    // One name at a time, stopping at the first unknown one, so no more than
+    // the build's steps are kept.
     let build = upgrade::build_steps(path);
-    if applied.iter().any(|name| !build.iter().any(|(known, _)| known == name)) {
-        return Err(OpenError::NewerVersion);
+    let mut applied = Vec::new();
+    let mut names =
+        conn.prepare("SELECT name FROM schema_migrations").map_err(OpenError::classify)?;
+    let mut rows = names.query([]).map_err(OpenError::classify)?;
+    while let Some(row) = rows.next().map_err(OpenError::classify)? {
+        let name: String = row.get(0).map_err(OpenError::classify)?;
+        match build.iter().position(|(known, _)| *known == name) {
+            Some(step) => applied.push(step),
+            None => return Err(OpenError::NewerVersion),
+        }
     }
-    for (name, sql) in build {
-        if applied.iter().any(|done| done == name) {
+    for (step, (_, sql)) in build.iter().enumerate() {
+        if applied.contains(&step) {
             expected.execute_batch(sql).map_err(OpenError::Internal)?;
         }
     }
