@@ -49,6 +49,9 @@
 //!      "landlock_enforced": bool,                 // Linux: any rule in force
 //!      "descriptors_before": [number],            // open from 3 up, before and
 //!      "descriptors_after": [number],             // once confined
+//!      "earlier_thread_open": number | null,      // Linux: opening <file> once
+//!                                                 // confined, from a thread started
+//!                                                 // before: 0 or the error
 //!      "filter": object | null }`                 // Linux: `filter_report`'s
 //!   It is the only way to look inside a confined process from outside, and it
 //!   is compiled into debug and test builds only (`cfg(debug_assertions)`): a
@@ -188,6 +191,9 @@ fn the_filter_refuses_every_listed_call_and_nothing_a_helper_needs() {
     assert_eq!(filter["udp"], eperm, "a UDP socket: {json}");
     assert_eq!(filter["unix"], eperm, "a pair of Unix sockets: {json}");
     assert_eq!(filter["start"], eperm, "starting a program: {json}");
+    // Landlock holds for the thread that confines and its new threads only,
+    // so this is the filter alone, on every thread (`SECCOMP_FILTER_FLAG_TSYNC`).
+    assert_eq!(json["earlier_thread_open"], eperm, "a thread started before: {json}");
 }
 
 /// The numbers in the filter mean other calls on another architecture, so a
@@ -357,6 +363,21 @@ fn without_landlock_its_filter_alone_keeps_it_from_files_programs_and_unix_socke
 #[cfg(all(debug_assertions, unix))]
 #[test]
 fn it_holds_no_descriptor_it_inherited() {
+    holds_no_descriptor_it_inherited(HelperHandle::command(&exe()));
+}
+
+/// On a kernel older than Linux 5.9, which has no `close_range`, as a parent's
+/// filter makes it look: each descriptor up to the limit is closed instead.
+#[cfg(all(debug_assertions, target_os = "linux"))]
+#[test]
+fn without_close_range_it_still_holds_no_descriptor_it_inherited() {
+    let mut command = HelperHandle::command(&exe());
+    under_a_parents_filter(&mut command, &[(libc::SYS_close_range, libc::ENOSYS)]);
+    holds_no_descriptor_it_inherited(command);
+}
+
+#[cfg(all(debug_assertions, unix))]
+fn holds_no_descriptor_it_inherited(mut command: std::process::Command) {
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
 
@@ -367,7 +388,6 @@ fn it_holds_no_descriptor_it_inherited() {
     let open = std::fs::File::open(&file).unwrap();
     let source = open.as_raw_fd();
 
-    let mut command = HelperHandle::command(&exe());
     command.args(["--self-check", "9", file.to_str().unwrap()]);
     // SAFETY: between fork and exec, one system call on numbers.
     unsafe {

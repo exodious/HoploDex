@@ -285,17 +285,20 @@ fn each_crafted_tiff_fails_cleanly_and_the_session_stays_usable() {
 
 // --- Closing at once (007 spec.md Edge Cases, "A large document") --------------------
 
-/// A valid 8192-pixel-wide TIFF of at least 100 MB, made once.
+/// A valid TIFF of 4096 x 7680 pixels, made once: the largest a connection
+/// reads (`db::MAX_VALUE_BYTES`, 31 MiB), just over the 30 MiB a new document may
+/// be (001 FR-010, amended 2026-11-04), so it is stored as a database made before
+/// that limit holds it.
 fn large() -> &'static hostile::Generated {
-    // Over the 30 MiB a new document may be (001 FR-010, amended 2026-11-04),
-    // so it is stored as a database made before that limit holds it.
     static LARGE: OnceLock<hostile::Generated> = OnceLock::new();
     LARGE.get_or_init(|| {
-        let large = hostile::large_tiff(100_000_000);
-        assert!(large.bytes.len() >= 100_000_000);
+        let large = hostile::gray_tiff(LARGE_WIDTH, 30 * 1024 * 1024);
+        assert!(large.bytes.len() <= hoplodex_lib::db::MAX_VALUE_BYTES as usize);
         large
     })
 }
+
+const LARGE_WIDTH: u32 = 4096;
 
 #[test]
 fn closing_during_the_load_of_a_large_tiff_is_prompt_and_kills_the_helper() {
@@ -410,13 +413,13 @@ fn the_width_is_clamped_to_4096_pixels() {
 fn the_page_is_clamped_to_24_megapixels_for_its_aspect_ratio() {
     let _serial = serial();
     let mut world = Fixture::new();
-    // The decode of 100 MB takes a while in a debug build.
+    // The decode of 30 MiB takes a while in a debug build.
     world.preview.env.helper_limits.render = Duration::from_secs(120);
     let preview_id =
         Fixture::id_of(&world.open_ok(world.add_stored(&large().name, &large().bytes)));
     let native = png_aspect_of_large();
 
-    // At 4096 wide this page would be about 25 megapixels.
+    // At 4096 wide this page would be about 31 megapixels.
     let png = render(&world, preview_id, 0, 4096).unwrap();
 
     let (width, height) = png_size(&png);
@@ -428,10 +431,10 @@ fn the_page_is_clamped_to_24_megapixels_for_its_aspect_ratio() {
     assert!((aspect - native).abs() / native < 0.01, "{width} x {height}");
 }
 
-/// Width over height of `large()`: 8192 pixels wide, as many rows as its
-/// size needs (`hostile::large_tiff`).
+/// Width over height of `large()`: as many rows as its size needs
+/// (`hostile::gray_tiff`).
 fn png_aspect_of_large() -> f64 {
-    8192.0 / f64::from(100_000_000u32.div_ceil(8192))
+    f64::from(LARGE_WIDTH) / f64::from((30 * 1024 * 1024u32).div_ceil(LARGE_WIDTH))
 }
 
 #[test]

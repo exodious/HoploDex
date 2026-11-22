@@ -339,6 +339,8 @@ _Amended 2026-11-19 (code scanning alert 89): the input is unchanged, but the ba
   contract list, but lets browse views render a firearm's thumbnail
   without fetching its full photo list.
 
+_Amended 2026-11-21: it reads the thumbnail without the original, as `list_photos` does, so a photo too large to open ([spec FR-007](../spec.md)) still shows one._
+
 ### `get_photo_original`
 
 - **Input**: `photoId: number`.
@@ -347,6 +349,8 @@ _Amended 2026-11-19 (code scanning alert 89): the input is unchanged, but the ba
   array, so multi-megabyte photos transfer quickly). Used by the record
   view's photo viewer and plate, where condition details must be legible.
 - **Errors**: `NOT_FOUND`.
+
+_Amended 2026-11-21: also `ATTACHMENT_TOO_LARGE` for a photo over 31 MiB stored before the limits ("This photo is too large to open. HoploDex opens one of at most 31 MiB."; `details` is `{ limit }` in bytes, [spec FR-007](../spec.md)). `export_collection` fails with the same code when a record it exports holds one (below)._
 
 ### `set_thumbnail_photo`
 
@@ -395,6 +399,8 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#op
 - **Errors**: `NOT_FOUND`, `INTERNAL_ERROR` (copy couldn't be written or
   no app could open it).
 
+_Amended 2026-11-21: also `ATTACHMENT_TOO_LARGE` for a document over 31 MiB stored before the limits ("This document is too large to open. HoploDex opens one of at most 31 MiB."; `details` is `{ limit }` in bytes, [spec FR-010](../spec.md)), before any copy is written._
+
 ### `get_generic_thumbnail`
 
 - **Input**: `key: string` (a `FirearmType.generic_thumbnail_key`).
@@ -412,6 +418,8 @@ _Amended by [spec 006](../../006-accessory-links/contracts/tauri-commands.md#exp
 _Amended 2026-10-09 (#74, #68): an export's names are reserved fresh and a photo's file name is a basename; see [spec 006's "Two tables"](../../006-accessory-links/contracts/spreadsheet-format.md#two-tables)._
 
 _Amended 2026-11-19 (code scanning alert 110): the input is `{ format, folderToken: string, scope, filter? }`, `destinationFolder` gone. `folderToken` is what the new scoped command `choose_export_folder` returned: no input, it opens the system's folder chooser from Rust and returns `{ token: string, path: string } | null` (`null` when cancelled), holding the folder for the open session. A token that isn't a held answer is `VALIDATION_ERROR`; the folder must be absolute and exist (`VALIDATION_ERROR` "That folder isn't there any more…") and is never made; reach is checked as before. An export that finishes uses the token up; one that fails or is stopped leaves it for another try._
+
+_Amended 2026-11-21 ([spec FR-007](../spec.md)): also `ATTACHMENT_TOO_LARGE` when a record it exports holds a photo over 31 MiB stored before the limits, naming the photo's file and the record as messages name one (006 FR-005): "old.png on Glock 19 is too large to export. HoploDex exports photos of at most 31 MiB."; `details` is `{ limit }` in bytes. The export fails as a whole and removes what it made; it succeeds once that photo is deleted._
 
 _Amended 2026-11-21: when the picked folder may be on another computer (a `\\server\share` path or a drive letter mapped to one on Windows; an NFS, SMB, AFS, Ceph, Coda or 9P mount, or any FUSE mount, which is how gvfs, kio-fuse, sshfs and the Flatpak document portal reach a share, on Linux; a volume not marked local on macOS), the backend asks first in a native confirmation (`services::consent`), "Export to a folder that may be on another computer?", saying the folder may be on another computer, naming it and how many records the export holds, with **Export** and **Cancel**. Cancel writes nothing and is `OPERATION_STOPPED` ("Nothing was exported."), leaving the token for another try._
 

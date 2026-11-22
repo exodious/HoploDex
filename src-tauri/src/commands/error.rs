@@ -487,6 +487,25 @@ impl CommandError {
         Self::new("ATTACHMENT_TOO_LARGE", message).with_details(Some(json!({ "limit": limit })))
     }
 
+    /// Reading a stored photo or document failed: `ATTACHMENT_TOO_LARGE` when
+    /// it is longer than any connection reads (`db::MAX_VALUE_BYTES`), as one
+    /// stored before the limits of 001 FR-007 and FR-010 can be (amended
+    /// 2026-11-21), and as [`from_db`](Self::from_db) otherwise. `what` is
+    /// "photo" or "document".
+    pub fn from_attachment_read(err: rusqlite::Error, what: &str) -> Self {
+        if err.sqlite_error_code() != Some(rusqlite::ErrorCode::TooBig) {
+            return Self::from_db(err);
+        }
+        let limit = crate::db::MAX_VALUE_BYTES as u64;
+        Self::attachment_too_large(
+            format!(
+                "This {what} is too large to open. HoploDex opens one of at most {}.",
+                crate::models::rules::size_label(limit)
+            ),
+            limit,
+        )
+    }
+
     /// 008 FR-007: an import file couldn't be read: not a table, damaged,
     /// or the reader's child died, timed out or sent a malformed frame. No
     /// parser detail is shown.

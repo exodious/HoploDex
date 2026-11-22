@@ -38,6 +38,47 @@ impl DocumentAttachment {
     }
 }
 
+/// A document without its content, as `list_documents` reads it: a list never
+/// reads a document's bytes, so a record whose document is larger than any
+/// connection reads (one stored before 001 FR-010's limit, amended 2026-11-21)
+/// still lists all of them.
+#[derive(Debug, Clone)]
+pub struct DocumentInfo {
+    pub id: i64,
+    pub owner: RecordRef,
+    pub original_filename: String,
+    pub mime_type: String,
+    pub created_at: String,
+}
+
+impl DocumentInfo {
+    /// The columns [`DocumentInfo::from_row`] reads.
+    pub const COLUMNS: &str =
+        "id, firearm_id, accessory_id, original_filename, mime_type, created_at";
+
+    pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            owner: RecordRef::from_owner_row(row)?,
+            original_filename: row.get("original_filename")?,
+            mime_type: row.get("mime_type")?,
+            created_at: row.get("created_at")?,
+        })
+    }
+}
+
+impl From<DocumentAttachment> for DocumentInfo {
+    fn from(doc: DocumentAttachment) -> Self {
+        Self {
+            id: doc.id,
+            owner: doc.owner,
+            original_filename: doc.original_filename,
+            mime_type: doc.mime_type,
+            created_at: doc.created_at,
+        }
+    }
+}
+
 /// The frontend-facing DTO for listing a record's documents — omits
 /// `file_bytes` (read only to preview or reopen a document, 001 FR-010) to keep
 /// `list_documents` payloads small. The last three fields are derived on
@@ -63,7 +104,8 @@ pub struct DocumentSummary {
 }
 
 impl DocumentSummary {
-    pub fn new(doc: DocumentAttachment, pdf: &PdfAvailability) -> Self {
+    pub fn new(doc: impl Into<DocumentInfo>, pdf: &PdfAvailability) -> Self {
+        let doc = doc.into();
         let recorded = from_recorded(&doc.mime_type);
         let preview_kind = recorded.and_then(|t| t.preview_kind);
         let preview_available = match preview_kind {

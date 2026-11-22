@@ -296,13 +296,26 @@ mod imp {
             if libc::setrlimit(libc::RLIMIT_DATA, &data) != 0 {
                 return Err(last_error("RLIMIT_DATA"));
             }
-            // Only the three pipes: close whatever else was inherited.
-            libc::syscall(
+            // Only the three pipes: close whatever else was inherited. Before
+            // Linux 5.9 there is no `close_range`, so each number up to the
+            // hard limit is closed instead: a descriptor opened while the soft
+            // one was higher can be above it.
+            let closed = libc::syscall(
                 libc::SYS_close_range,
                 3 as libc::c_uint,
                 libc::c_uint::MAX,
                 0 as libc::c_uint,
             );
+            if closed != 0 {
+                let mut open = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+                if libc::getrlimit(libc::RLIMIT_NOFILE, &mut open) != 0 {
+                    return Err(last_error("RLIMIT_NOFILE"));
+                }
+                let end = open.rlim_max.min(libc::c_int::MAX as libc::rlim_t) as libc::c_int;
+                for fd in 3..end {
+                    libc::close(fd);
+                }
+            }
         }
         let confinement = landlock();
         refuse_system_calls().map_err(|e| format!("the seccomp filter: {e}"))?;
@@ -324,8 +337,9 @@ mod imp {
 
     /// The filter, on top of Landlock and whatever the kernel's version of
     /// Landlock leaves open: it allows by default and answers a listed call
-    /// with `EPERM`, a normal error, and never kills. It holds for this thread
-    /// and the threads it starts, and a helper has no other at this point.
+    /// with `EPERM`, a normal error, and never kills. It holds for every
+    /// thread of the helper (`TSYNC`), the threads it starts after too, so a
+    /// thread a library started before [`confine`] is under it as well.
     fn refuse_system_calls() -> Result<(), std::io::Error> {
         // Offsets in `seccomp_data`; an argument's low half on a little-endian
         // machine, and each argument checked here is a 32-bit `int` or flags.
@@ -407,10 +421,15 @@ mod imp {
             libc::syscall(
                 libc::SYS_seccomp,
                 libc::SECCOMP_SET_MODE_FILTER,
-                libc::SECCOMP_FILTER_FLAG_SPEC_ALLOW,
+                libc::SECCOMP_FILTER_FLAG_SPEC_ALLOW | libc::SECCOMP_FILTER_FLAG_TSYNC,
                 &raw const program,
             )
         };
+        // With `TSYNC`, a positive answer is a thread that couldn't take the
+        // filter, and none of the helper's threads has it then.
+        if installed > 0 {
+            return Err(std::io::Error::other(format!("thread {installed} isn't filtered")));
+        }
         if installed != 0 {
             return Err(std::io::Error::last_os_error());
         }

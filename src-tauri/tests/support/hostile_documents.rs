@@ -908,12 +908,15 @@ pub fn hostile_tiffs() -> Vec<Generated> {
     vec![tiff_truncated(), tiff_bit_flipped(), tiff_endless_pages(), tiff_huge_dimensions()]
 }
 
-/// A valid uncompressed 8-bit grayscale TIFF of one page, at least
-/// `min_bytes` long (a 100 MB document for the large-document case). Its
-/// pixels repeat a 4 KiB pattern, so it is cheap to make and the same every
-/// time.
+/// A valid uncompressed 8-bit grayscale TIFF of one page, 8192 pixels wide
+/// and at least `min_bytes` long. Its pixels repeat a 4 KiB pattern, so it is
+/// cheap to make and the same every time.
 pub fn large_tiff(min_bytes: usize) -> Generated {
-    let width = 8192u32;
+    gray_tiff(8192, min_bytes)
+}
+
+/// [`large_tiff`] `width` pixels wide.
+pub fn gray_tiff(width: u32, min_bytes: usize) -> Generated {
     let height = (min_bytes as u32).div_ceil(width).max(1);
     let data_len = width * height;
     let mut b = tiff_header(8);

@@ -9,7 +9,7 @@ use crate::app_dirs;
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
 use crate::models::database::IdlePauseReason;
-use crate::models::document_attachment::{DocumentAttachment, DocumentSummary};
+use crate::models::document_attachment::{DocumentAttachment, DocumentInfo, DocumentSummary};
 use crate::models::document_opening::DocumentOpening;
 use crate::models::record::RecordRef;
 use crate::models::rules::{MAX_DOCUMENT_BYTES, MAX_DOCUMENTS_PER_RECORD};
@@ -77,22 +77,25 @@ pub mod ops {
             DocumentAttachment::from_row,
         )
         .optional()
-        .map_err(CommandError::from_db)?
+        .map_err(|e| CommandError::from_attachment_read(e, "document"))?
         .ok_or_else(|| CommandError::not_found("No document was found with that id."))
     }
 
+    /// The owner's documents without their content, which is read only to
+    /// preview or reopen one.
     pub fn list_documents(
         conn: &Connection,
         owner: RecordRef,
-    ) -> Result<Vec<DocumentAttachment>, CommandError> {
+    ) -> Result<Vec<DocumentInfo>, CommandError> {
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT * FROM document_attachments WHERE {} = :id ORDER BY created_at, id",
+                "SELECT {} FROM document_attachments WHERE {} = :id ORDER BY created_at, id",
+                DocumentInfo::COLUMNS,
                 owner.owner_column()
             ))
             .map_err(CommandError::from_db)?;
         let rows = stmt
-            .query_map(named_params! { ":id": owner.id() }, DocumentAttachment::from_row)
+            .query_map(named_params! { ":id": owner.id() }, DocumentInfo::from_row)
             .map_err(CommandError::from_db)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(CommandError::from_db)
     }

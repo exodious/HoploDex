@@ -81,13 +81,19 @@ fn the_fixture_opens_with_its_passphrase_and_holds_the_known_records() {
     let photos = photos::list_photos(&conn, RecordRef::Firearm(firearm.id)).unwrap();
     assert_eq!(photos.len(), 1);
     assert_eq!(photos[0].original_filename, portable_fixture::PHOTO_NAME);
-    assert_eq!(photos[0].original_bytes, portable_fixture::PHOTO_PNG);
+    assert_eq!(
+        photos::get_photo(&conn, photos[0].id).unwrap().original_bytes,
+        portable_fixture::PHOTO_PNG
+    );
     assert!(!photos[0].thumbnail_bytes.is_empty());
 
     let documents = documents::list_documents(&conn, RecordRef::Firearm(firearm.id)).unwrap();
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].original_filename, portable_fixture::DOCUMENT_NAME);
-    assert_eq!(documents[0].file_bytes, portable_fixture::DOCUMENT);
+    assert_eq!(
+        documents::get_document(&conn, documents[0].id).unwrap().file_bytes,
+        portable_fixture::DOCUMENT
+    );
 }
 
 /// A pragma's value as text, whether SQLCipher reports it as text or as a
