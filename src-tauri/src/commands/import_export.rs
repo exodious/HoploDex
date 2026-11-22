@@ -662,7 +662,20 @@ pub mod ops {
         let mut names = Vec::with_capacity(photos.len());
         for listed in &photos {
             // One original in memory at a time.
-            let photo = get_photo(conn, listed.id)?;
+            let photo = match get_photo(conn, listed.id) {
+                Err(mut err) if err.code == "ATTACHMENT_TOO_LARGE" => {
+                    let record = mounts::label(conn, owner)?
+                        .map_or_else(|| owner.noun().to_owned(), |l| mounts::record_name(&l));
+                    err.message = format!(
+                        "{} on {record} is too large to export. HoploDex exports photos of at \
+                         most {}.",
+                        listed.original_filename,
+                        crate::models::rules::size_label(crate::db::MAX_VALUE_BYTES as u64)
+                    );
+                    return Err(err);
+                }
+                found => found?,
+            };
             let dest_name = photo_file_name(prefix, owner.id(), &photo.original_filename);
             let dest_name = write_new_file(photos_folder_path, &dest_name, &photo.original_bytes)
                 .map_err(|e| {

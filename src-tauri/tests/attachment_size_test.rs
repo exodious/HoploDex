@@ -310,6 +310,10 @@ fn an_attachment_past_what_a_connection_reads_still_lists_and_only_it_fails_to_o
     )
     .unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_TOO_LARGE");
+    assert_eq!(
+        err.message,
+        "old.png on Glock 19 is too large to export. HoploDex exports photos of at most 31 MiB."
+    );
     assert_eq!(err.details.as_deref(), Some(&limit));
     assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0);
 
