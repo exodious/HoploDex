@@ -999,26 +999,6 @@ pub mod ops {
         }
     }
 
-    /// Saves the backup settings (003 FR-024, FR-026), a change to the
-    /// collection (003 FR-025). Lowering the number kept deletes nothing now:
-    /// the next backup rotates.
-    ///
-    /// A changed location (its resolved folder, however spelled) with
-    /// backups of the database at the old one saves nothing until
-    /// `existing_backups` says what to do with them (003 research.md §22):
-    /// `leave` saves; `delete` deletes them as "delete all backups" does and
-    /// saves only when every one went; `move` checks the new folder and its
-    /// space, saves, then moves them. An old folder that can't be read
-    /// allows only `leave`. The recent entry's cached backup folder follows
-    /// every save.
-    ///
-    /// Inside a Flatpak a changed custom location out of reach is refused
-    /// before the question about existing backups, with nothing saved or made:
-    /// as a `VALIDATION_ERROR` on the location field, or, with the backups to
-    /// `move`, as `BACKUP_LOCATION_UNAVAILABLE` with the reason `outOfReach`
-    /// (011 FR-004, 011 US1-8). The stored location is the host path of a
-    /// Documents-portal one that is within reach. A location left as it was
-    /// is not checked: saving the other settings writes nothing there.
     /// [`update_backup_settings`] with the location the settings dialog chose:
     /// the default, the one saved now, or the folder the user picked in
     /// `choose_backup_folder` for session `id`, held under its token. A token
@@ -1079,6 +1059,26 @@ pub mod ops {
         pub existing_backups: Option<ExistingBackupsChoice>,
     }
 
+    /// Saves the backup settings (003 FR-024, FR-026), a change to the
+    /// collection (003 FR-025). Lowering the number kept deletes nothing now:
+    /// the next backup rotates.
+    ///
+    /// A changed location (its resolved folder, however spelled) with
+    /// backups of the database at the old one saves nothing until
+    /// `existing_backups` says what to do with them (003 research.md §22):
+    /// `leave` saves; `delete` deletes them as "delete all backups" does and
+    /// saves only when every one went; `move` checks the new folder and its
+    /// space, saves, then moves them. An old folder that can't be read
+    /// allows only `leave`. The recent entry's cached backup folder follows
+    /// every save.
+    ///
+    /// Inside a Flatpak a changed custom location out of reach is refused
+    /// before the question about existing backups, with nothing saved or made:
+    /// as a `VALIDATION_ERROR` on the location field, or, with the backups to
+    /// `move`, as `BACKUP_LOCATION_UNAVAILABLE` with the reason `outOfReach`
+    /// (011 FR-004, 011 US1-8). The stored location is the host path of a
+    /// Documents-portal one that is within reach. A location left as it was
+    /// is not checked: saving the other settings writes nothing there.
     pub fn update_backup_settings(
         session: &Session,
         id: SessionId,

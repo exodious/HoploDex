@@ -1128,6 +1128,38 @@ describe("DatabaseSettingsDialog: changing the location (003 contracts/ui-databa
     expect(databasesService.updateLockSettings).toHaveBeenCalled();
   });
 
+  it("saves the location it kept open on as the current one, not the folder's spent choice, on the next Save", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockRejectedValueOnce(atOldLocation())
+      .mockResolvedValueOnce(
+        saved({
+          action: "move",
+          movedCount: 2,
+          leftBehind: { count: 1, folder: DEFAULT_BACKUPS, reason: "nameTaken" },
+        }),
+      )
+      .mockResolvedValueOnce(saved(null));
+    renderSettings();
+
+    await changeAndSave(user);
+    await user.click(await screen.findByRole("button", { name: "Change location" }));
+    const settingsDialog = screen.getByRole("dialog", { name: "Database settings" });
+    await within(settingsDialog).findByRole("status");
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "7");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(databasesService.updateBackupSettings).toHaveBeenCalledTimes(3));
+    expect(databasesService.updateBackupSettings).toHaveBeenLastCalledWith(SCOPE, {
+      enabled: true,
+      keepCount: 7,
+      location: { kind: "current" },
+    });
+  });
+
   it.each([
     ["locationUnavailable", `because ${USB} became unavailable`],
     ["insufficientSpace", "because there wasn't enough space there"],
