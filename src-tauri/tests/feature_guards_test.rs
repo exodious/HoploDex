@@ -7,12 +7,13 @@
 //! library with all three and Tauri's `custom-protocol`, and fails unless
 //! every guard stops it.
 
+// shortcut: Linux only, since the guards' cfgs don't depend on the OS and a
+// separate `cargo check` per OS would add minutes; run it everywhere if one does.
+#![cfg(target_os = "linux")]
+
 use std::path::PathBuf;
 use std::process::Command;
 
-// shortcut: Linux only, since the guards' cfgs don't depend on the OS and a
-// separate `cargo check` per OS would add minutes; run it everywhere if one does.
-#[cfg(target_os = "linux")]
 #[test]
 fn every_test_only_feature_refuses_to_compile_in_a_shipped_build() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
