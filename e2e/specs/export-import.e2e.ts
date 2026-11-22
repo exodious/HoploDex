@@ -200,7 +200,7 @@ describe("001 US5 - Export and Import Records (was us5-export-import)", () => {
     });
     const consent = logLines("HOPLODEX_E2E_CONSENT_LOG");
     expect(consent).toHaveLength(asked + 1);
-    expect(consent.at(-1)).toContain("Export to another computer?");
+    expect(consent.at(-1)).toContain("Export to a folder that may be on another computer?");
     expect(consent.at(-1)).toContain(`“${share}” may be on another computer.`);
     expect(consent.at(-1)).toMatch(/HoploDex will write \d+ records? there/);
     expect(fs.readdirSync(share).some((f) => f.endsWith(".csv"))).toBe(true);

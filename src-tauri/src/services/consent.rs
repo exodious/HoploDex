@@ -70,7 +70,9 @@ impl ConsentRequest {
                 format!("Open \u{201C}{}\u{201D} in another app?", display_name(name))
             }
             Self::Setting => "Open documents in another app?".to_owned(),
-            Self::NetworkExport { .. } => "Export to another computer?".to_owned(),
+            Self::NetworkExport { .. } => {
+                "Export to a folder that may be on another computer?".to_owned()
+            }
         }
     }
 
