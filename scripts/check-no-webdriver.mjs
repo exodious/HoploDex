@@ -8,7 +8,9 @@
 // to another app, HOPLODEX_E2E_PASSPHRASES answers the native passphrase
 // dialog, HOPLODEX_E2E_CHOOSER the native choosers, and
 // HOPLODEX_E2E_NETWORK_FOLDER stands in for a network share), each held out of a shipped build by the same feature and
-// checked by its name in the binary.
+// checked by its name in the binary, and the in-memory keyring that `e2e`
+// brings with `mock-keyring` (HOPLODEX_E2E_KEYRING_FILE), which
+// services/keyring.rs also refuses to compile alone in a shipped build.
 //
 //   node scripts/check-no-webdriver.mjs            the dependency graph only
 //   node scripts/check-no-webdriver.mjs BINARY...  also these built binaries
@@ -32,7 +34,7 @@ const crate = "tauri-plugin-wdio-webdriver";
 // server reads its port from, compiled into it, and the E2E-only switches the
 // app reads (007 research.md §7, §16 and contracts/ui-document-preview.md §10).
 // Each is a string in the binary only while its `#[cfg(feature = "e2e")]` code
-// is built.
+// is built (the keyring file's, while the `mock_keyring` cfg's is).
 const markers = [
   { name: "TAURI_WEBDRIVER_PORT", what: "the embedded WebDriver server" },
   { name: "HOPLODEX_E2E_PDF_PREVIEW", what: "the E2E switch that turns PDF preview off" },
@@ -51,6 +53,10 @@ const markers = [
   {
     name: "HOPLODEX_E2E_NETWORK_FOLDER",
     what: "the E2E stand-in for a network share, which an export there asks about first",
+  },
+  {
+    name: "HOPLODEX_E2E_KEYRING_FILE",
+    what: "the in-memory keyring of `mock-keyring`, which keeps saved passphrases in a plain file",
   },
 ].map((marker) => ({ ...marker, bytes: Buffer.from(marker.name) }));
 
