@@ -59,7 +59,8 @@ jobs:
       contents: read
     steps:
       # GitHub's own actions are pinned to a release tag; third-party ones to a
-      # commit (#72). Dependabot updates both (.github/dependabot.yml).
+      # commit (#72). Both move by hand: Dependabot's version updates are off
+      # (.github/dependabot.yml).
       - uses: actions/checkout@v7
         with:
           fetch-depth: 2

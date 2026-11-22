@@ -3,8 +3,8 @@
 //
 // The Windows build links OpenSSL statically from vcpkg, pinned by the
 // `builtin-baseline` (a microsoft/vcpkg commit) in
-// scripts/windows/vcpkg/vcpkg.json (#25). Dependabot moves that pin but raises
-// no security alerts for vcpkg, so this reads the OpenSSL version the pin
+// scripts/windows/vcpkg/vcpkg.json (#25). That pin moves by hand and Dependabot
+// raises no security alerts for vcpkg, so this reads the OpenSSL version the pin
 // resolves to (vcpkg's versions/baseline.json at that commit) and fails when
 // any of OpenSSL's own advisories lists it as affected, whatever the severity.
 // The advisories are the CVE records OpenSSL publishes for its website, in
