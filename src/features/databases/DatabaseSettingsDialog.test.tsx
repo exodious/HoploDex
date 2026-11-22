@@ -1160,6 +1160,45 @@ describe("DatabaseSettingsDialog: changing the location (003 contracts/ui-databa
     });
   });
 
+  it("still shows the default as saved, with nothing to save, when a move to it left some behind", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockRejectedValueOnce(atOldLocation())
+      .mockResolvedValueOnce({
+        settings: settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }),
+        existingBackups: {
+          action: "move",
+          movedCount: 2,
+          leftBehind: { count: 1, folder: USB, reason: "nameTaken" },
+        },
+      });
+    const props = {
+      onOpenChange: vi.fn(),
+      onSaved: vi.fn(),
+      onRestore: vi.fn(),
+      onPassphraseSavedChange: vi.fn(),
+    };
+    const shown = (current: DatabaseStatus) => (
+      <ToastProvider>
+        <DatabaseSettingsDialog open status={current} {...props} />
+      </ToastProvider>
+    );
+    const { rerender } = render(shown(status({ kind: "custom", path: USB, available: true })));
+
+    await user.click(screen.getByRole("button", { name: "Use the default" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(await screen.findByRole("button", { name: "Change location" }));
+    const settingsDialog = screen.getByRole("dialog", { name: "Database settings" });
+    await within(settingsDialog).findByRole("status");
+    // As the database menu does once the settings are saved.
+    rerender(shown(status()));
+
+    const backups = screen.getByRole("group", { name: "Backups" });
+    expect(within(backups).getByText("(next to the database)")).toBeInTheDocument();
+    expect(within(backups).getByRole("button", { name: "Use the default" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
   it.each([
     ["locationUnavailable", `because ${USB} became unavailable`],
     ["insufficientSpace", "because there wasn't enough space there"],

@@ -247,7 +247,8 @@ function SettingsForm({
     if (outcome?.action === "move" && outcome.leftBehind) {
       // The location is saved, so the result stays here.
       setLeftBehind(leftBehindText(outcome.movedCount, outcome.leftBehind, location.path));
-      setLocation({ ...location, input: { kind: "current" } });
+      if (location.input.kind === "chosen")
+        setLocation({ ...location, input: { kind: "current" } });
       onSaved(settings, true);
       return;
     }
