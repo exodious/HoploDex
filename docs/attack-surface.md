@@ -297,7 +297,7 @@ and peer review catch that.
   - Are the E2E chooser (`E2eChooser`, which answers every chooser Rust opens from a queue file), the stand-in share (`HOPLODEX_E2E_NETWORK_FOLDER`, which only makes an export there ask) and the listener that hands the page's own `tauri://drag-drop` events to `drops::record` as drops (`main.rs`) built only with `e2e`? Either in a shipped build would let the page choose what the backend reads or writes.
   - Does anything stop a shipped build with `mock-keyring` alone, beside `custom-protocol`?
   - Do `test-kdf` and `upgrade-test-steps` still refuse `custom-protocol` and `e2e` at compile time? `tauri build` turns on Tauri's `custom-protocol` alone, not the app's, so the guards test `not(dev)` (tauri-build's cfg for it): does every packaged build still fail to compile with either feature?
-- **Since:** #29, #76; seams 007, #76, 009; `test-kdf` #105; chooser and drop seams 2026-11-19; network share seam 2026-11-21.
+- **Since:** #29, #76; seams 007, #76, 009; `test-kdf` #105; chooser and drop seams 2026-11-19; network share seam 2026-11-21; guards test `not(dev)` 2026-11-21.
 
 ## unsafe-ffi: unsafe Rust and platform FFI
 
