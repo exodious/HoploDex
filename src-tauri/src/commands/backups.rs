@@ -332,16 +332,19 @@ pub mod ops {
             cipher::key(&conn, "main", passphrase)?;
             cipher::apply_cipher_settings(&conn, "main")?;
             conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get::<_, i64>(0))?;
+            if db::has_unknown_migration(&conn, database_path)? {
+                return Ok(None);
+            }
+            db::check_layout(&conn, database_path)?;
             let database_id = conn.query_row("SELECT database_id FROM app_state", [], |row| {
                 row.get::<_, String>(0)
             })?;
-            let newer = db::has_unknown_migration(&conn, database_path)?;
             let due = db::upgrade::steps_due(&conn, database_path)?;
-            Ok((database_id, newer, !due.is_empty()))
+            Ok(Some((database_id, !due.is_empty())))
         });
         match checked {
-            Ok((_, true, _)) => Err(OpenError::NewerVersion.into()),
-            Ok((database_id, false, due)) => Ok(InspectedBackup {
+            Ok(None) => Err(OpenError::NewerVersion.into()),
+            Ok(Some((database_id, due))) => Ok(InspectedBackup {
                 database_id,
                 upgrade_to: due.then(|| crate::APP_VERSION.to_owned()),
             }),

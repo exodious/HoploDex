@@ -355,6 +355,35 @@ fn a_wrong_backup_passphrase_changes_nothing() {
     assert!(world.session.is_open(), "the current database stays open");
 }
 
+/// A backup whose schema isn't the one its steps make, a view where
+/// `document_attachments` was, is refused as damaged at the restore's first
+/// look, before any of its tables is read, and nothing changes.
+#[test]
+fn a_crafted_backup_is_refused_as_damaged_and_changes_nothing() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    let crafted = Connection::open(&listed[1].path).unwrap();
+    cipher::key(&crafted, "main", &passphrase()).unwrap();
+    cipher::apply_cipher_settings(&crafted, "main").unwrap();
+    crafted
+        .execute_batch(
+            "DROP TABLE document_attachments;
+             CREATE VIEW document_attachments AS SELECT 1 AS id, zeroblob(1024) AS content;",
+        )
+        .unwrap();
+    drop(crafted);
+    let before = fs::read(world.path()).unwrap();
+    let names = World::names(&world.default_folder());
+
+    let refused = world.restore(&listed[1].path, support::TEST_PASSPHRASE).unwrap_err();
+
+    assert_eq!(refused.code, "DATABASE_DAMAGED");
+    assert_eq!(fs::read(world.path()).unwrap(), before);
+    assert_eq!(World::names(&world.default_folder()), names);
+    assert!(world.leftovers().is_empty());
+    assert!(world.session.is_open(), "the current database stays open");
+}
+
 #[test]
 fn a_file_planted_at_the_copys_name_fails_the_restore_and_is_left_alone() {
     // #63: the failure path removed whatever was at `.new`.

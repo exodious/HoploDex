@@ -342,6 +342,9 @@ pub fn open_database(
     if has_unknown_migration(&conn, path).map_err(OpenError::classify)? {
         return Err(OpenError::NewerVersion);
     }
+    // Step 3b, read-only: nothing in the schema but what those steps make,
+    // before any table is read.
+    check_layout(&conn, path).map_err(OpenError::classify)?;
     // Step 4, read-only: open on another computer. This computer's own
     // marker is one a crash left behind, since the exclusive lock has
     // already shown no other copy here has the file open.
@@ -429,6 +432,7 @@ pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, Op
     if has_unknown_migration(&conn, path).map_err(OpenError::classify)? {
         return Err(OpenError::NewerVersion);
     }
+    check_layout(&conn, path).map_err(OpenError::classify)?;
     Ok(conn)
 }
 
@@ -445,6 +449,54 @@ pub(crate) fn has_unknown_migration(conn: &Connection, path: &Path) -> rusqlite:
         }
     }
     Ok(false)
+}
+
+/// Refuses, as damaged (`SQLITE_CORRUPT`), a database whose schema is not
+/// exactly the one the steps it records make: every table, view, trigger
+/// and index, by type, name and SQL text, compared with those steps applied
+/// to an empty database. A crafted file could otherwise put a view, a
+/// generated column or a trigger where HoploDex's own table or trigger is,
+/// and the built-in functions `trusted_schema` off still allows (`zeroblob`,
+/// a recursive CTE) would turn a small file into any number of rows each
+/// just under [`MAX_VALUE_BYTES`]. A table of another name, and its indexes,
+/// are left alone, since nothing reads them (`sqlite_stat1`, a test's
+/// filler); a view or trigger of another name is not. Call it after
+/// [`has_unknown_migration`], so a newer version's database is reported as
+/// that, and before any other table is read.
+pub(crate) fn check_layout(conn: &Connection, path: &Path) -> rusqlite::Result<()> {
+    let expected = Connection::open_in_memory()?;
+    expected.execute_batch(upgrade::SCHEMA_MIGRATIONS)?;
+    for (name, sql) in upgrade::build_steps(path) {
+        let applied: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE name = ?1)",
+            [name],
+            |row| row.get(0),
+        )?;
+        if applied {
+            expected.execute_batch(sql)?;
+        }
+    }
+    let expected = schema(&expected)?;
+    let ours = |table: &Option<String>| expected.iter().any(|object| object[2] == *table);
+    let mut found = schema(conn)?;
+    found.retain(|[kind, _, table, _]| {
+        !matches!(kind.as_deref(), Some("table" | "index")) || ours(table)
+    });
+    if found == expected {
+        return Ok(());
+    }
+    log::error!("the database's schema is not the one its steps make");
+    Err(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
+        None,
+    ))
+}
+
+/// Every object in a database's schema, in order, without its root page.
+fn schema(conn: &Connection) -> rusqlite::Result<Vec<[Option<String>; 4]>> {
+    conn.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY type, name")?
+        .query_map([], |row| Ok([row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?]))?
+        .collect()
 }
 
 /// A HoploDex database has its migrations table and its `app_state` row.
@@ -588,6 +640,54 @@ mod tests {
         hardened(&opened);
         drop(opened);
         hardened(&check_copy(&db_path, &passphrase(PASSPHRASE)).unwrap());
+    }
+
+    /// A crafted database whose schema isn't the one its steps make is refused
+    /// as damaged, by an open and a copy's check alike, before any table is
+    /// read: a view where `document_attachments` was, which `connect`'s
+    /// hardening lets return 4 rows of 30 MiB from a file of a few hundred KiB
+    /// with no bound on their number; a generated column; and a trigger the
+    /// open marker's write would fire.
+    #[test]
+    fn a_schema_its_steps_dont_make_is_refused() {
+        const ROW: usize = 30 * 1024 * 1024;
+        let crafts = [
+            format!(
+                "DROP TABLE document_attachments;
+                 CREATE VIEW document_attachments AS
+                 WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n LIMIT 4)
+                 SELECT i AS id, zeroblob({ROW}) AS content FROM n;"
+            ),
+            format!("ALTER TABLE firearms ADD COLUMN padding AS (zeroblob({ROW}));"),
+            "CREATE TRIGGER app_state_crafted AFTER UPDATE ON app_state BEGIN SELECT 1; END;"
+                .to_owned(),
+        ];
+        for (index, craft) in crafts.iter().enumerate() {
+            let dir = tempfile::TempDir::new().unwrap();
+            let db_path = dir.path().join("crafted.hoplodex");
+            drop(create_database(&db_path, &passphrase(PASSPHRASE), &machine()).unwrap());
+            let conn = connect(&db_path, OpenFlags::default()).unwrap();
+            cipher::key(&conn, "main", &passphrase(PASSPHRASE)).unwrap();
+            cipher::apply_cipher_settings(&conn, "main").unwrap();
+            conn.execute_batch(craft).unwrap();
+            if index == 0 {
+                // Without the check: every row reaches memory, each within the limit.
+                let mut stmt = conn.prepare("SELECT content FROM document_attachments").unwrap();
+                let sizes: Vec<usize> = stmt
+                    .query_map([], |row| row.get::<_, Vec<u8>>(0).map(|content| content.len()))
+                    .unwrap()
+                    .collect::<rusqlite::Result<_>>()
+                    .unwrap();
+                assert_eq!(sizes, [ROW; 4]);
+                assert!(fs::metadata(&db_path).unwrap().len() < 1024 * 1024);
+            }
+            drop(conn);
+
+            let opened = open_database(&db_path, &passphrase(PASSPHRASE), &machine(), false);
+            assert!(matches!(opened, Err(OpenError::Damaged)), "craft {index}: {opened:?}");
+            let checked = check_copy(&db_path, &passphrase(PASSPHRASE));
+            assert!(matches!(checked, Err(OpenError::Damaged)), "craft {index}: {checked:?}");
+        }
     }
 
     #[test]

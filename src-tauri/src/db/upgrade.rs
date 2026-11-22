@@ -194,6 +194,14 @@ impl OpenMarker {
 const E2E_STEPS: &[(&str, &str)] =
     &[("9000_e2e_upgrade_check", "CREATE TABLE e2e_upgrade_check (id INTEGER PRIMARY KEY);")];
 
+/// The table that records the steps applied, created by the runner rather
+/// than a step. Its text is in every database's schema, which
+/// [`super::check_layout`] compares exactly: it never changes.
+pub(crate) const SCHEMA_MIGRATIONS: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )";
+
 /// Every step a build applies to the database at `database_path`, in order:
 /// [`MIGRATIONS`], plus, with `upgrade-test-steps`, the test-only steps
 /// registered for the database's folder, or, in an `e2e` build, [`E2E_STEPS`].
@@ -288,12 +296,7 @@ fn run(
 ) -> Result<(), UpgradeError> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
 
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (
-            name TEXT PRIMARY KEY,
-            applied_at TEXT NOT NULL
-        )",
-    )?;
+    conn.execute_batch(SCHEMA_MIGRATIONS)?;
     let applied = applied_steps(conn)?;
     let changes_waiting = if table_exists(conn, "app_state")? {
         conn.query_row("SELECT changes_waiting FROM app_state WHERE id = 1", [], |row| {

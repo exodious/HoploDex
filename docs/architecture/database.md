@@ -41,6 +41,20 @@ an export holding it, fails (`ATTACHMENT_TOO_LARGE`,
 `CommandError::from_attachment_read`). `sqlcipher_export` copies it unchanged,
 so a passphrase change still works.
 
+Those settings don't bound how many rows a view makes, so an open, a copy's
+check and a backup's first look also refuse as damaged a database whose schema
+isn't exactly what the steps it records make (`db::check_layout`, after the
+`NewerVersion` check and before any other table is read): every table, view,
+trigger and index, by type, name and SQL text, against those steps applied to
+an empty in-memory database. A table of another name and its indexes are left
+alone, since nothing reads them (`sqlite_stat1`, a test's filler); a view or
+trigger of another name is refused. The schema's text is therefore part of
+the data layout: a released step's SQL never changes
+(`tests/released_migrations_test.rs`), nor does the runner's own
+`schema_migrations` table (`upgrade::SCHEMA_MIGRATIONS`), and
+`tests/release_upgrade_test.rs`'s fixtures would catch a SQLite update that
+changed the text FTS5 writes for its own tables.
+
 Each connection gets `db/cipher.rs`'s pinned `CIPHER_SETTINGS`, then foreign
 keys, `secure_delete` and `locking_mode = EXCLUSIVE`.
 
