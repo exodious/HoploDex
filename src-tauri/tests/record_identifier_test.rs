@@ -895,14 +895,7 @@ fn no_identifier_of_a_policy_photo_or_document_is_serialized_or_exported() {
         ),
         (
             "list_photos",
-            serde_json::to_value(
-                photo_ops::list_photos(&db.conn, owner)
-                    .unwrap()
-                    .into_iter()
-                    .map(PhotoSummary::from)
-                    .collect::<Vec<_>>(),
-            )
-            .unwrap(),
+            serde_json::to_value(photo_ops::list_photos(&db.conn, owner).unwrap()).unwrap(),
         ),
         (
             "add_document",

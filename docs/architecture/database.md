@@ -28,6 +28,15 @@ A policy's name is unique ignoring A-Z case and surrounding spaces
 (`insurance::ops` refuses with `fieldErrors.name`; `idx_insurance_policies_name`
 backs it).
 
+Every connection to a database, a backup or a copy is opened by
+`db::connect`, since any of them can be a database from elsewhere:
+`trusted_schema` off, `SQLITE_DBCONFIG_DEFENSIVE` on, and `SQLITE_LIMIT_LENGTH`
+at `db::MAX_VALUE_BYTES`, 31 MiB, just above the largest attachment (a 30 MiB
+document), so no value read or made is longer. A list of photos or documents
+reads no attachment's content (`PhotoSummary::COLUMNS`, `DocumentInfo::COLUMNS`),
+so a longer one stored before the limits still lists, and only opening it fails
+(`ATTACHMENT_TOO_LARGE`, `CommandError::from_attachment_read`).
+
 Each connection gets `db/cipher.rs`'s pinned `CIPHER_SETTINGS`, then foreign
 keys, `secure_delete` and `locking_mode = EXCLUSIVE`.
 

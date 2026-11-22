@@ -148,7 +148,26 @@ mod self_check {
         let tcp_before = can_connect();
         let exec_before = can_start();
         let unix_before = reach_unix();
+        // A thread started before confining, as a library's could be: once
+        // told, it opens `file` and answers `0` or the error it got.
+        #[cfg(target_os = "linux")]
+        let (go, earlier_thread) = {
+            let (go, told) = std::sync::mpsc::channel::<()>();
+            let file = file.clone();
+            let thread = std::thread::spawn(move || {
+                let _ = told.recv();
+                File::open(file).map_or_else(|e| e.raw_os_error().unwrap_or(-1), |_| 0)
+            });
+            (go, thread)
+        };
         let Ok(confinement) = confine::confine(MEMORY_LIMIT) else { return 3 };
+        #[cfg(target_os = "linux")]
+        let earlier_thread_open = {
+            let _ = go.send(());
+            earlier_thread.join().ok()
+        };
+        #[cfg(not(target_os = "linux"))]
+        let earlier_thread_open: Option<i32> = None;
         let descriptors_after = open_descriptors();
         let exec_after = can_start();
         let unix_after = reach_unix();
@@ -205,6 +224,7 @@ mod self_check {
                 "descriptors_before": descriptors_before,
                 "descriptors_after": descriptors_after,
                 "filter": filter,
+                "earlier_thread_open": earlier_thread_open,
             })
         );
         0

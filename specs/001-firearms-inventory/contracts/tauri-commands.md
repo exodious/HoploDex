@@ -339,6 +339,8 @@ _Amended 2026-11-19 (code scanning alert 89): the input is unchanged, but the ba
   contract list, but lets browse views render a firearm's thumbnail
   without fetching its full photo list.
 
+_Amended 2026-11-21: it reads the thumbnail without the original, as `list_photos` does, so a photo too large to open ([spec FR-007](../spec.md)) still shows one._
+
 ### `get_photo_original`
 
 - **Input**: `photoId: number`.
@@ -347,6 +349,8 @@ _Amended 2026-11-19 (code scanning alert 89): the input is unchanged, but the ba
   array, so multi-megabyte photos transfer quickly). Used by the record
   view's photo viewer and plate, where condition details must be legible.
 - **Errors**: `NOT_FOUND`.
+
+_Amended 2026-11-21: also `ATTACHMENT_TOO_LARGE` for a photo over 31 MiB stored before the limits ("This photo is too large to open. HoploDex opens one of at most 31 MiB."; `details` is `{ limit }` in bytes, [spec FR-007](../spec.md)). `export_collection` fails with the same error when a record it exports holds one._
 
 ### `set_thumbnail_photo`
 
@@ -394,6 +398,8 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#op
   therefore never outlive the session that created them.
 - **Errors**: `NOT_FOUND`, `INTERNAL_ERROR` (copy couldn't be written or
   no app could open it).
+
+_Amended 2026-11-21: also `ATTACHMENT_TOO_LARGE` for a document over 31 MiB stored before the limits ("This document is too large to open. HoploDex opens one of at most 31 MiB."; `details` is `{ limit }` in bytes, [spec FR-010](../spec.md)), before any copy is written._
 
 ### `get_generic_thumbnail`
 

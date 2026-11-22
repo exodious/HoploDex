@@ -91,6 +91,26 @@ pub struct PhotoSummary {
     pub created_at: String,
 }
 
+impl PhotoSummary {
+    /// The columns [`PhotoSummary::from_row`] reads: every one but the
+    /// original, so a list or a thumbnail never reads it, and a photo larger
+    /// than any connection reads (one stored before 001 FR-007's limit,
+    /// amended 2026-11-21) still lists.
+    pub const COLUMNS: &str = "id, firearm_id, accessory_id, original_filename, mime_type, thumbnail_bytes, sort_order, created_at";
+
+    pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get("id")?,
+            owner: RecordRef::from_owner_row(row)?,
+            original_filename: row.get("original_filename")?,
+            mime_type: row.get("mime_type")?,
+            thumbnail_bytes: row.get("thumbnail_bytes")?,
+            sort_order: row.get("sort_order")?,
+            created_at: row.get("created_at")?,
+        })
+    }
+}
+
 impl From<Photo> for PhotoSummary {
     fn from(photo: Photo) -> Self {
         Self {

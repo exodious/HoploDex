@@ -168,6 +168,8 @@ _Amended 2026-11-19: only a path the user dropped onto the window in the open se
   - `NOT_FOUND`;
   - the session's codes.
 
+  _Amended 2026-11-21: also `ATTACHMENT_TOO_LARGE` for a document over 31 MiB stored before 001's limits, before the confirmation ([001 spec FR-010](../../001-firearms-inventory/spec.md))._
+
   _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#open_document-amended-inside-flatpak-only): inside a Flatpak, step 5 hands the copy to the OpenURI portal instead of `xdg-open`; input, output and errors are unchanged, and `NO_APP_FOR_DOCUMENT` means the portal said no application could open it, or there is no portal (011 FR-008)._
 
 ## Preview commands *(new)*
@@ -202,6 +204,8 @@ All refuse with `DATABASE_CLOSED` when nothing is open. They need no
   - `PREVIEW_FAILED` (TIFF helper crash, time-out or memory limit during
     load; or the PDF surface couldn't be built);
   - `NOT_FOUND`.
+
+  _Amended 2026-11-21: also `ATTACHMENT_TOO_LARGE` for a document over 31 MiB stored before 001's limits ([001 spec FR-010](../../001-firearms-inventory/spec.md))._
 
   The message is a plain sentence the viewer can show as is.
 

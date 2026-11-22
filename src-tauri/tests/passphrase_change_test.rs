@@ -425,21 +425,24 @@ fn unresolved_pending_changes_are_resolved_first() {
 
 // --- Interruptions (003 SC-004) ----------------------------------------------
 
-/// Adds about 48 MiB of document to the open database, so the copy runs
-/// long enough to be stopped while it is under way.
+/// Adds about 48 MiB of documents to the open database, so the copy runs
+/// long enough to be stopped while it is under way: two, since a connection
+/// reads no value past `db::MAX_VALUE_BYTES`.
 fn make_large(world: &World) {
     world
         .session
         .write(world.session.current_id(), |conn| {
-            conn.execute(
-                "INSERT INTO document_attachments
-                     (uid, firearm_id, file_bytes, original_filename, mime_type, created_at)
-                 VALUES (?1, 1, randomblob(48 * 1024 * 1024), 'large.pdf', 'application/pdf',
-                         datetime('now'))",
-                [support::uid()],
-            )
-            .map(|_| ())
-            .map_err(CommandError::from_db)
+            for _ in 0..2 {
+                conn.execute(
+                    "INSERT INTO document_attachments
+                         (uid, firearm_id, file_bytes, original_filename, mime_type, created_at)
+                     VALUES (?1, 1, randomblob(24 * 1024 * 1024), 'large.pdf', 'application/pdf',
+                             datetime('now'))",
+                    [support::uid()],
+                )
+                .map_err(CommandError::from_db)?;
+            }
+            Ok(())
         })
         .unwrap();
 }

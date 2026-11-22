@@ -13,7 +13,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use rusqlite::config::DbConfig;
+use rusqlite::limits::Limit;
 use rusqlite::{Connection, ErrorCode, OpenFlags};
+
+use crate::models::rules::MAX_DOCUMENT_BYTES;
 
 use crate::services::machine_settings::MachineIdentity;
 use crate::services::passphrase::Passphrase;
@@ -123,6 +127,26 @@ pub fn now_utc() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
+/// The longest string or blob, and row, SQLite makes or reads on a HoploDex
+/// connection: just above the largest attachment, a document, so a value in a
+/// database from elsewhere is no larger than one HoploDex would store.
+pub const MAX_VALUE_BYTES: i32 = (MAX_DOCUMENT_BYTES + 1024 * 1024) as i32;
+
+/// Opens the file at `path` for HoploDex, before anything reads it: every
+/// connection HoploDex makes to a database, a backup or a copy is opened here,
+/// since any of them can be a database from elsewhere. Functions and virtual
+/// tables in its schema run only if SQLite calls them harmless
+/// (`trusted_schema` off), its SQL can't write the schema or FTS5's tables
+/// directly (`SQLITE_DBCONFIG_DEFENSIVE`), and no value is longer than
+/// [`MAX_VALUE_BYTES`] (`SQLITE_LIMIT_LENGTH`), a crafted view's included.
+pub fn connect(path: &Path, flags: OpenFlags) -> rusqlite::Result<Connection> {
+    let conn = Connection::open_with_flags(path, flags)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA, false)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)?;
+    conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_VALUE_BYTES)?;
+    Ok(conn)
+}
+
 /// Keys a fresh connection and sets everything each connection needs,
 /// before its first read: the pinned cipher settings (003 FR-011), foreign keys,
 /// secure deletion (constitution V), and exclusive locking, so a second
@@ -169,7 +193,7 @@ fn initialize(
     passphrase: &Passphrase,
     machine: &MachineIdentity,
 ) -> Result<Connection, DbError> {
-    let conn = Connection::open(path)?;
+    let conn = connect(path, OpenFlags::default())?;
     configure(&conn, passphrase)?;
     upgrade::upgrade(&conn, &upgrade::build_steps(path), None, &mut |_, _| {})?;
     // The settings row goes in before `app_state` exists, so its
@@ -301,11 +325,8 @@ pub fn open_database(
         Err(_) => return Err(OpenError::Unreadable { path: path.to_owned() }),
     }
     // Without CREATE, so a file removed in the meantime is not recreated.
-    let conn = Connection::open_with_flags(
-        path,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(OpenError::classify)?;
+    let conn = connect(path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+        .map_err(OpenError::classify)?;
 
     // Step 1: key, cipher settings and locking mode.
     configure(&conn, passphrase).map_err(OpenError::classify)?;
@@ -377,11 +398,8 @@ pub fn clear_open_marker(conn: &Connection) -> rusqlite::Result<()> {
 /// connection so the caller can stamp the copy. Nothing else knows about
 /// the copy, so it is not locked exclusively.
 pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, OpenError> {
-    let conn = Connection::open_with_flags(
-        path,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(OpenError::classify)?;
+    let conn = connect(path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+        .map_err(OpenError::classify)?;
     (|| {
         cipher::key(&conn, "main", passphrase)?;
         cipher::apply_cipher_settings(&conn, "main")?;
@@ -472,7 +490,7 @@ fn probe_first_page(
     file.read_exact_at(&mut first_page, 0)?;
     OpenOptions::new().write(true).create_new(true).open(probe)?.write_all(&first_page)?;
 
-    let conn = Connection::open(probe)?;
+    let conn = connect(probe, OpenFlags::default())?;
     cipher::key(&conn, "main", candidate)?;
     cipher::apply_cipher_settings(&conn, "main")?;
     match conn.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0)) {
@@ -545,6 +563,31 @@ mod tests {
 
     fn passphrase(text: &str) -> Passphrase {
         Passphrase::from_input(text.into())
+    }
+
+    /// A created, an opened and a checked database's connections all come from
+    /// `connect`: no untrusted schema, defensive, and no value past the limit.
+    #[test]
+    fn every_connection_is_hardened() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_path = dir.path().join("test.hoplodex");
+        let hardened = |conn: &Connection| {
+            assert!(!conn.db_config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA).unwrap());
+            assert!(conn.db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE).unwrap());
+            assert_eq!(conn.limit(Limit::SQLITE_LIMIT_LENGTH).unwrap(), MAX_VALUE_BYTES);
+            let past = conn.query_row("SELECT zeroblob(?1)", [MAX_VALUE_BYTES + 1], |r| {
+                r.get::<_, Vec<u8>>(0)
+            });
+            assert_eq!(past.unwrap_err().sqlite_error_code(), Some(ErrorCode::TooBig));
+        };
+
+        hardened(&create_database(&db_path, &passphrase(PASSPHRASE), &machine()).unwrap());
+        let opened = open_database(&db_path, &passphrase(PASSPHRASE), &machine(), false)
+            .unwrap()
+            .expect_ready();
+        hardened(&opened);
+        drop(opened);
+        hardened(&check_copy(&db_path, &passphrase(PASSPHRASE)).unwrap());
     }
 
     #[test]

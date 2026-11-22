@@ -14,6 +14,7 @@ use crate::support;
 use hoplodex_lib::commands::documents::ops as document_ops;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
+use hoplodex_lib::db;
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::sandbox::Reach;
 use serde_json::json;
@@ -152,11 +153,17 @@ fn a_record_takes_attachments_up_to_1_gib_together_and_refuses_one_past_it() {
     let other = new_firearm(&db, "TS-2");
     let photo = sample_png_bytes();
     let photo_size = photo.len() as u64;
-    // Room left for the photo and 100 bytes more.
-    // In two, since SQLite holds no blob over 1,000,000,000 bytes.
-    let filler = MAX_ATTACHMENT_BYTES_PER_RECORD - photo_size - 100;
-    store_zero_document(&db, owner, filler / 2);
-    store_zero_document(&db, owner, filler - filler / 2);
+    // Room left for the photo and 100 bytes more, in documents of the
+    // largest size, since a connection reads no longer value
+    // (`db::MAX_VALUE_BYTES`).
+    let mut filler = MAX_ATTACHMENT_BYTES_PER_RECORD - photo_size - 100;
+    let mut stored = 0;
+    while filler > 0 {
+        let size = filler.min(MAX_DOCUMENT_BYTES);
+        store_zero_document(&db, owner, size);
+        filler -= size;
+        stored += 1;
+    }
 
     // Photos count toward the same total as documents.
     photo_ops::add_photo(&db.conn, owner, &photo, "a.png").unwrap();
@@ -187,7 +194,7 @@ fn a_record_takes_attachments_up_to_1_gib_together_and_refuses_one_past_it() {
         photo_ops::add_photo_from_path(&db.conn, owner, &path, &Reach::Unconfined).unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_TOO_LARGE");
     assert_eq!(count(&db, "photos"), 1);
-    assert_eq!(count(&db, "document_attachments"), 4);
+    assert_eq!(count(&db, "document_attachments"), stored + 2);
 
     // The total is each record's own.
     photo_ops::add_photo(&db.conn, other, &photo, "c.png").unwrap();
@@ -215,6 +222,82 @@ fn what_a_record_already_holds_past_a_limit_stays_and_still_opens() {
     assert_eq!(document_ops::list_documents(&db.conn, owner).unwrap().len(), 1);
     // The record still takes a small one.
     document_ops::add_document(&db.conn, owner, b"%PDF-1.4 receipt", "new.pdf").unwrap();
+}
+
+/// A photo and a document longer than any connection reads (`db::MAX_VALUE_BYTES`,
+/// 31 MiB), as a database made before the limits can hold (001 FR-007 and FR-010,
+/// amended 2026-11-21): the record still lists all its photos and documents, the
+/// photo's thumbnail still shows, both can be deleted, and only opening one of the
+/// two fails, with `ATTACHMENT_TOO_LARGE`.
+#[test]
+fn an_attachment_past_what_a_connection_reads_still_lists_and_only_it_fails_to_open() {
+    use rusqlite::limits::Limit;
+
+    let db = TestDb::new();
+    let owner = new_firearm(&db, "TS-4");
+    let (firearm_id, _) = owner.owner_columns();
+    let past = i64::from(db::MAX_VALUE_BYTES) + 1;
+    // Stored as a connection without the limit, as before 2026-11-21, stores it.
+    db.conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, 1_000_000_000).unwrap();
+    db.conn
+        .execute(
+            "INSERT INTO document_attachments
+                (uid, firearm_id, file_bytes, original_filename, mime_type, created_at)
+             VALUES (?1, ?2, zeroblob(?3), 'old scan.pdf', 'application/pdf', datetime('now'))",
+            rusqlite::params![support::uid(), firearm_id, past],
+        )
+        .unwrap();
+    let big_document = db.conn.last_insert_rowid();
+    let thumbnail = document_ops::add_document(&db.conn, owner, b"%PDF-1.4 receipt", "new.pdf")
+        .map(|_| photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "new.png").unwrap())
+        .unwrap()
+        .thumbnail_bytes;
+    db.conn
+        .execute(
+            "INSERT INTO photos
+                (uid, firearm_id, original_bytes, original_filename, mime_type, thumbnail_bytes,
+                 sort_order, created_at)
+             VALUES (?1, ?2, zeroblob(?3), 'old.png', 'image/png', ?4, 1, datetime('now'))",
+            rusqlite::params![support::uid(), firearm_id, past, thumbnail],
+        )
+        .unwrap();
+    let big_photo = db.conn.last_insert_rowid();
+    db.conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, db::MAX_VALUE_BYTES).unwrap();
+
+    let documents = document_ops::list_documents(&db.conn, owner).unwrap();
+    assert_eq!(
+        documents.iter().map(|d| d.original_filename.as_str()).collect::<Vec<_>>(),
+        ["old scan.pdf", "new.pdf"]
+    );
+    let photos = photo_ops::list_photos(&db.conn, owner).unwrap();
+    assert_eq!(photos.len(), 2);
+    assert_eq!(
+        photo_ops::get_photo_summary(&db.conn, big_photo).unwrap().thumbnail_bytes,
+        thumbnail
+    );
+
+    let limit = json!({ "limit": db::MAX_VALUE_BYTES });
+    let err = document_ops::get_document(&db.conn, big_document).unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_TOO_LARGE");
+    assert_eq!(
+        err.message,
+        "This document is too large to open. HoploDex opens one of at most 31 MiB."
+    );
+    assert_eq!(err.details.as_deref(), Some(&limit));
+    let err = photo_ops::get_photo(&db.conn, big_photo).unwrap_err();
+    assert_eq!(err.code, "ATTACHMENT_TOO_LARGE");
+    assert_eq!(
+        err.message,
+        "This photo is too large to open. HoploDex opens one of at most 31 MiB."
+    );
+    // The others open.
+    document_ops::get_document(&db.conn, documents[1].id).unwrap();
+    photo_ops::get_photo(&db.conn, photos[0].id).unwrap();
+
+    document_ops::delete_document(&db.conn, big_document, true).unwrap();
+    photo_ops::delete_photo(&db.conn, big_photo, true).unwrap();
+    assert_eq!(count(&db, "document_attachments"), 1);
+    assert_eq!(count(&db, "photos"), 1);
 }
 
 // --- A type judged by its name and first bytes ---------------------------------

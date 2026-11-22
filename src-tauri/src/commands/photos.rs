@@ -37,6 +37,19 @@ pub mod ops {
             Photo::from_row,
         )
         .optional()
+        .map_err(|e| CommandError::from_attachment_read(e, "photo"))?
+        .ok_or_else(|| CommandError::not_found("No photo was found with that id."))
+    }
+
+    /// A photo without its original, which only export and the photo viewer
+    /// read.
+    pub fn get_photo_summary(conn: &Connection, id: i64) -> Result<PhotoSummary, CommandError> {
+        conn.query_row(
+            &format!("SELECT {} FROM photos WHERE id = :id", PhotoSummary::COLUMNS),
+            named_params! { ":id": id },
+            PhotoSummary::from_row,
+        )
+        .optional()
         .map_err(CommandError::from_db)?
         .ok_or_else(|| CommandError::not_found("No photo was found with that id."))
     }
@@ -57,15 +70,20 @@ pub mod ops {
         }
     }
 
-    pub fn list_photos(conn: &Connection, owner: RecordRef) -> Result<Vec<Photo>, CommandError> {
+    /// The owner's photos without their originals.
+    pub fn list_photos(
+        conn: &Connection,
+        owner: RecordRef,
+    ) -> Result<Vec<PhotoSummary>, CommandError> {
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT * FROM photos WHERE {} = :id ORDER BY sort_order",
+                "SELECT {} FROM photos WHERE {} = :id ORDER BY sort_order",
+                PhotoSummary::COLUMNS,
                 owner.owner_column()
             ))
             .map_err(CommandError::from_db)?;
         let rows = stmt
-            .query_map(named_params! { ":id": owner.id() }, Photo::from_row)
+            .query_map(named_params! { ":id": owner.id() }, PhotoSummary::from_row)
             .map_err(CommandError::from_db)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(CommandError::from_db)
     }
@@ -205,7 +223,7 @@ pub mod ops {
         owner: RecordRef,
         photo_id: i64,
     ) -> Result<ThumbnailChoice, CommandError> {
-        let photo = get_photo(conn, photo_id)?;
+        let photo = get_photo_summary(conn, photo_id)?;
         if photo.owner != owner {
             return Err(CommandError::not_found(format!(
                 "That photo does not belong to this {}.",
@@ -231,7 +249,7 @@ pub mod ops {
             ));
         }
 
-        let owner = get_photo(conn, photo_id)?.owner;
+        let owner = get_photo_summary(conn, photo_id)?.owner;
         let was_thumbnail: bool = conn
             .query_row(
                 &format!(
@@ -274,9 +292,7 @@ pub async fn list_photos(
     owner: RecordRef,
     session: ScopedSession,
 ) -> Result<Vec<PhotoSummary>, CommandError> {
-    session.read(|conn| {
-        Ok(ops::list_photos(conn, owner)?.into_iter().map(PhotoSummary::from).collect())
-    })
+    session.read(|conn| ops::list_photos(conn, owner))
 }
 
 #[tauri::command]
@@ -311,7 +327,7 @@ pub async fn get_photo_thumbnail(
     photo_id: i64,
     session: ScopedSession,
 ) -> Result<Vec<u8>, CommandError> {
-    session.read(|conn| Ok(ops::get_photo(conn, photo_id)?.thumbnail_bytes))
+    session.read(|conn| Ok(ops::get_photo_summary(conn, photo_id)?.thumbnail_bytes))
 }
 
 /// The full-resolution original bytes for one photo, returned as a raw
