@@ -34,7 +34,11 @@ A license that's only acceptable for particular packages goes in `EXCEPTIONS`
 in `policy.mjs`, scoped to those packages or hand-recorded entries, with the
 reason. Today they are OFL-1.1 for the `@fontsource` fonts, and the licenses
 for data the strength hint's dictionary uses (below; the EFF, OpenSubtitles and
-Moby entries are kept, though those lists no longer ship).
+Moby entries are kept, though those lists no longer ship). A crate only
+`cargo deny` sees, such as a build dependency, takes its exception in
+`deny.toml`'s `exceptions` instead, with the reason: today `blessing` and
+`WTFPL` for `sqlcipher-src`, whose sources libsqlite3-sys compiles only the
+SQLCipher amalgamation from.
 
 The Flatpak ships the same binary, built from the same lockfiles, and adds no
 module of its own, so these checks already cover it; `scripts/flatpak/manifest.test.ts`

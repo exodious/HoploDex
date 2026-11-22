@@ -346,6 +346,8 @@ Moby entry carries its credit and random-name's MIT `LICENSE` (the repository at
 1990, 2015-02-09, 2016-07). Every committed text's first line is `Source: <url>`
 and nothing between it and the text._
 
+_Amended 2026-11-22 (#203): SQLCipher is 4.20.0 community on SQLite 3.54.1, and the three `libsqlite3-sys` entries' carrier is 0.40.0, which compiles the amalgamation from its build dependency `sqlcipher-src` (420.0.0). SQLCipher's text is now committed (`licenses/texts/sqlcipher/LICENSE.txt`, a copy of `sqlcipher-src`'s), since the notices read only shipped crates (`licenses/hand-recorded.json`)._
+
 **Their licenses** are allowed for these entries only, as exceptions scoped
 to them in `policy.mjs` (constitution, "Licensing": a license acceptable only
 for particular packages is recorded as an exception):
