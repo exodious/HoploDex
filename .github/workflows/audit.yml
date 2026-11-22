@@ -48,7 +48,8 @@ jobs:
 
     steps:
       # GitHub's own actions are pinned to a release tag; third-party ones to a
-      # commit (#72). Dependabot updates both (.github/dependabot.yml).
+      # commit (#72). Both move by hand: Dependabot's version updates are off
+      # (.github/dependabot.yml).
       # Two commits deep: on a pull request, HEAD is GitHub's merge commit and
       # its first parent is main, so their diff is the pull request's change.
       - uses: actions/checkout@v7
@@ -75,16 +76,17 @@ jobs:
             echo "::notice::Only Markdown or the other workflows changed, so the dependency audit is skipped."
           fi
 
+      # The Dockerfile's NODE_VERSION, as in .github/actions/setup; moved by
+      # hand with it.
       - uses: actions/setup-node@v7
         if: steps.scope.outputs.skip != 'true'
         with:
-          node-version: 24
+          node-version: 24.21.0
           cache: npm
 
       # The Rust version is pinned too: 1.99.0 was the latest stable release on
       # 2026-10-09, as in codeql.yml. This action has no release tags, only a
-      # branch per toolchain, so Dependabot may not move its pin; refresh it
-      # when the toolchain changes.
+      # branch per toolchain; refresh its pin when the toolchain changes.
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         if: steps.scope.outputs.skip != 'true'
         with:

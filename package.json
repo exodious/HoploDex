@@ -89,9 +89,7 @@
     }
   },
   "allowScripts": {
-    "edgedriver@8.0.0": true,
     "esbuild@0.28.1": true,
-    "esbuild@0.25.12": true,
-    "geckodriver@8.0.0": true
+    "esbuild@0.25.12": true
   }
 }

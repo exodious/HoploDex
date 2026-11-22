@@ -18,9 +18,11 @@ inputs:
 runs:
   using: composite
   steps:
+    # The Dockerfile's NODE_VERSION, so CI and the dev container agree; move
+    # both together by hand.
     - uses: actions/setup-node@v7
       with:
-        node-version: 24
+        node-version: 24.21.0
 
     - id: npm
       shell: bash
@@ -44,10 +46,10 @@ runs:
     - shell: bash
       run: npm install --global npm@12
 
-    # Third-party actions are pinned to a commit (#72); Dependabot moves the
-    # pins. This is the head of the action's `stable` branch on 2026-10-09,
+    # Third-party actions are pinned to a commit (#72), moved by hand.
+    # This is the head of the action's `stable` branch on 2026-10-09,
     # and 1.99.0 the Rust that codeql.yml and audit.yml pin. The action has no
-    # release tags, so Dependabot may not move it; refresh it with the toolchain.
+    # release tags; refresh it with the toolchain.
     - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
       with:
         toolchain: 1.99.0
