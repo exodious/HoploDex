@@ -355,33 +355,45 @@ fn a_wrong_backup_passphrase_changes_nothing() {
     assert!(world.session.is_open(), "the current database stays open");
 }
 
-/// A backup whose schema isn't the one its steps make, a view where
-/// `document_attachments` was, is refused as damaged at the restore's first
-/// look, before any of its tables is read, and nothing changes.
+/// A backup whose schema isn't the one its steps make is refused at the
+/// restore's first look, before any of its tables but the runner's own
+/// `schema_migrations` is read, and nothing changes: a view where
+/// `document_attachments` was is damaged, and a `schema_migrations` view that
+/// never ends is no HoploDex database (and doesn't keep the look running).
 #[test]
-fn a_crafted_backup_is_refused_as_damaged_and_changes_nothing() {
-    let world = World::new();
-    let listed = world.with_two_backups();
-    let crafted = Connection::open(&listed[1].path).unwrap();
-    cipher::key(&crafted, "main", &passphrase()).unwrap();
-    cipher::apply_cipher_settings(&crafted, "main").unwrap();
-    crafted
-        .execute_batch(
+fn a_crafted_backup_is_refused_and_changes_nothing() {
+    for (craft, code) in [
+        (
             "DROP TABLE document_attachments;
              CREATE VIEW document_attachments AS SELECT 1 AS id, zeroblob(1024) AS content;",
-        )
-        .unwrap();
-    drop(crafted);
-    let before = fs::read(world.path()).unwrap();
-    let names = World::names(&world.default_folder());
+            "DATABASE_DAMAGED",
+        ),
+        (
+            "DROP TABLE schema_migrations;
+             CREATE VIEW schema_migrations AS
+             WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n)
+             SELECT '0001_initial' AS name FROM n;",
+            "PASSPHRASE_INCORRECT",
+        ),
+    ] {
+        let world = World::new();
+        let listed = world.with_two_backups();
+        let crafted = Connection::open(&listed[1].path).unwrap();
+        cipher::key(&crafted, "main", &passphrase()).unwrap();
+        cipher::apply_cipher_settings(&crafted, "main").unwrap();
+        crafted.execute_batch(craft).unwrap();
+        drop(crafted);
+        let before = fs::read(world.path()).unwrap();
+        let names = World::names(&world.default_folder());
 
-    let refused = world.restore(&listed[1].path, support::TEST_PASSPHRASE).unwrap_err();
+        let refused = world.restore(&listed[1].path, support::TEST_PASSPHRASE).unwrap_err();
 
-    assert_eq!(refused.code, "DATABASE_DAMAGED");
-    assert_eq!(fs::read(world.path()).unwrap(), before);
-    assert_eq!(World::names(&world.default_folder()), names);
-    assert!(world.leftovers().is_empty());
-    assert!(world.session.is_open(), "the current database stays open");
+        assert_eq!(refused.code, code);
+        assert_eq!(fs::read(world.path()).unwrap(), before);
+        assert_eq!(World::names(&world.default_folder()), names);
+        assert!(world.leftovers().is_empty());
+        assert!(world.session.is_open(), "the current database stays open");
+    }
 }
 
 #[test]

@@ -113,7 +113,7 @@ impl World {
         let filler = db::random_hex(bytes / 2).unwrap();
         self.session
             .write(self.session.current_id(), |conn| {
-                conn.execute_batch("CREATE TABLE IF NOT EXISTS filler (content TEXT)").unwrap();
+                conn.execute_batch(db::upgrade::testing::FILLER).unwrap();
                 conn.execute("INSERT INTO filler (content) VALUES (?1)", [filler]).unwrap();
                 Ok(())
             })

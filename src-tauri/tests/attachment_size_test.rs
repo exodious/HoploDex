@@ -326,7 +326,7 @@ fn an_attachment_past_what_a_connection_reads_still_lists_and_only_it_fails_to_o
 /// A database from elsewhere whose `document_attachments` is a view that makes
 /// a document's bytes with `zeroblob(...)`, the review's lead for alert #108.
 /// Reopened, it is refused as damaged before any table is read
-/// (`db::check_layout`). On a connection that already holds it, HoploDex still
+/// (`db::check_schema`). On a connection that already holds it, HoploDex still
 /// lists the document from its metadata and refuses to read its 900 MB with
 /// `ATTACHMENT_TOO_LARGE` (`db::MAX_VALUE_BYTES`), where a connection without
 /// the limit would make all of it.
