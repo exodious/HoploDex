@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -23,6 +24,7 @@ use crate::services::chooser::{Chooser, ChosenPath, Pick, choose};
 use crate::services::consent::{Consent, ConsentAnswer, ConsentRequest};
 use crate::services::disk_space;
 use crate::services::entry_text::{EntryField, check_entry_text};
+use crate::services::import_reader::limits::{ImportLimit, MAX_MOUNTED_ENTRIES};
 use crate::services::import_reader::read_files;
 use crate::services::mounts::{self, MountGraph};
 use crate::services::record_id;
@@ -1800,12 +1802,13 @@ pub mod ops {
     /// mount that can't be made never fails the row: the record stays
     /// unmounted and a warning names the row and the reason. The graph is
     /// loaded once and kept current, so each mount is checked against the
-    /// ones before it.
+    /// ones before it. `stop` is asked before each mount.
     fn resolve_mounts(
         conn: &Connection,
         requests: &[MountRequest],
         outcomes: &HashMap<String, RecordRef>,
         warnings: &mut Vec<RowError>,
+        stop: &dyn Fn() -> Result<(), CommandError>,
     ) -> Result<(), CommandError> {
         if requests.is_empty() {
             return Ok(());
@@ -1813,6 +1816,7 @@ pub mod ops {
         let mut graph = MountGraph::load(conn)?;
         let (by_uid, active) = record_index(conn)?;
         for request in requests {
+            stop()?;
             let warn = |warnings: &mut Vec<RowError>, message: String| {
                 warnings.push(RowError {
                     table: request.table,
@@ -1870,21 +1874,44 @@ pub mod ops {
 
     /// Issue #56: fills in `mounted` for each conflict whose row would
     /// dispose of the record, once this import's own mounts are made, so
-    /// the list is what replacing it would find.
+    /// the list is what replacing it would find. Each record's list is made
+    /// once, however many rows match it, and the lists together stay within
+    /// `MAX_MOUNTED_ENTRIES`, past which the import fails naming `source`'s
+    /// file (code scanning alert 81). `stop` is asked before each conflict.
     fn list_mounted(
         conn: &Connection,
         conflicts: &mut [ImportConflict],
         pending: &[PendingConflict],
+        source: &dyn Fn(ImportTable) -> String,
+        stop: &dyn Fn() -> Result<(), CommandError>,
     ) -> Result<(), CommandError> {
         if !pending.iter().any(|p| p.new_input.disposition().is_some()) {
             return Ok(());
         }
         let graph = MountGraph::load(conn)?;
+        let mut lists: HashMap<RecordRef, Vec<MountedEntry>> = HashMap::new();
+        let mut listed = 0;
         for (conflict, pending) in conflicts.iter_mut().zip(pending) {
             debug_assert_eq!(conflict.conflict_id, pending.conflict_id);
-            if pending.new_input.disposition().is_some() {
-                conflict.mounted = mounts::mounted_entries(conn, &graph, pending.existing)?;
+            stop()?;
+            if pending.new_input.disposition().is_none() {
+                continue;
             }
+            let mounted = match lists.entry(pending.existing) {
+                Entry::Occupied(list) => list.into_mut(),
+                Entry::Vacant(list) => {
+                    list.insert(mounts::mounted_entries(conn, &graph, pending.existing)?)
+                }
+            };
+            listed += mounted.len();
+            if listed > MAX_MOUNTED_ENTRIES {
+                return Err(CommandError::import_limit_exceeded(
+                    &source(conflict.table),
+                    None,
+                    ImportLimit::MountedEntries,
+                ));
+            }
+            conflict.mounted = mounted.clone();
         }
         Ok(())
     }
@@ -2151,11 +2178,15 @@ pub mod ops {
     /// as the firearm rows and the accessory rows; stops with
     /// `VALIDATION_ERROR` naming the file (and the sheet) when two sheets
     /// hold the same table.
+    /// A table's rows and the name of its source.
+    type Named<T> = Option<(String, Vec<T>)>;
+
+    /// The firearm table and the accessory table.
     fn collect_tables(
         tables: Vec<ReadTable>,
-    ) -> Result<(Vec<RawImportRow>, Vec<RawAccessoryRow>), CommandError> {
-        let mut firearms: Option<(String, Vec<RawImportRow>)> = None;
-        let mut accessories: Option<(String, Vec<RawAccessoryRow>)> = None;
+    ) -> Result<(Named<RawImportRow>, Named<RawAccessoryRow>), CommandError> {
+        let mut firearms: Named<RawImportRow> = None;
+        let mut accessories: Named<RawAccessoryRow> = None;
         let same_table = |first: &str, second: &str, noun: &str| {
             CommandError::new(
                 "VALIDATION_ERROR",
@@ -2185,10 +2216,7 @@ pub mod ops {
                 }
             }
         }
-        Ok((
-            firearms.map(|(_, rows)| rows).unwrap_or_default(),
-            accessories.map(|(_, rows)| rows).unwrap_or_default(),
-        ))
+        Ok((firearms, accessories))
     }
 
     /// The record identifier `record` has now (`NOT_FOUND` when it is gone).
@@ -2326,7 +2354,9 @@ pub mod ops {
         record_imported: &dyn Fn(u64),
     ) -> Result<ImportResult, CommandError> {
         log::debug!("import: matching and saving what was read");
-        let (firearm_rows, accessory_rows) = collect_tables(tables)?;
+        let (firearm_table, accessory_table) = collect_tables(tables)?;
+        let (firearm_source, firearm_rows) = firearm_table.unwrap_or_default();
+        let (accessory_source, accessory_rows) = accessory_table.unwrap_or_default();
         let snapping = Snapping::new(conn, &firearm_rows, &accessory_rows)?;
         let total = firearm_rows.len() + accessory_rows.len();
         let session_id = format!("import-{}", chrono::Utc::now().timestamp_micros());
@@ -2373,8 +2403,21 @@ pub mod ops {
             on_progress(done, total);
         }
 
-        resolve_mounts(conn, &run.mount_requests, &run.outcomes, &mut run.warnings)?;
-        list_mounted(conn, &mut run.conflicts, &run.pending)?;
+        // A stop from here keeps every row, and reports them all.
+        let imported = run.imported_count as u64;
+        let stop = || {
+            if is_cancelled() {
+                Err(CommandError::operation_stopped(OperationKind::Import, Some(imported), None))
+            } else {
+                Ok(())
+            }
+        };
+        resolve_mounts(conn, &run.mount_requests, &run.outcomes, &mut run.warnings, &stop)?;
+        let source = |table| match table {
+            ImportTable::Firearms => firearm_source.clone(),
+            ImportTable::Accessories => accessory_source.clone(),
+        };
+        list_mounted(conn, &mut run.conflicts, &run.pending, &source, &stop)?;
 
         if !run.pending.is_empty() {
             for conflict in &mut run.pending {
@@ -2547,7 +2590,7 @@ pub mod ops {
             }
         }
 
-        resolve_mounts(conn, &mount_requests, &outcomes, &mut warnings)?;
+        resolve_mounts(conn, &mount_requests, &outcomes, &mut warnings, &|| Ok(()))?;
 
         if !still_open.is_empty() {
             store.keep(session_id, ImportSession { pending: still_open, outcomes });

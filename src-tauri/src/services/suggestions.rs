@@ -280,6 +280,10 @@ impl SheetSpellings {
     /// that break 004 FR-015's rules (a row error of their own), don't vote.
     pub fn from_cells<'a>(field: EntryField, cells: impl IntoIterator<Item = &'a str>) -> Self {
         let mut by_key: HashMap<String, Vec<SheetSpelling>> = HashMap::new();
+        // Where each spelling is in its key's list, so a cell finds its own
+        // in one lookup however many spellings a key has (code scanning
+        // alert 82).
+        let mut at: HashMap<String, usize> = HashMap::new();
         for (index, cell) in cells.into_iter().enumerate() {
             let text = cell.trim();
             if text.is_empty() || check_entry_text(field, text).is_err() {
@@ -290,9 +294,10 @@ impl SheetSpellings {
                 continue;
             }
             let spellings = by_key.entry(key).or_default();
-            match spellings.iter_mut().find(|spelling| spelling.text == text) {
-                Some(spelling) => spelling.count += 1,
+            match at.get(text) {
+                Some(&i) => spellings[i].count += 1,
                 None => {
+                    at.insert(text.to_owned(), spellings.len());
                     spellings.push(SheetSpelling { text: text.to_owned(), count: 1, first: index })
                 }
             }
@@ -655,4 +660,93 @@ pub fn suggest(
             caliber: ranked.caliber.map(str::to_owned),
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// The vote as it was before code scanning alert 82: each cell searched
+    /// its key's spellings one by one.
+    fn chosen_by_search(field: EntryField, cells: &[&str]) -> HashMap<String, String> {
+        let mut by_key: HashMap<String, Vec<SheetSpelling>> = HashMap::new();
+        for (index, cell) in cells.iter().enumerate() {
+            let text = cell.trim();
+            if text.is_empty() || check_entry_text(field, text).is_err() {
+                continue;
+            }
+            let key = words_key(text);
+            if key.is_empty() {
+                continue;
+            }
+            let spellings = by_key.entry(key).or_default();
+            match spellings.iter_mut().find(|spelling| spelling.text == text) {
+                Some(spelling) => spelling.count += 1,
+                None => {
+                    spellings.push(SheetSpelling { text: text.to_owned(), count: 1, first: index })
+                }
+            }
+        }
+        by_key
+            .into_iter()
+            .filter_map(|(key, spellings)| {
+                spellings
+                    .into_iter()
+                    .max_by_key(|spelling| (spelling.count, Reverse(spelling.first)))
+                    .map(|spelling| (key, spelling.text))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_vote_chooses_what_it_chose_before() {
+        let cells = [
+            "Smith & Wesson",
+            "smith & wesson",
+            " Smith &  Wesson ",
+            "SMITH & WESSON",
+            "smith & wesson",
+            "Ruger",
+            "RUGER",
+            "ruger",
+            "Ruger",
+            "RUGER",
+            "Glock",
+            "",
+            "   ",
+            "Sig Sauer",
+            "SIG SAUER",
+            "Sig Sauer",
+            "SIG SAUER",
+            "Colt",
+        ];
+        let chosen = SheetSpellings::from_cells(EntryField::Make, cells).chosen;
+        assert_eq!(chosen, chosen_by_search(EntryField::Make, &cells));
+        // The most cells win, and the earliest row a tie.
+        assert_eq!(chosen[&words_key("ruger")], "Ruger");
+        assert_eq!(chosen[&words_key("sig sauer")], "Sig Sauer");
+        assert_eq!(chosen[&words_key("smith & wesson")], "smith & wesson");
+    }
+
+    #[test]
+    fn many_spellings_of_one_value_are_counted_in_linear_time() {
+        // 100,000 spellings of one 21-letter word, each its own (the first 17
+        // letters' case spells `n`): the search made 5 × 10^9 comparisons,
+        // 12 s in a release build.
+        let word = "abcdefghijklmnopqrstu";
+        let cells: Vec<String> = (0..100_000u32)
+            .map(|n| {
+                word.chars()
+                    .enumerate()
+                    .map(|(i, c)| if n >> (i % 17) & 1 == 1 { c.to_ascii_uppercase() } else { c })
+                    .collect()
+            })
+            .collect();
+        let started = Instant::now();
+        let chosen =
+            SheetSpellings::from_cells(EntryField::Make, cells.iter().map(String::as_str)).chosen;
+        assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+        assert_eq!(chosen.len(), 1);
+    }
 }

@@ -22,8 +22,8 @@ use super::frames::{
     Format, FromHelper, MAX_CHUNK, ToHelper, read_from_helper, write_chunk, write_to_helper,
 };
 use super::limits::{
-    HELPER_IDLE_TIMEOUT, HELPER_MEMORY_BYTES, ImportLimit, MAX_CELLS, MAX_COLUMNS, MAX_FILE_BYTES,
-    MAX_ROWS, MAX_TOTAL_TEXT_BYTES,
+    HELPER_IDLE_TIMEOUT, HELPER_MEMORY_BYTES, ImportLimit, MAX_CELL_CHARS, MAX_CELLS, MAX_COLUMNS,
+    MAX_FILE_BYTES, MAX_ROWS, MAX_SHEETS, MAX_TOTAL_TEXT_BYTES,
 };
 use super::reader::ARGUMENT;
 use crate::commands::CommandError;
@@ -186,6 +186,20 @@ impl Sheets {
         match frame {
             FromHelper::Progress { done, total } => progress(done, total),
             FromHelper::Sheet { name } => {
+                // The helper's limits again, so that a helper that has been
+                // taken over can't make the parent hold any number of sheets
+                // or names of any length (code scanning alert 84). No sheet
+                // name is longer than a cell.
+                if self.sheets.len() >= MAX_SHEETS {
+                    return Some(End::Refused(ImportLimit::Sheets, None));
+                }
+                if name.len() > MAX_CELL_CHARS && name.chars().count() > MAX_CELL_CHARS {
+                    return Some(End::Unreadable);
+                }
+                budget.text_bytes += name.len() as u64;
+                if budget.text_bytes > MAX_TOTAL_TEXT_BYTES {
+                    return Some(self.refuse(ImportLimit::TotalText));
+                }
                 self.sheets.push((Some(name), TableReader::new()));
                 self.rows = 0;
             }
@@ -441,4 +455,48 @@ fn fill(source: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
         }
     }
     Ok(filled)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn workbook() -> Sheets {
+        Sheets { format: SpreadsheetFormat::Xlsx, sheets: Vec::new(), rows: 0 }
+    }
+
+    fn sheet(sheets: &mut Sheets, budget: &mut Budget, name: String) -> Option<End> {
+        sheets.take(FromHelper::Sheet { name }, budget, &mut |_, _| {})
+    }
+
+    #[test]
+    fn a_helper_sending_more_sheets_than_a_workbook_may_have_is_refused() {
+        // Code scanning alert 84: the helper refuses a 17th sheet itself, so
+        // only one that has been taken over sends it.
+        let (mut sheets, mut budget) = (workbook(), Budget::default());
+        for n in 1..=MAX_SHEETS {
+            assert!(sheet(&mut sheets, &mut budget, format!("Sheet{n}")).is_none());
+        }
+        let end = sheet(&mut sheets, &mut budget, "Sheet17".into());
+        assert!(matches!(end, Some(End::Refused(ImportLimit::Sheets, None))));
+        assert_eq!(sheets.sheets.len(), MAX_SHEETS);
+    }
+
+    #[test]
+    fn a_sheet_name_longer_than_a_cell_is_unreadable_and_names_count_as_text() {
+        let (mut sheets, mut budget) = (workbook(), Budget::default());
+        let longest = "é".repeat(MAX_CELL_CHARS);
+        assert!(sheet(&mut sheets, &mut budget, longest.clone()).is_none());
+        assert_eq!(budget.text_bytes, longest.len() as u64);
+        assert!(matches!(
+            sheet(&mut sheets, &mut budget, "a".repeat(MAX_CELL_CHARS + 1)),
+            Some(End::Unreadable)
+        ));
+
+        let mut budget = Budget { text_bytes: MAX_TOTAL_TEXT_BYTES - 1, ..Budget::default() };
+        assert!(matches!(
+            sheet(&mut workbook(), &mut budget, "AB".into()),
+            Some(End::Refused(ImportLimit::TotalText, _))
+        ));
+    }
 }

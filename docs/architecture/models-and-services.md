@@ -98,8 +98,9 @@ insurance status, valuation, attachment storage, secure delete,
   snapping, the import sheet pass);
 - for 005 `registration` (the built-in form names, used only as suggestions);
 - and for 006 `mounts` (`MountGraph`, a scan of the `mounts` table that every
-  mount rule goes through: no cycles, one host per record, the descendants of a
-  record; `atomically` runs a multi-write change in one savepoint) and
+  mount rule goes through: no cycles, one host per record, at most
+  `MAX_MOUNT_DEPTH` (16) levels below the top of a chain, so every walk up one is
+  bounded, the descendants of a record; `atomically` runs a multi-write change in one savepoint) and
   `record_id` (the random UUID that names a record across export and import;
   insurance policies, photos and documents carry a `uid` too since 009, in the
   file only: no IPC type, export or import has it);
@@ -121,7 +122,10 @@ insurance status, valuation, attachment storage, secure delete,
   `client.rs` the app's, which feeds the file in chunks and turns the rows into
   import rows as they arrive; `limits.rs` holds the file, unpacked-size, entry,
   sheet, row, column, cell, text and shared-string maximums, measured by
-  inflating, and a breach is `IMPORT_LIMIT_EXCEEDED` before any row is saved; it
+  inflating, and a breach is `IMPORT_LIMIT_EXCEEDED` before any row is saved
+  (`client.rs` checks the sheets, rows, cells and text again as if the child
+  were compromised); one more, `MAX_MOUNTED_ENTRIES`, bounds the mounted lists
+  an import's conflicts carry, and is met after the rows are saved; it
   also holds Excel's own limits on a workbook's styles (cell formats, number
   formats, fonts, fills and borders, which `calamine` keeps every one of, and
   the length of a number format's code or a font's name, which it copies into

@@ -162,6 +162,8 @@ _Amended 2026-11-04: a workbook's styles are bounded too (`MAX_STYLE_TEXT_CHARS`
 `fileSize`, `unpackedSize`, `zipEntries`, `sheets`, `rows`, `columns`,
 `cells`, `cellText`, `totalText`, `sharedStrings`.
 
+_Amended 2026-11-22: `mountedEntries` (`MAX_MOUNTED_ENTRIES`, 100,000 records listed as mounted on the records an import's rows would replace, across all its conflicts) is the one limit met after rows are saved: the parent checks it while it lists the conflicts, and the rows imported before stay (code scanning alert 81). The parent also refuses a 17th `Sheet` frame (`sheets`), takes a sheet name over 32,767 characters as unreadable, and counts names toward `MAX_TOTAL_TEXT_BYTES` (code scanning alert 84)._
+
 `MAX_CELLS` and `MAX_TOTAL_TEXT_BYTES` together bound the parent's memory
 (SC-002): at most 256 MiB of text plus about 32 bytes a cell (the `String`
 and its allocation) for 5,000,000 cells, about 160 MB, ≈ 420 MB in all. The
