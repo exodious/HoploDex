@@ -433,7 +433,8 @@ fn read_only_profile(name: &str, sid: PSID) -> io::Result<()> {
 
     let name = name.to_lowercase();
     let packages = packages_folder().ok_or_else(|| io::Error::other("no Local AppData folder"))?;
-    read_only_tree(&packages.join(&name), sid, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE)?;
+    let folder = packages.join(&name).canonicalize()?;
+    read_only_tree(&folder, sid, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE)?;
     read_only_key(&format!(r"{STORAGE}\{name}"), sid, KEY_READ)
 }
 
@@ -447,7 +448,13 @@ fn read_only_tree(folder: &Path, sid: PSID, rights: u32) -> io::Result<()> {
         // Not followed: `is_dir` and `is_file` are false for a link or junction.
         let kind = entry.file_type()?;
         if kind.is_dir() {
-            read_only_tree(&entry.path(), sid, rights)?;
+            // Kept below the canonical `folder`, so the walk changes only the profile.
+            let path = entry.path().canonicalize()?;
+            if path.starts_with(folder) {
+                read_only_tree(&path, sid, rights)?;
+            } else {
+                return Err(io::Error::other("a folder outside the profile"));
+            }
         } else if kind.is_file() {
             read_only(&object(&entry.path()), SE_FILE_OBJECT, sid, rights, NO_INHERITANCE)?;
         }
