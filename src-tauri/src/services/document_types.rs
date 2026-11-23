@@ -344,8 +344,11 @@ fn is_plain_ole(bytes: &[u8], streams: &[&str]) -> bool {
     let mut has_stream = false;
     for entry in file.walk() {
         // `cfb` builds each entry's whole path, so a deep chain costs the
-        // square of its depth. The root is `/`, at depth 0.
-        if entry.path().components().count() > OLE_DEPTH_LIMIT + 1 {
+        // square of its depth. A name can't hold `/` or `\`, so an entry's
+        // separators are its depth (`components` would skip a storage named
+        // `.`), and the root's one is depth 0's.
+        let path = entry.path().as_os_str().as_encoded_bytes();
+        if path.iter().filter(|&&b| b == b'/' || b == b'\\').count() > OLE_DEPTH_LIMIT {
             return false;
         }
         let name = entry.name();
@@ -648,13 +651,18 @@ fn unambiguous(bytes: &[u8], archive: &zip::ZipArchive<Cursor<&[u8]>>) -> bool {
 /// (code scanning alert #94).
 const END_RECORDS_LIMIT: usize = 16;
 
+/// The most a Zip64 end record may say follows its size field: its 44 bytes
+/// and a little extensible data, which PKWARE reserves and nothing writes.
+const ZIP64_RECORD_LIMIT: u64 = 44 + 1024;
+
 /// The package `bytes` is, as zip reads it, if zip's search for its
 /// directory is bounded (code scanning alert #94): at most
 /// [`END_RECORDS_LIMIT`] end records in the last 64 KiB (zip looks in the
 /// last 64 KiB and a record's length; the window here is a little wider),
 /// and where one follows a Zip64 locator, at most as many Zip64 end records
-/// in the file, none declaring more entries than a 32-bit record can. So zip
-/// reads at most 65,535 directory headers for each record it tries.
+/// in the file, none declaring more entries than a 32-bit record can or
+/// more than [`ZIP64_RECORD_LIMIT`] bytes. So for each record it tries, zip
+/// reads at most 65,535 directory headers and a kilobyte of Zip64 record.
 fn zip_archive(bytes: &[u8]) -> Option<zip::ZipArchive<Cursor<&[u8]>>> {
     let tail = bytes.len().saturating_sub((64 << 10) + 128);
     let end_records: Vec<usize> = signatures(bytes, tail, b"PK\x05\x06").collect();
@@ -665,10 +673,14 @@ fn zip_archive(bytes: &[u8]) -> Option<zip::ZipArchive<Cursor<&[u8]>>> {
     if end_records.iter().any(|&at| at >= 20 && bytes[at - 20..].starts_with(b"PK\x06\x07")) {
         let zip64_records: Vec<usize> =
             signatures(bytes, 0, b"PK\x06\x06").take(END_RECORDS_LIMIT + 1).collect();
-        if zip64_records.len() > END_RECORDS_LIMIT
-            // The total entry count (zip refuses a record whose count on this disk differs).
-            || zip64_records.iter().any(|&at| le(bytes, at + 32, 8).is_none_or(|n| n > 0xFFFF))
-        {
+        // A record's size (44, and any extensible data after it, which zip
+        // reads whole for each end record it tries) and its total entry count
+        // (zip refuses a record whose count on this disk differs).
+        let oversized = |at: usize| {
+            le(bytes, at + 4, 8).is_none_or(|size| size > ZIP64_RECORD_LIMIT)
+                || le(bytes, at + 32, 8).is_none_or(|entries| entries > 0xFFFF)
+        };
+        if zip64_records.len() > END_RECORDS_LIMIT || zip64_records.into_iter().any(oversized) {
             return None;
         }
     }

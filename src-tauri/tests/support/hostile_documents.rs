@@ -340,11 +340,11 @@ pub fn doc_with_storages(storages: usize) -> Generated {
 }
 
 /// A DOC that is a sound compound file with a `WordDocument` stream and a
-/// chain of `depth` storages, each inside the one before.
-pub fn doc_with_nested_storages(depth: usize) -> Generated {
-    let mut chain = storage("Nested", Vec::new());
+/// chain of `depth` storages named `name`, each inside the one before.
+pub fn doc_with_nested_storages(name: &str, depth: usize) -> Generated {
+    let mut chain = storage(name, Vec::new());
     for _ in 1..depth {
-        chain = storage("Nested", vec![chain]);
+        chain = storage(name, vec![chain]);
     }
     let b = cfb(vec![stream("WordDocument", word97_fib()), chain]);
     Generated::new("nested.doc", b)
@@ -855,10 +855,16 @@ pub fn docx_with_many_end_records(len: usize, pairs: usize) -> Generated {
 
 /// A sound DOCX in Zip64 form: its end record defers to a Zip64 one. A stored
 /// part holds `extra` more Zip64 end records, each declaring `entries`
-/// entries.
-pub fn docx_in_zip64_form(extra: usize, entries: u64) -> Generated {
-    let records: Vec<u8> =
-        (0..extra).flat_map(|_| zip64_end_record(entries, entries * 46, 0)).collect();
+/// entries and that `record_size` bytes follow its size field (44 is none
+/// beyond the fixed fields).
+pub fn docx_in_zip64_form(extra: usize, entries: u64, record_size: u64) -> Generated {
+    let records: Vec<u8> = (0..extra)
+        .flat_map(|_| {
+            let mut record = zip64_end_record(entries, entries * 46, 0);
+            record[4..12].copy_from_slice(&record_size.to_le_bytes());
+            record
+        })
+        .collect();
     let mut b = word_package(WORD_MAIN, &[("word/media/records.bin", &records)]);
     // The package's own end record: its entry count, directory size and offset.
     let end = b.len() - 22;
