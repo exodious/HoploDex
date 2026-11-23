@@ -21,6 +21,23 @@ describe("useDebounced", () => {
     expect(window.__hoplodexBusy).toBe(0);
   });
 
+  // A search that reported idle between its delay and the render of its query
+  // let an E2E read the list before the search was even sent.
+  it("stays busy after the delay until the new value is rendered", async () => {
+    const { result, rerender } = renderHook(({ value }) => useDebounced(value, 150), {
+      initialProps: { value: "" },
+    });
+    rerender({ value: "colt" });
+
+    vi.advanceTimersByTime(150);
+    expect(result.current).toBe("");
+    expect(window.__hoplodexBusy).toBe(1);
+
+    await act(async () => {});
+    expect(result.current).toBe("colt");
+    expect(window.__hoplodexBusy).toBe(0);
+  });
+
   it("stays busy through a burst of typing, counting it once", () => {
     const { result, rerender } = renderHook(({ value }) => useDebounced(value, 150), {
       initialProps: { value: "" },

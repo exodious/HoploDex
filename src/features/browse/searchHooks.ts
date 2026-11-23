@@ -13,18 +13,13 @@ export function useDebounced<T>(value: T, delayMs: number): T {
   useEffect(() => {
     if (Object.is(value, debounced)) return;
     begin();
-    let pending = true;
-    const settle = () => {
-      if (pending) end();
-      pending = false;
-    };
-    const timer = window.setTimeout(() => {
-      setDebounced(value);
-      settle();
-    }, delayMs);
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    // Ends only once the new value is rendered: this cleanup runs in the same
+    // effect flush as the consumer's effect that starts the search, so no frame
+    // sees the app idle in between.
     return () => {
       window.clearTimeout(timer);
-      settle();
+      end();
     };
   }, [value, debounced, delayMs]);
   return debounced;
