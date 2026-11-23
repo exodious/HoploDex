@@ -1324,6 +1324,7 @@ _Amended by [spec 013](../013-troubleshooting-log/research.md): the log also rea
 - **The keyring**: no narrower than on a `.deb` (§7).
 - **The Documents portal** remembers the opened copy's path and name after
   the copy is deleted (§8).
+  _Amended 2026-11-23 (code scanning alert flatpak/cwe-272 on `Reach::check_portal`): a pick in the Documents portal's chooser also gives the app a lasting grant to what was picked, recursive, read and write, through restarts and logins, which the app can't revoke. A database's folder or file, the backup location and the folder for the backup before an upgrade are now picked in GTK's own chooser, which sees only the sandbox and makes no grant (`services::chooser::SandboxChooser`); an import's files and an export's folder still make one. What that leaves is in [docs/attack-surface.md](../../docs/attack-surface.md), "flatpak"._
 - **Overrides the user makes.** The refusal's advice (§5) is a
   `flatpak override --user --filesystem=<folder>` command, and Reach honours
   whatever the user grants, `host` included. That widens what a compromised

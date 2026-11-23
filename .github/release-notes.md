@@ -23,6 +23,9 @@ or open the file with your software centre. This adds Flathub if it isn't set
 up and fetches the GNOME runtime. A newer version installs the same way, over
 the old one, keeping everything. `flatpak update` updates the runtime but not
 a HoploDex installed from a file.
+Each spreadsheet you import or folder you export to through the Flatpak's file
+chooser stays open to HoploDex after it quits, until you take that back:
+`flatpak permission-reset io.github.exodious.HoploDex`, then log out and in.
 
 **Linux, the `.deb`** (Ubuntu): `sudo apt install ./HoploDex-{{app_version}}-x86_64.deb`.
 **The `.rpm`** (Fedora): `sudo dnf install ./HoploDex-{{app_version}}-x86_64.rpm`.
