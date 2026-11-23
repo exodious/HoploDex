@@ -850,6 +850,9 @@ mod tests {
     /// The shipped grants, as the sandbox's own chooser offers them: writable
     /// ones only, `<Documents>/HoploDex` first, and none outside a Flatpak
     /// (code scanning alert `flatpak/cwe-272` on `Reach::check_portal`).
+    /// Unix only: its paths are POSIX absolute, which Windows does not count
+    /// as absolute; a Flatpak runs only on Linux.
+    #[cfg(unix)]
     #[test]
     fn the_sandbox_chooser_offers_the_writable_grants_documents_first() {
         let reach = Reach::from_flatpak_info(
