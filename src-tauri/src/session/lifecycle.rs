@@ -14,7 +14,7 @@ use crate::commands::databases::ops::folder_error;
 use crate::db;
 use crate::models::database::{
     BackupFailureReason, BackupOutcome, ChooserNotice, CloseOutcome, CloseReason, Draft,
-    OpenedBackupNote, OperationKind,
+    LockSettings, OpenedBackupNote, OperationKind,
 };
 use crate::services::backups::{self, BackupFailure, BackupJob, BackupKind, Due};
 use crate::services::file_swap;
@@ -63,7 +63,7 @@ pub fn create(
     let open = prepare(machine, conn, path)?;
     let id = open.session_id;
     session.install(open);
-    honour_locks(session, machine, locks, id)
+    honour_locks(session, machine, locks, id, None)
 }
 
 /// Opens the database at `path` with `passphrase` and makes it the open
@@ -81,6 +81,20 @@ pub fn open(
     path: &Path,
     passphrase: &Passphrase,
     take_over: bool,
+) -> Result<(), CommandError> {
+    open_then(session, machine, path, passphrase, take_over, |_| {})
+}
+
+/// [`open`], calling `opened` with the database's id once it is installed,
+/// before a lock that came meanwhile is honoured: what the passphrase opened
+/// is saved for even when it locks at once (003 FR-018).
+pub fn open_then(
+    session: &Session,
+    machine: &MachineSettings,
+    path: &Path,
+    passphrase: &Passphrase,
+    take_over: bool,
+    opened: impl FnOnce(&str),
 ) -> Result<(), CommandError> {
     log::debug!("opening {} (take over: {take_over})", crate::logging::place(path));
     // The generation is read as the slot is emptied, before the key is
@@ -105,8 +119,10 @@ pub fn open(
         db::Opened::Ready(conn) => {
             let open = prepare(machine, conn, path)?;
             let id = open.session_id;
+            let database_id = open.database_id.clone();
             session.install(open);
-            honour_locks(session, machine, locks, id)
+            opened(&database_id);
+            honour_locks(session, machine, locks, id, None)
         }
         db::Opened::UpgradeDue { conn, steps_due, marker_seen } => {
             Err(upgrade::wait_for_answer(session, conn, path, steps_due, marker_seen, generation))
@@ -117,19 +133,21 @@ pub fn open(
 /// Locks the database an open, create or restore has just installed as the
 /// session `installed`, if a lock came since `since` that would have locked
 /// it had it been open then ([`Session::lock_due_since`]), as that lock would
-/// have: a sleep as an immediate close, any other as a normal one. Its lock
-/// settings are its own now, so they decide. Either way, a database no
-/// longer open when this returns ends the command with `DATABASE_CLOSED`, so
-/// the page never shows a session that is gone; the chooser has the lock's
-/// notice. Called with no operation of the caller's running, which an
-/// immediate close would stop and wait for.
+/// have: a sleep as an immediate close, any other as a normal one. Its own
+/// lock settings decide, and for a restore over the open database those of
+/// the database it `replaced` too, which was open when the lock came. Either
+/// way, a database no longer open when this returns ends the command with
+/// `DATABASE_CLOSED`, so the page never shows a session that is gone; the
+/// chooser has the lock's notice. Called with no operation of the caller's
+/// running, which an immediate close would stop and wait for.
 pub(crate) fn honour_locks(
     session: &Session,
     machine: &MachineSettings,
     since: LockGeneration,
     installed: SessionId,
+    replaced: Option<&LockSettings>,
 ) -> Result<(), CommandError> {
-    if let Some(reason) = session.lock_due_since(since) {
+    if let Some(reason) = session.lock_due_since(since, replaced) {
         log::debug!("a lock came while the database was opened: {reason:?}");
         if reason == CloseReason::Sleep {
             close_immediate(session, machine, reason);
@@ -139,7 +157,10 @@ pub(crate) fn honour_locks(
         }
         return Err(locked_meanwhile(reason));
     }
-    // A lock noted after the reading above found the database and closed it.
+    // A screen lock or sleep noted after the reading above found the database
+    // and closed it. A "Lock now" noted then names a session that had ended,
+    // one a restore replaced, so the database stays open (code scanning alert
+    // plaintext-lifetime/cwe-367/src-tauri/src/commands/backups.rs#ops.restore_open).
     if session.current_id() != installed {
         return Err(CommandError::database_closed());
     }

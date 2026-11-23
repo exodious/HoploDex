@@ -1242,12 +1242,12 @@ impl World {
         locker
     }
 
-    /// "Mine" with the lock settings given, closed with a backup made of
-    /// it, then opened again with them the other way round, so only the
-    /// backup's can lock what a restore opens. Returns the backup's path.
-    fn backed_up_with(&self, idle_enabled: bool, on_screen_lock: bool) -> String {
+    /// "Mine" with the lock settings `backup`, closed with a backup made of
+    /// it, then opened again with the settings `open`, each as
+    /// `(idle_enabled, on_screen_lock)`. Returns the backup's path.
+    fn backed_up_with(&self, backup: (bool, bool), open: (bool, bool)) -> String {
         self.create();
-        self.set_lock(idle_enabled, 10, on_screen_lock);
+        self.set_lock(backup.0, 10, backup.1);
         self.change();
         lifecycle::close_normal(
             &self.session,
@@ -1259,7 +1259,7 @@ impl World {
         // The backup before restoring is named for its own minute.
         self.minutes(60);
         self.open();
-        self.set_lock(!idle_enabled, 10, !on_screen_lock);
+        self.set_lock(open.0, 10, open.1);
         self.change();
         backups::list(&self.backup_folder(), &self.database_id()).unwrap().remove(0).path
     }
@@ -1309,15 +1309,17 @@ fn restore_open(world: &World, backup: &str) -> Result<(), CommandError> {
 }
 
 /// A screen lock during a restore over the open database, while the restore
-/// holds it: the restored database is locked once reopened if its own "lock
-/// when the screen locks" is on, and the page leaves the session it showed.
+/// holds it: the restored database is locked once reopened if "lock when the
+/// screen locks" is on in it or in the database it replaced, which was open
+/// when the screen locked, and the page leaves the session it showed.
 /// Before, the lock waited for the session and then found another one open.
 #[test]
-fn a_screen_lock_during_a_restore_locks_the_restored_database_by_its_own_setting() {
-    for lock_on in [true, false] {
-        let label = format!("setting {}", if lock_on { "on" } else { "off" });
+fn a_screen_lock_during_a_restore_locks_the_restored_database_if_either_setting_is_on() {
+    for (in_backup, in_ended) in [(true, false), (false, true), (false, false)] {
+        let lock_on = in_backup || in_ended;
+        let label = format!("in the backup {in_backup}, in the database it replaced {in_ended}");
         let world = Arc::new(World::new());
-        let backup = world.backed_up_with(false, lock_on);
+        let backup = world.backed_up_with((false, in_backup), (false, in_ended));
         let ended = json!(world.session.current_id().get());
         let locker = world.lock_at("restore:progress", replacing, screen_lock());
 
@@ -1343,7 +1345,7 @@ fn a_screen_lock_during_a_restore_locks_the_restored_database_by_its_own_setting
 #[test]
 fn lock_now_during_a_restore_locks_the_restored_database() {
     let world = Arc::new(World::new());
-    let backup = world.backed_up_with(false, false);
+    let backup = world.backed_up_with((false, false), (false, false));
     let id = world.session.current_id();
     let lock_now: LockEvent = Arc::new(move |session: &Session, machine: &MachineSettings| {
         databases::lock_database(session, id, machine, None).ok();
@@ -1362,7 +1364,7 @@ fn lock_now_during_a_restore_locks_the_restored_database() {
 #[test]
 fn a_sleep_during_a_restore_locks_the_restored_database_by_its_own_idle_lock() {
     let world = Arc::new(World::new());
-    let backup = world.backed_up_with(true, false);
+    let backup = world.backed_up_with((true, false), (false, true));
     let locker = world.lock_at("restore:progress", replacing, sleep());
 
     let restored = restore_open(&world, &backup);

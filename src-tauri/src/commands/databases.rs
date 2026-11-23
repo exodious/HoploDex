@@ -315,16 +315,15 @@ pub mod ops {
             ),
             Unlock::Saved => (false, None),
         };
-        match lifecycle::open(session, machine, path, passphrase, take_over) {
-            Ok(()) => {
-                if let Unlock::Typed { passphrase, .. } = unlock
-                    && let Some(opened) = open_database_id(session)
-                    && (remember || saved_for.as_ref() == Some(&opened))
-                {
-                    save_for(machine, path, &opened, passphrase);
-                }
-                database_status(session, machine)
+        let save = |opened: &str| {
+            if let Unlock::Typed { passphrase, .. } = unlock
+                && (remember || saved_for.as_deref() == Some(opened))
+            {
+                save_for(machine, path, opened, passphrase);
             }
+        };
+        match lifecycle::open_then(session, machine, path, passphrase, take_over, save) {
+            Ok(()) => database_status(session, machine),
             Err(err) if err.code == "UPGRADE_NEEDED" => {
                 // Saving waits for the upgrade to succeed, so the passphrase
                 // stays with the database that waits, and nowhere else.

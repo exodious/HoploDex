@@ -1125,18 +1125,27 @@ impl SessionInner {
     }
 
     /// The lock that the database just installed is due, if one came since
-    /// `since` that would have locked it had it been open then: any "Lock
-    /// now", a screen lock with "lock when the screen locks" on, a sleep with
-    /// the idle lock on (003 FR-033, FR-037, FR-038). Read after the install,
-    /// so a lock noted after this read finds the database and locks it itself.
-    pub(crate) fn lock_due_since(&self, since: LockGeneration) -> Option<CloseReason> {
+    /// `since` that would have locked it, or the database `replaced` had the
+    /// settings of, had it been open then: any "Lock now", a screen lock with
+    /// "lock when the screen locks" on, a sleep with the idle lock on (003
+    /// FR-033, FR-037, FR-038). Read after the install, so a screen lock or
+    /// sleep noted after this read finds the database and locks it itself; a
+    /// "Lock now" noted then is for the session it names, which a restore
+    /// may have ended, and is not caught (code scanning alert
+    /// plaintext-lifetime/cwe-367/src-tauri/src/commands/backups.rs#ops.restore_open).
+    pub(crate) fn lock_due_since(
+        &self,
+        since: LockGeneration,
+        replaced: Option<&LockSettings>,
+    ) -> Option<CloseReason> {
         let seen = self.lock_generation();
         let settings = self.idle.settings()?;
+        let either = |on: fn(&LockSettings) -> bool| on(&settings) || replaced.is_some_and(on);
         if seen.user != since.user {
             Some(CloseReason::LockedByUser)
-        } else if seen.screen != since.screen && settings.on_screen_lock {
+        } else if seen.screen != since.screen && either(|lock| lock.on_screen_lock) {
             Some(CloseReason::ScreenLocked)
-        } else if seen.sleep != since.sleep && settings.idle_enabled {
+        } else if seen.sleep != since.sleep && either(|lock| lock.idle_enabled) {
             Some(CloseReason::Sleep)
         } else {
             None

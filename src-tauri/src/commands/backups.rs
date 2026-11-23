@@ -595,6 +595,7 @@ pub mod ops {
         }
         let database_id = open.database_id.clone();
         let ended_session = open.session_id;
+        let ended_locks = open.lock_settings.clone();
         // Its file is about to be replaced, so nothing more is written to it.
         drop(slot.take());
         session.clear_opened_documents();
@@ -629,7 +630,9 @@ pub mod ops {
         *slot = Some(reopened);
         drop(slot);
         drop(operation);
-        if let Err(err) = lifecycle::honour_locks(session, machine, locks, reopened_session) {
+        if let Err(err) =
+            lifecycle::honour_locks(session, machine, locks, reopened_session, Some(&ended_locks))
+        {
             // The page still shows the session the restore ended, which no
             // close announced: it goes to the chooser, with the lock's notice.
             events.emit(
@@ -796,7 +799,7 @@ pub mod ops {
         let reopened_session = reopened.session_id;
         session.install(reopened);
         drop(operation);
-        lifecycle::honour_locks(session, machine, locks, reopened_session)?;
+        lifecycle::honour_locks(session, machine, locks, reopened_session, None)?;
         crate::commands::databases::ops::database_status(session, machine)
     }
 

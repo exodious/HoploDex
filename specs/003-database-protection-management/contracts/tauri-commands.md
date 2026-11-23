@@ -236,6 +236,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-22: so does a recent entry `locate_database` re-pointed and that hasn't opened at its new path since: the saved passphrase isn't used for it, and the native dialog asks once. The open that succeeds there clears the mark, and refreshes the saved passphrase when the file is the database it was saved for, so the next open uses it again. A database whose stored id isn't 32 lowercase hex digits, the only form HoploDex writes, is refused as `DATABASE_DAMAGED` before anything is written._
 
+  _Amended 2026-11-23 (code scanning alerts 98, 99): a "Lock now", a screen lock or a sleep that comes while it is opened still locks it once it is open, by its own lock settings, as it would have had it been open then (FR-033, FR-037, FR-038): the command fails with `DATABASE_CLOSED` ("The database opened, and HoploDex locked it at once because …"), and the chooser has the lock's `closed` notice. The passphrase that opened it is still saved or refreshed first, as on success (FR-018)._
+
 ### `remove_recent_database`
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
 - Also deletes the saved keyring passphrase for it (FR-018). Never touches the file.
@@ -359,7 +361,6 @@ sleep stops it (FR-037).
 - **Errors**: `NOT_FOUND` when `databasePath` is not in this computer's recent list, which is where its backup folder and id are cached
 
   _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#shared-types-amended): the output (`BackupList`) also carries `unavailableReason?: "outOfReach"` when `available` is false because the backup folder is outside what a Flatpak may reach. That is not an error (011 FR-004)._
-  _Amended 2026-11-23 (code scanning alerts 98, 99): a "Lock now", a screen lock or a sleep that comes while it is opened still locks it once it is open, by its own lock settings, as it would have had it been open then (FR-033, FR-037, FR-038): the command fails with `DATABASE_CLOSED` ("The database opened, and HoploDex locked it at once because …"), and the chooser has the lock's `closed` notice._
 
   _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#list_backups-amended-fr-013): each `BackupInfo` also carries `beforeUpgradeTo` (009 FR-013)._
 
@@ -380,7 +381,7 @@ sleep stops it (FR-037).
 
   _Amended 2026-11-04: **Input**: `{ checkId: number; databasePath?: string; upgrade?: boolean }`, with no passphrase. `checkId` is what `check_backup` returned once the passphrase typed in the native dialog opened the backup; the backend kept that passphrase, wiped when dropped, and the restore uses it, once. A check that is gone (dropped at Cancel by the new unscoped `drop_backup_check { checkId }`, a screen lock, a sleep, a shutdown or a close) or was for another target is `OPERATION_STOPPED`, with nothing changed._
 
-  _Amended 2026-11-23 (code scanning alerts 98, 99): a "Lock now", a screen lock or a sleep that comes while the restored database is opened still locks it once it is open, by its own lock settings, as it would have had it been open then (FR-033, FR-037, FR-038): the command fails with `DATABASE_CLOSED` ("The database opened, and HoploDex locked it at once because …"), and the chooser has the lock's `closed` notice. A restore over the open database also emits `session:closed` with `reason: "closed"` for the session it ended._
+  _Amended 2026-11-23 (code scanning alerts 98, 99): a "Lock now", a screen lock or a sleep that comes while the restored database is opened still locks it once it is open, by its own lock settings, as it would have had it been open then (FR-033, FR-037, FR-038), or, for a restore over the open database, by the settings of the database it replaced too: the command fails with `DATABASE_CLOSED` ("The database opened, and HoploDex locked it at once because …"), and the chooser has the lock's `closed` notice. A restore over the open database also emits `session:closed` with `reason: "closed"` for the session it ended._
 
 ### `delete_all_backups`
 - **Input**: `{ confirmed: boolean }` → **Output**: `{ deletedCount: number; failedPaths: string[] }`
