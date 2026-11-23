@@ -304,6 +304,15 @@ describe("code scanning alert build-ci/cwe-345 - only the generators' own inline
       ).toBe(stray(CARGO, "a script source at cargo/x.sh"));
     });
 
+    it("refuses a crate archive with a key the generator does not write", () => {
+      expect(
+        changed("cargo", (e) => {
+          find(e, (x) => x.type === "archive" && x.dest === "cargo/vendor/foo-1.2.3").path =
+            "src-tauri";
+        }),
+      ).toBe(`${CARGO}: crate foo 1.2.3 unpacks to cargo/vendor/foo-1.2.3. ${REGENERATE}`);
+    });
+
     it("refuses a crate unpacked anywhere but its vendor folder", () => {
       expect(
         changed("cargo", (e) => {
@@ -390,6 +399,25 @@ describe("code scanning alert build-ci/cwe-345 - only the generators' own inline
           find(e, (x) => x.type === "archive").dest = "flatpak-node/cache/../../src-tauri";
         }),
       ).not.toBeNull();
+    });
+
+    it("refuses an esbuild shell entry for a tool cache copy of another package", () => {
+      expect(
+        changed("node", (e) => {
+          const leftPad = find(e, (x) => x.type === "file");
+          const archive = find(e, (x) => x.type === "archive");
+          archive.url = leftPad.url;
+          archive.sha512 = leftPad.sha512;
+        }),
+      ).toBe(stray(NODE, "a shell source at flatpak-node/cache/esbuild"));
+    });
+
+    it("refuses a package's tarball with a key the generator does not write", () => {
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "file").path = "src-tauri/src/main.rs";
+        }),
+      ).toMatch(/npm package left-pad@1\.3\.0 is put at flatpak-node\/npm-cache\//);
     });
 
     it("refuses a package's tarball put anywhere but the npm cache", () => {

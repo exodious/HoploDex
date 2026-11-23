@@ -58,6 +58,11 @@ function hasKeys(source, ...keys) {
   return own.length === keys.length + 1 && ["type", ...keys].every((k) => own.includes(k));
 }
 
+/** Whether `source` has no key but these (and `type`), so none (`path`, `base64`) changes what it fetches. */
+function onlyKeys(source, ...keys) {
+  return Object.keys(source).every((k) => k === "type" || keys.includes(k));
+}
+
 /** The difference that names an entry the generator does not write. */
 function strayEntry(source) {
   const where = [source.dest, source["dest-filename"]].filter(Boolean).join("/");
@@ -166,7 +171,13 @@ export function checkCargoSources({ cargoLockPath, sourcesPath }) {
     }
     const crate = source.type === "archive" ? crateOfUrl(source.url) : null;
     if (crate && known.has(`${crate.name}/${crate.version}`)) {
-      if (source.dest === `cargo/vendor/${crate.name}-${crate.version}`) continue;
+      if (
+        source.dest === `cargo/vendor/${crate.name}-${crate.version}` &&
+        source["archive-type"] === "tar-gzip" &&
+        hasKeys(source, "archive-type", "url", "sha256", "dest")
+      ) {
+        continue;
+      }
       return wrongList(
         list,
         lock,
@@ -214,12 +225,16 @@ function isBelow(dest, prefix) {
 /** esbuild's platform package, as the tool cache names its folder. */
 const ESBUILD_PACKAGE = /^@esbuild\/[a-z0-9-]+@\d+\.\d+\.\d+$/;
 
-/** The shell entry `flatpak-node-generator` writes for an esbuild binary it unpacks. */
-function esbuildShell(archive) {
+/**
+ * The shell entry `flatpak-node-generator` writes for an esbuild binary it
+ * unpacks: only for an archive whose folder names the lockfile package it is.
+ */
+function esbuildShell(archive, wanted) {
   const pkg = String(archive.dest).slice(`${ESBUILD_CACHE}/.package/`.length);
   if (
     !String(archive.dest).startsWith(`${ESBUILD_CACHE}/.package/`) ||
-    !ESBUILD_PACKAGE.test(pkg)
+    !ESBUILD_PACKAGE.test(pkg) ||
+    wanted.get(archive.url)?.id !== pkg
   ) {
     return null;
   }
@@ -314,6 +329,7 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
     if (!wanted.has(entry.resolved)) {
       wanted.set(entry.resolved, {
         label: `npm package ${npmName(key, entry)}@${entry.version}`,
+        id: `${npmName(key, entry)}@${entry.version}`,
         integrity: entry.integrity,
       });
     }
@@ -326,12 +342,22 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
   // other archive there is a source like the rest and fails below.
   const isToolCacheCopy = (s) => {
     if (s.type !== "archive" || !isBelow(s.dest, TOOL_CACHE)) return false;
+    if (
+      !onlyKeys(s, "url", "sha512", "sha256", "sha1", "strip-components", "dest", "only-arches")
+    ) {
+      return false;
+    }
     const entry = wanted.get(s.url);
     const expected = entry && parseIntegrity(entry.integrity);
     return Boolean(expected) && s[expected.algorithm] === expected.hex;
   };
   const downloads = sources.filter((s) => !CONFIG_TYPES.has(s.type) && !isToolCacheCopy(s));
-  const esbuildShells = new Set(sources.filter(isToolCacheCopy).map(esbuildShell).filter(Boolean));
+  const esbuildShells = new Set(
+    sources
+      .filter(isToolCacheCopy)
+      .map((archive) => esbuildShell(archive, wanted))
+      .filter(Boolean),
+  );
   for (const source of sources) {
     if (CONFIG_TYPES.has(source.type) && !isNodeConfigEntry(source, esbuildShells)) {
       return wrongList(list, lock, strayEntry(source));
@@ -368,6 +394,7 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
     }
     if (
       source.type !== "file" ||
+      !onlyKeys(source, "url", "sha512", "sha256", "sha1", "dest", "dest-filename") ||
       !NPM_CONTENT.test(source.dest) ||
       !/^[0-9a-f]+$/.test(source["dest-filename"])
     ) {
