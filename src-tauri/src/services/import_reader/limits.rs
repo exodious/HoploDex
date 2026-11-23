@@ -136,9 +136,9 @@ impl ImportLimit {
                 n = thousands(MAX_SHARED_STRINGS)
             ),
             Self::MountedEntries => format!(
-                "the firearms and accessories its rows would replace have more than {n} \
-                 firearms and accessories mounted on them in all. HoploDex lists at most {n} \
-                 for one import, and kept the rows already imported.",
+                "its rows would list more than {n} mounted firearms and accessories in all, \
+                 counting a firearm's or accessory's again for each row that matches it. \
+                 HoploDex lists at most {n} for one import, and kept the rows already imported.",
                 n = thousands(MAX_MOUNTED_ENTRIES as u64)
             ),
         }

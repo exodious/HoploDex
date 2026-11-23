@@ -1039,9 +1039,9 @@ describe("ImportDialog reading the files (008 US2)", () => {
     vi.mocked(collection.refresh).mockClear();
     const { settle } = await startImport();
     const message =
-      "firearms.csv: the firearms and accessories its rows would replace have more than " +
-      "100,000 firearms and accessories mounted on them in all. HoploDex lists at most " +
-      "100,000 for one import, and kept the rows already imported.";
+      "firearms.csv: its rows would list more than 100,000 mounted firearms and accessories " +
+      "in all, counting a firearm's or accessory's again for each row that matches it. " +
+      "HoploDex lists at most 100,000 for one import, and kept the rows already imported.";
 
     settle.reject(
       new CommandFailure({

@@ -1408,9 +1408,10 @@ fn the_conflicts_list_at_most_100000_mounted_records_and_past_that_the_import_fa
     assert_eq!(err.code, "IMPORT_LIMIT_EXCEEDED", "{err:?}");
     assert_eq!(
         err.message,
-        "firearms.csv: the firearms and accessories its rows would replace have more than \
-         100,000 firearms and accessories mounted on them in all. HoploDex lists at most \
-         100,000 for one import, and kept the rows already imported."
+        "firearms.csv: its rows would list more than 100,000 mounted firearms and \
+         accessories in all, counting a firearm's or accessory's again for each row that \
+         matches it. HoploDex lists at most 100,000 for one import, and kept the rows \
+         already imported."
     );
     assert_eq!(err.details.as_ref().unwrap()["limit"], "mountedEntries");
 }
