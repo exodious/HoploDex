@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { SegmentedControl } from "../../components";
-import { applyTheme, loadTheme } from "./theme";
+import { chooseTheme, loadTheme } from "./theme";
 import type { ThemePreference } from "./theme";
 
 /** Auto follows the operating system's light/dark setting; the other two
@@ -16,7 +16,7 @@ export function ThemeToggle() {
       value={theme}
       onChange={(next) => {
         setTheme(next);
-        applyTheme(next);
+        chooseTheme(next);
       }}
       options={[
         { value: "auto", label: "Auto (match system)", icon: "auto", iconOnly: true },

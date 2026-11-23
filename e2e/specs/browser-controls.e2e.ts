@@ -1,3 +1,7 @@
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   HAS_REAL_INPUT,
   realClick,
@@ -115,6 +119,32 @@ describe("008 US3 - No Browser Controls in the Main Window (was us15-browser-con
   before(async () => {
     await createDatabase({ folder, name: "Controls" });
     await addFirearm(firearm);
+  });
+
+  // Code scanning alert webview-config/cwe-1188: wry's default download handler
+  // saved whatever a page's `<a download>` named into Downloads on macOS and
+  // Windows, past the navigation handler and consent. Linux's navigation handler
+  // already refused the blob: URL.
+  it("saves nothing a page downloads", async () => {
+    const name = `hd-download-probe-${randomBytes(4).toString("hex")}.txt`;
+    const downloads = [os.homedir(), process.env.HOPLODEX_E2E_HOME]
+      .filter((home): home is string => Boolean(home))
+      .map((home) => path.join(home, "Downloads", name));
+    const page = await browser.execute(() => location.href);
+    await browser.execute((fileName) => {
+      const a = document.createElement("a");
+      a.download = fileName;
+      a.href = URL.createObjectURL(new Blob(["probe"]));
+      document.body.append(a);
+      a.click();
+      a.remove();
+    }, name);
+    // A download that was let through lands within a second or two.
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const saved = downloads.filter((file) => fs.existsSync(file));
+    for (const file of saved) fs.rmSync(file);
+    expect(saved).toEqual([]);
+    expect(await browser.execute(() => location.href)).toBe(page);
   });
 
   it("cancels the context menu on a blank area, a row, a card, a button and an image", async () => {

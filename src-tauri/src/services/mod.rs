@@ -1,6 +1,4 @@
 pub mod attachments;
-#[cfg(windows)]
-pub mod autofill;
 pub mod backups;
 pub mod cartridges;
 pub mod chooser;

@@ -124,6 +124,8 @@ _Amended by [spec 007](../007-document-preview/data-model.md#machine-local-machi
 
 _Amended by [spec 013](../013-troubleshooting-log/data-model.md): the file gains `troubleshootingLog` and `troubleshootingLogNoticeShown`, and `notices` can hold the log's notice._
 
+_Amended 2026-11-23 (code scanning alert plaintext-lifetime/cwe-922): the file gains `appearance`, `{ theme: "auto" | "light" | "dark", browseView: "list" | "tile" }` (default `auto` and `list`; a value this version doesn't know reads as that field's default; no change to `VERSION`), the page's color mode and the collection's layout, which were in the main web view's `localStorage` until that web view became incognito._
+
 Location: the OS app config directory (`~/.config/io.github.exodious.HoploDex/machine.json`
 on Linux). Written atomically. Plain JSON: it holds paths, names and times,
 never collection data or secrets (research §11).

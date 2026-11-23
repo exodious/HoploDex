@@ -27,6 +27,7 @@
     "allow-get-troubleshooting-log",
     "allow-set-troubleshooting-log",
     "allow-show-troubleshooting-log",
+    "allow-set-appearance",
     "allow-set-document-opening",
     "allow-stage-pending-changes",
     "allow-resolve-pending-changes",

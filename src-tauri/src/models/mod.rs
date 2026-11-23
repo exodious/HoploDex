@@ -41,6 +41,7 @@ macro_rules! text_enum {
 pub mod accessory;
 pub mod accessory_kind;
 pub mod action_type;
+pub mod appearance;
 pub mod database;
 pub mod disposition_history;
 pub mod document_attachment;

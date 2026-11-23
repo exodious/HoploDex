@@ -1,4 +1,5 @@
 pub mod accessories;
+pub mod appearance;
 pub mod backups;
 pub mod databases;
 pub mod documents;

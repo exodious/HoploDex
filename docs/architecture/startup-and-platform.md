@@ -63,7 +63,12 @@ custom crash reporting on, so WebView2 sends no crash report to Microsoft, wry
 having no setting for it; the Crashpad minidumps WebView2 still writes into both
 web views' data folders are securely deleted with the decrypted document copies,
 at startup, at every close and at exit, #166) rather than from
-`tauri.conf.json`.
+`tauri.conf.json`. The main window is incognito and refuses every download, so
+the page keeps nothing on disk; its data folder is securely deleted before it is
+built, with whatever an earlier version kept there, and the page's color mode
+and layout come from `machine.json` in an initialization script
+(`window.__HOPLODEX_APPEARANCE__`) and go back through `set_appearance` (code
+scanning alerts `plaintext-lifetime/cwe-922` and `webview-config/cwe-1188`).
 
 No database is open at startup: it manages `Session` and `MachineSettings` (with
 the system keyring), sweeps unfinished backups and, on Windows, the AppContainer

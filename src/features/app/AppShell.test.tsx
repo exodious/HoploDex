@@ -12,6 +12,7 @@ import type { DatabaseStatus, Draft } from "../databases/types";
 import { FORM_VERSION as FIREARM_FORM_VERSION } from "../firearms/FirearmForm";
 import { FORM_VERSION as DISPOSE_FORM_VERSION } from "../firearms/DisposeDialog";
 import { AppShell } from "./AppShell";
+import { saveAppearance } from "./appearance";
 import { CollectionContext } from "./collectionStore";
 import type { CollectionState } from "./collectionStore";
 import { ACCESSORY_KINDS, FIREARM_TYPES } from "../../test/collectionFixtures";
@@ -908,7 +909,7 @@ describe("The collection's search, grouping and view survive opening a record", 
       groups: [{ key: ".357", firearms: input.query ? [summary] : [summary, uninsured] }],
     }));
   });
-  afterEach(() => localStorage.clear());
+  afterEach(() => saveAppearance({ browseView: "list" }));
 
   it("returns to the same search, grouping and tiles", async () => {
     const user = userEvent.setup();

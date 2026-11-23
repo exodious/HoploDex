@@ -12,6 +12,7 @@ use std::sync::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::db::{now_utc, random_hex};
+use crate::models::appearance::Appearance;
 use crate::models::database::ChooserNotice;
 use crate::models::document_opening::DocumentOpening;
 use crate::models::troubleshooting_log::LogChoice;
@@ -153,6 +154,10 @@ struct MachineFile {
     /// 013 FR-020: the notice has been queued on this computer.
     #[serde(default)]
     troubleshooting_log_notice_shown: bool,
+    /// The page's color mode and layout, which the incognito main web view
+    /// can't keep (code scanning alert `plaintext-lifetime/cwe-922`).
+    #[serde(default)]
+    appearance: Appearance,
 }
 
 /// Reads `notices` one entry at a time (009 research.md §15): a file that a
@@ -214,6 +219,7 @@ impl MachineFile {
             pdf_preview_hold: None,
             troubleshooting_log: None,
             troubleshooting_log_notice_shown: false,
+            appearance: Appearance::default(),
         })
     }
 
@@ -471,6 +477,16 @@ impl MachineSettings {
         self.update(|file| file.document_opening = value);
     }
 
+    pub fn appearance(&self) -> Appearance {
+        self.lock().appearance
+    }
+
+    pub fn set_appearance(&self, value: Appearance) {
+        if self.appearance() != value {
+            self.update(|file| file.appearance = value);
+        }
+    }
+
     /// The user's choice about the troubleshooting log, if they made one
     /// (013 FR-002).
     pub fn troubleshooting_log(&self) -> Option<LogChoice> {
@@ -692,6 +708,21 @@ mod tests {
             [known]
         );
         assert!(!config.path().join("machine.json.bad").exists(), "the file was not set aside");
+    }
+
+    /// The page's color mode and layout outlive the run in `machine.json`, as
+    /// they did in the main web view's own storage before it went incognito
+    /// (code scanning alert `plaintext-lifetime/cwe-922`); a file written
+    /// before they were kept reads as the defaults.
+    #[test]
+    fn the_appearance_is_kept_across_loads() {
+        use crate::models::appearance::{BrowseView, Theme};
+        let config = tempfile::TempDir::new().unwrap();
+        let settings = MachineSettings::load(config.path()).unwrap();
+        assert_eq!(settings.appearance(), Appearance::default());
+        let chosen = Appearance { theme: Theme::Dark, browse_view: BrowseView::Tile };
+        settings.set_appearance(chosen);
+        assert_eq!(MachineSettings::load(config.path()).unwrap().appearance(), chosen);
     }
 
     /// A record written before `beforeUpgrade` existed reads as an ordinary

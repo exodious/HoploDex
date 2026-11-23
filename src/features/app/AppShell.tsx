@@ -23,20 +23,14 @@ import { BrandMark } from "./BrandMark";
 import { firearmName, useCollection } from "./collectionStore";
 import { NavigationContext } from "./navigation";
 import { ThemeToggle } from "./ThemeToggle";
+import { loadAppearance, saveAppearance } from "./appearance";
 import type { Draft } from "../databases/types";
 import { useSessionScope } from "../session/sessionScope";
 import type { BackTarget, Navigation, Route, ShellDialog } from "./navigation";
 import "./AppShell.css";
 
-const VIEW_PREFERENCE_KEY = "hoplodex.browseView";
-
 function initialView(): BrowseState["view"] {
-  try {
-    if (localStorage.getItem(VIEW_PREFERENCE_KEY) === "tile") return "tile";
-  } catch {
-    // storage unavailable — default to list
-  }
-  return "list";
+  return loadAppearance().browseView;
 }
 
 function initialBrowseState(): BrowseState {
@@ -189,13 +183,7 @@ export function AppShell() {
     window.scrollTo(0, isRecord ? 0 : (scrollMemory.current[route.page] ?? 0));
   }, [route]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_PREFERENCE_KEY, browse.view);
-    } catch {
-      // storage unavailable — the preference just won't persist
-    }
-  }, [browse.view]);
+  useEffect(() => saveAppearance({ browseView: browse.view }), [browse.view]);
 
   // Ctrl/⌘+N adds a firearm from anywhere, unless a dialog is already open.
   useEffect(() => {
