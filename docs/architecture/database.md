@@ -39,7 +39,10 @@ reads no attachment's content (`PhotoSummary::COLUMNS`, `DocumentInfo::COLUMNS`)
 so a longer one stored before the limits still lists, and only opening it, or
 an export holding it, fails (`ATTACHMENT_TOO_LARGE`,
 `CommandError::from_attachment_read`). `sqlcipher_export` copies it unchanged,
-so a passphrase change still works.
+so a passphrase change still works. A stored thumbnail over 1 MiB
+(`MAX_THUMBNAIL_BYTES`), or one that isn't a BLOB, which only a database from
+elsewhere holds, reads as empty without being read, and `get_photo_thumbnail`
+refuses it (`ATTACHMENT_TOO_LARGE`).
 
 Those settings don't bound how many rows a view makes, or how long an
 expression takes, so an open, a copy's check and a backup's first look go
@@ -50,7 +53,11 @@ shown to be HoploDex's own. A database without the runner's own
 HoploDex database; a step this build doesn't know means `NewerVersion`; and a
 schema that isn't exactly what the steps it records make, every table, view,
 trigger and index by type, name and SQL text, against those steps applied to
-an empty in-memory database, is damaged. Only then is `app_state` read, and a
+an empty in-memory database, is damaged. Only then is `app_state` read; then
+a name in the four lookup tables, or a type's or kind's
+`generic_thumbnail_key`, longer than the 200 characters HoploDex writes (or
+800 bytes, since `length` of text stops at a NUL) is damaged too, since the
+collection's lists repeat it on every record; and only then is a
 copy's `integrity_check` (which works out every row's CHECK constraints and
 index keys) run. The test hooks' build alone also passes
 `upgrade::testing::FILLER`, the plain table tests use to make a file bigger.
