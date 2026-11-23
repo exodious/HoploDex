@@ -292,7 +292,13 @@ fn a_doc_listing_one_fat_sector_over_and_over_is_refused_from_its_header() {
     let bomb = hostile::doc_listing_one_fat_sector_over_and_over(1 << 20);
     assert!(bomb.bytes.len() <= 1 << 20);
     refused_within(&bomb, Duration::from_millis(50));
-    refused_within(&hostile::doc_listing_a_fat_sector_twice(), Duration::from_millis(50));
+
+    // A FAT sector listed twice is refused, though `cfb` would take it.
+    let once = hostile::doc_with_a_free_fat_sector(false);
+    assert_eq!(classify(&once.name, &once.bytes).unwrap().canonical_extension, "doc");
+    let twice = hostile::doc_with_a_free_fat_sector(true);
+    assert!(cfb::CompoundFile::open(std::io::Cursor::new(&twice.bytes)).is_ok());
+    refused_within(&twice, Duration::from_millis(50));
 }
 
 /// A compound file's directory is read only up to 4,096 entries, and its
@@ -335,6 +341,9 @@ fn a_package_with_many_end_records_is_refused_from_its_tail() {
     refused_within(&hostile::docx_in_zip64_form(1, 0x1_0000, 44), Duration::from_millis(50));
     // zip reads a Zip64 record's whole declared length for each end record it tries.
     refused_within(&hostile::docx_in_zip64_form(1, 0, 44 + 1025), Duration::from_millis(50));
+    // Only where the locator points is looked at: elsewhere, those bytes are a part's.
+    let stray = hostile::docx_in_zip64_form_with_a_stray_record();
+    assert_eq!(classify(&stray.name, &stray.bytes).unwrap().canonical_extension, "docx");
 }
 
 #[test]

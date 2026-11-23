@@ -384,13 +384,23 @@ pub fn doc_listing_one_fat_sector_over_and_over(len: usize) -> Generated {
     Generated::new("fat-bomb.doc", b)
 }
 
-/// A sound DOC whose header lists its one FAT sector twice (and says it
-/// has two), so the FAT is that sector's entries twice over.
-pub fn doc_listing_a_fat_sector_twice() -> Generated {
+/// A sound DOC with a second FAT sector at its end, every entry free, which
+/// its header lists twice (and counts twice) if `twice`. `cfb` takes the FAT
+/// as each listed sector's entries in turn and drops the free ones at the
+/// end, so it opens both: only the repeat tells them apart (code scanning
+/// alert #92).
+pub fn doc_with_a_free_fat_sector(twice: bool) -> Generated {
     let mut b = cfb(vec![stream("WordDocument", word97_fib())]);
-    b[44..48].copy_from_slice(&le32(2));
-    b[80..84].copy_from_slice(&le32(0));
-    Generated::new("repeated-fat.doc", b)
+    let last = b.len() / 512 - 1;
+    assert!(last < 128, "the first FAT sector must cover the new one");
+    b.extend(std::iter::repeat_n(0xFF, 512));
+    b[512 + 4 * last..516 + 4 * last].copy_from_slice(&le32(FAT_SECTOR));
+    let listed = if twice { 3 } else { 2 };
+    b[44..48].copy_from_slice(&le32(listed as u32));
+    for i in 1..listed {
+        b[76 + 4 * i..80 + 4 * i].copy_from_slice(&le32(last as u32));
+    }
+    Generated::new("free-fat.doc", b)
 }
 
 /// An ODT with a `Basic/` script library.
@@ -853,19 +863,39 @@ pub fn docx_with_many_end_records(len: usize, pairs: usize) -> Generated {
     Generated::new("end-records.docx", b)
 }
 
-/// A sound DOCX in Zip64 form: its end record defers to a Zip64 one. A stored
-/// part holds `extra` more Zip64 end records, each declaring `entries`
-/// entries and that `record_size` bytes follow its size field (44 is none
-/// beyond the fixed fields).
+/// A sound DOCX in Zip64 form: its end record defers to a Zip64 one, whose
+/// extensible data holds `extra` more Zip64 end records, each declaring
+/// `entries` entries and that `record_size` bytes follow its size field (44
+/// is none beyond the fixed fields). They lie between where its locator
+/// points and the locator, where a reader looks for its Zip64 record.
 pub fn docx_in_zip64_form(extra: usize, entries: u64, record_size: u64) -> Generated {
-    let records: Vec<u8> = (0..extra)
+    zip64_docx(&[], &zip64_end_records(extra, entries, record_size))
+}
+
+/// A sound DOCX in Zip64 form with a stored part holding what reads as a
+/// Zip64 end record declaring 65,536 entries and 1,069 bytes, as any part's
+/// deflated data may by chance. It lies before where the locator points,
+/// where no reader looks for one.
+pub fn docx_in_zip64_form_with_a_stray_record() -> Generated {
+    zip64_docx(&zip64_end_records(1, 0x1_0000, 44 + 1025), &[])
+}
+
+/// `count` Zip64 end records, each declaring `entries` entries and that
+/// `record_size` bytes follow its size field.
+fn zip64_end_records(count: usize, entries: u64, record_size: u64) -> Vec<u8> {
+    (0..count)
         .flat_map(|_| {
             let mut record = zip64_end_record(entries, entries * 46, 0);
             record[4..12].copy_from_slice(&record_size.to_le_bytes());
             record
         })
-        .collect();
-    let mut b = word_package(WORD_MAIN, &[("word/media/records.bin", &records)]);
+        .collect()
+}
+
+/// A sound DOCX in Zip64 form with a stored part of `part`, and `extensible`
+/// as its Zip64 end record's extensible data.
+fn zip64_docx(part: &[u8], extensible: &[u8]) -> Generated {
+    let mut b = word_package(WORD_MAIN, &[("word/media/records.bin", part)]);
     // The package's own end record: its entry count, directory size and offset.
     let end = b.len() - 22;
     let field = |at: usize, width: usize| {
@@ -874,7 +904,10 @@ pub fn docx_in_zip64_form(extra: usize, entries: u64, record_size: u64) -> Gener
     let (count, size, offset) = (field(10, 2), field(12, 4), field(16, 4));
     b.truncate(end);
     let zip64_at = b.len() as u64;
-    b.extend(zip64_end_record(count, size, offset));
+    let mut record = zip64_end_record(count, size, offset);
+    record[4..12].copy_from_slice(&(44 + extensible.len() as u64).to_le_bytes());
+    b.extend(record);
+    b.extend_from_slice(extensible);
     b.extend(deferring_end_record(zip64_at));
     Generated::new("zip64.docx", b)
 }

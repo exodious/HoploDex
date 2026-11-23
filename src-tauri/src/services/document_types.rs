@@ -643,12 +643,12 @@ fn unambiguous(bytes: &[u8], archive: &zip::ZipArchive<Cursor<&[u8]>>) -> bool {
 }
 
 /// The most end-of-central-directory records a package's last 64 KiB may
-/// hold, and the most Zip64 end records it may hold anywhere. A package has
-/// one of the first and at most one of the second, and each package stored
-/// whole inside it (a chart's workbook, say) one more. zip tries every end
-/// record it finds there until one leads to a directory, and for each that
-/// defers to Zip64, every Zip64 record between where it points and itself
-/// (code scanning alert #94).
+/// hold, and the most Zip64 end records zip may look at for them. A package
+/// has one end record, and each package stored whole inside it (a chart's
+/// workbook, say) one more, and at most one Zip64 record where its locator
+/// points. zip tries every end record it finds there until one leads to a
+/// directory, and for each that follows a Zip64 locator, every Zip64 record
+/// between where the locator points and the locator (code scanning alert #94).
 const END_RECORDS_LIMIT: usize = 16;
 
 /// The most a Zip64 end record may say follows its size field: its 44 bytes
@@ -660,7 +660,7 @@ const ZIP64_RECORD_LIMIT: u64 = 44 + 1024;
 /// [`END_RECORDS_LIMIT`] end records in the last 64 KiB (zip looks in the
 /// last 64 KiB and a record's length; the window here is a little wider),
 /// and where one follows a Zip64 locator, at most as many Zip64 end records
-/// in the file, none declaring more entries than a 32-bit record can or
+/// between where those locators point and themselves, none declaring more entries than a 32-bit record can or
 /// more than [`ZIP64_RECORD_LIMIT`] bytes. So for each record it tries, zip
 /// reads at most 65,535 directory headers and a kilobyte of Zip64 record.
 fn zip_archive(bytes: &[u8]) -> Option<zip::ZipArchive<Cursor<&[u8]>>> {
@@ -669,10 +669,22 @@ fn zip_archive(bytes: &[u8]) -> Option<zip::ZipArchive<Cursor<&[u8]>>> {
     if end_records.len() > END_RECORDS_LIMIT {
         return None;
     }
-    // zip reads Zip64 records only for an end record right after a locator.
-    if end_records.iter().any(|&at| at >= 20 && bytes[at - 20..].starts_with(b"PK\x06\x07")) {
-        let zip64_records: Vec<usize> =
-            signatures(bytes, 0, b"PK\x06\x06").take(END_RECORDS_LIMIT + 1).collect();
+    // zip reads Zip64 records only for an end record right after a locator,
+    // and only from where the locator points up to it.
+    let ranges: Vec<(usize, usize)> = end_records
+        .iter()
+        .filter_map(|&at| {
+            let locator = at.checked_sub(20)?;
+            let start = usize::try_from(le(bytes, locator + 8, 8)?).ok()?;
+            (bytes[locator..].starts_with(b"PK\x06\x07") && start < locator)
+                .then_some((start, locator))
+        })
+        .collect();
+    if let Some(&(from, _)) = ranges.iter().min() {
+        let zip64_records: Vec<usize> = signatures(bytes, from, b"PK\x06\x06")
+            .filter(|at| ranges.iter().any(|&(start, end)| (start..end).contains(at)))
+            .take(END_RECORDS_LIMIT + 1)
+            .collect();
         // A record's size (44, and any extensible data after it, which zip
         // reads whole for each end record it tries) and its total entry count
         // (zip refuses a record whose count on this disk differs).
