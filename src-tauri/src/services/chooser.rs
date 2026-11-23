@@ -107,8 +107,9 @@ fn folder_title(pick: Pick) -> &'static str {
 /// refuses the path. A database's folder or file, the backup location and the
 /// folder for the backup before an upgrade are picked instead in GTK's own
 /// chooser, which sees only the sandbox and makes no grant, opened on
-/// `folders` (the writable grants). Only the import's files and the export's
-/// folder still go through the portal.
+/// `folders` (the writable grants). Of the choosers Rust opens, only the
+/// import's files and the export's folder still go through the portal; the
+/// page's file input for an attached photo or document does too.
 #[cfg(target_os = "linux")]
 pub struct SandboxChooser<R: tauri::Runtime> {
     portal: NativeChooser<R>,

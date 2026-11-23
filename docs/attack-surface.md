@@ -255,7 +255,7 @@ and peer review catch that.
   - Does the manifest grant no permission beyond 011 research.md §4's table, as `manifest.test.ts` enforces?
   - Does Show log file reach only `OpenURI.OpenDirectory`, with a read-only descriptor of the log file (`commands/documents.rs`, `portal_open_directory`)?
   - Is every write location checked against `Reach` first? Can `HostPaths`' mapping of a Documents-portal path be steered outside the grants?
-  - Does every chooser but the import's files and the export's folder open GTK's own (`SandboxChooser`), which sees only the sandbox and makes no Documents-portal grant, so no grant is made where `Reach` can only refuse the path?
+  - Does every chooser Rust opens but the import's files and the export's folder open GTK's own (`SandboxChooser`), which sees only the sandbox and makes no Documents-portal grant, so no grant is made where `Reach` can only refuse the path, leaving the portal to those two and the web view's file input for an attached photo or document?
   - Is the Secret portal used, and never the Secret Service?
   - Does the web process match 011 research.md §9's arguments with the sandbox on?
   - Does the bundle carry only what `contents.mjs` allows?
@@ -263,7 +263,7 @@ and peer review catch that.
   - What a compromised process reaches: `<Documents>/HoploDex`, the drives, its own saved passphrases, logind and the screen savers.
   - A user's `flatpak override` widens that.
   - The Documents portal remembers copies.
-  - Each file or folder picked through the Documents portal's chooser (an import's spreadsheets, an export's folder) is granted to the app for good: read and write, a folder's whole tree, through restarts, logouts and reboots, adding up over time, all listed under `/run/user/<uid>/doc/` to code in the app's or the network process (not the web process), and passable to another Flatpak app. The app can't revoke a grant (the portal refuses it); the user can, with `flatpak permission-reset io.github.exodious.HoploDex` and a log out and in, as the release notes say (code scanning alert `flatpak/cwe-272` on `Reach::check_portal`).
+  - Each file or folder picked through the Documents portal's chooser (an import's spreadsheets, an export's folder, an attached photo or document, picked in the web view's file input) is granted to the app for good: read and write, a folder's whole tree, through restarts, logouts and reboots, adding up over time, all listed under `/run/user/<uid>/doc/` to code in the app's or the network process (not the web process), and passable to another Flatpak app. The app can't revoke a grant (the portal refuses it); the user can, with `flatpak permission-reset io.github.exodious.HoploDex` and a log out and in, as the release notes say (code scanning alert `flatpak/cwe-272` on `Reach::check_portal`).
   - The runtime ends with GNOME 51 (#129).
   - The `.flatpak` file is unsigned (#19).
 - **Rerun:** the Flatpak check (`docs/development/flatpak.md`, "The Flatpak check").
