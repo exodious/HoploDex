@@ -36,7 +36,8 @@ export const LIST = "docs/attack-surface.md";
 export const PRODUCTION = [
   "src-tauri/src/**",
   "src-tauri/build.rs",
-  ".cargo/config.toml",
+  ".cargo/**",
+  "src-tauri/.cargo/**",
   "src-tauri/Cargo.toml",
   "src-tauri/tauri.conf.json",
   "src-tauri/tauri.bundle.conf.json",
