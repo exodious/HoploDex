@@ -562,8 +562,8 @@ describe("010 research.md §7 - the OpenSSL version comes from the build", () =>
     expect(refused({ OPENSSL_DIR: v1 })).toEqual([linksOpenSsl1("OPENSSL_DIR")]);
   });
 
-  // libsqlite3-sys 0.38.1's build.rs, `env()` (lines 312-321): each name is read as
-  // <TARGET>_<name> first, then <name>. Its include path (lines 159-189): both
+  // libsqlite3-sys 0.40.0's build.rs, `env()` (lines 358-369): each name is read as
+  // <TARGET>_<name> first, then <name>. Its include path (lines 203-235): both
   // OPENSSL_LIB_DIR and OPENSSL_INCLUDE_DIR set -> the include variable's value;
   // else OPENSSL_DIR is required, and the include path is OPENSSL_INCLUDE_DIR if
   // set, else <OPENSSL_DIR>/include. 010 research.md §7 has the same account.

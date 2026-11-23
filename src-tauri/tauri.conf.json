@@ -46,6 +46,7 @@
           "libm.so.6()(64bit)",
           "libc.so.6()(64bit)",
           "libc.so.6(GLIBC_2.39)(64bit)",
+          "ld-linux-x86-64.so.2()(64bit)",
           "xdg-utils"
         ]
       },

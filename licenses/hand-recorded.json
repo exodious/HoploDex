@@ -59,7 +59,7 @@
     "os": ["windows"],
     "carrier": {
       "crate": "libsqlite3-sys",
-      "version": "0.38.1",
+      "version": "0.40.0",
       "feature": "bundled-sqlcipher"
     },
     "texts": ["licenses/texts/openssl/LICENSE.txt"],
@@ -67,27 +67,27 @@
   },
   {
     "name": "SQLCipher",
-    "version": "4.14.0 community",
+    "version": "4.20.0 community",
     "license": "BSD-3-Clause",
     "kind": "compiled-in",
     "os": ["linux", "macos", "windows"],
     "carrier": {
       "crate": "libsqlite3-sys",
-      "version": "0.38.1",
+      "version": "0.40.0",
       "feature": "bundled-sqlcipher"
     },
-    "texts": ["package:sqlcipher/LICENSE"],
-    "reason": "libsqlite3-sys compiles the SQLCipher source it carries into the program; the crate's license (MIT) doesn't cover it (010 research.md §1, §7)"
+    "texts": ["licenses/texts/sqlcipher/LICENSE.txt"],
+    "reason": "libsqlite3-sys compiles the SQLCipher amalgamation from its build dependency sqlcipher-src (420.0.0) into the program; the crate's license (MIT) doesn't cover it, and the text is a copy of sqlcipher-src's sqlcipher/LICENSE-sqlcipher, since the notices read only shipped crates (010 research.md §1, §7)"
   },
   {
     "name": "SQLite",
-    "version": "3.51.3",
+    "version": "3.54.1",
     "license": "blessing",
     "kind": "compiled-in",
     "os": ["linux", "macos", "windows"],
     "carrier": {
       "crate": "libsqlite3-sys",
-      "version": "0.38.1",
+      "version": "0.40.0",
       "feature": "bundled-sqlcipher"
     },
     "texts": ["licenses/texts/sqlite/blessing.txt"],

@@ -113,7 +113,7 @@ one: [Windows](windows.md) says how to build against it.
 (`builtin-baseline`) whose OpenSSL every Windows job links statically
 (`openssl:x64-windows-static-md`). CI fetches vcpkg at that commit, builds
 OpenSSL into the fixed folder `C:\hoplodex-openssl` (fixed, because
-libsqlite3-sys doesn't rebuild SQLCipher when `OPENSSL_DIR` moves) and caches
+libsqlite3-sys rebuilds SQLCipher whenever `OPENSSL_DIR` changes) and caches
 it under a key from the manifest, so it is built again only when the pin
 moves. The pin is moved by hand; `npm run audit:openssl` checks the
 OpenSSL it resolves to ([The pinned OpenSSL](dependency-audit.md#the-pinned-openssl)).

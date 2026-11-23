@@ -279,7 +279,7 @@ function chosenLicense(component) {
 
 /**
  * The folder with `openssl/opensslv.h` that the Windows build compiles against,
- * found the way `libsqlite3-sys` 0.38.1's `build.rs` finds it (010 research.md
+ * found the way `libsqlite3-sys` 0.40.0's `build.rs` finds it (010 research.md
  * §7): each variable is read as `<TARGET>_<name>` first (`TARGET` upper-cased,
  * dashes to underscores), then as `<name>`, and a variable that is set counts
  * even when empty. When both `OPENSSL_LIB_DIR` and `OPENSSL_INCLUDE_DIR` are set
