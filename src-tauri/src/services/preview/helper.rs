@@ -148,26 +148,29 @@ mod self_check {
         let tcp_before = can_connect();
         let exec_before = can_start();
         let unix_before = reach_unix();
-        // A thread started before confining, as a library's could be: once
-        // told, it opens `file` and answers `0` or the error it got.
+        // Beside a thread started before, as a library's could be, which
+        // Landlock wouldn't hold for: confining must refuse, and only once
+        // it has ended (and the kernel has let it go) go ahead.
         #[cfg(target_os = "linux")]
-        let (go, earlier_thread) = {
+        let confined_beside_a_thread = {
             let (go, told) = std::sync::mpsc::channel::<()>();
-            let file = file.clone();
-            let thread = std::thread::spawn(move || {
-                let _ = told.recv();
-                File::open(file).map_or_else(|e| e.raw_os_error().unwrap_or(-1), |_| 0)
-            });
-            (go, thread)
-        };
-        let Ok(confinement) = confine::confine(MEMORY_LIMIT) else { return 3 };
-        #[cfg(target_os = "linux")]
-        let earlier_thread_open = {
+            let thread = std::thread::spawn(move || told.recv());
+            let confined = confine::confine(MEMORY_LIMIT).is_ok();
             let _ = go.send(());
-            earlier_thread.join().ok()
+            let _ = thread.join();
+            let alone =
+                || std::fs::read_dir("/proc/self/task").map(Iterator::count).ok() == Some(1);
+            for _ in 0..1000 {
+                if alone() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Some(confined)
         };
         #[cfg(not(target_os = "linux"))]
-        let earlier_thread_open: Option<i32> = None;
+        let confined_beside_a_thread: Option<bool> = None;
+        let Ok(confinement) = confine::confine(MEMORY_LIMIT) else { return 3 };
         let descriptors_after = open_descriptors();
         let exec_after = can_start();
         let unix_after = reach_unix();
@@ -194,6 +197,15 @@ mod self_check {
         #[cfg(not(unix))]
         let rlimit_core: Option<serde_json::Value> = None;
         #[cfg(target_os = "linux")]
+        let rlimit_as = {
+            let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+            // SAFETY: a plain system call with a pointer to a local.
+            let read = unsafe { libc::getrlimit(libc::RLIMIT_AS, &mut limit) } == 0;
+            read.then(|| json!([limit.rlim_cur, limit.rlim_max]))
+        };
+        #[cfg(not(target_os = "linux"))]
+        let rlimit_as: Option<serde_json::Value> = None;
+        #[cfg(target_os = "linux")]
         // SAFETY: a plain system call.
         let dumpable = Some(unsafe { libc::prctl(libc::PR_GET_DUMPABLE, 0, 0, 0, 0) } != 0);
         #[cfg(not(target_os = "linux"))]
@@ -218,13 +230,14 @@ mod self_check {
                 "reach_after": reach_after,
                 "env_vars": env_vars,
                 "rlimit_core": rlimit_core,
+                "rlimit_as": rlimit_as,
                 "dumpable": dumpable,
                 "landlock_abi": confinement.landlock_abi,
                 "landlock_enforced": confinement.landlock_enforced,
                 "descriptors_before": descriptors_before,
                 "descriptors_after": descriptors_after,
                 "filter": filter,
-                "earlier_thread_open": earlier_thread_open,
+                "confined_beside_a_thread": confined_beside_a_thread,
             })
         );
         0
@@ -311,7 +324,7 @@ mod self_check {
         // SAFETY: plain system calls: a signal 0 tests only that it may be
         // sent, and a mapping is at no fixed address; each call is on a pointer
         // to a local or none.
-        let checks: [(&str, i32, i32); 14] = unsafe {
+        let checks: [(&str, i32, i32); 15] = unsafe {
             let anonymous = (libc::PROT_READ, libc::MAP_ANONYMOUS);
             let mapping = |flags: i32| {
                 syscall(libc::SYS_mmap, 0, 4096, anonymous.0, anonymous.1 | flags, -1, 0)
@@ -335,6 +348,11 @@ mod self_check {
                 ),
                 ("private memory", answer(mapping(libc::MAP_PRIVATE)), 0),
                 ("shared memory", answer(mapping(libc::MAP_SHARED)), EPERM),
+                (
+                    "memory that grows down",
+                    answer(mapping(libc::MAP_PRIVATE | libc::MAP_GROWSDOWN)),
+                    EPERM,
+                ),
                 (
                     "a new process",
                     answer(syscall(libc::SYS_clone, libc::SIGCHLD, 0, 0, 0, 0)),

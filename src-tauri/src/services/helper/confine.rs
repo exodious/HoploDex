@@ -21,13 +21,15 @@ pub struct Confinement {
 }
 
 /// Confines this process, which is a helper. `memory_limit` is the most it may
-/// allocate, in bytes: `RLIMIT_DATA` on Linux and the most the job object
+/// allocate, in bytes: `RLIMIT_DATA` on Linux, with `RLIMIT_AS` as the outer
+/// bound (what is mapped already, this, and a headroom), and the most the job object
 /// HoploDex made for it may have on Windows (`job::spawn` is given the same
 /// number); macOS has no enforced limit. A measure that can
 /// fail without making the helper unsafe to run is best effort (Landlock on
-/// an older kernel); one that can't (no new privileges, the core dump limit,
-/// the seccomp filter) is an error, and the helper exits without reading a
-/// document.
+/// an older kernel); one that can't (no new privileges, the core dump and
+/// memory limits, the seccomp filter) is an error, and the helper exits
+/// without reading a document. On Linux it is an error too to call this with
+/// another thread running, which Landlock wouldn't hold for.
 pub fn confine(memory_limit: usize) -> Result<Confinement, String> {
     imp::confine(memory_limit)
 }
@@ -268,7 +270,75 @@ mod imp {
         format!("{what}: {}", std::io::Error::last_os_error())
     }
 
+    /// How far the address space may grow past its size at [`confine`] and the
+    /// memory limit: what `RLIMIT_DATA` doesn't count (stacks, guard pages,
+    /// the allocator's reserved ranges). Measured on the helpers' largest
+    /// inputs (a TIFF page that decodes to 640 MiB, an import of 4,200,000
+    /// cells and 250 MB of text), that grew by nothing once confined. A new
+    /// thread's stack and allocator arena are the most it could need, about
+    /// 130 MiB.
+    const ADDRESS_SPACE_HEADROOM: usize = 256 * 1024 * 1024;
+
+    /// The threads of this process.
+    fn threads() -> Result<usize, String> {
+        std::fs::read_dir("/proc/self/task")
+            .and_then(|threads| threads.collect::<std::io::Result<Vec<_>>>())
+            .map(|threads| threads.len())
+            .map_err(|e| format!("the threads: {e}"))
+    }
+
+    /// The bytes of address space this process has mapped.
+    fn mapped_bytes() -> Result<usize, String> {
+        let statm = std::fs::read_to_string("/proc/self/statm")
+            .map_err(|e| format!("the address space: {e}"))?;
+        let pages: usize = statm
+            .split_whitespace()
+            .next()
+            .and_then(|pages| pages.parse().ok())
+            .ok_or("the address space: unreadable")?;
+        // SAFETY: a plain query.
+        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        Ok(pages * page)
+    }
+
+    /// Closes every descriptor from 3 up. Before Linux 5.9 there is no
+    /// `close_range`, so the open ones are read from `/proc/self/fd` instead of
+    /// closing each number up to the hard limit, which takes minutes when that
+    /// is near `nr_open` (a descriptor opened while the soft one was higher can
+    /// be above it). Sound only with no other thread to open one meanwhile.
+    fn close_inherited() -> Result<(), String> {
+        // SAFETY: a plain system call with integer arguments.
+        let closed = unsafe {
+            libc::syscall(libc::SYS_close_range, 3 as libc::c_uint, libc::c_uint::MAX, 0)
+        };
+        if closed == 0 {
+            return Ok(());
+        }
+        let open = std::fs::read_dir("/proc/self/fd")
+            .and_then(|entries| {
+                entries
+                    .map(|entry| Ok(entry?.file_name().to_str().and_then(|n| n.parse().ok())))
+                    .collect::<std::io::Result<Vec<Option<libc::c_int>>>>()
+            })
+            .map_err(|e| format!("the descriptors: {e}"))?;
+        // The listing's own descriptor is among them, and closed already.
+        for fd in open.into_iter().flatten().filter(|&fd| fd > 2) {
+            // SAFETY: closes a number nothing in this process uses.
+            unsafe { libc::close(fd) };
+        }
+        Ok(())
+    }
+
     pub fn confine(memory_limit: usize) -> Result<Confinement, String> {
+        // Landlock holds for the thread that confines and the threads it
+        // starts after, not for one already running, and nothing else may
+        // open a descriptor while they are closed: so there must be no other.
+        if threads()? != 1 {
+            return Err("another thread is running".into());
+        }
+        let address_space = (mapped_bytes()? as libc::rlim_t)
+            .saturating_add(memory_limit as libc::rlim_t)
+            .saturating_add(ADDRESS_SPACE_HEADROOM as libc::rlim_t);
         // SAFETY: plain system calls with integer arguments.
         unsafe {
             // Dies with HoploDex. The parent may already be gone (it was
@@ -296,27 +366,16 @@ mod imp {
             if libc::setrlimit(libc::RLIMIT_DATA, &data) != 0 {
                 return Err(last_error("RLIMIT_DATA"));
             }
-            // Only the three pipes: close whatever else was inherited. Before
-            // Linux 5.9 there is no `close_range`, so each number up to the
-            // hard limit is closed instead: a descriptor opened while the soft
-            // one was higher can be above it.
-            let closed = libc::syscall(
-                libc::SYS_close_range,
-                3 as libc::c_uint,
-                libc::c_uint::MAX,
-                0 as libc::c_uint,
-            );
-            if closed != 0 {
-                let mut open = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
-                if libc::getrlimit(libc::RLIMIT_NOFILE, &mut open) != 0 {
-                    return Err(last_error("RLIMIT_NOFILE"));
-                }
-                let end = open.rlim_max.min(libc::c_int::MAX as libc::rlim_t) as libc::c_int;
-                for fd in 3..end {
-                    libc::close(fd);
-                }
+            // RLIMIT_AS, the outer bound: what else can grow (a stack, which
+            // the helper may raise its own limit for) stops this far past the
+            // data limit.
+            let space = libc::rlimit { rlim_cur: address_space, rlim_max: address_space };
+            if libc::setrlimit(libc::RLIMIT_AS, &space) != 0 {
+                return Err(last_error("RLIMIT_AS"));
             }
         }
+        // Only the three pipes: close whatever else was inherited.
+        close_inherited()?;
         let confinement = landlock();
         refuse_system_calls().map_err(|e| format!("the seccomp filter: {e}"))?;
         Ok(confinement)
@@ -338,8 +397,8 @@ mod imp {
     /// The filter, on top of Landlock and whatever the kernel's version of
     /// Landlock leaves open: it allows by default and answers a listed call
     /// with `EPERM`, a normal error, and never kills. It holds for every
-    /// thread of the helper (`TSYNC`), the threads it starts after too, so a
-    /// thread a library started before [`confine`] is under it as well.
+    /// thread of the helper (`TSYNC`), the threads it starts after too, though
+    /// [`confine`] refuses to run beside another thread anyway.
     fn refuse_system_calls() -> Result<(), std::io::Error> {
         // Offsets in `seccomp_data`; an argument's low half on a little-endian
         // machine, and each argument checked here is a 32-bit `int` or flags.
@@ -380,11 +439,12 @@ mod imp {
             jump(libc::BPF_JSET, libc::CLONE_THREAD as u32, 0, 1),
             allow,
             refuse,
-            // No memory shared with anything: `MAP_SHARED_VALIDATE` has this
-            // bit too.
+            // No memory shared with anything (`MAP_SHARED_VALIDATE` has this
+            // bit too), and none that grows down like a stack, which
+            // `RLIMIT_DATA` doesn't count.
             jump(libc::BPF_JEQ, libc::SYS_mmap as u32, 0, 4),
             load(argument(3)),
-            jump(libc::BPF_JSET, libc::MAP_SHARED as u32, 0, 1),
+            jump(libc::BPF_JSET, (libc::MAP_SHARED | libc::MAP_GROWSDOWN) as u32, 0, 1),
             refuse,
             allow,
             // `clone3`'s flags are behind a pointer the filter can't read.
