@@ -147,9 +147,9 @@ struct MachineFile {
     machine_id: String,
     #[serde(default)]
     recent_databases: Vec<RecentEntry>,
-    /// The backup location the user chose on this computer for each database,
-    /// by its id, as `collection_settings.backup_location` stores it. A
-    /// location stored in a database is used only when it is the one recorded
+    /// The backup locations the user chose on this computer for each database,
+    /// by its id, as `collection_settings.backup_location` stores them. A
+    /// location stored in a database is used only when it is one recorded
     /// here (code scanning alert
     /// paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder). Absent
     /// in a file an earlier version wrote, whose cached backup folders the load
@@ -157,7 +157,7 @@ struct MachineFile {
     /// version can't read is absent too (009 research.md §15): nothing is then
     /// used but the default folders until chosen again.
     #[serde(default, deserialize_with = "lenient_backup_locations")]
-    backup_locations: Option<BTreeMap<String, String>>,
+    backup_locations: Option<BTreeMap<String, Vec<String>>>,
     /// Kept when a database leaves the recent list, so its backups still
     /// rotate when it is opened at that path again. A value this version can't
     /// read is empty (009 research.md §15): nothing rotates until recorded.
@@ -255,7 +255,7 @@ where
 /// Reads `backupLocations`, as absent for a value this version can't read.
 fn lenient_backup_locations<'de, D>(
     deserializer: D,
-) -> Result<Option<BTreeMap<String, String>>, D::Error>
+) -> Result<Option<BTreeMap<String, Vec<String>>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -264,35 +264,6 @@ where
 }
 
 impl MachineFile {
-    /// Adds `names` to the record of the database `database_id` at `path`,
-    /// once each, making the record if there is none and names to add.
-    fn record_made(
-        &mut self,
-        path: &Path,
-        database_id: &str,
-        names: impl IntoIterator<Item = String>,
-    ) {
-        let index = self.made_backups.iter().position(|made| made.is(path, database_id));
-        let mut names = names.into_iter().peekable();
-        if index.is_none() && names.peek().is_none() {
-            return;
-        }
-        let index = index.unwrap_or_else(|| {
-            self.made_backups.push(MadeBackups {
-                database_path: path.to_owned(),
-                database_id: database_id.to_owned(),
-                file_names: Vec::new(),
-            });
-            self.made_backups.len() - 1
-        });
-        let recorded = &mut self.made_backups[index].file_names;
-        for name in names {
-            if !recorded.contains(&name) {
-                recorded.push(name);
-            }
-        }
-    }
-
     fn fresh() -> io::Result<Self> {
         Ok(Self {
             version: VERSION,
@@ -467,25 +438,29 @@ impl MachineSettings {
 
     /// `stored`, a database's `collection_settings.backup_location`, as this
     /// computer uses it: `default`, or a custom location only when the user
-    /// chose it here for the database `database_id`. One the file arrived with
-    /// is not used, and backups go to the default folder instead (code
-    /// scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder).
+    /// chose it here for the database `database_id`, now or before. One the
+    /// file arrived with is not used, and backups go to the default folder
+    /// instead (code scanning alert
+    /// paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder).
     pub fn backup_location<'a>(&self, database_id: &str, stored: &'a str) -> &'a str {
         let file = self.lock();
         let chosen = file.backup_locations.as_ref().and_then(|chosen| chosen.get(database_id));
-        let chosen = chosen.is_some_and(|location| location == stored);
+        let chosen = chosen.is_some_and(|locations| locations.iter().any(|l| l == stored));
         if chosen { stored } else { "default" }
     }
 
     /// Records that the user chose `location` here as the backup location of
-    /// the database `database_id`; `default` needs no record.
+    /// the database `database_id`. `default` needs no record, and forgets
+    /// none: a restore can bring back any location chosen here.
     pub fn set_backup_location_chosen(&self, database_id: &str, location: &str) {
+        if location == "default" {
+            return;
+        }
         self.update(|file| {
             let chosen = file.backup_locations.get_or_insert_default();
-            if location == "default" {
-                chosen.remove(database_id);
-            } else {
-                chosen.insert(database_id.to_owned(), location.to_owned());
+            let chosen = chosen.entry(database_id.to_owned()).or_default();
+            if !chosen.iter().any(|l| l == location) {
+                chosen.push(location.to_owned());
             }
         });
     }
@@ -501,7 +476,21 @@ impl MachineSettings {
     /// Records that this computer made the backup `file_name` of the database
     /// `database_id` at `path`, whether or not it is in the recent list yet.
     pub fn record_backup_made(&self, path: &Path, database_id: &str, file_name: &str) {
-        self.update(|file| file.record_made(path, database_id, [file_name.to_owned()]));
+        self.update(|file| {
+            let index = file.made_backups.iter().position(|made| made.is(path, database_id));
+            let index = index.unwrap_or_else(|| {
+                file.made_backups.push(MadeBackups {
+                    database_path: path.to_owned(),
+                    database_id: database_id.to_owned(),
+                    file_names: Vec::new(),
+                });
+                file.made_backups.len() - 1
+            });
+            let recorded = &mut file.made_backups[index].file_names;
+            if !recorded.iter().any(|name| name == file_name) {
+                recorded.push(file_name.to_owned());
+            }
+        });
     }
 
     /// Forgets the recorded backups of the database `database_id` at `path`
@@ -583,18 +572,6 @@ impl MachineSettings {
                 return;
             };
             let mut entry = file.recent_databases.remove(index);
-            // Its backups stay its own at the path the user found it at.
-            if let Some(id) = &entry.database_id {
-                // Into any record already at the new path, so none is left unused.
-                let moved: Vec<String> = file
-                    .made_backups
-                    .iter()
-                    .filter(|made| made.is(path, id))
-                    .flat_map(|made| made.file_names.clone())
-                    .collect();
-                file.made_backups.retain(|made| !made.is(path, id));
-                file.record_made(new_path, id, moved);
-            }
             entry.path = new_path.to_owned();
             // The file found may be a copy, with a time of its own.
             entry.left_modified_at = None;
@@ -783,12 +760,6 @@ fn normalize_hold(hold: &mut Option<PdfPreviewHold>) {
     }
 }
 
-/// Writes to a temporary file beside `path`, flushes it, then renames it
-/// over `path`, so a crash leaves either the old file or the new one. The
-/// temporary file has an unpredictable name (nothing recovers it by name) and
-/// is created exclusively, so a file or symlink planted in the folder is
-/// never truncated or followed, and only a file this call created is removed
-/// (#63).
 /// In a file an earlier version wrote, which cached whatever backup location a
 /// database stored, and which the chooser lists at every launch (code scanning
 /// alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder):
@@ -809,6 +780,12 @@ fn forget_unchosen_backup_folders(file: &mut MachineFile) {
     file.backup_locations = Some(BTreeMap::new());
 }
 
+/// Writes to a temporary file beside `path`, flushes it, then renames it
+/// over `path`, so a crash leaves either the old file or the new one. The
+/// temporary file has an unpredictable name (nothing recovers it by name) and
+/// is created exclusively, so a file or symlink planted in the folder is
+/// never truncated or followed, and only a file this call created is removed
+/// (#63).
 fn write_atomically(path: &Path, file: &MachineFile) -> io::Result<()> {
     let id = random_hex(8).map_err(io::Error::other)?;
     let temp = path.with_extension(format!("json.{id}.tmp"));

@@ -1819,3 +1819,93 @@ fn a_backup_this_computer_did_not_make_is_listed_and_restorable_but_never_rotate
     assert_eq!(world.firearm_count(), 1, "the first day's collection is back");
     assert!(Path::new(&elsewhere.path).exists(), "a restore never rotates it away");
 }
+
+/// Restores `backup` over the open database, an hour on so the backup made
+/// first is named for a later minute.
+fn restore(world: &World, backup: &str) {
+    world.clock.advance(chrono::Duration::hours(1));
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        backup,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+        false,
+        &Reach::Unconfined,
+    )
+    .unwrap();
+}
+
+/// After a restore brought back `chosen`, a location chosen here earlier:
+/// the dialogs show it, and the next backup goes to it.
+fn assert_used_after_restore(world: &World, id: &str, chosen: &Path) {
+    let shown = shown_location(world);
+    assert_eq!(shown["kind"], "custom");
+    assert_eq!(shown["path"], json!(path_text(chosen)));
+    assert_eq!(shown.get("chosenElsewhere"), None, "it was chosen on this computer");
+    let listed = backups_ops::list_backups(
+        &world.session,
+        &world.machine,
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
+    assert_eq!(listed.folder, path_text(chosen), "the restore dialog lists it");
+    let before = world.backups_in(chosen, id).len();
+    world.next_day();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    assert_eq!(world.backups_in(chosen, id).len(), before + 1);
+}
+
+// Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
+#[test]
+fn a_location_chosen_here_then_changed_is_still_used_when_a_restore_brings_it_back() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    let (first, second) = (world.dir.path().join("First"), world.dir.path().join("Second"));
+    fs::create_dir(&first).unwrap();
+    fs::create_dir(&second).unwrap();
+    world.set_backups(true, 3, BackupLocationInput::Custom { path: path_text(&first) });
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    world.open();
+    databases::update_backup_settings(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        &BackupSettingsInput {
+            enabled: true,
+            keep_count: 3,
+            location: BackupLocationInput::Custom { path: path_text(&second) },
+            existing_backups: Some(ExistingBackupsChoice::Move),
+        },
+        &Reach::Unconfined,
+    )
+    .unwrap();
+    let older = world.backups_in(&second, &id).remove(0);
+
+    restore(&world, &older.path);
+
+    assert_used_after_restore(&world, &id, &first);
+}
+
+// Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
+#[test]
+fn a_location_chosen_here_then_left_for_the_default_is_still_used_when_a_restore_brings_it_back() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    let chosen = world.dir.path().join("Chosen");
+    fs::create_dir(&chosen).unwrap();
+    world.set_backups(true, 3, BackupLocationInput::Custom { path: path_text(&chosen) });
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    world.open();
+    world.set_backups(true, 3, BackupLocationInput::Default);
+    let older = world.backups_in(&chosen, &id).remove(0);
+
+    restore(&world, &older.path);
+
+    assert_used_after_restore(&world, &id, &chosen);
+}

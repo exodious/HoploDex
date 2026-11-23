@@ -257,8 +257,15 @@ fn a_stored_backup_location_is_used_only_once_it_is_chosen_here_for_that_databas
     assert_eq!(settings.backup_location(&a, "/usb/backups"), "/usb/backups");
     assert_eq!(settings.backup_location(&a, "/elsewhere"), "default", "only what was chosen");
     assert_eq!(settings.backup_location(&b, "/usb/backups"), "default", "only for that database");
+    // Every location chosen here stays chosen, whatever is chosen after it,
+    // since a restore can bring an earlier one back.
+    settings.set_backup_location_chosen(&a, "/elsewhere");
     settings.set_backup_location_chosen(&a, "default");
-    assert_eq!(settings.backup_location(&a, "/usb/backups"), "default");
+    let settings = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(settings.backup_location(&a, "/usb/backups"), "/usb/backups");
+    assert_eq!(settings.backup_location(&a, "/elsewhere"), "/elsewhere");
+    assert_eq!(settings.backup_location(&a, "default"), "default");
+    assert_eq!(settings.backup_location(&b, "/elsewhere"), "default");
 }
 
 // Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
@@ -328,21 +335,15 @@ fn the_backups_made_here_stay_recorded_for_that_path_and_id_only() {
     settings.touch_recent(a, "A", &id, Path::new("/data/HoploDex backups"));
     let reloaded = MachineSettings::load(config.path()).unwrap();
     assert_eq!(reloaded.made_backups(a, &id), both);
-    // Located elsewhere, they go with it, and another id's at that path stay.
-    reloaded.record_backup_made(a, &"c".repeat(32), "C 2026-09-26 143005 cccccccc.hoplodex");
+    // Located elsewhere, they stay with the path they were made for: the file
+    // found there is not trusted with them.
     let found = Path::new("/usb/A.hoplodex");
     reloaded.locate_recent(a, found).unwrap();
-    assert_eq!(reloaded.made_backups(found, &id), both);
-    assert!(reloaded.made_backups(a, &id).is_empty());
-    assert_eq!(reloaded.made_backups(a, &"c".repeat(32)).len(), 1);
-    // Located onto a path that already has a record for that id: one record.
-    reloaded.record_backup_made(a, &id, "A 2026-09-27 143005 aaaaaaaa.hoplodex");
-    reloaded.touch_recent(a, "A", &id, Path::new("/data/HoploDex backups"));
-    reloaded.locate_recent(a, found).unwrap();
-    assert_eq!(reloaded.made_backups(found, &id).len(), 3, "merged, so all of them rotate");
+    assert!(reloaded.made_backups(found, &id).is_empty());
+    assert_eq!(reloaded.made_backups(a, &id), both);
     // What rotation deleted is forgotten.
-    reloaded.keep_made_backups(found, &id, |name| name.contains("before"));
-    assert_eq!(reloaded.made_backups(found, &id), [both[0].clone()]);
+    reloaded.keep_made_backups(a, &id, |name| name.contains("before"));
+    assert_eq!(reloaded.made_backups(a, &id), [both[0].clone()]);
 }
 
 // --- 003 US2 ----------------------------------------------------------------

@@ -118,7 +118,7 @@ journal may exist next to it only while a write is in progress.
 
 _Amended 2026-11-23: rotation deletes only backups this computer recorded making of this database, at its path and with its id (`machine.json`'s `madeBackups`), since a name carries only `<id8>`, which a file can copy. Backups made on another computer or by 0.1.0 are listed and restorable but never rotated here; at most `backup_keep_count` of them stay until the user deletes them (code scanning alert database-files/cwe-639/src-tauri/src/services/backups.rs#rotate)._
 
-_Amended 2026-11-23: a custom `backup_location` is used only when this computer recorded the user choosing it for this database (`machine.json`'s `backupLocations`); otherwise backups go to the default folder (code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder; [the architecture](../../docs/architecture/models-and-services.md))._
+_Amended 2026-11-23: a custom `backup_location` is used only when this computer recorded the user choosing it for this database, now or before (`machine.json`'s `backupLocations`); otherwise backups go to the default folder (code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder; [the architecture](../../docs/architecture/models-and-services.md))._
 
 ---
 
@@ -130,9 +130,9 @@ _Amended by [spec 013](../013-troubleshooting-log/data-model.md): the file gains
 
 _Amended 2026-11-23 (code scanning alert plaintext-lifetime/cwe-922): the file gains `appearance`, `{ theme: "auto" | "light" | "dark", browseView: "list" | "tile" }` (default `auto` and `list`; a value this version doesn't know reads as that field's default; no change to `VERSION`), the page's color mode and the collection's layout, which were in the main web view's `localStorage` until that web view became incognito._
 
-_Amended 2026-11-23: the file gains `backupLocations`, `{ "<databaseId>": "<location as stored>" }`, the custom backup location the user chose on this computer for each database; a stored location is used here only when it is the one recorded. A file without it (written before) has every cached `backupFolder` but the default one dropped once at load (code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder)._
+_Amended 2026-11-23: the file gains `backupLocations`, `{ "<databaseId>": ["<location as stored>", …] }`, every custom backup location the user chose on this computer for each database; a stored location is used here only when it is one recorded. Choosing another location or the default forgets none, so one a restore brings back is still used. A file without it (written before) has every cached `backupFolder` but the default one dropped once at load (code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder)._
 
-_Amended 2026-11-23: the file gains `madeBackups`, `[{ "databasePath", "databaseId", "fileNames": [...] }]`, the backups this computer made of each database at that path with that id, which are the only ones rotation deletes. Rotation forgets the names it deletes; the list stays when the database leaves the recent list, and moves with it when it is re-located; a database at another path, or with another id, has none (code scanning alert database-files/cwe-639/src-tauri/src/services/backups.rs#rotate)._
+_Amended 2026-11-23: the file gains `madeBackups`, `[{ "databasePath", "databaseId", "fileNames": [...] }]`, the backups this computer made of each database at that path with that id, which are the only ones rotation deletes. Rotation forgets the names it deletes; the list stays when the database leaves the recent list, and stays at the old path when it is re-located, so the backups made before are not rotated; a database at another path, or with another id, has none (code scanning alert database-files/cwe-639/src-tauri/src/services/backups.rs#rotate)._
 
 Location: the OS app config directory (`~/.config/io.github.exodious.HoploDex/machine.json`
 on Linux). Written atomically. Plain JSON: it holds paths, names and times,
