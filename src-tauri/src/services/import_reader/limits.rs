@@ -42,8 +42,9 @@ pub const MAX_STYLE_TEXT_CHARS: usize = 255;
 /// slots (Excel writes 12).
 pub const MAX_CELL_FORMATS: usize = 65_490;
 /// Firearms and accessories listed as mounted on the firearms and accessories
-/// an import's rows would replace, in all its conflicts (code scanning alert 81). Checked by the parent once
-/// the rows are saved, so it is the one limit met after them.
+/// an import's rows would replace, in all its conflicts (code scanning alert
+/// 81). Checked by the parent once the rows are saved, so it is the one limit
+/// met after them.
 pub const MAX_MOUNTED_ENTRIES: usize = 100_000;
 /// The import helper's data limit (Linux, Windows).
 pub const HELPER_MEMORY_BYTES: usize = 536_870_912;
