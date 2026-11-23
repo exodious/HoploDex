@@ -128,7 +128,7 @@ pub mod ops {
         // (issue #68; the export checks again, for rows made before this).
         let original_filename = safe_basename(original_filename, "photo");
         let mime_type = photo_type(&original_filename, file_bytes)?;
-        let thumbnail_bytes = generate_thumbnail(file_bytes)?;
+        let thumbnail_bytes = generate_thumbnail(&original_filename, file_bytes)?;
 
         let next_sort_order: i64 = conn
             .query_row(

@@ -664,7 +664,7 @@ fn a_photo_past_the_pixel_limits_is_refused_and_nothing_is_stored() {
     ] {
         let err = photo_ops::add_photo(&db.conn, owner, &bytes, "big.jpg").unwrap_err();
         assert_eq!(err.code, "VALIDATION_ERROR", "{name}");
-        assert_eq!(err.message, "The photo has more pixels than HoploDex reads.", "{name}");
+        assert_eq!(err.message, "big.jpg has more pixels than HoploDex reads.", "{name}");
     }
     assert_eq!(count(&db, "photos"), 0);
 
@@ -673,7 +673,7 @@ fn a_photo_past_the_pixel_limits_is_refused_and_nothing_is_stored() {
     // is added as before.
     let at_limit = crafted_jpeg(true, 0xC2, 8_192, 8_192, false);
     if let Err(err) = photo_ops::add_photo(&db.conn, owner, &at_limit, "at.jpg") {
-        assert_ne!(err.message, "The photo has more pixels than HoploDex reads.");
+        assert_ne!(err.message, "at.jpg has more pixels than HoploDex reads.");
     }
     let real = crafted_jpeg(false, 0xC0, 16, 16, false);
     photo_ops::add_photo(&db.conn, owner, &real, "real.jpg").unwrap();

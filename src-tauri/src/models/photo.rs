@@ -47,15 +47,20 @@ const MAX_PLANAR_JPEG_PIXELS: u64 = 64 * 1024 * 1024;
 
 /// Decodes `original_bytes` and re-encodes a small JPEG thumbnail capped at
 /// `THUMBNAIL_MAX_DIMENSION` on its longest side, generated once at insert
-/// time (001 research.md §4) rather than on every browse render.
-pub fn generate_thumbnail(original_bytes: &[u8]) -> Result<Vec<u8>, CommandError> {
+/// time (001 research.md §4) rather than on every browse render. `name`
+/// names the photo in a refusal, as `photo_type`'s does.
+pub fn generate_thumbnail(name: &str, original_bytes: &[u8]) -> Result<Vec<u8>, CommandError> {
     let reader = |bytes| {
         ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
             .map_err(|_| CommandError::new("VALIDATION_ERROR", "Could not read the image file."))
     };
-    let too_large =
-        || CommandError::new("VALIDATION_ERROR", "The photo has more pixels than HoploDex reads.");
+    let too_large = || {
+        CommandError::new(
+            "VALIDATION_ERROR",
+            format!("{name} has more pixels than HoploDex reads."),
+        )
+    };
     let decode_failed = |err: ImageError| match err {
         ImageError::Limits(_) => too_large(),
         _ => CommandError::new("VALIDATION_ERROR", "Could not decode the image file."),
