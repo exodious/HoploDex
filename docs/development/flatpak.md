@@ -122,6 +122,16 @@ lists. Until you do, `scripts/flatpak/sources.test.ts` fails in every
 one by hand: regenerate the lists in the dev container and commit them to its
 branch before `npm test` passes.
 
+The test also fails on an `inline`, `script` or `shell` entry the generators
+don't write: one at another place than they write it, a crate's
+`.cargo-checksum.json` that isn't `{"package": <its Cargo.lock checksum>,
+"files": {}}`, another `cargo/config`, or a command other than
+flatpak-node-generator's fixed node-gyp headers script and esbuild copies
+(`scripts/flatpak/sources.mjs`). Such an entry writes or runs something beside
+the checkout before the build. A list the generators wrote passes; when moving
+`FLATPAK_BUILDER_TOOLS_COMMIT` in the `Dockerfile` changes what they write,
+update `sources.mjs` to match, in the same change.
+
 ## The Flatpak check
 
 `npm run test:flatpak` builds the Flatpak's check variant, installs it into the
@@ -221,12 +231,13 @@ paths (`011 FR-021`): `flatpak/`, `scripts/flatpak/`,
 `e2e/specs/flatpak.e2e.ts`, `e2e/support/flatpak.ts`,
 `src-tauri/src/platform/linux.rs`, `src-tauri/src/platform/core_dumps.rs`,
 `src-tauri/src/main.rs`, `src-tauri/src/app_dirs.rs`,
-`src-tauri/src/session/lifecycle.rs`, `src-tauri/src/session/grants.rs`; under
-`src-tauri/src/services/`: `sandbox.rs`, `keyring.rs`, `file_swap.rs`,
+`src-tauri/src/session/lifecycle.rs`, `src-tauri/src/session/grants.rs`,
+`src-tauri/src/logging.rs`, `src-tauri/src/logging/`; under
+`src-tauri/src/services/`: `sandbox.rs`, `keyring.rs`, `keyring/`, `file_swap.rs`,
 `backups.rs`, `scratch.rs`, `chooser.rs`, `helper/`, `import_reader/`, `preview/helper.rs`,
 `preview/sandbox_probe.rs`; under `src-tauri/src/commands/`: `databases.rs`,
-`backups.rs`, `import_export.rs`, `documents.rs`, `photos.rs`; and
-`src/features/media/useFileDrop.ts`.
+`backups.rs`, `import_export.rs`, `documents.rs`, `photos.rs`,
+`troubleshooting_log.rs`; and `src/features/media/useFileDrop.ts`.
 
 It never touches your Flatpak installation, your `~/.var/app`, your buses or
 your keyring: the container has its own (`011 SC-007`), and the script refuses

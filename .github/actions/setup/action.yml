@@ -42,9 +42,10 @@ runs:
         key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
         restore-keys: npm-${{ runner.os }}-
 
-    # The Dockerfile's npm, so CI and the dev container agree.
+    # The Dockerfile's NPM_VERSION, an exact version so a newly published npm
+    # can't build a release unreviewed; move both together by hand.
     - shell: bash
-      run: npm install --global npm@12
+      run: npm install --global npm@12.2.3
 
     # Third-party actions are pinned to a commit (#72), moved by hand.
     # This is the head of the action's `stable` branch on 2026-10-09,

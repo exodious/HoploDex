@@ -3,32 +3,73 @@
     "type": "file",
     "url": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
     "sha512": "6373dc9c5f5acddcb799fd30fbca14d0f21bce2709322c79cfd3a3faad5e03ff8605838cec17c7d8bdf0a9bfa018c1464439644669ab5cc82836524a0c46c1ac",
-    "dest": "flatpak-node/cache/_cacache/content-v2/sha512/63/73",
+    "dest": "flatpak-node/npm-cache/_cacache/content-v2/sha512/63/73",
     "dest-filename": "dc9c5f5acddcb799fd30fbca14d0f21bce2709322c79cfd3a3faad5e03ff8605838cec17c7d8bdf0a9bfa018c1464439644669ab5cc82836524a0c46c1ac"
   },
   {
     "type": "inline",
     "contents": "{\"key\":\"make-fetch-happen:request-cache:https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz\"}",
-    "dest": "flatpak-node/cache/_cacache/index-v5/00/00",
-    "dest-filename": "leftpad130"
+    "dest": "flatpak-node/npm-cache/_cacache/index-v5/00/00",
+    "dest-filename": "502929b640d701d14910114efaebe6e11ec6e7f9b3cbaa8686c3ca7a71a4"
   },
   {
     "type": "file",
     "url": "https://registry.npmjs.org/@scope/pkg/-/pkg-2.0.0.tgz",
     "sha512": "f8b81fa1055e29f9e0d0d5e1a0d37342e48315d1277b81e2b89236eb3abbbfdd8927f0d242da0454d7a4f609c427fee6baec6004f9d7fa31e81defe6b1e1a702",
-    "dest": "flatpak-node/cache/_cacache/content-v2/sha512/f8/b8",
+    "dest": "flatpak-node/npm-cache/_cacache/content-v2/sha512/f8/b8",
     "dest-filename": "1fa1055e29f9e0d0d5e1a0d37342e48315d1277b81e2b89236eb3abbbfdd8927f0d242da0454d7a4f609c427fee6baec6004f9d7fa31e81defe6b1e1a702"
   },
   {
     "type": "inline",
     "contents": "{\"key\":\"make-fetch-happen:request-cache:https://registry.npmjs.org/@scope/pkg/-/pkg-2.0.0.tgz\"}",
-    "dest": "flatpak-node/cache/_cacache/index-v5/00/00",
-    "dest-filename": "scopepkg200"
+    "dest": "flatpak-node/npm-cache/_cacache/index-v5/00/00",
+    "dest-filename": "2cdb6dfc805976d1908c8e27b7eb4e86da5f005f83025d647238b48efe1c"
+  },
+  {
+    "type": "file",
+    "url": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.25.12.tgz",
+    "sha512": "b2fd72ce8d33d10c2998bd9cb1898d0ee135edb0c55f2b27106e4609aba2810afe104a2a955c37cc83cb7b7739c33146fcc8e142acdea7b8cc87169501b09acb",
+    "dest": "flatpak-node/npm-cache/_cacache/content-v2/sha512/b2/fd",
+    "dest-filename": "72ce8d33d10c2998bd9cb1898d0ee135edb0c55f2b27106e4609aba2810afe104a2a955c37cc83cb7b7739c33146fcc8e142acdea7b8cc87169501b09acb"
+  },
+  {
+    "type": "inline",
+    "contents": "{\"key\":\"make-fetch-happen:request-cache:https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.25.12.tgz\"}",
+    "dest": "flatpak-node/npm-cache/_cacache/index-v5/00/00",
+    "dest-filename": "e61b16fcd188fb19c926a9e554b5d265aa38380cd4fd65df5cf62228a5d2"
+  },
+  {
+    "type": "archive",
+    "url": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.25.12.tgz",
+    "strip-components": 1,
+    "sha512": "b2fd72ce8d33d10c2998bd9cb1898d0ee135edb0c55f2b27106e4609aba2810afe104a2a955c37cc83cb7b7739c33146fcc8e142acdea7b8cc87169501b09acb",
+    "dest": "flatpak-node/cache/esbuild/.package/@esbuild/linux-x64@0.25.12",
+    "only-arches": ["x86_64"]
   },
   {
     "type": "script",
-    "commands": ["export npm_config_cache=$FLATPAK_BUILDER_BUILDDIR/flatpak-node/cache"],
+    "commands": [
+      "version=$(node --version | sed \"s/^v//\")",
+      "nodedir=$(dirname \"$(dirname \"$(which node)\")\")",
+      "mkdir -p \"flatpak-node/cache/node-gyp/$version\"",
+      "ln -s \"$nodedir/include\" \"flatpak-node/cache/node-gyp/$version/include\"",
+      "echo 11 > \"flatpak-node/cache/node-gyp/$version/installVersion\""
+    ],
     "dest-filename": "setup_sdk_node_headers.sh",
     "dest": "flatpak-node"
+  },
+  {
+    "type": "shell",
+    "commands": [
+      "mkdir -p \"bin/@esbuild\"",
+      "cp \".package/@esbuild/linux-x64@0.25.12/bin/esbuild\" \"bin/@esbuild/linux-x64@0.25.12\"",
+      "ln -sf \"@esbuild/linux-x64@0.25.12\" \"bin/esbuild-current\""
+    ],
+    "dest": "flatpak-node/cache/esbuild",
+    "only-arches": ["x86_64"]
+  },
+  {
+    "type": "shell",
+    "commands": ["bash flatpak-node/setup_sdk_node_headers.sh"]
   }
 ]

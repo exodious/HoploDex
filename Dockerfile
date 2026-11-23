@@ -13,7 +13,7 @@
 FROM docker.io/library/debian:trixie-slim
 
 ARG NODE_VERSION=24.21.0
-ARG NPM_VERSION=12
+ARG NPM_VERSION=12.2.3
 ARG RUST_TOOLCHAIN=stable
 ARG CARGO_DENY_VERSION=0.20.2
 ARG CARGO_NEXTEST_VERSION=0.9.146
@@ -111,7 +111,8 @@ RUN install -d -m 0755 /etc/apt/keyrings \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js LTS (official build, checksum-verified) and npm 12, which writes the
-# lockfile format this repo uses.
+# lockfile format this repo uses, at an exact version moved by hand with
+# .github/actions/setup (code scanning alert build-ci/cwe-829).
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
         amd64) arch=x64 ;; \

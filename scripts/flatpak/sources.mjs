@@ -6,8 +6,12 @@
 // Python and the network). This module is the cheap check that runs in every
 // `npm test`: it reads a lockfile and its list and says, without Python or the
 // network, whether the list still covers exactly the lockfile's packages with
-// the lockfile's hashes. Every path is a parameter, so the tests point it at
-// fixtures and at the real files.
+// the lockfile's hashes, and whether every entry that is not a package (the
+// `inline`, `script` and `shell` entries) is one the pinned generators write,
+// where they write it (code scanning alert build-ci/cwe-345): such an entry
+// writes or runs something in the build directory, beside the checkout, before
+// the build. Every path is a parameter, so the tests point it at fixtures and at
+// the real files.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -19,6 +23,21 @@ const REGENERATE = "Run `npm run flatpak:sources` in the dev container and commi
 const CONFIG_TYPES = new Set(["inline", "script", "shell"]);
 /** Where `flatpak-node-generator` puts the tools it unpacks (the node list's `dest`). */
 const TOOL_CACHE = "flatpak-node/cache/";
+/** Where it unpacks esbuild's platform binaries, and the shell entry's `dest` for each. */
+const ESBUILD_CACHE = `${TOOL_CACHE}esbuild`;
+/** What `flatpak-cargo-generator.py` writes as `cargo/config` for crates.io crates only. */
+const CARGO_CONFIG =
+  '[source.vendored-sources]\ndirectory = "cargo/vendor"\n\n' +
+  '[source.crates-io]\nreplace-with = "vendored-sources"\n';
+/** `flatpak-node-generator`'s node-gyp headers script and the command that runs it (`--xdg-layout`). */
+const NODE_HEADERS_SCRIPT = [
+  'version=$(node --version | sed "s/^v//")',
+  'nodedir=$(dirname "$(dirname "$(which node)")")',
+  'mkdir -p "flatpak-node/cache/node-gyp/$version"',
+  'ln -s "$nodedir/include" "flatpak-node/cache/node-gyp/$version/include"',
+  'echo 11 > "flatpak-node/cache/node-gyp/$version/installVersion"',
+];
+const NODE_HEADERS_COMMAND = "bash flatpak-node/setup_sdk_node_headers.sh";
 
 /** The name a message gives a list: the repository path it has. */
 function listName(listPath) {
@@ -31,6 +50,18 @@ function readJson(file) {
 
 function wrongList(list, lock, detail) {
   return `${list} does not match ${lock}: ${detail}. ${REGENERATE}`;
+}
+
+/** Whether `source` has exactly these keys, so no other one (`base64`, `url`) changes what it does. */
+function hasKeys(source, ...keys) {
+  const own = Object.keys(source);
+  return own.length === keys.length + 1 && ["type", ...keys].every((k) => own.includes(k));
+}
+
+/** The difference that names an entry the generator does not write. */
+function strayEntry(source) {
+  const where = [source.dest, source["dest-filename"]].filter(Boolean).join("/");
+  return `the list has ${source.type === "inline" ? "an" : "a"} ${source.type} source${where ? ` at ${where}` : ""} that the generator does not write`;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,10 +152,27 @@ export function checkCargoSources({ cargoLockPath, sourcesPath }) {
   }
 
   const known = new Set(registry.map((pkg) => `${pkg.name}/${pkg.version}`));
+  // Each crate's directory, and the `.cargo-checksum.json` the generator writes there.
+  const checksums = new Map(
+    registry.map((pkg) => [
+      `cargo/vendor/${pkg.name}-${pkg.version}`,
+      JSON.stringify({ package: pkg.checksum, files: {} }),
+    ]),
+  );
   for (const source of sources) {
-    if (CONFIG_TYPES.has(source.type)) continue;
+    if (CONFIG_TYPES.has(source.type)) {
+      if (!isCargoConfigEntry(source, checksums)) return wrongList(list, lock, strayEntry(source));
+      continue;
+    }
     const crate = source.type === "archive" ? crateOfUrl(source.url) : null;
-    if (crate && known.has(`${crate.name}/${crate.version}`)) continue;
+    if (crate && known.has(`${crate.name}/${crate.version}`)) {
+      if (source.dest === `cargo/vendor/${crate.name}-${crate.version}`) continue;
+      return wrongList(
+        list,
+        lock,
+        `crate ${crate.name} ${crate.version} unpacks to ${source.dest}`,
+      );
+    }
     const what = crate
       ? `crate ${crate.name} ${crate.version}`
       : `${source.type} source ${source.url ?? source.dest ?? ""}`.trim();
@@ -133,8 +181,105 @@ export function checkCargoSources({ cargoLockPath, sourcesPath }) {
   return null;
 }
 
+/**
+ * Whether an inline entry is one `flatpak-cargo-generator.py` writes for
+ * crates.io crates: `cargo/config`, or a crate's `.cargo-checksum.json` with its
+ * lockfile checksum and no files.
+ */
+function isCargoConfigEntry(source, checksums) {
+  if (source.type !== "inline" || !hasKeys(source, "contents", "dest", "dest-filename")) {
+    return false;
+  }
+  if (source.dest === "cargo" && source["dest-filename"] === "config") {
+    return source.contents === CARGO_CONFIG;
+  }
+  const expected = checksums.get(source.dest);
+  if (source["dest-filename"] !== ".cargo-checksum.json" || !expected) return false;
+  try {
+    return JSON.stringify(JSON.parse(source.contents)) === expected;
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // npm
+
+/** Whether `dest` is below `prefix`, with no segment that climbs out of it. */
+function isBelow(dest, prefix) {
+  const rest = String(dest).startsWith(prefix) ? String(dest).slice(prefix.length) : null;
+  return rest !== null && rest.split("/").every((part) => part && part !== "." && part !== "..");
+}
+
+/** esbuild's platform package, as the tool cache names its folder. */
+const ESBUILD_PACKAGE = /^@esbuild\/[a-z0-9-]+@\d+\.\d+\.\d+$/;
+
+/** The shell entry `flatpak-node-generator` writes for an esbuild binary it unpacks. */
+function esbuildShell(archive) {
+  const pkg = String(archive.dest).slice(`${ESBUILD_CACHE}/.package/`.length);
+  if (
+    !String(archive.dest).startsWith(`${ESBUILD_CACHE}/.package/`) ||
+    !ESBUILD_PACKAGE.test(pkg)
+  ) {
+    return null;
+  }
+  return JSON.stringify({
+    type: "shell",
+    commands: [
+      'mkdir -p "bin/@esbuild"',
+      `cp ".package/${pkg}/bin/esbuild" "bin/${pkg}"`,
+      `ln -sf "${pkg}" "bin/esbuild-current"`,
+    ],
+    dest: ESBUILD_CACHE,
+    "only-arches": archive["only-arches"],
+  });
+}
+
+/**
+ * Whether an inline, script or shell entry is one `flatpak-node-generator`
+ * writes for this list: an npm cache index entry, the node-gyp headers script
+ * and the command that runs it, or the copy of an esbuild binary the list
+ * unpacks (`esbuildShells`).
+ */
+function isNodeConfigEntry(source, esbuildShells) {
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  switch (source.type) {
+    case "inline":
+      return (
+        hasKeys(source, "contents", "dest", "dest-filename") &&
+        /^flatpak-node\/npm-cache\/_cacache\/index-v5\/[0-9a-f]{2}\/[0-9a-f]{2}$/.test(
+          source.dest,
+        ) &&
+        /^[0-9a-f]+$/.test(source["dest-filename"])
+      );
+    case "script":
+      return (
+        hasKeys(source, "commands", "dest", "dest-filename") &&
+        source.dest === "flatpak-node" &&
+        source["dest-filename"] === "setup_sdk_node_headers.sh" &&
+        same(source.commands, NODE_HEADERS_SCRIPT)
+      );
+    case "shell":
+      if (hasKeys(source, "commands")) return same(source.commands, [NODE_HEADERS_COMMAND]);
+      return (
+        hasKeys(source, "commands", "dest", "only-arches") &&
+        esbuildShells.has(
+          JSON.stringify({
+            type: "shell",
+            commands: source.commands,
+            dest: source.dest,
+            "only-arches": source["only-arches"],
+          }),
+        )
+      );
+    default:
+      return false;
+  }
+}
+
+/** Where the generator puts a package's tarball in the npm cache (`file` entries). */
+const NPM_CONTENT =
+  /^flatpak-node\/npm-cache\/_cacache\/content-v2\/sha(512|256|1)\/[0-9a-f]{2}\/[0-9a-f]{2}$/;
 
 /** `sha512-<base64>` as the algorithm and the hex digest `flatpak-builder` writes. */
 function parseIntegrity(integrity) {
@@ -180,12 +325,18 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
   // and is accepted only when its url and hash are a lockfile package's. Any
   // other archive there is a source like the rest and fails below.
   const isToolCacheCopy = (s) => {
-    if (s.type !== "archive" || !String(s.dest).startsWith(TOOL_CACHE)) return false;
+    if (s.type !== "archive" || !isBelow(s.dest, TOOL_CACHE)) return false;
     const entry = wanted.get(s.url);
     const expected = entry && parseIntegrity(entry.integrity);
     return Boolean(expected) && s[expected.algorithm] === expected.hex;
   };
   const downloads = sources.filter((s) => !CONFIG_TYPES.has(s.type) && !isToolCacheCopy(s));
+  const esbuildShells = new Set(sources.filter(isToolCacheCopy).map(esbuildShell).filter(Boolean));
+  for (const source of sources) {
+    if (CONFIG_TYPES.has(source.type) && !isNodeConfigEntry(source, esbuildShells)) {
+      return wrongList(list, lock, strayEntry(source));
+    }
+  }
 
   for (const [url, { label, integrity }] of wanted) {
     const matching = downloads.filter((s) => s.url === url);
@@ -213,6 +364,17 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
         list,
         lock,
         `the list has a source for ${source.url ?? source.dest ?? source.type}, which ${lock} does not have`,
+      );
+    }
+    if (
+      source.type !== "file" ||
+      !NPM_CONTENT.test(source.dest) ||
+      !/^[0-9a-f]+$/.test(source["dest-filename"])
+    ) {
+      return wrongList(
+        list,
+        lock,
+        `${wanted.get(source.url).label} is put at ${source.dest}, not in the npm cache`,
       );
     }
   }

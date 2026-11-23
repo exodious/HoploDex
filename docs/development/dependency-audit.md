@@ -232,3 +232,6 @@ checks:
   named successor.
 - Check `NODE_VERSION` in the `Dockerfile`, and the npm it brings, against
   [Node's release schedule](https://nodejs.org/en/about/previous-releases).
+  Move `NPM_VERSION`, the exact npm the dev container and every CI job install
+  (`.github/actions/setup`'s `npm@`, kept equal by `scripts/ci-actions.test.ts`),
+  to npm's newest release by hand.
