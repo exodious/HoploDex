@@ -155,8 +155,9 @@ struct MachineFile {
     #[serde(default)]
     troubleshooting_log_notice_shown: bool,
     /// The page's color mode and layout, which the incognito main web view
-    /// can't keep (code scanning alert `plaintext-lifetime/cwe-922`).
-    #[serde(default)]
+    /// can't keep (code scanning alert `plaintext-lifetime/cwe-922`). A value
+    /// this version can't read reads as the defaults (009 research.md §15).
+    #[serde(default, deserialize_with = "crate::models::appearance::lenient")]
     appearance: Appearance,
 }
 
@@ -691,6 +692,7 @@ mod tests {
             }],
             "notices": [{ "kind": "somethingNew", "databasePath": "/x" }, known.clone(), 7],
             "documentOpening": "somethingNew",
+            "appearance": "somethingNew",
             "somethingElseNew": { "a": 1 },
         });
         fs::write(config.path().join(FILE_NAME), file.to_string()).unwrap();
@@ -699,6 +701,7 @@ mod tests {
 
         assert_eq!(settings.recent().len(), 1);
         assert_eq!(settings.document_opening(), DocumentOpening::Preview);
+        assert_eq!(settings.appearance(), Appearance::default());
         assert_eq!(
             settings
                 .take_notices()

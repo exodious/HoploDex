@@ -40,7 +40,8 @@ pub struct Appearance {
     pub browse_view: BrowseView,
 }
 
-fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+/// Reads `T`, with its default for a value this version doesn't know.
+pub fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
     T: Default + serde::de::DeserializeOwned,
