@@ -190,7 +190,7 @@ describe("011 US3-2 - the offline source lists match the lockfiles", () => {
 
   describe("an archive in the node tool cache (011 research.md §3)", () => {
     it("is accepted only as a copy of a package the lockfile has, and any other archive fails", () => {
-      // The fixture also holds a copy of left-pad 1.3.0 (same url and hash), which passes.
+      // sources-ok holds the copy that passes: an @esbuild/ package's, in its own folder.
       expect(node("node-tool-cache-extra")).toBe(
         `${NODE}: the list has a source for https://registry.npmjs.org/extra-pkg/-/extra-pkg-9.9.9.tgz, ` +
           `which package-lock.json does not have. ${REGENERATE}`,
@@ -428,6 +428,27 @@ describe("code scanning alert build-ci/cwe-345 - only the generators' own inline
           find(e, (x) => x.type === "archive").dest = "flatpak-node/cache/../../src-tauri";
         }),
       ).not.toBeNull();
+    });
+
+    it("refuses a tool cache copy of a package that isn't esbuild's, or outside its own folder", () => {
+      // A copy anywhere else in the cache could plant a symlink a later copy follows.
+      expect(
+        changed("node", (e) => {
+          const leftPad = find(e, (x) => x.type === "file");
+          e.push({
+            type: "archive",
+            url: leftPad.url,
+            "strip-components": 1,
+            sha512: leftPad.sha512,
+            dest: "flatpak-node/cache/left-pad/.package/left-pad@1.3.0",
+          });
+        }),
+      ).toBe(`${NODE}: npm package left-pad@1.3.0 has 2 sources, not one. ${REGENERATE}`);
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "archive").dest = "flatpak-node/cache/x/l/src";
+        }),
+      ).toBe(stray(NODE, "a shell source at flatpak-node/cache/esbuild"));
     });
 
     it("refuses an esbuild shell entry for a tool cache copy of another package", () => {

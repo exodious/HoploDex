@@ -264,28 +264,12 @@ function isCargoConfigEntry(source, checksums) {
 // ---------------------------------------------------------------------------
 // npm
 
-/** Whether `dest` is below `prefix`, with no segment that climbs out of it. */
-function isBelow(dest, prefix) {
-  const rest = String(dest).startsWith(prefix) ? String(dest).slice(prefix.length) : null;
-  return rest !== null && rest.split("/").every((part) => part && part !== "." && part !== "..");
-}
-
 /** esbuild's platform package, as the tool cache names its folder. */
 const ESBUILD_PACKAGE = /^@esbuild\/[a-z0-9-]+@\d+\.\d+\.\d+$/;
 
-/**
- * The shell entry `flatpak-node-generator` writes for an esbuild binary it
- * unpacks: only for an archive whose folder names the lockfile package it is.
- */
+/** The shell entry `flatpak-node-generator` writes for an esbuild binary it unpacks (`isToolCacheCopy`). */
 function esbuildShell(archive, wanted) {
-  const pkg = String(archive.dest).slice(`${ESBUILD_CACHE}/.package/`.length);
-  if (
-    !String(archive.dest).startsWith(`${ESBUILD_CACHE}/.package/`) ||
-    !ESBUILD_PACKAGE.test(pkg) ||
-    wanted.get(archive.url)?.id !== pkg
-  ) {
-    return null;
-  }
+  const pkg = wanted.get(archive.url).id;
   return JSON.stringify({
     type: "shell",
     commands: [
@@ -388,10 +372,12 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
   // flatpak-node-generator unpacks esbuild's platform binary a second time, from
   // the tarball it already lists as a `file`, into its tool cache (011
   // research.md §3): such an archive is the same package, not a second source,
-  // and is accepted only when its url and hash are a lockfile package's. Any
-  // other archive there is a source like the rest and fails below.
+  // and is accepted only when its url and hash are an `@esbuild/` lockfile
+  // package's and it is unpacked into that package's own folder there. Any
+  // other archive is a source like the rest and fails below: a copy of a
+  // package anywhere else in the cache could, say, plant a symlink out of it.
   const isToolCacheCopy = (s) => {
-    if (s.type !== "archive" || !isBelow(s.dest, TOOL_CACHE)) return false;
+    if (s.type !== "archive") return false;
     if (
       !onlyKeys(s, "url", "sha512", "sha256", "sha1", "strip-components", "dest", "only-arches")
     ) {
@@ -399,14 +385,16 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
     }
     const entry = wanted.get(s.url);
     const expected = entry && parseIntegrity(entry.integrity);
-    return Boolean(expected) && s[expected.algorithm] === expected.hex;
+    return (
+      Boolean(expected) &&
+      s[expected.algorithm] === expected.hex &&
+      ESBUILD_PACKAGE.test(entry.id) &&
+      s.dest === `${ESBUILD_CACHE}/.package/${entry.id}`
+    );
   };
   const downloads = sources.filter((s) => !CONFIG_TYPES.has(s.type) && !isToolCacheCopy(s));
   const esbuildShells = new Set(
-    sources
-      .filter(isToolCacheCopy)
-      .map((archive) => esbuildShell(archive, wanted))
-      .filter(Boolean),
+    sources.filter(isToolCacheCopy).map((archive) => esbuildShell(archive, wanted)),
   );
   for (const source of sources) {
     if (CONFIG_TYPES.has(source.type) && !isNodeConfigEntry(source, esbuildShells)) {
