@@ -84,6 +84,8 @@ file (SC-002).
 
 _Amended by [spec 009](../../009-upgrade-readiness/contracts/database-file.md#backup-files-amends-backup-files): a backup made before an upgrade is named `<name> <YYYY-MM-DD HHMMSS> <id8> before <version>.hoplodex` and its stamp also sets `backup_before_upgrade_to` (009 FR-013)._
 
+_Amended 2026-11-23: a custom `backup_location` is used only on a computer that recorded the user choosing it for this database; elsewhere backups go to the default folder (code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder)._
+
 ## Replacing the file (passphrase change, restore)
 
 Temporary names in the database's folder: `.<file>.new` (the verified copy)

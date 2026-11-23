@@ -38,7 +38,10 @@ const ASSUMED_BYTES_PER_SECOND: u64 = 50 * 1024 * 1024;
 
 /// The folder a database's backups go to on this computer (003 research.md
 /// §7): `default` is a "HoploDex backups" folder next to the database, and
-/// anything else is the absolute path the user chose.
+/// anything else is the absolute path the user chose. `location` is the stored
+/// one as [`MachineSettings::backup_location`] gives it: a custom location the
+/// file arrived with, not chosen here, is not used (code scanning alert
+/// paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder).
 pub fn resolve_folder(database_path: &Path, location: &str) -> PathBuf {
     if location == "default" {
         database_path.parent().unwrap_or(Path::new("")).join(DEFAULT_FOLDER_NAME)
@@ -537,16 +540,29 @@ fn rename_new_natively(from: &Path, to: &Path) -> io::Result<()> {
 /// is being made from (003 FR-028), which does not count towards `keep`.
 /// The newest backup made before an upgrade is kept as well and does not count
 /// either (009 FR-014); older ones among the rest rotate as any other.
+///
+/// Only backups this computer recorded making for the database at
+/// `database_path` rotate ([`MachineSettings::made_backups`]): a name says
+/// only the first 8 digits of an id, which a file can copy, so a crafted
+/// database never deletes another's (code scanning alert
+/// database-files/cwe-639/src-tauri/src/services/backups.rs#rotate). Backups
+/// made on another computer or by 0.1.0 are neither counted nor deleted. The
+/// record forgets what this deletes; a backup left at an earlier location
+/// stays recorded, since moving the location back makes it the database's
+/// again (003 FR-026).
 /// Returns the backups that could not be deleted.
 pub fn rotate(
+    machine: &MachineSettings,
+    database_path: &Path,
     folder: &Path,
     database_id: &str,
     keep: usize,
     protected: Option<&Path>,
 ) -> Vec<PathBuf> {
     log::debug!("rotating the backups in {}", crate::logging::place(folder));
-    let listed = match list(folder, database_id) {
-        Ok(listed) => listed,
+    let made = machine.made_backups(database_path, database_id);
+    let listed: Vec<BackupInfo> = match list(folder, database_id) {
+        Ok(listed) => listed.into_iter().filter(|b| made.contains(&b.file_name)).collect(),
         Err(err) => {
             log::warn!("could not list the backups in {}: {err}", crate::logging::place(folder));
             return Vec::new();
@@ -559,12 +575,24 @@ pub fn rotate(
         .filter(|b| newest_before_upgrade.is_none_or(|kept| kept.path != b.path))
         .map(|b| PathBuf::from(&b.path))
         .filter(|path| protected.is_none_or(|protected| !same_path(path, protected)));
+    let mut deleted = Vec::new();
     for path in rotated.skip(keep) {
-        if let Err(err) = secure_delete::secure_delete_whole_file(&path, WipeControl::default()) {
-            log::warn!("could not delete the old backup {}: {err}", crate::logging::place(&path));
-            failed.push(path);
+        match secure_delete::secure_delete_whole_file(&path, WipeControl::default()) {
+            Ok(_) => deleted.extend(path.file_name().map(|name| name.to_owned())),
+            Err(err) => {
+                log::warn!(
+                    "could not delete the old backup {}: {err}",
+                    crate::logging::place(&path)
+                );
+                failed.push(path);
+            }
         }
     }
+    // shortcut: a backup removed any other way (deleting all, by hand) stays
+    // recorded; at most one regular backup a day, so it grows slowly.
+    machine.keep_made_backups(database_path, database_id, |name| {
+        !deleted.iter().any(|gone| gone.as_os_str() == name)
+    });
     failed
 }
 
@@ -820,7 +848,16 @@ pub fn make_backup(
     }
     machine.clear_unfinished_backup();
     match made {
-        Ok(()) => Ok(final_path),
+        Ok(()) => {
+            if let Some(name) = final_path.file_name() {
+                machine.record_backup_made(
+                    job.database_path,
+                    job.database_id,
+                    &name.to_string_lossy(),
+                );
+            }
+            Ok(final_path)
+        }
         Err(CopyError::Stopped) => Err(BackupFailure::Stopped),
         Err(CopyError::Io(err)) => {
             log::error!("the backup of {} failed: {err}", crate::logging::place(job.database_path));

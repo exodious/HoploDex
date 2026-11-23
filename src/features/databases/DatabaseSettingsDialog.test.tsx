@@ -244,6 +244,37 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     expect(await screen.findByText("3 backups were deleted.")).toBeInTheDocument();
   });
 
+  // Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
+  it("says a folder saved on another computer isn't used here, and keeps it saved for that one", async () => {
+    const user = userEvent.setup();
+    vi.mocked(databasesService.updateBackupSettings).mockResolvedValue({
+      settings: settings({ kind: "default", path: DEFAULT_BACKUPS, available: true }),
+      existingBackups: null,
+    });
+    renderSettings(
+      status({ kind: "default", path: DEFAULT_BACKUPS, available: true, chosenElsewhere: true }),
+    );
+
+    const backups = screen.getByRole("group", { name: "Backups" });
+    expect(within(backups).getByText(DEFAULT_BACKUPS)).toBeInTheDocument();
+    expect(within(backups).getByText("(next to the database)")).toBeInTheDocument();
+    expect(backups).toHaveTextContent(
+      "The folder saved with this database was chosen on another computer. Choose it here to use it on this one.",
+    );
+    expect(within(backups).getByRole("button", { name: "Use the default" })).toBeDisabled();
+
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "6");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(SCOPE, {
+      enabled: true,
+      keepCount: 6,
+      location: { kind: "current" },
+    });
+  });
+
   it("chooses a folder, then saves the settings", async () => {
     const user = userEvent.setup();
     vi.mocked(databasesService.chooseBackupFolder).mockResolvedValue(picked("/media/usb/Backups"));

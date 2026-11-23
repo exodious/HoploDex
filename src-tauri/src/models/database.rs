@@ -287,6 +287,12 @@ pub struct BackupLocation {
     /// out of reach.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unavailable_reason: Option<UnavailableReason>,
+    /// The database stores a folder that wasn't chosen on this computer, so
+    /// backups go to the default folder until the user chooses one here (code
+    /// scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder).
+    /// Sent only when true.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub chosen_elsewhere: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -513,9 +519,12 @@ pub struct PassphraseChanged {
 pub enum BackupLocationInput {
     /// A "HoploDex backups" folder next to the database.
     Default,
-    Custom {
-        path: String,
-    },
+    /// A folder the user chose on this computer, recorded as chosen here.
+    Custom { path: String },
+    /// The location saved now, as it is: one chosen on another computer stays
+    /// saved for it, and is still not used here (code scanning alert
+    /// paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder).
+    Saved,
 }
 
 /// Where backups go, as the settings dialog sends it: never a folder's path,
@@ -744,13 +753,17 @@ const MAX_KEEP_COUNT: i64 = 100;
 /// it: `default`, or the absolute path. A path that does not exist is
 /// accepted, so a location on another computer's drive can be kept; the
 /// settings then report it unavailable here.
-pub fn validate_backup_settings_input(input: &BackupSettingsInput) -> Result<String, CommandError> {
+/// The location to store, or `None` to keep the saved one.
+pub fn validate_backup_settings_input(
+    input: &BackupSettingsInput,
+) -> Result<Option<String>, CommandError> {
     let mut errors = HashMap::new();
     if !(1..=MAX_KEEP_COUNT).contains(&input.keep_count) {
         errors.insert("keepCount".to_owned(), "Keep between 1 and 100 backups.".to_owned());
     }
     let location = match &input.location {
-        BackupLocationInput::Default => "default".to_owned(),
+        BackupLocationInput::Saved => None,
+        BackupLocationInput::Default => Some("default".to_owned()),
         BackupLocationInput::Custom { path } => {
             if path.trim().is_empty() {
                 errors.insert("location".to_owned(), "Choose a folder.".to_owned());
@@ -762,7 +775,7 @@ pub fn validate_backup_settings_input(input: &BackupSettingsInput) -> Result<Str
                     "A folder can't contain control characters.".to_owned(),
                 );
             }
-            path.clone()
+            Some(path.clone())
         }
     };
     if !errors.is_empty() {

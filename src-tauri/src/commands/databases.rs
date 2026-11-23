@@ -36,7 +36,6 @@ pub mod ops {
     use std::io;
     use std::path::{Path, PathBuf};
 
-    use rusqlite::Connection;
     use serde_json::json;
 
     use crate::commands::CommandError;
@@ -922,57 +921,63 @@ pub mod ops {
             passphrase_saved,
             keyring_available: machine.keyring().is_available(),
             screen_lock_supported: crate::platform::screen_lock_supported(),
-            settings: collection_settings(&open.conn, &open.path, reach)?,
+            settings: collection_settings(machine, open, reach)?,
             pending_changes: pending::summary(&open.conn)?,
             notes: DatabaseNotes { disk_encryption: !note_dismissed, ..open.notes.clone() },
         })
     }
 
     /// The backup and lock settings kept in the database, with the backup
-    /// folder resolved on this computer. A backup folder out of reach is
-    /// `available: false` with the reason (011 FR-004), judged without
-    /// touching it.
+    /// folder resolved on this computer: a custom one only if it was chosen
+    /// here (code scanning alert
+    /// paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder). A backup
+    /// folder out of reach is `available: false` with the reason (011 FR-004),
+    /// judged without touching it.
     pub fn collection_settings(
-        conn: &Connection,
-        database_path: &Path,
+        machine: &MachineSettings,
+        open: &OpenDatabase,
         reach: &Reach,
     ) -> Result<CollectionSettings, CommandError> {
-        conn.query_row(
-            "SELECT backups_enabled, backup_keep_count, backup_location, idle_lock_enabled,
+        let database_path = open.path.as_path();
+        open.conn
+            .query_row(
+                "SELECT backups_enabled, backup_keep_count, backup_location, idle_lock_enabled,
                     idle_lock_minutes, lock_on_screen_lock
              FROM collection_settings",
-            [],
-            |row| {
-                let location: String = row.get(2)?;
-                let folder = backups::resolve_folder(database_path, &location);
-                let out_of_reach = reach.check(&folder, Need::BackupFolder).is_err();
-                let (kind, exists) = if location == "default" {
-                    // Made at the first backup, beside the database.
-                    (BackupLocationKind::Default, folder.is_dir() || database_path.exists())
-                } else {
-                    (BackupLocationKind::Custom, folder.is_dir())
-                };
-                Ok(CollectionSettings {
-                    backups: BackupSettings {
-                        enabled: row.get(0)?,
-                        keep_count: row.get(1)?,
-                        location: BackupLocation {
-                            kind,
-                            path: folder.to_string_lossy().into_owned(),
-                            available: exists && !out_of_reach,
-                            unavailable_reason: out_of_reach
-                                .then_some(UnavailableReason::OutOfReach),
+                [],
+                |row| {
+                    let stored: String = row.get(2)?;
+                    let location = machine.backup_location(&open.database_id, &stored);
+                    let folder = backups::resolve_folder(database_path, location);
+                    let out_of_reach = reach.check(&folder, Need::BackupFolder).is_err();
+                    let (kind, exists) = if location == "default" {
+                        // Made at the first backup, beside the database.
+                        (BackupLocationKind::Default, folder.is_dir() || database_path.exists())
+                    } else {
+                        (BackupLocationKind::Custom, folder.is_dir())
+                    };
+                    Ok(CollectionSettings {
+                        backups: BackupSettings {
+                            enabled: row.get(0)?,
+                            keep_count: row.get(1)?,
+                            location: BackupLocation {
+                                kind,
+                                path: folder.to_string_lossy().into_owned(),
+                                available: exists && !out_of_reach,
+                                unavailable_reason: out_of_reach
+                                    .then_some(UnavailableReason::OutOfReach),
+                                chosen_elsewhere: location != stored,
+                            },
                         },
-                    },
-                    lock: LockSettings {
-                        idle_enabled: row.get(3)?,
-                        idle_minutes: row.get(4)?,
-                        on_screen_lock: row.get(5)?,
-                    },
-                })
-            },
-        )
-        .map_err(CommandError::from_db)
+                        lock: LockSettings {
+                            idle_enabled: row.get(3)?,
+                            idle_minutes: row.get(4)?,
+                            on_screen_lock: row.get(5)?,
+                        },
+                    })
+                },
+            )
+            .map_err(CommandError::from_db)
     }
 
     /// Dismisses a note for good (`diskEncryption`, 003 FR-008) or for this
@@ -1022,20 +1027,7 @@ pub mod ops {
         let mut picked = None;
         let location = match choice.location {
             BackupLocationChoice::Default => BackupLocationInput::Default,
-            BackupLocationChoice::Current => {
-                let stored: String = session.inspect(id, |open| {
-                    open.conn
-                        .query_row("SELECT backup_location FROM collection_settings", [], |row| {
-                            row.get(0)
-                        })
-                        .map_err(CommandError::from_db)
-                })?;
-                if stored == "default" {
-                    BackupLocationInput::Default
-                } else {
-                    BackupLocationInput::Custom { path: stored }
-                }
-            }
+            BackupLocationChoice::Current => BackupLocationInput::Saved,
             BackupLocationChoice::Chosen { token } => {
                 let folder = session.take_pick(id, PickKind::BackupFolder, &token)?;
                 let path = folder.to_string_lossy().into_owned();
@@ -1093,16 +1085,26 @@ pub mod ops {
         input: &BackupSettingsInput,
         reach: &Reach,
     ) -> Result<BackupSettingsSaved, CommandError> {
-        let mut location = validate_backup_settings_input(input)?;
-        let (database_path, database_id, old_location) = session.inspect(id, |open| {
-            let old: String = open
+        let chosen = validate_backup_settings_input(input)?;
+        let (database_path, database_id, saved_location) = session.inspect(id, |open| {
+            let saved: String = open
                 .conn
                 .query_row("SELECT backup_location FROM collection_settings", [], |row| row.get(0))
                 .map_err(CommandError::from_db)?;
-            Ok((open.path.clone(), open.database_id.clone(), old))
+            Ok((open.path.clone(), open.database_id.clone(), saved))
         })?;
+        // The location as this computer uses it: one the file arrived with is
+        // not (code scanning alert
+        // paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder).
+        let old_location = machine.backup_location(&database_id, &saved_location).to_owned();
         let old_folder = backups::resolve_folder(&database_path, &old_location);
-        let mut new_folder = backups::resolve_folder(&database_path, &location);
+        let chosen_here = chosen.is_some();
+        let mut location = chosen.unwrap_or_else(|| saved_location.clone());
+        let mut new_folder = if chosen_here {
+            backups::resolve_folder(&database_path, &location)
+        } else {
+            old_folder.clone()
+        };
         if location != "default" && !backups::same_path(&old_folder, &new_folder) {
             match reach.check(&new_folder, Need::BackupFolder) {
                 Ok(usable) => {
@@ -1124,8 +1126,16 @@ pub mod ops {
                 }
             }
         }
-        let change =
-            LocationChange { id, input, location: &location, database_path: &database_path, reach };
+        let change = LocationChange {
+            id,
+            input,
+            location: &location,
+            chosen_here,
+            database_id: &database_id,
+            folder: &new_folder,
+            database_path: &database_path,
+            reach,
+        };
         let saved = |settings, existing_backups| BackupSettingsSaved { settings, existing_backups };
         if backups::same_path(&old_folder, &new_folder) {
             return Ok(saved(change.save(session, machine)?, None));
@@ -1192,6 +1202,12 @@ pub mod ops {
         input: &'a BackupSettingsInput,
         /// As `backup_location` stores it.
         location: &'a str,
+        /// The user chose `location` now, on this computer, so it is recorded
+        /// as chosen here; otherwise it is the saved one, kept as it was.
+        chosen_here: bool,
+        database_id: &'a str,
+        /// Where backups go on this computer after the save.
+        folder: &'a Path,
         database_path: &'a Path,
         reach: &'a Reach,
     }
@@ -1213,13 +1229,11 @@ pub mod ops {
                 .map(|_| ())
                 .map_err(CommandError::from_db)
             })?;
-            machine.set_backup_folder(
-                self.database_path,
-                &backups::resolve_folder(self.database_path, self.location),
-            );
-            session.inspect(self.id, |open| {
-                collection_settings(&open.conn, &open.path, session.reach())
-            })
+            if self.chosen_here {
+                machine.set_backup_location_chosen(self.database_id, self.location);
+            }
+            machine.set_backup_folder(self.database_path, self.folder);
+            session.inspect(self.id, |open| collection_settings(machine, open, session.reach()))
         }
     }
 
@@ -1300,6 +1314,7 @@ pub mod ops {
     pub fn update_lock_settings(
         session: &Session,
         id: SessionId,
+        machine: &MachineSettings,
         input: &LockSettingsInput,
     ) -> Result<CollectionSettings, CommandError> {
         validate_lock_settings_input(input)?;
@@ -1322,7 +1337,7 @@ pub mod ops {
             Ok(())
         })?;
         session.idle().start(settings, session.clock().now());
-        session.inspect(id, |open| collection_settings(&open.conn, &open.path, session.reach()))
+        session.inspect(id, |open| collection_settings(machine, open, session.reach()))
     }
 
     /// "Lock now" (003 FR-033, FR-035): `draft`, the form's unsaved input, is
@@ -1686,10 +1701,12 @@ pub async fn update_lock_settings(
     idle_minutes: i64,
     on_screen_lock: bool,
     session: ScopedSession,
+    machine: State<'_, MachineSettings>,
 ) -> Result<CollectionSettings, CommandError> {
     ops::update_lock_settings(
         &session.session,
         session.id,
+        &machine,
         &LockSettingsInput { idle_enabled, idle_minutes, on_screen_lock },
     )
 }

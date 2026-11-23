@@ -321,8 +321,13 @@ fn leaving_them_saves_and_they_are_no_longer_the_databases_backups() {
     assert_all_at(&world, &made, &world.default_folder());
 
     // Nor does deleting all backups.
-    let deleted =
-        backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
+    let deleted = backups_ops::delete_all_backups(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        true,
+    )
+    .unwrap();
     assert_eq!(deleted.deleted_count, 1);
     assert_all_at(&world, &made, &world.default_folder());
 

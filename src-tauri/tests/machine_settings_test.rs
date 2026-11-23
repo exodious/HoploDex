@@ -242,6 +242,104 @@ fn saving_a_backup_location_updates_only_the_cached_folder() {
     assert_eq!(after[0].last_opened_at, before.last_opened_at);
 }
 
+// Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
+#[test]
+fn a_stored_backup_location_is_used_only_once_it_is_chosen_here_for_that_database() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let (a, b) = ("a".repeat(32), "b".repeat(32));
+    assert_eq!(settings.backup_location(&a, "/usb/backups"), "default");
+    assert_eq!(settings.backup_location(&a, "default"), "default");
+
+    settings.set_backup_location_chosen(&a, "/usb/backups");
+
+    let settings = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(settings.backup_location(&a, "/usb/backups"), "/usb/backups");
+    assert_eq!(settings.backup_location(&a, "/elsewhere"), "default", "only what was chosen");
+    assert_eq!(settings.backup_location(&b, "/usb/backups"), "default", "only for that database");
+    settings.set_backup_location_chosen(&a, "default");
+    assert_eq!(settings.backup_location(&a, "/usb/backups"), "default");
+}
+
+// Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
+#[test]
+fn a_file_without_readable_backup_locations_forgets_its_cached_custom_backup_folders_once() {
+    let entry = |name: &str, id: &str, folder: &str| {
+        serde_json::json!({
+            "path": format!("/data/{name}.hoplodex"), "name": name,
+            "lastOpenedAt": "2026-09-25T12:30:05Z", "databaseId": id.repeat(32),
+            "backupFolder": folder, "passphraseSaved": false,
+        })
+    };
+    // Written by an earlier version, and in a shape this version can't read,
+    // which is read as absent, not as a corrupt file.
+    // (`madeBackups` unreadable too: as empty, not a corrupt file.)
+    for backup_locations in [None, Some(serde_json::json!(["/server/share/x"]))] {
+        let config = TempDir::new().unwrap();
+        let mut file = serde_json::json!({
+            "version": 1, "machineId": "0123456789abcdef0123456789abcdef",
+            "recentDatabases": [
+                entry("A", "a", "/data/HoploDex backups"),
+                entry("B", "b", "/server/share/x"),
+            ],
+        });
+        if let Some(value) = backup_locations {
+            file["backupLocations"] = value;
+            file["madeBackups"] = serde_json::json!({ "not": "a list" });
+        }
+        fs::write(config.path().join("machine.json"), file.to_string()).unwrap();
+
+        let settings = MachineSettings::load(config.path()).unwrap();
+
+        assert!(!config.path().join("machine.json.bad").exists());
+        let folders: Vec<Option<PathBuf>> =
+            settings.recent().into_iter().map(|entry| entry.backup_folder).collect();
+        assert_eq!(folders, [Some(PathBuf::from("/data/HoploDex backups")), None]);
+        // Once: what is cached from now on was resolved on this computer.
+        let b = Path::new("/data/B.hoplodex");
+        settings.set_backup_folder(b, Path::new("/usb/backups"));
+        let reloaded = MachineSettings::load(config.path()).unwrap();
+        assert_eq!(
+            reloaded.recent_entry(b).unwrap().backup_folder.as_deref(),
+            Some(Path::new("/usb/backups"))
+        );
+    }
+}
+
+// Code scanning alert database-files/cwe-639/src-tauri/src/services/backups.rs#rotate
+#[test]
+fn the_backups_made_here_stay_recorded_for_that_path_and_id_only() {
+    let config = TempDir::new().unwrap();
+    let settings = MachineSettings::load(config.path()).unwrap();
+    let (a, copy) = (Path::new("/data/A.hoplodex"), Path::new("/data/Copy.hoplodex"));
+    let id = "a".repeat(32);
+    // Before the database is listed here: a backup before its first upgrade.
+    settings.record_backup_made(a, &id, "A 2026-09-25 143005 aaaaaaaa before 0.2.0.hoplodex");
+    settings.touch_recent(a, "A", &id, Path::new("/data/HoploDex backups"));
+    settings.record_backup_made(a, &id, "A 2026-09-26 143005 aaaaaaaa.hoplodex");
+    let both = settings.made_backups(a, &id);
+    assert_eq!(both.len(), 2);
+
+    // Another path with the same id, or the same path with another id, has none.
+    assert!(settings.made_backups(copy, &id).is_empty());
+    assert!(settings.made_backups(a, &"b".repeat(32)).is_empty());
+    // Removed from the recent list and opened again, it keeps them.
+    settings.remove_recent(a);
+    settings.touch_recent(a, "A", &id, Path::new("/data/HoploDex backups"));
+    let reloaded = MachineSettings::load(config.path()).unwrap();
+    assert_eq!(reloaded.made_backups(a, &id), both);
+    // Located elsewhere, they go with it, and another id's at that path stay.
+    reloaded.record_backup_made(a, &"c".repeat(32), "C 2026-09-26 143005 cccccccc.hoplodex");
+    let found = Path::new("/usb/A.hoplodex");
+    reloaded.locate_recent(a, found).unwrap();
+    assert_eq!(reloaded.made_backups(found, &id), both);
+    assert!(reloaded.made_backups(a, &id).is_empty());
+    assert_eq!(reloaded.made_backups(a, &"c".repeat(32)).len(), 1);
+    // What rotation deleted is forgotten.
+    reloaded.keep_made_backups(found, &id, |name| name.contains("before"));
+    assert_eq!(reloaded.made_backups(found, &id), [both[0].clone()]);
+}
+
 // --- 003 US2 ----------------------------------------------------------------
 
 #[test]

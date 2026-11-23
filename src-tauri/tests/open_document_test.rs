@@ -882,6 +882,7 @@ fn the_idle_clock_is_paused_while_the_dialog_is_up_and_starts_again_after() {
     databases::update_lock_settings(
         &world.session,
         world.session.current_id(),
+        &world.machine,
         &LockSettingsInput { idle_enabled: true, idle_minutes: 10, on_screen_lock: false },
     )
     .unwrap();
@@ -1190,6 +1191,7 @@ fn the_idle_clock_is_paused_while_the_settings_dialog_is_up_and_starts_again_aft
     databases::update_lock_settings(
         &world.session,
         world.session.current_id(),
+        &world.machine,
         &LockSettingsInput { idle_enabled: true, idle_minutes: 10, on_screen_lock: false },
     )
     .unwrap();

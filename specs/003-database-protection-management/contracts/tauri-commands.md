@@ -142,6 +142,8 @@ type CollectionSettings = {
 
 _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#shared-types-amended): the backup `location` (`BackupLocation`) also carries `unavailableReason?: "outOfReach"`, set only inside a Flatpak when `available` is false because the custom folder is outside what that copy may reach (011 FR-004)._
 
+_Amended 2026-11-23: `path` is resolved as this computer uses the stored location: a custom one only when the user chose it here (`machine.json`'s `backupLocations`). When the database stores one that wasn't, `location` is `{ kind: "default", path: <the default folder>, … }` with `chosenElsewhere: true`, sent only then (code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder)._
+
 type PendingSummary = {
   formVersion: number;  // the frontend offers Resume only for a form version it knows
   kind: "firearm" | "policy";
@@ -307,6 +309,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): s
 
   _Amended 2026-11-21: `location` is `{ kind: "default" } | { kind: "current" } | { kind: "chosen"; token: string }`: the page never names a folder. `current` keeps the saved location as it is. `token` is what the new scoped command `choose_backup_folder` returned: no input, it opens the system's folder chooser from Rust and returns `{ token: string; path: string } | null`, holding the folder for the open session. A token that isn't a held answer is `VALIDATION_ERROR`. A save that is refused, or that waits for `existingBackups` (`BACKUPS_AT_OLD_LOCATION`, `OLD_BACKUP_LOCATION_UNAVAILABLE`), leaves the token for the next call; one that saves uses it up._
 
+  _Amended 2026-11-23: a `chosen` folder that saves is recorded in `machine.json` as chosen here for this database, which makes it the location used here. `current` keeps the saved location as it is and records nothing: one chosen on another computer stays saved for that computer and is still not used here. A changed location is judged by the folders as this computer resolves them (code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder)._
+
 - A collection change (FR-025). Lowering `keepCount` does not delete anything straight away; the next successful backup rotates.
 - **A changed location** (FR-026, research §22) is one whose resolved folder differs from the current one's. With backups of this database in the old folder, nothing is saved until the user has chosen:
   - `leave`: the settings are saved; the backups stay where they are and are no longer the database's.
@@ -386,6 +390,8 @@ sleep stops it (FR-037).
   never another database's files in a shared custom folder), each by secure
   deletion (research §12). It stops between files; a file whose overwrite
   was under way when stopped is removed without finishing it
+
+  _Amended 2026-11-23: the folder is the backup location as this computer uses it (code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder)._
 - **Progress**: `backups_delete:progress` `{ processed; total }` (files)
 
 ---
