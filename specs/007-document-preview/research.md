@@ -185,6 +185,12 @@ artifacts.
     XML read is an OOXML package's relationship parts, by a parser that
     expands no entities beyond XML's five and refuses a DTD, so they run
     safely in the main process.
+    _Amended 2026-11-23: `cfb` and `zip` themselves could spend gigabytes or
+    minutes on a crafted file of a few megabytes, so `document_types.rs` now
+    checks a compound file's header, DIFAT and directory length, and a
+    package's end records, before either reads it, and holds storages to 32
+    deep. A `.doc` or `.xls` with more than 4,096 directory entries, or a
+    package with more than 16 end records in its last 64 KiB, is refused._
   - Objects and outside links are refused *(2026-10-07)* because HoploDex
     can't rely on the other app's defences everywhere. On Windows, Office
     opens the zone-marked copy (§18) in Protected View; on Linux there is

@@ -9,8 +9,11 @@
 //! directory, and an RTF file's control words. An OOXML package's
 //! relationship parts are the only thing decompressed (a few megabytes at
 //! most, all together) and the only thing parsed, by `quick-xml`, which
-//! expands no entities beyond XML's five and refuses a DTD here, so the
-//! checks are safe to run in the main process on hostile input.
+//! expands no entities beyond XML's five and refuses a DTD here. They run in
+//! the main process on hostile input, so before `cfb` or `zip` reads a file,
+//! a bounded check of its own refuses what would make them spend memory or
+//! time out of proportion to its size (`ole_within_bounds`,
+//! `zip_archive`), and a compound file's directory is read only so far.
 
 use std::io::{Cursor, Read};
 
@@ -319,14 +322,32 @@ fn starts_with_markup(bytes: &[u8]) -> bool {
     })
 }
 
-/// A compound file with one of `streams` at its root and no macro storage.
-/// Only the directory is read.
+/// The most directory entries a compound file may have. A document's are a
+/// few dozen, and each embedded object adds a handful (code scanning alert
+/// #93).
+const OLE_ENTRIES_LIMIT: usize = 4096;
+
+/// How deep a compound file's storages may nest: an embedded object is two
+/// levels down, one embedded in it four (code scanning alert #93).
+const OLE_DEPTH_LIMIT: usize = 32;
+
+/// A compound file with one of `streams` at its root and no macro storage,
+/// within [`ole_within_bounds`] and [`OLE_DEPTH_LIMIT`]. Only the header,
+/// the allocation tables and the directory are read.
 fn is_plain_ole(bytes: &[u8], streams: &[&str]) -> bool {
+    if ole_within_bounds(bytes).is_none() {
+        return false;
+    }
     let Ok(file) = cfb::CompoundFile::open(Cursor::new(bytes)) else {
         return false;
     };
     let mut has_stream = false;
     for entry in file.walk() {
+        // `cfb` builds each entry's whole path, so a deep chain costs the
+        // square of its depth. The root is `/`, at depth 0.
+        if entry.path().components().count() > OLE_DEPTH_LIMIT + 1 {
+            return false;
+        }
         let name = entry.name();
         if ["macros", "_vba_project_cur", "_vba_project", "vba"]
             .iter()
@@ -339,6 +360,73 @@ fn is_plain_ole(bytes: &[u8], streams: &[&str]) -> bool {
         }
     }
     has_stream
+}
+
+/// A free sector, and the end of a chain, in a compound file's tables.
+const FREE_SECTOR: u64 = 0xFFFF_FFFF;
+const END_OF_CHAIN: u64 = 0xFFFF_FFFE;
+
+/// `Some` if a compound file's header and tables let `cfb` open it in time
+/// and memory in proportion to its size (code scanning alerts #92, #93): no
+/// more FAT or DIFAT sectors than the file has, no sector listed twice as a
+/// FAT sector, and a directory of at most [`OLE_ENTRIES_LIMIT`] entries.
+/// `cfb` reads a FAT sector once for each time the DIFAT lists it, so a few
+/// megabytes listing one sector over and over is gigabytes of FAT. Only the
+/// header, the DIFAT and the directory's chain in the FAT are read, each
+/// for at most as many sectors as the file has.
+fn ole_within_bounds(bytes: &[u8]) -> Option<()> {
+    let sector_len: usize = match le(bytes, 30, 2)? {
+        9 => 512,
+        12 => 4096,
+        _ => return None,
+    };
+    // The header takes the first sector's place, as `cfb` counts them.
+    let sectors = (bytes.len().div_ceil(sector_len).checked_sub(1)?) as u64;
+    let in_sector = |sector: u64, index: usize| {
+        le(bytes, usize::try_from(sector + 1).ok()? * sector_len + index * 4, 4)
+    };
+    let (fat_sectors, difat_sectors) = (le(bytes, 44, 4)?, le(bytes, 72, 4)?);
+    if fat_sectors > sectors || difat_sectors > sectors {
+        return None;
+    }
+    // The FAT's sectors: the header's 109 DIFAT entries up to the first free
+    // one, then each DIFAT sector's, whose last entry is the next one's.
+    let mut fat = Vec::new();
+    let mut listed = std::collections::HashSet::new();
+    let mut take = |sector: u64| {
+        (sector < sectors && listed.insert(sector) && fat.len() < fat_sectors as usize)
+            .then(|| fat.push(sector))
+    };
+    for index in 0..109 {
+        match le(bytes, 76 + index * 4, 4)? {
+            FREE_SECTOR => break,
+            sector => take(sector)?,
+        }
+    }
+    let entries_per_sector = sector_len / 4;
+    let mut difat = le(bytes, 68, 4)?;
+    for _ in 0..difat_sectors {
+        if difat >= sectors {
+            return None;
+        }
+        for index in 0..entries_per_sector - 1 {
+            match in_sector(difat, index)? {
+                FREE_SECTOR => {}
+                sector => take(sector)?,
+            }
+        }
+        difat = in_sector(difat, entries_per_sector - 1)?;
+    }
+    // The directory's chain, sector by sector through the FAT.
+    let mut directory = le(bytes, 48, 4)?;
+    for _ in 0..OLE_ENTRIES_LIMIT / (sector_len / 128) {
+        if directory == END_OF_CHAIN {
+            return Some(());
+        }
+        let fat_sector = *fat.get(usize::try_from(directory).ok()? / entries_per_sector)?;
+        directory = in_sector(fat_sector, usize::try_from(directory).ok()? % entries_per_sector)?;
+    }
+    (directory == END_OF_CHAIN).then_some(())
 }
 
 /// The part of an OOXML package's `[Content_Types].xml` that is read, at
@@ -356,7 +444,7 @@ const RELATIONSHIPS_LIMIT: u64 = 8 * 1024 * 1024;
 /// are [`unambiguous`] with no equivalent names. The directory, the local
 /// headers, the content types and the relationship parts are read.
 fn is_plain_ooxml(bytes: &[u8], main_part: &str) -> bool {
-    let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
+    let Some(mut archive) = zip_archive(bytes) else {
         return false;
     };
     // Readers differ on which entry of a name they take, so none may be ambiguous.
@@ -551,6 +639,55 @@ fn unambiguous(bytes: &[u8], archive: &zip::ZipArchive<Cursor<&[u8]>>) -> bool {
     true
 }
 
+/// The most end-of-central-directory records a package's last 64 KiB may
+/// hold, and the most Zip64 end records it may hold anywhere. A package has
+/// one of the first and at most one of the second, and each package stored
+/// whole inside it (a chart's workbook, say) one more. zip tries every end
+/// record it finds there until one leads to a directory, and for each that
+/// defers to Zip64, every Zip64 record between where it points and itself
+/// (code scanning alert #94).
+const END_RECORDS_LIMIT: usize = 16;
+
+/// The package `bytes` is, as zip reads it, if zip's search for its
+/// directory is bounded (code scanning alert #94): at most
+/// [`END_RECORDS_LIMIT`] end records in the last 64 KiB (zip looks in the
+/// last 64 KiB and a record's length; the window here is a little wider),
+/// and where one follows a Zip64 locator, at most as many Zip64 end records
+/// in the file, none declaring more entries than a 32-bit record can. So zip
+/// reads at most 65,535 directory headers for each record it tries.
+fn zip_archive(bytes: &[u8]) -> Option<zip::ZipArchive<Cursor<&[u8]>>> {
+    let tail = bytes.len().saturating_sub((64 << 10) + 128);
+    let end_records: Vec<usize> = signatures(bytes, tail, b"PK\x05\x06").collect();
+    if end_records.len() > END_RECORDS_LIMIT {
+        return None;
+    }
+    // zip reads Zip64 records only for an end record right after a locator.
+    if end_records.iter().any(|&at| at >= 20 && bytes[at - 20..].starts_with(b"PK\x06\x07")) {
+        let zip64_records: Vec<usize> =
+            signatures(bytes, 0, b"PK\x06\x06").take(END_RECORDS_LIMIT + 1).collect();
+        if zip64_records.len() > END_RECORDS_LIMIT
+            // The total entry count (zip refuses a record whose count on this disk differs).
+            || zip64_records.iter().any(|&at| le(bytes, at + 32, 8).is_none_or(|n| n > 0xFFFF))
+        {
+            return None;
+        }
+    }
+    zip::ZipArchive::new(Cursor::new(bytes)).ok()
+}
+
+/// Where `signature` starts in `bytes`, from `from` on.
+fn signatures<'a>(
+    bytes: &'a [u8],
+    from: usize,
+    signature: &'a [u8; 4],
+) -> impl Iterator<Item = usize> + 'a {
+    bytes[from..]
+        .windows(4)
+        .enumerate()
+        .filter(move |(_, w)| *w == signature)
+        .map(move |(at, _)| from + at)
+}
+
 /// A ZIP local header's signature.
 const LOCAL_HEADER: &[u8] = b"PK\x03\x04";
 
@@ -638,7 +775,7 @@ fn has_equivalent_names(archive: &zip::ZipArchive<Cursor<&[u8]>>) -> bool {
 /// `Scripts/` folder and [`unambiguous`] entries. The directory, the local
 /// headers and the first entry's few bytes are read.
 fn is_plain_odf(bytes: &[u8], mime: &str) -> bool {
-    let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(bytes)) else {
+    let Some(mut archive) = zip_archive(bytes) else {
         return false;
     };
     if !unambiguous(bytes, &archive) {
