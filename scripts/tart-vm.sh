@@ -379,7 +379,7 @@ if [ "$(node --version 2>/dev/null)" != "v$node_version" ]; then
   rm -rf "$tmp"
 fi
 case "$(npm --version)" in
-  "$npm_version".*) ;;
+  "$npm_version") ;;
   *) npm install -g --no-fund --no-audit "npm@${npm_version}" ;;
 esac
 

