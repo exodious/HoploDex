@@ -1205,6 +1205,268 @@ fn passphrase_fields_clear_at_sleep_and_screen_lock_whatever_is_open() {
     assert_eq!(world.events.payloads("system:clear-passphrase-fields").len(), 2);
 }
 
+// --- A lock while a database is opened, created or restored (003 FR-033, FR-037, FR-038) -
+//
+// Code scanning alerts plaintext-lifetime/cwe-367/src-tauri/src/commands/backups.rs#ops.restore_open
+// and plaintext-lifetime/cwe-362/src-tauri/src/session/lifecycle.rs#lifecycle.open: a lock that
+// comes before the database is installed found nothing to lock, and was lost.
+
+type LockEvent = Arc<dyn Fn(&Session, &MachineSettings) + Send + Sync>;
+
+impl World {
+    /// Brings `lock` from another thread at the first `event` that `when`
+    /// picks, as the OS or the page brings it while the work runs here, and
+    /// goes on once the lock has been noted. The lock may then wait for the
+    /// session, as it does in the app.
+    fn lock_at(
+        self: &Arc<Self>,
+        event: &'static str,
+        when: impl Fn(&Value) -> bool + Send + Sync + 'static,
+        lock: LockEvent,
+    ) -> Arc<Mutex<Option<JoinHandle<()>>>> {
+        let locker = Arc::new(Mutex::new(None));
+        let (world, slot, fired) = (Arc::clone(self), Arc::clone(&locker), AtomicBool::new(false));
+        self.events.on_event(move |name, payload| {
+            if name == event && when(payload) && !fired.swap(true, Ordering::SeqCst) {
+                let before = world.session.lock_generation();
+                let (session, machine, lock) =
+                    (Arc::clone(&world.session), Arc::clone(&world.machine), Arc::clone(&lock));
+                *slot.lock().unwrap() = Some(thread::spawn(move || lock(&session, &machine)));
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while world.session.lock_generation() == before {
+                    assert!(Instant::now() < deadline, "the lock never came");
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        });
+        locker
+    }
+
+    /// "Mine" with the lock settings `backup`, closed with a backup made of
+    /// it, then opened again with the settings `open`, each as
+    /// `(idle_enabled, on_screen_lock)`. Returns the backup's path.
+    fn backed_up_with(&self, backup: (bool, bool), open: (bool, bool)) -> String {
+        self.create();
+        self.set_lock(backup.0, 10, backup.1);
+        self.change();
+        lifecycle::close_normal(
+            &self.session,
+            self.session.current_id(),
+            &self.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
+        // The backup before restoring is named for its own minute.
+        self.minutes(60);
+        self.open();
+        self.set_lock(open.0, 10, open.1);
+        self.change();
+        backups::list(&self.backup_folder(), &self.database_id()).unwrap().remove(0).path
+    }
+
+    fn locked_notice(&self, reason: &str) -> Value {
+        json!({ "kind": "closed", "reason": reason, "databasePath": self.path_text() })
+    }
+
+    /// The database a lock closed as soon as it opened: nothing open, the
+    /// command refused, the lock's notice in the chooser, and the file no
+    /// longer marked open here.
+    fn assert_locked_at_once(&self, result: Result<(), CommandError>, reason: &str, label: &str) {
+        let err = result.expect_err(label);
+        assert_eq!(err.code, "DATABASE_CLOSED", "{label}: {err:?}");
+        assert!(!self.session.is_open(), "{label}: the database is locked");
+        assert!(self.notices().contains(&self.locked_notice(reason)), "{label}");
+        let (_, _, marked) = self.closed_file();
+        assert!(!marked, "{label}: no longer marked open here");
+    }
+}
+
+fn screen_lock() -> LockEvent {
+    Arc::new(|session: &Session, machine: &MachineSettings| {
+        lifecycle::screen_locked(session, machine)
+    })
+}
+
+fn sleep() -> LockEvent {
+    Arc::new(|session: &Session, machine: &MachineSettings| lifecycle::will_sleep(session, machine))
+}
+
+fn replacing(payload: &Value) -> bool {
+    payload["phase"] == "replacing"
+}
+
+fn restore_open(world: &World, backup: &str) -> Result<(), CommandError> {
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        backup,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+        false,
+        &Reach::Unconfined,
+    )
+    .map(|_| ())
+}
+
+/// A screen lock during a restore over the open database, while the restore
+/// holds it: the restored database is locked once reopened if "lock when the
+/// screen locks" is on in it or in the database it replaced, which was open
+/// when the screen locked, and the page leaves the session it showed.
+/// Before, the lock waited for the session and then found another one open.
+#[test]
+fn a_screen_lock_during_a_restore_locks_the_restored_database_if_either_setting_is_on() {
+    for (in_backup, in_ended) in [(true, false), (false, true), (false, false)] {
+        let lock_on = in_backup || in_ended;
+        let label = format!("in the backup {in_backup}, in the database it replaced {in_ended}");
+        let world = Arc::new(World::new());
+        let backup = world.backed_up_with((false, in_backup), (false, in_ended));
+        let ended = json!(world.session.current_id().get());
+        let locker = world.lock_at("restore:progress", replacing, screen_lock());
+
+        let restored = restore_open(&world, &backup);
+        join(&locker);
+        world.events.on_event(|_, _| {});
+
+        if lock_on {
+            world.assert_locked_at_once(restored, "screenLocked", &label);
+            assert!(world.session_ids_of("session:closed").contains(&ended), "{label}");
+            world.open();
+            assert_eq!(world.firearm_count(), 1, "{label}: the restore stands");
+        } else {
+            restored.unwrap_or_else(|err| panic!("{label}: {err:?}"));
+            assert!(world.session.is_open(), "{label}");
+            assert_eq!(world.firearm_count(), 1, "{label}");
+        }
+    }
+}
+
+/// "Lock now" during a restore over the open database locks the restored
+/// one, whatever its settings.
+#[test]
+fn lock_now_during_a_restore_locks_the_restored_database() {
+    let world = Arc::new(World::new());
+    let backup = world.backed_up_with((false, false), (false, false));
+    let id = world.session.current_id();
+    let lock_now: LockEvent = Arc::new(move |session: &Session, machine: &MachineSettings| {
+        databases::lock_database(session, id, machine, None).ok();
+    });
+    let locker = world.lock_at("restore:progress", replacing, lock_now);
+
+    let restored = restore_open(&world, &backup);
+    join(&locker);
+    world.events.on_event(|_, _| {});
+
+    world.assert_locked_at_once(restored, "lockedByUser", "lock now");
+}
+
+/// A sleep during a restore over the open database, whose own idle lock is
+/// off but the backup's is on: the restored database is locked at once.
+#[test]
+fn a_sleep_during_a_restore_locks_the_restored_database_by_its_own_idle_lock() {
+    let world = Arc::new(World::new());
+    let backup = world.backed_up_with((true, false), (false, true));
+    let locker = world.lock_at("restore:progress", replacing, sleep());
+
+    let restored = restore_open(&world, &backup);
+    join(&locker);
+    world.events.on_event(|_, _| {});
+
+    world.assert_locked_at_once(restored, "sleep", "sleep");
+}
+
+/// A screen lock or a sleep while a database that doesn't open is restored,
+/// with nothing open: the restored database is locked once it opens, by its
+/// own settings.
+#[test]
+fn a_screen_lock_or_a_sleep_during_a_damaged_restore_locks_the_restored_database() {
+    for (lock, reason) in [(screen_lock(), "screenLocked"), (sleep(), "sleep")] {
+        let world = Arc::new(World::new());
+        world.create();
+        world.set_lock(reason == "sleep", 10, reason == "screenLocked");
+        world.change();
+        lifecycle::close_normal(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
+        let id = world.machine.recent_entry(&world.path()).unwrap().database_id.unwrap();
+        let backup = backups::list(&world.backup_folder(), &id).unwrap().remove(0).path;
+        let locker = world.lock_at("restore:progress", replacing, lock);
+
+        let restored = backups_ops::restore_backup(
+            &world.session,
+            &world.machine,
+            &backup,
+            &passphrase(),
+            Target::At(&world.path_text()),
+            false,
+            &Reach::Unconfined,
+        );
+        join(&locker);
+        world.events.on_event(|_, _| {});
+
+        world.assert_locked_at_once(restored.map(|_| ()), reason, reason);
+    }
+}
+
+/// A screen lock while a database is opened, here as another closes for the
+/// switch, before the key is derived: the database is locked once it opens
+/// if its own "lock when the screen locks" is on.
+#[test]
+fn a_screen_lock_during_an_open_locks_the_database_by_its_own_setting() {
+    for lock_on in [true, false] {
+        let label = format!("setting {}", if lock_on { "on" } else { "off" });
+        let world = Arc::new(World::new());
+        world.create();
+        world.set_lock(false, 10, lock_on);
+        lifecycle::close_normal(
+            &world.session,
+            world.session.current_id(),
+            &world.machine,
+            CloseReason::Closed,
+        )
+        .unwrap();
+        let other = world.dir.path().join("Other.hoplodex");
+        lifecycle::create(&world.session, &world.machine, &other, &passphrase()).unwrap();
+        let locker = world.lock_at(
+            "session:closing",
+            |payload| payload["reason"] == "switched",
+            screen_lock(),
+        );
+
+        let opened = world.open_with(TEST_PASSPHRASE);
+        join(&locker);
+        world.events.on_event(|_, _| {});
+
+        if lock_on {
+            world.assert_locked_at_once(opened, "screenLocked", &label);
+        } else {
+            opened.unwrap_or_else(|err| panic!("{label}: {err:?}"));
+            assert!(world.session.is_open(), "{label}");
+        }
+    }
+}
+
+/// A sleep while a database is created, here as another closes for the
+/// switch: the new database, whose idle lock is on by default, is locked
+/// once it opens.
+#[test]
+fn a_sleep_during_a_create_locks_the_new_database() {
+    let world = Arc::new(World::new());
+    let other = world.dir.path().join("Other.hoplodex");
+    lifecycle::create(&world.session, &world.machine, &other, &passphrase()).unwrap();
+    let locker =
+        world.lock_at("session:closing", |payload| payload["reason"] == "switched", sleep());
+
+    let created = lifecycle::create(&world.session, &world.machine, &world.path(), &passphrase());
+    join(&locker);
+    world.events.on_event(|_, _| {});
+
+    world.assert_locked_at_once(created, "sleep", "create");
+}
+
 // --- Shutdown (003 FR-039) ---------------------------------------------------
 
 #[test]

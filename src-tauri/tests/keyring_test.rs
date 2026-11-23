@@ -9,14 +9,17 @@ use crate::support;
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use hoplodex_lib::commands::CommandError;
 use hoplodex_lib::commands::backups::ops as backups_ops;
 use hoplodex_lib::commands::databases::ops::{self, Unlock};
 use hoplodex_lib::commands::firearms::ops as firearms;
 use hoplodex_lib::db;
-use hoplodex_lib::models::database::{CloseReason, DatabaseStatus};
+use hoplodex_lib::models::database::{CloseReason, DatabaseStatus, LockSettingsInput};
 use hoplodex_lib::services::keyring::Keyring;
 use hoplodex_lib::services::machine_settings::MachineSettings;
 use hoplodex_lib::services::passphrase::Passphrase;
@@ -49,8 +52,8 @@ struct World {
     folder: TempDir,
     _config: TempDir,
     scratch: TempDir,
-    machine: MachineSettings,
-    session: Session,
+    machine: Arc<MachineSettings>,
+    session: Arc<Session>,
     _events: Arc<TestEvents>,
     _store: Option<RwLockReadGuard<'static, ()>>,
     /// The session's clock, which each close moves on a minute: a backup's
@@ -78,9 +81,9 @@ impl World {
         Self {
             folder: TempDir::new().unwrap(),
             scratch: TempDir::new().unwrap(),
-            machine: MachineSettings::load(config.path()).unwrap().with_keyring(keyring),
+            machine: Arc::new(MachineSettings::load(config.path()).unwrap().with_keyring(keyring)),
             _config: config,
-            session,
+            session: Arc::new(session),
             _events: events,
             _store: None,
             clock,
@@ -180,6 +183,57 @@ fn stored(database_id: &str) -> Option<String> {
 fn saved_failed(err: &CommandError) -> bool {
     err.code == "PASSPHRASE_INCORRECT"
         && err.details.as_deref().and_then(|d| d["savedPassphraseFailed"].as_bool()) == Some(true)
+}
+
+/// A screen lock while a database is opened with "Remember passphrase"
+/// ticked, here as another closes for the switch, which locks the database
+/// as soon as it opens (003 FR-037): the passphrase that opened it is still
+/// saved, as on any open it opened (003 FR-017; code scanning alert
+/// plaintext-lifetime/cwe-362/src-tauri/src/session/lifecycle.rs#lifecycle.open).
+#[test]
+fn a_passphrase_to_remember_is_saved_when_a_screen_lock_locks_the_open_at_once() {
+    let world = World::new();
+    world.create("Main");
+    let id = world.database_id();
+    ops::update_lock_settings(
+        &world.session,
+        world.session.current_id(),
+        &LockSettingsInput { idle_enabled: false, idle_minutes: 10, on_screen_lock: true },
+    )
+    .unwrap();
+    world.close();
+    world.create("Other");
+    let locker = Arc::new(Mutex::new(None));
+    let (session, machine, slot) =
+        (Arc::clone(&world.session), Arc::clone(&world.machine), Arc::clone(&locker));
+    let fired = AtomicBool::new(false);
+    world._events.on_event(move |name, payload| {
+        if name == "session:closing"
+            && payload["reason"] == "switched"
+            && !fired.swap(true, Ordering::SeqCst)
+        {
+            let before = session.lock_generation();
+            let (session_, machine_) = (Arc::clone(&session), Arc::clone(&machine));
+            *slot.lock().unwrap() =
+                Some(thread::spawn(move || lifecycle::screen_locked(&session_, &machine_)));
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while session.lock_generation() == before {
+                assert!(Instant::now() < deadline, "the screen lock never came");
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+    });
+
+    let refused = world
+        .open("Main", Unlock::Typed { passphrase: &passphrase(), remember: true })
+        .expect_err("locked as soon as it opened");
+    locker.lock().unwrap().take().expect("the screen locked").join().unwrap();
+    world._events.on_event(|_, _| {});
+
+    assert_eq!(refused.code, "DATABASE_CLOSED", "{refused:?}");
+    assert!(!world.session.is_open());
+    assert_eq!(stored(&id).as_deref(), Some(TEST_PASSPHRASE));
+    assert!(world.saved_flag("Main"));
 }
 
 #[test]

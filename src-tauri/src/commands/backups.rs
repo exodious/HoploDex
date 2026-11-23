@@ -492,6 +492,10 @@ pub mod ops {
         upgrade: bool,
         reach: &Reach,
     ) -> Result<DatabaseStatus, CommandError> {
+        // Before any key is derived: a lock from here on locks what the
+        // restore reopens (code scanning alert
+        // plaintext-lifetime/cwe-367/src-tauri/src/commands/backups.rs#ops.restore_open).
+        let locks = session.lock_generation();
         let operation = session.operations().begin(OperationKind::Restore, None)?;
         let events = session.events();
         let mut slot = hold_still_ours(session, id)?;
@@ -591,6 +595,7 @@ pub mod ops {
         }
         let database_id = open.database_id.clone();
         let ended_session = open.session_id;
+        let ended_locks = open.lock_settings.clone();
         // Its file is about to be replaced, so nothing more is written to it.
         drop(slot.take());
         session.clear_opened_documents();
@@ -621,7 +626,25 @@ pub mod ops {
         let status = status(&reopened, machine, reach);
         // The backup's lock settings come with it.
         session.reinstalled(&reopened);
+        let reopened_session = reopened.session_id;
         *slot = Some(reopened);
+        drop(slot);
+        drop(operation);
+        if let Err(err) =
+            lifecycle::honour_locks(session, machine, locks, reopened_session, Some(&ended_locks))
+        {
+            // The page still shows the session the restore ended, which no
+            // close announced: it goes to the chooser, with the lock's notice.
+            events.emit(
+                "session:closed",
+                json!({
+                    "reason": CloseReason::Closed,
+                    "databasePath": path.to_string_lossy(),
+                    "sessionId": ended_session,
+                }),
+            );
+            return Err(err);
+        }
         status
     }
 
@@ -710,6 +733,10 @@ pub mod ops {
         path: &Path,
         upgrade: bool,
     ) -> Result<DatabaseStatus, CommandError> {
+        // Before any key is derived: a lock from here on locks what the
+        // restore opens (code scanning alert
+        // plaintext-lifetime/cwe-362/src-tauri/src/session/lifecycle.rs#lifecycle.open).
+        let locks = session.lock_generation();
         // Before anything is closed or written.
         let expected_id = authorize_damaged_restore(machine, backup, path)?;
         replaceable_target(path)?;
@@ -769,7 +796,10 @@ pub mod ops {
         reopened.notes.damaged_file_kept_at =
             set_aside.then(|| kept.to_string_lossy().into_owned());
         refresh_saved(machine, path, &reopened.database_id, passphrase);
+        let reopened_session = reopened.session_id;
         session.install(reopened);
+        drop(operation);
+        lifecycle::honour_locks(session, machine, locks, reopened_session, None)?;
         crate::commands::databases::ops::database_status(session, machine)
     }
 

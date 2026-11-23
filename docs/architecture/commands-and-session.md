@@ -66,6 +66,15 @@ restore, a quit, sleep, screen lock or shutdown), `upgrade_database` takes the
 backup before the upgrade, runs `db::upgrade::upgrade` and installs the
 database, and `cancel_upgrade` drops the slot or stops that backup.
 
+`Session` also counts the "Lock now"s, screen locks and sleeps that have come
+(`lock_generation`, raised by `lock_database`, `screen_locked`, `will_sleep` and
+`finish_on_wake` even with nothing open). An open, create or restore reads it
+before it derives a key, and once it has installed the database
+`lifecycle::honour_locks` locks it if one came that its own settings, or for a
+restore over the open database the replaced one's, say would have locked it, so
+a lock that found nothing yet to lock isn't lost (code scanning alerts 98, 99).
+An open saves or refreshes the passphrase before that, as on success.
+
 `session/grants.rs` holds what the user handed the app outside the page, each
 under the session it arrived in: the paths of files dropped onto the main window
 (recorded from the main web view's `DragDrop` event by `drops::register`, kept

@@ -14,7 +14,7 @@ use crate::commands::databases::ops::folder_error;
 use crate::db;
 use crate::models::database::{
     BackupFailureReason, BackupOutcome, ChooserNotice, CloseOutcome, CloseReason, Draft,
-    OpenedBackupNote, OperationKind,
+    LockSettings, OpenedBackupNote, OperationKind,
 };
 use crate::services::backups::{self, BackupFailure, BackupJob, BackupKind, Due};
 use crate::services::file_swap;
@@ -25,7 +25,8 @@ use crate::services::suggestions;
 use crate::session::fingerprint::FingerprintCheck;
 use crate::session::operations::StoppedOperation;
 use crate::session::{
-    ImmediateClose, OpenDatabase, Session, SessionId, SessionInner, pending, upgrade,
+    ImmediateClose, LockGeneration, OpenDatabase, Session, SessionId, SessionInner, pending,
+    upgrade,
 };
 
 /// How long a sleep or shutdown waits for a close already under way, or
@@ -42,6 +43,7 @@ pub fn create(
     passphrase: &Passphrase,
 ) -> Result<(), CommandError> {
     log::debug!("creating a database at {}", crate::logging::place(path));
+    let locks = session.lock_generation();
     // Whatever waits for an upgrade is let go of first (009 research.md §4).
     session.drop_awaiting_upgrade();
     let conn =
@@ -58,8 +60,10 @@ pub fn create(
         // (its preview ends, its backup is made) rather than replaced.
         close_normal(session, session.current_id(), machine, CloseReason::Switched).ok();
     }
-    session.install(prepare(machine, conn, path)?);
-    Ok(())
+    let open = prepare(machine, conn, path)?;
+    let id = open.session_id;
+    session.install(open);
+    honour_locks(session, machine, locks, id, None)
 }
 
 /// Opens the database at `path` with `passphrase` and makes it the open
@@ -78,11 +82,29 @@ pub fn open(
     passphrase: &Passphrase,
     take_over: bool,
 ) -> Result<(), CommandError> {
+    open_then(session, machine, path, passphrase, take_over, |_| {})
+}
+
+/// [`open`], calling `on_opened` with the database's id once it is installed,
+/// before a lock that came meanwhile is honoured: what the passphrase opened
+/// is saved for even when it locks at once (003 FR-018).
+pub fn open_then(
+    session: &Session,
+    machine: &MachineSettings,
+    path: &Path,
+    passphrase: &Passphrase,
+    take_over: bool,
+    on_opened: impl FnOnce(&str),
+) -> Result<(), CommandError> {
     log::debug!("opening {} (take over: {take_over})", crate::logging::place(path));
     // The generation is read as the slot is emptied, before the key is
     // derived: a sleep, screen lock or shutdown during the derivation raises
     // it, and the database is not put in the slot (009 research.md §4).
     let generation = session.drop_awaiting_upgrade();
+    // Likewise a "Lock now", screen lock or sleep, which the database is
+    // locked for once installed (code scanning alert
+    // plaintext-lifetime/cwe-362/src-tauri/src/session/lifecycle.rs#lifecycle.open).
+    let locks = session.lock_generation();
     if session.is_open() {
         // The frontend closes first itself, to ask about unsaved changes;
         // this covers anything else. It can only fail when nothing is open.
@@ -95,13 +117,68 @@ pub fn open(
     file_swap::remove_leftovers(path);
     match opened {
         db::Opened::Ready(conn) => {
-            session.install(prepare(machine, conn, path)?);
-            Ok(())
+            let open = prepare(machine, conn, path)?;
+            let id = open.session_id;
+            let database_id = open.database_id.clone();
+            session.install(open);
+            on_opened(&database_id);
+            honour_locks(session, machine, locks, id, None)
         }
         db::Opened::UpgradeDue { conn, steps_due, marker_seen } => {
             Err(upgrade::wait_for_answer(session, conn, path, steps_due, marker_seen, generation))
         }
     }
+}
+
+/// Locks the database an open, create or restore has just installed as the
+/// session `installed`, if a lock came since `since` that would have locked
+/// it had it been open then ([`Session::lock_due_since`]), as that lock would
+/// have: a sleep as an immediate close, any other as a normal one. Its own
+/// lock settings decide, and for a restore over the open database those of
+/// the database it `replaced` too, which was open when the lock came. Either
+/// way, a database no longer open when this returns ends the command with
+/// `DATABASE_CLOSED`, so the page never shows a session that is gone; the
+/// chooser has the lock's notice. Called with no operation of the caller's
+/// running, which an immediate close would stop and wait for.
+pub(crate) fn honour_locks(
+    session: &Session,
+    machine: &MachineSettings,
+    since: LockGeneration,
+    installed: SessionId,
+    replaced: Option<&LockSettings>,
+) -> Result<(), CommandError> {
+    if let Some(reason) = session.lock_due_since(since, replaced) {
+        log::debug!("a lock came while the database was opened: {reason:?}");
+        if reason == CloseReason::Sleep {
+            close_immediate(session, machine, reason);
+        } else {
+            // Refused only when the lock itself found the database and closed it.
+            lock_with_staged(session, machine, reason).ok();
+        }
+        return Err(locked_meanwhile(reason));
+    }
+    // A screen lock or sleep noted after the reading above found the database
+    // and closed it. A "Lock now" noted then names a session that had ended,
+    // one a restore replaced, so the database stays open (code scanning alert
+    // plaintext-lifetime/cwe-367/src-tauri/src/commands/backups.rs#ops.restore_open).
+    if session.current_id() != installed {
+        return Err(CommandError::database_closed());
+    }
+    Ok(())
+}
+
+/// The refusal of an open, create or restore whose database was locked as
+/// soon as it was installed ([`honour_locks`]).
+fn locked_meanwhile(reason: CloseReason) -> CommandError {
+    let why = match reason {
+        CloseReason::Sleep => "the computer went to sleep",
+        CloseReason::ScreenLocked => "the screen locked",
+        _ => "it was locked",
+    };
+    CommandError::new(
+        "DATABASE_CLOSED",
+        format!("The database opened, and HoploDex locked it at once because {why} meanwhile."),
+    )
 }
 
 /// Quits (003 research.md §17): whatever waits for an upgrade is dropped, and
@@ -559,6 +636,7 @@ fn stopped_notice(path: &Path, stopped: &StoppedOperation) -> ChooserNotice {
 /// noticed now, and locks now if the idle lock is on (003 research.md §14).
 pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
     log::debug!("the computer woke");
+    session.note_lock(CloseReason::Sleep);
     // However the sleep was noticed, its dialogs go and a passphrase kept for
     // a restore is wiped, as `will_sleep` does (amended 2026-11-04).
     session.prompts().dismiss_all();
@@ -576,6 +654,7 @@ pub fn finish_on_wake(session: &Session, machine: &MachineSettings) {
 /// with the idle lock on, an open database locks at once.
 pub fn will_sleep(session: &Session, machine: &MachineSettings) {
     log::debug!("the computer is going to sleep");
+    session.note_lock(CloseReason::Sleep);
     session.events().emit("system:clear-passphrase-fields", json!({}));
     // A passphrase dialog is emptied and taken down, and a passphrase kept
     // for a restore's confirmation is wiped (amended 2026-11-04).
@@ -600,6 +679,7 @@ pub fn will_sleep(session: &Session, machine: &MachineSettings) {
 /// the option on, the open database locks as a normal close.
 pub fn screen_locked(session: &Session, machine: &MachineSettings) {
     log::debug!("the screen locked");
+    session.note_lock(CloseReason::ScreenLocked);
     session.events().emit("system:clear-passphrase-fields", json!({}));
     session.prompts().dismiss_all();
     session.drop_backup_check();

@@ -26,7 +26,7 @@ use crate::commands::CommandError;
 use crate::commands::import_export::ImportSessionStore;
 use crate::db;
 use crate::models::database::{
-    ChooserNotice, DatabaseNotes, Draft, LockSettings, OpenedBackupNote, PendingState,
+    ChooserNotice, CloseReason, DatabaseNotes, Draft, LockSettings, OpenedBackupNote, PendingState,
 };
 use crate::services::machine_settings::MachineSettings;
 use crate::services::passphrase::Passphrase;
@@ -239,6 +239,18 @@ impl std::ops::Deref for Session {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AwaitingGeneration(u64);
 
+/// How many "Lock now"s, screen locks and sleeps have come in this run, read
+/// as an open, create or restore begins: what it installs is locked if one of
+/// them came meanwhile (code scanning alerts
+/// plaintext-lifetime/cwe-367/src-tauri/src/commands/backups.rs#ops.restore_open and
+/// plaintext-lifetime/cwe-362/src-tauri/src/session/lifecycle.rs#lifecycle.open).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LockGeneration {
+    user: u64,
+    screen: u64,
+    sleep: u64,
+}
+
 /// What a [`Session`] holds.
 pub struct SessionInner {
     open: Mutex<Option<OpenDatabase>>,
@@ -296,6 +308,9 @@ pub struct SessionInner {
     /// upgrade to decide whether the database opens (009 research.md §5
     /// "Sleep and shutdown").
     screen_locked_in_upgrade: AtomicBool,
+    /// The locks that have come, raised even with nothing open
+    /// ([`LockGeneration`]). Its mutex is never held while another is taken.
+    locks_seen: Mutex<LockGeneration>,
     /// The passphrase dialogs on the screen, which a screen lock, a sleep or
     /// the close of the database they are for takes down (003 FR-007).
     prompts: Prompts,
@@ -428,6 +443,7 @@ impl Session {
             awaiting_drops: AtomicU64::new(0),
             upgrading: AtomicU64::new(0),
             screen_locked_in_upgrade: AtomicBool::new(false),
+            locks_seen: Mutex::default(),
             prompts: Prompts::default(),
             backup_check: Mutex::new(None),
             backup_check_drops: AtomicU64::new(0),
@@ -1086,6 +1102,53 @@ impl SessionInner {
             waiting.id == id && only_for.is_none_or(|database| database == will_be)
         }) {
             waiting.save_passphrase = Some(passphrase);
+        }
+    }
+
+    /// The locks that have come so far: what an open, create or restore reads
+    /// before it derives a key, to pass to [`lock_due_since`](Self::lock_due_since).
+    pub fn lock_generation(&self) -> LockGeneration {
+        *self.locks_seen.lock().expect("session mutex poisoned")
+    }
+
+    /// A "Lock now", screen lock or sleep came, whether or not anything is
+    /// open. Raised before the lock looks for an open database, so one that
+    /// finds nothing yet is still seen by the open that installs it.
+    pub(crate) fn note_lock(&self, reason: CloseReason) {
+        let mut seen = self.locks_seen.lock().expect("session mutex poisoned");
+        match reason {
+            CloseReason::LockedByUser => seen.user += 1,
+            CloseReason::ScreenLocked => seen.screen += 1,
+            CloseReason::Sleep => seen.sleep += 1,
+            _ => {}
+        }
+    }
+
+    /// The lock that the database just installed is due, if one came since
+    /// `since` that would have locked it, or the database `replaced` had the
+    /// settings of, had it been open then: any "Lock now", a screen lock with
+    /// "lock when the screen locks" on, a sleep with the idle lock on (003
+    /// FR-033, FR-037, FR-038). Read after the install, so a screen lock or
+    /// sleep noted after this read finds the database and locks it itself; a
+    /// "Lock now" noted then is for the session it names, which a restore
+    /// may have ended, and is not caught (code scanning alert
+    /// plaintext-lifetime/cwe-367/src-tauri/src/commands/backups.rs#ops.restore_open).
+    pub(crate) fn lock_due_since(
+        &self,
+        since: LockGeneration,
+        replaced: Option<&LockSettings>,
+    ) -> Option<CloseReason> {
+        let seen = self.lock_generation();
+        let settings = self.idle.settings()?;
+        let either = |on: fn(&LockSettings) -> bool| on(&settings) || replaced.is_some_and(on);
+        if seen.user != since.user {
+            Some(CloseReason::LockedByUser)
+        } else if seen.screen != since.screen && either(|lock| lock.on_screen_lock) {
+            Some(CloseReason::ScreenLocked)
+        } else if seen.sleep != since.sleep && either(|lock| lock.idle_enabled) {
+            Some(CloseReason::Sleep)
+        } else {
+            None
         }
     }
 
