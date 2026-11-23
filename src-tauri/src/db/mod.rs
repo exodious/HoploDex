@@ -121,6 +121,19 @@ pub fn random_hex(bytes: usize) -> Result<String, getrandom::Error> {
     Ok(buffer.iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// `app_state.database_id`, refused as damaged in any form but the one
+/// HoploDex writes, `random_hex(16)`'s 32 lowercase hex digits. The id goes
+/// into its backups' file names and its keyring entry's name, so one from a
+/// file made elsewhere is checked where it is read (code scanning alert
+/// paths/cwe-23/src-tauri/src/services/backups.rs#backup_file_name).
+pub fn read_database_id(conn: &Connection) -> Result<String, OpenError> {
+    let id: String = conn
+        .query_row("SELECT database_id FROM app_state", [], |row| row.get(0))
+        .map_err(OpenError::classify)?;
+    let written = id.len() == 32 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    if written { Ok(id) } else { Err(OpenError::Damaged) }
+}
+
 /// The current time as the database and `machine.json` store it: UTC
 /// ISO-8601 to the second.
 pub fn now_utc() -> String {
@@ -336,8 +349,9 @@ pub fn open_database(
         .map_err(OpenError::classify)?;
     // Step 3, read-only: a HoploDex database, no step this build doesn't know
     // (a newer version changed the data layout), and nothing in its schema
-    // but what its steps make.
+    // but what its steps make, with an id in the one form HoploDex writes.
     check_schema(&conn, path)?;
+    read_database_id(&conn)?;
     // Step 4, read-only: open on another computer. This computer's own
     // marker is one a crash left behind, since the exclusive lock has
     // already shown no other copy here has the file open.

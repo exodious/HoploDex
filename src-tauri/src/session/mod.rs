@@ -151,9 +151,7 @@ impl OpenDatabase {
     /// Wraps a connection from `db::create_database` or `db::open_database`,
     /// taking the file's fingerprint as the open left it.
     pub fn new(conn: Connection, path: &Path) -> Result<Self, CommandError> {
-        let database_id: String = conn
-            .query_row("SELECT database_id FROM app_state", [], |row| row.get(0))
-            .map_err(CommandError::from_db)?;
+        let database_id = db::read_database_id(&conn).map_err(CommandError::from)?;
         let has_pending: bool = conn
             .query_row("SELECT EXISTS (SELECT 1 FROM pending_changes)", [], |row| row.get(0))
             .map_err(CommandError::from_db)?;

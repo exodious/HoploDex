@@ -304,6 +304,60 @@ fn a_database_naming_an_unknown_migration_is_newer_and_left_untouched() {
     );
 }
 
+/// Database ids HoploDex never writes (it writes 32 lowercase hex digits),
+/// among them ones that would name a backup outside its folder.
+const CRAFTED_IDS: [&str; 5] = [
+    "a\\..\\..\\",
+    "1234567\u{e9}\\..\\..\\Users\\Public\\Desktop\\Read me",
+    "../../escape",
+    "0123456789ABCDEF0123456789ABCDEF",
+    "0123456789abcdef0123456789abcde",
+];
+
+/// code scanning alert paths/cwe-23/src-tauri/src/services/backups.rs#backup_file_name:
+/// a database id in a form HoploDex never writes, which its backups' names
+/// would carry, refuses the open as damaged, and the refused open writes
+/// nothing (003 FR-014).
+#[test]
+fn a_database_id_hoplodex_never_writes_is_refused_as_damaged_and_left_untouched() {
+    for crafted in CRAFTED_IDS {
+        let db = TestDb::new();
+        db.conn.execute("UPDATE app_state SET database_id = ?1", [crafted]).unwrap();
+        let path = db.path();
+        let (conn, _dir) = db.into_parts();
+        drop(conn);
+        let before = fs::read(&path).unwrap();
+
+        let result = open(&path, &passphrase());
+
+        assert!(matches!(result, Err(OpenError::Damaged)), "{crafted}: {result:?}");
+        assert_eq!(fs::read(&path).unwrap(), before, "{crafted}");
+    }
+}
+
+/// The same through the lifecycle: nothing is installed, and no backup is
+/// made under a name the id chose.
+#[test]
+fn a_crafted_database_id_opens_nothing_and_makes_no_backup() {
+    let setup = Setup::new();
+    setup.create("Crafted");
+    setup.close();
+    let backups = setup.dir.path().join("HoploDex backups");
+    let names = || fs::read_dir(&backups).map(|dir| dir.count()).unwrap_or(0);
+    let made = names();
+    let conn = Connection::open(setup.db_path("Crafted")).unwrap();
+    conn.pragma_update(None, "key", support::TEST_PASSPHRASE).unwrap();
+    db::cipher::apply_cipher_settings(&conn, "main").unwrap();
+    conn.execute("UPDATE app_state SET database_id = ?1", [CRAFTED_IDS[0]]).unwrap();
+    drop(conn);
+
+    let err = setup.open("Crafted").unwrap_err();
+
+    assert_eq!(err.code, "DATABASE_DAMAGED");
+    assert!(!setup.session.is_open());
+    assert_eq!(names(), made);
+}
+
 #[test]
 fn opening_sets_the_open_marker_to_this_machine() {
     let db = TestDb::new();
