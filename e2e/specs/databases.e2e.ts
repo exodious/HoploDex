@@ -1247,8 +1247,9 @@ describe("013 US2 - The log is designed to hold nothing sensitive", () => {
 // unencrypted in its profile's `Web Data` (code scanning alert plaintext-lifetime/cwe-312),
 // and a page's localStorage and IndexedDB were files in the main web view's profile on every
 // OS, past the lock, the close and the quit (code scanning alert plaintext-lifetime/cwe-922).
-// The main web view is incognito now, and what an earlier version left in its folder is
-// deleted at start. At the end of the file, since it quits the app.
+// The main web view is incognito now, and what an earlier version left in its folder, or on
+// macOS in WebKit's persistent store, is deleted at start. At the end of the file, since it
+// quits the app.
 describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
   /** The main web view's folder. macOS keeps an incognito web view's data nowhere, and kept
    * a persistent one's under ~/Library/WebKit, so there it is empty or missing. */
@@ -1368,5 +1369,28 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     await quitCleanly();
     expect(holding(await settledProfile(), earlier)).toEqual([]);
     await relaunch();
+  });
+
+  // Before it went incognito, the window used WebKit's persistent default store on macOS,
+  // outside its folder: the page's localStorage and IndexedDB were under ~/Library/WebKit.
+  it("deletes what an earlier version's WebKit store kept, at the next start (macOS)", async function () {
+    if (process.platform !== "darwin") return this.skip();
+    const earlier = `EARLIER-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const store = path.join(
+      process.env.HOPLODEX_E2E_HOME!,
+      "Library",
+      "WebKit",
+      "io.github.exodious.HoploDex",
+    );
+    const planted = path.join(
+      store,
+      "WebsiteData",
+      "LocalStorage",
+      "tauri_localhost_0.localstorage",
+    );
+    fs.mkdirSync(path.dirname(planted), { recursive: true });
+    fs.writeFileSync(planted, earlier);
+    await relaunch();
+    expect(fs.existsSync(planted)).toBe(false);
   });
 });

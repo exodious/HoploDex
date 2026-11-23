@@ -49,6 +49,15 @@ pub fn web_view_dirs(cache: &Path) -> Vec<PathBuf> {
     vec![main_webview_dir(cache), preview_webview_dir(cache)]
 }
 
+/// Where an earlier version's main window kept its web data on macOS:
+/// WebKit's persistent default store, `~/Library/WebKit/<identifier>`, before
+/// the window went incognito (code scanning alert `plaintext-lifetime/cwe-922`).
+/// Deleted at startup; `home` is the sandbox's in an E2E build.
+#[cfg(any(target_os = "macos", test))]
+pub fn earlier_webkit_store(home: &Path, identifier: &str) -> PathBuf {
+    home.join("Library").join("WebKit").join(identifier)
+}
+
 const MAIN_WEBVIEW_FOLDER: &str = "main-webview";
 const PREVIEW_WEBVIEW_FOLDER: &str = "preview-webview2";
 
@@ -172,6 +181,17 @@ mod tests {
         assert!(preview_webview_dir(&cache).starts_with(&sandbox));
         assert_eq!(super::resolve::cache_dir_in(None, "x"), None);
         assert_eq!(super::resolve::cache_dir_in(Some("cache".into()), "x"), None);
+    }
+
+    /// The earlier store is the identifier's own WebKit folder under the home,
+    /// never the home's Library or another app's, which the startup deletes.
+    #[test]
+    fn the_earlier_webkit_store_is_the_apps_own_folder_under_the_home() {
+        let home = std::env::temp_dir().join("hoplodex-e2e-home");
+        assert_eq!(
+            super::earlier_webkit_store(&home, "io.github.exodious.HoploDex"),
+            home.join("Library/WebKit/io.github.exodious.HoploDex")
+        );
     }
 
     #[test]

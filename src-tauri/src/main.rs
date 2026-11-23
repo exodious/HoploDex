@@ -539,6 +539,18 @@ fn main() {
             if !secure_delete_dir(&main_data_dir).is_empty() {
                 log::warn!("some of the main web view's earlier files couldn't be deleted");
             }
+            // On macOS an earlier version's window used WebKit's persistent
+            // default store, outside that folder (PR #230's follow-up).
+            #[cfg(target_os = "macos")]
+            if let Ok(home) = app_dirs::home_dir(app.handle())
+                && !secure_delete_dir(&app_dirs::earlier_webkit_store(
+                    &home,
+                    &app.config().identifier,
+                ))
+                .is_empty()
+            {
+                log::warn!("some of the earlier WebKit store's files couldn't be deleted");
+            }
             // The page's color mode and layout, from `machine.json`, before its
             // first script runs, so a chosen theme never flashes the other one.
             let appearance = serde_json::to_string(&app.state::<MachineSettings>().appearance())?;
