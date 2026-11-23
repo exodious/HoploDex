@@ -1334,6 +1334,8 @@ pub mod ops {
         machine: &MachineSettings,
         draft: Option<Draft>,
     ) -> Result<CloseOutcome, CommandError> {
+        // Seen by an open or restore that installs a database after it.
+        session.note_lock(CloseReason::LockedByUser);
         lifecycle::lock(session, id, machine, CloseReason::LockedByUser, draft)
     }
 

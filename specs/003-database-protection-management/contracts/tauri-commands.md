@@ -217,6 +217,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-21: **Input**: `{ folderToken?: string; name: string }`. `folderToken` is what the new unscoped command `choose_database_folder` returned: no input, it opens the system's folder chooser from Rust while nothing is open and returns `{ token: string; path: string } | null` (`null` when cancelled). Without a token the database goes in the suggested folder `get_chooser_state` reports, which the backend computes again. A token that isn't a held answer is `VALIDATION_ERROR` ("Choose it again: that choice is no longer available."), before the passphrase is asked for. A create that fails leaves the token for another try; one that succeeds uses it up._
 
+  _Amended 2026-11-23 (code scanning alerts 98, 99): a "Lock now", a screen lock or a sleep that comes while the database is created still locks it once it is open, by its own lock settings, as it would have had it been open then (FR-033, FR-037, FR-038): the command fails with `DATABASE_CLOSED` ("The database opened, and HoploDex locked it at once because …"), and the chooser has the lock's `closed` notice._
+
 ### `open_database` 🔑
 - **Input**: `{ path: string; passphrase?: string; useSavedPassphrase?: boolean; rememberPassphrase?: boolean; takeOver?: boolean }`. Exactly one of `passphrase` or `useSavedPassphrase: true` is given.
 - **Output**: `DatabaseStatus`
@@ -357,6 +359,7 @@ sleep stops it (FR-037).
 - **Errors**: `NOT_FOUND` when `databasePath` is not in this computer's recent list, which is where its backup folder and id are cached
 
   _Amended by [spec 011](../../011-flatpak/contracts/tauri-commands.md#shared-types-amended): the output (`BackupList`) also carries `unavailableReason?: "outOfReach"` when `available` is false because the backup folder is outside what a Flatpak may reach. That is not an error (011 FR-004)._
+  _Amended 2026-11-23 (code scanning alerts 98, 99): a "Lock now", a screen lock or a sleep that comes while it is opened still locks it once it is open, by its own lock settings, as it would have had it been open then (FR-033, FR-037, FR-038): the command fails with `DATABASE_CLOSED` ("The database opened, and HoploDex locked it at once because …"), and the chooser has the lock's `closed` notice._
 
   _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#list_backups-amended-fr-013): each `BackupInfo` also carries `beforeUpgradeTo` (009 FR-013)._
 
@@ -376,6 +379,8 @@ sleep stops it (FR-037).
   _Amended 2026-11-22: without `databasePath` too, the database id stored inside the backup must be the open database's, checked by `check_backup` and again before anything is copied, else `VALIDATION_ERROR` with `fieldErrors.backupPath`: only the open database's own backups replace it. A backup made before the database got a new id (one opened from a backup) is refused, as for a damaged database._
 
   _Amended 2026-11-04: **Input**: `{ checkId: number; databasePath?: string; upgrade?: boolean }`, with no passphrase. `checkId` is what `check_backup` returned once the passphrase typed in the native dialog opened the backup; the backend kept that passphrase, wiped when dropped, and the restore uses it, once. A check that is gone (dropped at Cancel by the new unscoped `drop_backup_check { checkId }`, a screen lock, a sleep, a shutdown or a close) or was for another target is `OPERATION_STOPPED`, with nothing changed._
+
+  _Amended 2026-11-23 (code scanning alerts 98, 99): a "Lock now", a screen lock or a sleep that comes while the restored database is opened still locks it once it is open, by its own lock settings, as it would have had it been open then (FR-033, FR-037, FR-038): the command fails with `DATABASE_CLOSED` ("The database opened, and HoploDex locked it at once because …"), and the chooser has the lock's `closed` notice. A restore over the open database also emits `session:closed` with `reason: "closed"` for the session it ended._
 
 ### `delete_all_backups`
 - **Input**: `{ confirmed: boolean }` → **Output**: `{ deletedCount: number; failedPaths: string[] }`
