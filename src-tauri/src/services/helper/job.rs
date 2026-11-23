@@ -28,7 +28,7 @@
 //!
 //! Each helper has a container of its own, so one helper can't open another,
 //! which may hold another document or another database's. Its profile (a
-//! per-user folder and registry key) is the one place it can write, nothing the
+//! per-user folder and registry key) is the one place Windows lets it write, nothing the
 //! helpers run writes there. So, as soon as the profile is made and before the
 //! helper starts, the container's own access to its folder and registry key is
 //! cut to reading ([`read_only_profile`]), and a hostile helper can't fill the
