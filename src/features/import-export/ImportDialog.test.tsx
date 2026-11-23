@@ -1015,6 +1015,7 @@ describe("ImportDialog reading the files (008 US2)", () => {
   });
 
   it("shows a refused file's message in the alert banner, with the files still listed", async () => {
+    vi.mocked(collection.refresh).mockClear();
     const { settle } = await startImport();
     const message =
       "inventory.xlsx: more than 16 sheets. HoploDex imports at most 16 sheets per workbook.";
@@ -1031,5 +1032,26 @@ describe("ImportDialog reading the files (008 US2)", () => {
     expect(screen.getByRole("list", { name: "Files to import" })).toHaveTextContent(FILE);
     expect(screen.getByRole("button", { name: "Import" })).toBeEnabled();
     await waitFor(() => expect(screen.queryByRole("progressbar")).not.toBeInTheDocument());
+    expect(collection.refresh).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the collection when the mounted lists' limit stops an import whose rows were kept", async () => {
+    vi.mocked(collection.refresh).mockClear();
+    const { settle } = await startImport();
+    const message =
+      "firearms.csv: the firearms and accessories its rows would replace have more than " +
+      "100,000 firearms and accessories mounted on them in all. HoploDex lists at most " +
+      "100,000 for one import, and kept the rows already imported.";
+
+    settle.reject(
+      new CommandFailure({
+        code: "IMPORT_LIMIT_EXCEEDED",
+        message,
+        details: { file: "firearms.csv", limit: "mountedEntries" },
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    await waitFor(() => expect(collection.refresh).toHaveBeenCalledTimes(1));
   });
 });

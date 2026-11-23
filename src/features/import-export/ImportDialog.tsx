@@ -258,6 +258,13 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
             : e.message
           : "The import didn't finish.",
       );
+      if (
+        e instanceof CommandFailure &&
+        e.code === "IMPORT_LIMIT_EXCEEDED" &&
+        e.details?.limit === "mountedEntries"
+      ) {
+        await refresh();
+      }
     } finally {
       setImporting(false);
     }
