@@ -264,6 +264,35 @@ where
 }
 
 impl MachineFile {
+    /// Adds `names` to the record of the database `database_id` at `path`,
+    /// once each, making the record if there is none and names to add.
+    fn record_made(
+        &mut self,
+        path: &Path,
+        database_id: &str,
+        names: impl IntoIterator<Item = String>,
+    ) {
+        let index = self.made_backups.iter().position(|made| made.is(path, database_id));
+        let mut names = names.into_iter().peekable();
+        if index.is_none() && names.peek().is_none() {
+            return;
+        }
+        let index = index.unwrap_or_else(|| {
+            self.made_backups.push(MadeBackups {
+                database_path: path.to_owned(),
+                database_id: database_id.to_owned(),
+                file_names: Vec::new(),
+            });
+            self.made_backups.len() - 1
+        });
+        let recorded = &mut self.made_backups[index].file_names;
+        for name in names {
+            if !recorded.contains(&name) {
+                recorded.push(name);
+            }
+        }
+    }
+
     fn fresh() -> io::Result<Self> {
         Ok(Self {
             version: VERSION,
@@ -472,23 +501,7 @@ impl MachineSettings {
     /// Records that this computer made the backup `file_name` of the database
     /// `database_id` at `path`, whether or not it is in the recent list yet.
     pub fn record_backup_made(&self, path: &Path, database_id: &str, file_name: &str) {
-        self.update(|file| {
-            let index = match file.made_backups.iter().position(|made| made.is(path, database_id)) {
-                Some(index) => index,
-                None => {
-                    file.made_backups.push(MadeBackups {
-                        database_path: path.to_owned(),
-                        database_id: database_id.to_owned(),
-                        file_names: Vec::new(),
-                    });
-                    file.made_backups.len() - 1
-                }
-            };
-            let names = &mut file.made_backups[index].file_names;
-            if !names.iter().any(|made| made == file_name) {
-                names.push(file_name.to_owned());
-            }
-        });
+        self.update(|file| file.record_made(path, database_id, [file_name.to_owned()]));
     }
 
     /// Forgets the recorded backups of the database `database_id` at `path`
@@ -572,9 +585,15 @@ impl MachineSettings {
             let mut entry = file.recent_databases.remove(index);
             // Its backups stay its own at the path the user found it at.
             if let Some(id) = &entry.database_id {
-                for made in file.made_backups.iter_mut().filter(|made| made.is(path, id)) {
-                    made.database_path = new_path.to_owned();
-                }
+                // Into any record already at the new path, so none is left unused.
+                let moved: Vec<String> = file
+                    .made_backups
+                    .iter()
+                    .filter(|made| made.is(path, id))
+                    .flat_map(|made| made.file_names.clone())
+                    .collect();
+                file.made_backups.retain(|made| !made.is(path, id));
+                file.record_made(new_path, id, moved);
             }
             entry.path = new_path.to_owned();
             // The file found may be a copy, with a time of its own.

@@ -358,9 +358,8 @@ pub fn seed_sandbox(
         (now, BackupKind::Regular),
         (now + Duration::minutes(1), BackupKind::BeforeUpgrade { to_version: APP_VERSION }),
     ];
-    let mut made = Vec::new();
     for (made_at, kind) in backups_made {
-        made.push(must(
+        must(
             backups::make_backup(
                 &machine,
                 BackupJob {
@@ -379,7 +378,7 @@ pub fn seed_sandbox(
                 },
             ),
             "a backup of the main database",
-        ));
+        );
     }
     must(
         main.execute(
@@ -400,11 +399,6 @@ pub fn seed_sandbox(
     // this computer, so it is used here.
     machine.set_backup_location_chosen(&database_id(&main), &paths.main_backups.to_string_lossy());
     machine.touch_recent(&paths.main, MAIN_NAME, &database_id(&main), &paths.main_backups);
-    // Made here, so they rotate as this computer's own.
-    for backup in made {
-        let name = backup.file_name().map(|name| name.to_string_lossy().into_owned());
-        machine.record_backup_made(&paths.main, &database_id(&main), &name.unwrap_or_default());
-    }
     if fixed_times {
         set_last_opened(&paths.config, &backups::utc_text(&now));
     }
