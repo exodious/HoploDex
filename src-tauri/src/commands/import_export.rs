@@ -2174,14 +2174,13 @@ pub mod ops {
         Ok(())
     }
 
-    /// 006 FR-022: the tables read from the files (`import_reader::read_files`),
-    /// as the firearm rows and the accessory rows; stops with
-    /// `VALIDATION_ERROR` naming the file (and the sheet) when two sheets
-    /// hold the same table.
     /// A table's rows and the name of its source.
     type Named<T> = Option<(String, Vec<T>)>;
 
-    /// The firearm table and the accessory table.
+    /// 006 FR-022: the tables read from the files (`import_reader::read_files`),
+    /// as the firearm table and the accessory table, each with its source's
+    /// name; stops with `VALIDATION_ERROR` naming the file (and the sheet)
+    /// when two sheets hold the same table.
     fn collect_tables(
         tables: Vec<ReadTable>,
     ) -> Result<(Named<RawImportRow>, Named<RawAccessoryRow>), CommandError> {

@@ -41,8 +41,8 @@ pub const MAX_STYLE_TEXT_CHARS: usize = 255;
 /// no file needs more of than it has cell formats, and the theme's colour
 /// slots (Excel writes 12).
 pub const MAX_CELL_FORMATS: usize = 65_490;
-/// Records listed as mounted on the records an import's rows would replace,
-/// in all its conflicts (code scanning alert 81). Checked by the parent once
+/// Firearms and accessories listed as mounted on the firearms and accessories
+/// an import's rows would replace, in all its conflicts (code scanning alert 81). Checked by the parent once
 /// the rows are saved, so it is the one limit met after them.
 pub const MAX_MOUNTED_ENTRIES: usize = 100_000;
 /// The import helper's data limit (Linux, Windows).
@@ -135,9 +135,9 @@ impl ImportLimit {
                 n = thousands(MAX_SHARED_STRINGS)
             ),
             Self::MountedEntries => format!(
-                "the records its rows would replace have more than {n} records mounted on \
-                 them in all. HoploDex lists at most {n} for one import, and kept the rows \
-                 already imported.",
+                "the firearms and accessories its rows would replace have more than {n} \
+                 firearms and accessories mounted on them in all. HoploDex lists at most {n} \
+                 for one import, and kept the rows already imported.",
                 n = thousands(MAX_MOUNTED_ENTRIES as u64)
             ),
         }
