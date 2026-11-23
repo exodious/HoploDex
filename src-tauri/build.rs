@@ -10,6 +10,16 @@ fn main() {
     // an `e2e` one that is not the check variant (`E2eOpener` logs instead).
     println!("cargo::rustc-check-cfg=cfg(mock_keyring)");
     println!("cargo::rustc-check-cfg=cfg(app_opener)");
+    // SQLCipher is built without `mlock` (`.cargo/config.toml`'s `[env]`, which
+    // cargo gives every build script, libsqlite3-sys's included): refuse a build
+    // that didn't read it (code scanning alert
+    // plaintext-lifetime/cwe-244/src-tauri/src/db/mod.rs#configure).
+    println!("cargo:rerun-if-env-changed=LIBSQLITE3_FLAGS");
+    let sqlite_flags = std::env::var("LIBSQLITE3_FLAGS").unwrap_or_default();
+    assert!(
+        sqlite_flags.split_whitespace().any(|flag| flag == "-DOMIT_MEMLOCK"),
+        "LIBSQLITE3_FLAGS must hold -DOMIT_MEMLOCK, as .cargo/config.toml sets it; got {sqlite_flags:?}"
+    );
     let has = |feature: &str| std::env::var_os(format!("CARGO_FEATURE_{feature}")).is_some();
     if has("MOCK_KEYRING") && !has("FLATPAK_CHECK") {
         println!("cargo::rustc-cfg=mock_keyring");

@@ -1,0 +1,10 @@
+# Build SQLCipher without `mlock` (`OMIT_MEMLOCK`, the owner's decision for code
+# scanning alert plaintext-lifetime/cwe-244/src-tauri/src/db/mod.rs#configure).
+# `db::connect` turns on its memory security, which then fills every block SQLite
+# frees with random bytes; locking each block too cost a system call per
+# allocation and missed the performance budgets under load. It also stops
+# SQLCipher locking its own key buffers. Read by libsqlite3-sys's build script,
+# and checked by `src-tauri/build.rs`; cargo finds this file from the repository
+# root and from `src-tauri`, the Flatpak's build included.
+[env]
+LIBSQLITE3_FLAGS = "-DOMIT_MEMLOCK"
