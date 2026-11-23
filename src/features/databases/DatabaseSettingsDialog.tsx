@@ -138,8 +138,8 @@ interface ShownLocation {
   path: string;
   available: boolean;
   unavailableReason?: "outOfReach";
-  /** The default folder is shown because the saved one was chosen on another
-   * computer. */
+  /** The default folder is shown because the saved one isn't set up on this
+   * computer yet. */
   chosenElsewhere?: boolean;
 }
 
@@ -160,7 +160,7 @@ function SettingsForm({
   const scope = useSessionScope();
   const saved = status.settings.backups;
   const defaultFolder = joinPath(folderOf(status.path), "HoploDex backups");
-  // A folder chosen on another computer stays saved for it: saving sends "current".
+  // A folder not set up on this computer stays saved as it is: saving sends "current".
   const savedLocation = (): ShownLocation => ({
     input:
       saved.location.kind === "default" && !saved.location.chosenElsewhere
@@ -439,8 +439,8 @@ function SettingsForm({
               </p>
               {location.chosenElsewhere && (
                 <p className="hd-field__hint">
-                  The folder saved with this database was chosen on another computer. Choose it here
-                  to use it on this one.
+                  The backup folder saved with this database isn&apos;t set up on this computer yet.
+                  Backups go to the default folder until you choose it again.
                 </p>
               )}
               <div className="hd-settings-location__actions">

@@ -521,8 +521,8 @@ pub enum BackupLocationInput {
     Default,
     /// A folder the user chose on this computer, recorded as chosen here.
     Custom { path: String },
-    /// The location saved now, as it is: one chosen on another computer stays
-    /// saved for it, and is still not used here (code scanning alert
+    /// The location saved now, as it is: one not set up on this computer stays
+    /// saved, and is still not used here (code scanning alert
     /// paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder).
     Saved,
 }

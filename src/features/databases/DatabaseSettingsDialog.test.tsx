@@ -259,7 +259,7 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     expect(within(backups).getByText(DEFAULT_BACKUPS)).toBeInTheDocument();
     expect(within(backups).getByText("(next to the database)")).toBeInTheDocument();
     expect(backups).toHaveTextContent(
-      "The folder saved with this database was chosen on another computer. Choose it here to use it on this one.",
+      "The backup folder saved with this database isn't set up on this computer yet. Backups go to the default folder until you choose it again.",
     );
     expect(within(backups).getByRole("button", { name: "Use the default" })).toBeDisabled();
 
