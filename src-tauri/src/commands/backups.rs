@@ -250,19 +250,19 @@ pub mod ops {
         backup: PathBuf,
         /// The database it would replace.
         database_path: PathBuf,
-        /// For a damaged database, the id the backup must carry to be its own.
-        expected_id: Option<String>,
+        /// The id the backup must carry to be the database's own.
+        expected_id: String,
     }
 
     impl CheckingBackup {
         /// Opens the backup with `passphrase`, refusing one that isn't the
-        /// damaged database's own.
+        /// database's own.
         fn inspect(&self, passphrase: &Passphrase) -> Result<InspectedBackup, CommandError> {
             let inspected = inspect_backup(&self.backup, passphrase, &self.database_path)?;
-            match &self.expected_id {
-                Some(expected) if inspected.database_id != *expected => Err(not_its_backup()),
-                _ => Ok(inspected),
+            if inspected.database_id != self.expected_id {
+                return Err(not_its_backup());
             }
+            Ok(inspected)
         }
     }
 
@@ -289,12 +289,16 @@ pub mod ops {
         }
         let backup = session.reach().check(Path::new(backup_path), Need::ReadFile)?;
         let (database_path, expected_id) = match target {
-            Target::Open(id) => (session.inspect(id, |open| Ok(open.path.clone()))?, None),
+            // Only the open database's own backups replace it (code scanning alert
+            // ipc-commands/cwe-639/src-tauri/src/commands/backups.rs#ops.restore_open).
+            Target::Open(id) => {
+                session.inspect(id, |open| Ok((open.path.clone(), open.database_id.clone())))?
+            }
             Target::At(path) => {
                 let path = Path::new(path);
                 let expected = authorize_damaged_restore(machine, &backup, path)?;
                 replaceable_target(path)?;
-                (path.to_owned(), Some(expected))
+                (path.to_owned(), expected)
             }
         };
         backup_len(&backup)?;
@@ -340,15 +344,9 @@ pub mod ops {
                 })
                 .map_err(OpenError::classify)?;
             db::check_schema(&conn, database_path)?;
-            (|| {
-                let database_id =
-                    conn.query_row("SELECT database_id FROM app_state", [], |row| {
-                        row.get::<_, String>(0)
-                    })?;
-                let due = db::upgrade::steps_due(&conn, database_path)?;
-                Ok((database_id, !due.is_empty()))
-            })()
-            .map_err(OpenError::classify)
+            let database_id = db::read_database_id(&conn)?;
+            let due = db::upgrade::steps_due(&conn, database_path).map_err(OpenError::classify)?;
+            Ok((database_id, !due.is_empty()))
         })();
         match checked {
             Ok((database_id, due)) => Ok(InspectedBackup {
@@ -520,6 +518,11 @@ pub mod ops {
         // key, which takes longer than the 100 ms feedback budget.
         progress(events, RestorePhase::Copying, 0, restored_len);
         let inspected = inspect_backup(backup, passphrase, &path)?;
+        // Again here, since the page names the backup: only the open
+        // database's own replaces it, as `check_backup` said.
+        if inspected.database_id != open.database_id {
+            return Err(not_its_backup());
+        }
         // Before anything is copied: the user was not told it is upgraded.
         let upgrade_to = inspected.upgrade_to.as_deref();
         if let Some(version) = upgrade_to.filter(|_| !upgrade) {

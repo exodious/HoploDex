@@ -276,6 +276,53 @@ fn a_relocated_entry_doesnt_save_another_databases_passphrase() {
     assert_eq!(stored(&other_id), None);
 }
 
+/// code scanning alert key-passphrase/cwe-639/src-tauri/src/commands/databases.rs#ops.open_database:
+/// an entry re-located (`locate_database`) has no saved passphrase until the
+/// database opens at its new path. Moved onto another file with the same
+/// passphrase, the saved one doesn't open it: the native dialog asks, and
+/// cancelling it opens nothing. Moved onto the database's own file, the
+/// dialog asks once, and from then on the saved passphrase opens it again.
+#[test]
+fn a_relocated_entry_asks_for_the_passphrase_once_before_the_saved_one_opens_it() {
+    let world = World::new();
+    world.create("Saved");
+    let id = world.database_id();
+    world.save(TEST_PASSPHRASE).unwrap();
+    world.close();
+    world.create("Other");
+    world.close();
+    let open = |name: &str, script: &Arc<Scripted>| {
+        ops::open_database_requested(
+            &world.session,
+            &world.machine,
+            &ScriptedDialog(Arc::clone(script)),
+            &world.path_text(name),
+            true,
+            false,
+            false,
+        )
+    };
+
+    world.machine.locate_recent(&world.path("Saved"), &world.path("Other")).unwrap();
+    assert!(saved_failed(&world.open("Other", Unlock::Saved).unwrap_err()));
+    let cancelled = Scripted::answering([None]);
+    assert_eq!(open("Other", &cancelled).unwrap_err().code, "PASSPHRASE_CANCELLED");
+    assert_eq!(cancelled.asked().len(), 1, "the native dialog asks");
+    assert!(!world.session.is_open());
+
+    world.machine.locate_recent(&world.path("Other"), &world.path("Saved")).unwrap();
+    let typed = Scripted::answering([Some((TEST_PASSPHRASE, None))]);
+    open("Saved", &typed).unwrap();
+    assert_eq!(typed.asked().len(), 1);
+    assert_eq!(world.database_id(), id);
+    assert_eq!(stored(&id).as_deref(), Some(TEST_PASSPHRASE));
+    assert!(world.saved_flag("Saved"));
+    world.close();
+    let unasked = Scripted::answering([]);
+    open("Saved", &unasked).unwrap();
+    assert!(unasked.asked().is_empty(), "the saved passphrase opens it again");
+}
+
 /// 003 FR-017: saving the open database's passphrase marks only its own
 /// entry. Another database's entry the page moved to its path (and later
 /// back) doesn't get the mark, so its next typed open saves nothing.

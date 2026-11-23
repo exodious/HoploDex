@@ -74,17 +74,13 @@ fn describe(
     steps_due: Vec<&'static str>,
     marker_seen: SeenMarker,
 ) -> Result<AwaitingUpgrade, CommandError> {
-    let (database_id, made_at, of_name, before_upgrade_to): (
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    ) = conn
-        .query_row(
-            "SELECT database_id, backup_made_at, backup_of_name, backup_before_upgrade_to
-             FROM app_state",
+    let database_id =
+        db::read_database_id(&conn).map_err(|err| CommandError::from(err).located_at(path))?;
+    let (made_at, of_name, before_upgrade_to): (Option<String>, Option<String>, Option<String>) =
+        conn.query_row(
+            "SELECT backup_made_at, backup_of_name, backup_before_upgrade_to FROM app_state",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|err| CommandError::from_db(err).located_at(path))?;
     let location: String = conn

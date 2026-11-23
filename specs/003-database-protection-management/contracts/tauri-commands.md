@@ -232,6 +232,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-06: `takeOver` always asks in the native dialog, even with `useSavedPassphrase`, which it then ignores: typing the passphrase is the take-over's confirmation (FR-032), so the page can't skip it. A marker with a blank machine name reads as "another computer", in the message and in `machineName`._
 
+  _Amended 2026-11-22: so does a recent entry `locate_database` re-pointed and that hasn't opened at its new path since: the saved passphrase isn't used for it, and the native dialog asks once. The open that succeeds there clears the mark, and refreshes the saved passphrase when the file is the database it was saved for, so the next open uses it again. A database whose stored id isn't 32 lowercase hex digits, the only form HoploDex writes, is refused as `DATABASE_DAMAGED` before anything is written._
+
 ### `remove_recent_database`
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
 - Also deletes the saved keyring passphrase for it (FR-018). Never touches the file.
@@ -241,6 +243,7 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 - Replaces an unavailable entry's path (FR-012) and keeps its other fields, except `leftModifiedAt`, which is forgotten: the file found may be a copy (FR-040).
   _Amended 2026-10-09 ([#62](https://github.com/exodious/HoploDex/issues/62)): the entry is also marked located (in `machine.json`, not in `RecentDatabase`) until the database opens at the new path. Until then `restore_backup` won't replace the file there, since nothing yet shows it is the database the entry's id and backup folder were cached from._
   _Amended 2026-11-21: a `newPath` that names a server or a device is taken only when the user picked it in `choose_database_file`, which uses that pick up; otherwise it is `VALIDATION_ERROR`, before anything looks at the path. **Locate…** uses `choose_database_file` for every file, and an entry located there opens from the recent list._
+  _Amended 2026-11-22: until it opens at the new path, the entry's saved passphrase isn't used either: `open_database` asks in the native dialog (see its 2026-11-22 note)._
 
 ---
 
@@ -369,6 +372,8 @@ sleep stops it (FR-037).
   _Amended 2026-10-09 ([#62](https://github.com/exodious/HoploDex/issues/62)): with `databasePath`, the backend authorizes the target itself and no longer takes the web view's word for it. `databasePath` must be in this computer's recent list (as for `list_backups`), else `NOT_FOUND`. `backupPath` must be in that entry's cached backup folder, and the database id stored inside the backup (read when its passphrase is checked) must be the entry's cached one, else `VALIDATION_ERROR` with `fieldErrors.backupPath`. An entry `locate_database` re-pointed and that hasn't opened at its new path since is refused with `VALIDATION_ERROR` and `fieldErrors.databasePath`. What is at `databasePath` must be a regular file or nothing, never a symlink (not followed), a directory or anything else, else `VALIDATION_ERROR` with `fieldErrors.databasePath`; it is checked before anything is closed and again right before it is renamed aside, and what was renamed is checked after, so a swap in between is put back and refused with `REPLACE_FAILED`, as is a `damaged` name that is already taken. No refusal changes a file. The frontend needs no new code: the dialog only offers the listed backups and shows the message of any other refusal._
 
   _Amended by [spec 009](../../009-upgrade-readiness/contracts/tauri-commands.md#restore_backup-amended-fr-019): `restore_backup` takes `upgrade?: boolean`, refuses an older-layout backup without it as `UPGRADE_NEEDED`, upgrades the restored copy with it, and gains the progress phase `"upgrading"`; the new unscoped `check_backup` runs first (009 FR-019, [research.md §9](../../009-upgrade-readiness/research.md))._
+
+  _Amended 2026-11-22: without `databasePath` too, the database id stored inside the backup must be the open database's, checked by `check_backup` and again before anything is copied, else `VALIDATION_ERROR` with `fieldErrors.backupPath`: only the open database's own backups replace it. A backup made before the database got a new id (one opened from a backup) is refused, as for a damaged database._
 
   _Amended 2026-11-04: **Input**: `{ checkId: number; databasePath?: string; upgrade?: boolean }`, with no passphrase. `checkId` is what `check_backup` returned once the passphrase typed in the native dialog opened the backup; the backend kept that passphrase, wiped when dropped, and the restore uses it, once. A check that is gone (dropped at Cancel by the new unscoped `drop_backup_check { checkId }`, a screen lock, a sleep, a shutdown or a close) or was for another target is `OPERATION_STOPPED`, with nothing changed._
 

@@ -375,6 +375,10 @@ fn a_crafted_backup_is_refused_and_changes_nothing() {
              SELECT '0001_initial' AS name FROM n;",
             "PASSPHRASE_INCORRECT",
         ),
+        // An id HoploDex never writes, which the "before restoring" backup's
+        // name would carry (code scanning alert
+        // paths/cwe-23/src-tauri/src/services/backups.rs#backup_file_name).
+        ("UPDATE app_state SET database_id = 'a\\..\\..\\';", "DATABASE_DAMAGED"),
     ] {
         let world = World::new();
         let listed = world.with_two_backups();
@@ -710,6 +714,42 @@ fn issue_62_a_backup_of_another_database_is_refused_whatever_its_name_and_place(
     assert_eq!(fs::read(world.path()).unwrap(), bytes, "Mine is as it was");
     assert_eq!(World::names(world.dir.path()), names);
     assert!(world.leftovers().is_empty());
+}
+
+/// code scanning alert ipc-commands/cwe-639/src-tauri/src/commands/backups.rs#ops.restore_open:
+/// the open database is replaced only by one of its own backups. Another
+/// closed database with the same passphrase, or one of its backups, is
+/// refused by the check and by the restore, whatever the page names, and
+/// nothing changes.
+#[test]
+fn the_open_database_is_restored_only_from_its_own_backups() {
+    let world = World::new();
+    let listed = world.with_two_backups();
+    world.close();
+    let other = world.dir.path().join("Other.hoplodex");
+    lifecycle::create(&world.session, &world.machine, &other, &passphrase()).unwrap();
+    let other_id = world.database_id();
+    world.add_firearm("Z9");
+    world.close();
+    let theirs = backups::list(&world.default_folder(), &other_id).unwrap().remove(0);
+    world.open();
+    let mine = world.database_id();
+    let collection = open_collection(&world);
+    let names = World::names(&world.default_folder());
+
+    for backup in [other.to_str().unwrap(), theirs.path.as_str()] {
+        let refused = world.check(backup, support::TEST_PASSPHRASE).unwrap_err();
+        assert_eq!(refused.code, "VALIDATION_ERROR", "check {backup}");
+        let refused = world.restore(backup, support::TEST_PASSPHRASE).unwrap_err();
+        assert_eq!(refused.code, "VALIDATION_ERROR", "restore {backup}");
+    }
+
+    assert_eq!(world.database_id(), mine, "Mine is still the open one");
+    assert_eq!(open_collection(&world), collection, "Mine is as it was");
+    assert_eq!(World::names(&world.default_folder()), names);
+    assert!(world.leftovers().is_empty());
+    // Its own backups still restore.
+    world.restore(&listed[1].path, support::TEST_PASSPHRASE).unwrap();
 }
 
 #[test]

@@ -185,6 +185,8 @@ _Amended 2026-11-21: a `backupPath` that names a server or a device (`\\server\s
   - `NOT_FOUND`, `PASSPHRASE_INCORRECT`, `DATABASE_DAMAGED`;
   - `DATABASE_NEWER_VERSION`;
   - with `databasePath`, the damaged restore's authorization refusals (#62).
+
+  _Amended 2026-11-22: without it, a backup whose stored database id isn't the open database's is `VALIDATION_ERROR` with `fieldErrors.backupPath` (003 contracts/tauri-commands.md, `restore_backup`)._
 - **Reads only**: the backup is opened read-only and closed before the
   command returns, and the passphrase is wiped then (003 FR-007).
 - **Scope**: without `databasePath` it requires the `HoploDex-Session`

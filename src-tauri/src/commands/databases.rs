@@ -265,7 +265,10 @@ pub mod ops {
     /// The saved passphrase is found through the recent entry's cached
     /// database id, since the file can't be read without it. When it no
     /// longer opens the database the refusal says so (003 US5-5), and the next
-    /// typed passphrase that does replaces it (003 FR-018).
+    /// typed passphrase that does replaces it (003 FR-018). An entry re-located
+    /// (`locate_database`) has none until the database opens at its new path,
+    /// since nothing says the file there is the one it was saved for (code
+    /// scanning alert key-passphrase/cwe-639/src-tauri/src/commands/databases.rs#ops.open_database).
     ///
     /// Inside a Flatpak the database's folder must be within reach first
     /// (011 FR-004): a Documents-portal path whose host path is, opens from
@@ -287,6 +290,7 @@ pub mod ops {
             Unlock::Saved => {
                 loaded = machine
                     .recent_entry(path)
+                    .filter(|entry| !entry.located)
                     .and_then(|entry| entry.database_id)
                     .and_then(|id| machine.keyring().load(&id));
                 match &loaded {
@@ -458,7 +462,9 @@ pub mod ops {
     /// What the `open_database` command does with what the page sent. The saved
     /// passphrase opens without asking, except for a take-over, whose
     /// confirmation is typing it in the native dialog (003 FR-032): the page
-    /// can't skip that by sending `use_saved` along with `take_over`.
+    /// can't skip that by sending `use_saved` along with `take_over`. Nor for
+    /// an entry re-located since it last opened: the native dialog asks once,
+    /// and the open that follows lets the saved passphrase open it again.
     pub fn open_database_requested(
         session: &Session,
         machine: &MachineSettings,
@@ -469,7 +475,8 @@ pub mod ops {
         take_over: bool,
     ) -> Result<DatabaseStatus, CommandError> {
         let picked = picked_server_path(session, machine, path)?;
-        let result = if use_saved && !take_over {
+        let located = machine.recent_entry(Path::new(path)).is_some_and(|entry| entry.located);
+        let result = if use_saved && !take_over && !located {
             open_database(session, machine, path, Unlock::Saved, false, session.reach())
         } else {
             open_database_typed(session, machine, dialog, path, remember, take_over)

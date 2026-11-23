@@ -29,9 +29,10 @@ passphrase) and `commands/backups.rs` (list, restore, passphrase change) are
 feature 003's.
 
 No command takes or returns a passphrase: `create_database`, `open_database`
-(without `useSavedPassphrase`, or with `takeOver`, which the saved passphrase
-never confirms), `save_passphrase`, `change_passphrase` and `check_backup` ask
-for it in the native passphrase dialog (`services::passphrase_dialog`, in
+(without `useSavedPassphrase`, with `takeOver`, which the saved passphrase
+never confirms, or for a recent entry re-located since it last opened),
+`save_passphrase`, `change_passphrase` and `check_backup` ask for it in the
+native passphrase dialog (`services::passphrase_dialog`, in
 [Models and services](models-and-services.md)) from `ops::*_typed`, which run on
 a blocking thread (`spawn_blocking`), since the dialog waits for the user;
 `restore_backup` takes the `checkId` that `check_backup` kept the passphrase

@@ -698,6 +698,28 @@ fn an_older_database_waits_keyed_locked_and_unwritten_for_the_answer() {
     assert_eq!(sha(&world.path()), before, "009 FR-010: nothing was written");
 }
 
+/// code scanning alert paths/cwe-23/src-tauri/src/services/backups.rs#backup_file_name:
+/// an older database whose id HoploDex never wrote is refused as damaged
+/// before the question, so no backup before the upgrade is named with it,
+/// and nothing is written or held.
+#[test]
+fn an_older_database_with_a_crafted_id_is_refused_before_the_question() {
+    let world = World::new();
+    world.older_database(Older::default());
+    raw_exec(&world.path(), "UPDATE app_state SET database_id = 'a\\..\\..\\'", []);
+    let _scope = world.steps(&[STEP_A]);
+    let before = sha(&world.path());
+
+    let refused =
+        lifecycle::open(&world.session, &world.machine, &world.path(), &passphrase(), false)
+            .unwrap_err();
+
+    assert_eq!(refused.code, "DATABASE_DAMAGED");
+    assert!(!is_held(&world.path()));
+    assert!(!world.default_folder().exists());
+    assert_eq!(sha(&world.path()), before);
+}
+
 /// 009 US3-2, 009 FR-010: Cancel closes it untouched.
 #[test]
 fn cancel_drops_the_waiting_database_with_nothing_written_and_no_backup() {
