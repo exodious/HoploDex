@@ -28,6 +28,17 @@ pub fn self_or_below(item: RecordRef) -> String {
     format!("{what} can't be mounted on itself, or on something mounted on it.")
 }
 
+/// The most levels a record may sit below the top of its mount chain: an
+/// optic on a mount on a rail on a handguard on a firearm is 4. It keeps
+/// every walk up a chain to this many steps, whatever a file asks for
+/// (code scanning alert 83).
+pub const MAX_MOUNT_DEPTH: usize = 16;
+/// Heights (how many levels are below a record) are counted up to this, which
+/// is enough to tell a mount past [`MAX_MOUNT_DEPTH`].
+const HEIGHT_CAP: usize = MAX_MOUNT_DEPTH + 1;
+/// A mount that would put something deeper than [`MAX_MOUNT_DEPTH`].
+pub const TOO_DEEP: &str = "Mounts can't stack more than 16 levels deep.";
+
 fn field_error(field: &str, message: &str) -> CommandError {
     CommandError::validation(message, Default::default()).on_field(field, message)
 }
@@ -48,6 +59,11 @@ pub struct MountGraph {
     /// Each host's items in the order their rows were recorded (a move
     /// updates the row, so the item keeps its place).
     items_of: HashMap<RecordRef, Vec<RecordRef>>,
+    /// How many of each host's items have each height, up to
+    /// [`HEIGHT_CAP`]. A record's height is one more than its tallest
+    /// item's, so a mount changes a few counts up the host's chain and never
+    /// walks down (code scanning alert 83).
+    items_by_height: HashMap<RecordRef, [u32; HEIGHT_CAP + 1]>,
 }
 
 impl MountGraph {
@@ -75,21 +91,93 @@ impl MountGraph {
                 graph.items_of.entry(host).or_default().push(item);
             }
         }
+        graph.count_heights();
         Ok(graph)
+    }
+
+    /// Works out every record's height once, children first, and counts
+    /// each host's items by theirs. A record on a loop (a file edited by
+    /// hand) counts as [`HEIGHT_CAP`].
+    fn count_heights(&mut self) {
+        let mut heights: HashMap<RecordRef, usize> = HashMap::new();
+        let mut visiting = HashSet::new();
+        for &top in self.items_of.keys() {
+            let mut stack = vec![(top, false)];
+            while let Some((at, expanded)) = stack.pop() {
+                if heights.contains_key(&at) {
+                    continue;
+                }
+                let items = self.items_of.get(&at).map(Vec::as_slice).unwrap_or_default();
+                if expanded {
+                    let tallest = items.iter().map(|i| heights.get(i).map_or(HEIGHT_CAP, |h| *h));
+                    heights.insert(at, tallest.max().map_or(0, |h| (h + 1).min(HEIGHT_CAP)));
+                    continue;
+                }
+                if !visiting.insert(at) {
+                    continue;
+                }
+                stack.push((at, true));
+                stack.extend(
+                    items
+                        .iter()
+                        .filter(|item| !visiting.contains(*item))
+                        .map(|item| (*item, false)),
+                );
+            }
+        }
+        for (item, host) in &self.host_of {
+            let height = heights.get(item).copied().unwrap_or(0);
+            self.items_by_height.entry(*host).or_default()[height] += 1;
+        }
+    }
+
+    /// How many levels are below `record`, up to [`HEIGHT_CAP`].
+    fn height(&self, record: RecordRef) -> usize {
+        self.items_by_height
+            .get(&record)
+            .and_then(|counts| counts.iter().rposition(|n| *n > 0))
+            .map_or(0, |h| (h + 1).min(HEIGHT_CAP))
+    }
+
+    /// One of `host`'s items went from height `from` to `to` (`None`: it
+    /// left or arrived), and so on up the chain while a height changes. A
+    /// change dies out within [`HEIGHT_CAP`] steps, where heights reach the
+    /// cap.
+    fn recount(&mut self, mut host: RecordRef, mut from: Option<usize>, mut to: Option<usize>) {
+        for _ in 0..=HEIGHT_CAP {
+            let before = self.height(host);
+            let counts = self.items_by_height.entry(host).or_default();
+            if let Some(h) = from {
+                counts[h] = counts[h].saturating_sub(1);
+            }
+            if let Some(h) = to {
+                counts[h] += 1;
+            }
+            let after = self.height(host);
+            match self.host_of(host) {
+                Some(next) if after != before => {
+                    (host, from, to) = (next, Some(before), Some(after));
+                }
+                _ => return,
+            }
+        }
     }
 
     /// Records in this graph that `item` is now on `host` (or on nothing),
     /// after the mount was saved, so a run of mounts (an import's) checks
     /// each against the ones before it without loading the table again.
     pub fn place(&mut self, item: RecordRef, host: Option<RecordRef>) {
-        if let Some(old) = self.host_of.remove(&item)
-            && let Some(items) = self.items_of.get_mut(&old)
-        {
-            items.retain(|i| *i != item);
+        let height = self.height(item);
+        if let Some(old) = self.host_of.remove(&item) {
+            if let Some(items) = self.items_of.get_mut(&old) {
+                items.retain(|i| *i != item);
+            }
+            self.recount(old, Some(height), None);
         }
         if let Some(host) = host {
             self.host_of.insert(item, host);
             self.items_of.entry(host).or_default().push(item);
+            self.recount(host, None, Some(height));
         }
     }
 
@@ -100,10 +188,17 @@ impl MountGraph {
 
     /// Its host, that host's host, and so on.
     pub fn chain(&self, item: RecordRef) -> Vec<RecordRef> {
+        self.chain_upto(item, usize::MAX)
+    }
+
+    /// The first `limit` records of [`chain`](Self::chain).
+    fn chain_upto(&self, item: RecordRef, limit: usize) -> Vec<RecordRef> {
         let mut chain = Vec::new();
         let mut seen = HashSet::from([item]);
         let mut at = item;
-        while let Some(host) = self.host_of(at) {
+        while chain.len() < limit
+            && let Some(host) = self.host_of(at)
+        {
             // A loop can't be made through the commands; this keeps a file
             // edited by hand from hanging the walk.
             if !seen.insert(host) {
@@ -184,9 +279,17 @@ impl MountGraph {
 
     /// 006 FR-010: mounting `item` on `host` would make a record carry itself.
     /// True when `host` is `item` or is below it, which is when `item` is
-    /// on `host`'s chain.
+    /// on `host`'s chain. Only [`MAX_MOUNT_DEPTH`] steps of the chain are
+    /// walked: a host deeper than that is refused by [`Self::too_deep`].
     pub fn would_loop(&self, item: RecordRef, host: RecordRef) -> bool {
-        host == item || self.chain(host).contains(&item)
+        host == item || self.chain_upto(host, MAX_MOUNT_DEPTH).contains(&item)
+    }
+
+    /// Mounting `item` (and everything on it) on `host` would put a record
+    /// more than [`MAX_MOUNT_DEPTH`] levels below the top of its chain.
+    pub fn too_deep(&self, item: RecordRef, host: RecordRef) -> bool {
+        let above = self.chain_upto(host, MAX_MOUNT_DEPTH).len() + 1;
+        above + self.height(item) > MAX_MOUNT_DEPTH
     }
 }
 
@@ -212,7 +315,8 @@ fn is_active(conn: &Connection, record: RecordRef) -> Result<bool, CommandError>
 
 /// Puts `item` on `host`, moves it, or takes it off (`None`), by deleting,
 /// updating or inserting the item's one row. Checks, in order: both records
-/// are active, and the mount makes no loop. Errors are `VALIDATION_ERROR`
+/// are active, the mount makes no loop, and it puts nothing deeper than
+/// [`MAX_MOUNT_DEPTH`]. Errors are `VALIDATION_ERROR`
 /// on `field` (`host` for `mount_record`, `mountedOn` for a form). Mounting
 /// an item on what it is already on changes nothing and checks nothing.
 pub fn set_mount(
@@ -242,6 +346,9 @@ pub fn set_mount(
     }
     if graph.would_loop(item, host) {
         return Err(field_error(field, &self_or_below(item)));
+    }
+    if graph.too_deep(item, host) {
+        return Err(field_error(field, TOO_DEEP));
     }
     let (host_firearm, host_accessory) = host.owner_columns();
     let updated = conn
@@ -507,4 +614,88 @@ pub fn mounted_entries(
             })
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_wide_record_moved_again_and_again_is_measured_once() {
+        // A conflict resolution can mount one record many times (code
+        // scanning alert 83's review): with 50,000 records on it, walking
+        // them on every move was 2.5 × 10^9 steps.
+        let (wide, left, right) =
+            (RecordRef::Firearm(1), RecordRef::Accessory(1), RecordRef::Accessory(2));
+        let mut graph = MountGraph::default();
+        for id in 10..50_010 {
+            graph.place(RecordRef::Accessory(id), Some(wide));
+        }
+        // And a firearm on one of them, moved off and back between each:
+        // a change below the wide record, which a cache of heights would forget.
+        let (below, firearm) = (RecordRef::Accessory(10), RecordRef::Firearm(2));
+        graph.place(firearm, Some(below));
+        let started = Instant::now();
+        for n in 0..50_000 {
+            let host = if n % 2 == 0 { left } else { right };
+            assert!(!graph.too_deep(wide, host));
+            graph.place(wide, Some(host));
+            graph.place(firearm, None);
+            graph.place(firearm, Some(below));
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+        assert_eq!(graph.height(wide), 2);
+    }
+
+    #[test]
+    fn heights_follow_every_move() {
+        // A chain 0 <- 1 <- ... <- 15: record 15 is 15 levels down.
+        let record = RecordRef::Accessory;
+        let mut graph = MountGraph::default();
+        for id in 1..16 {
+            graph.place(record(id), Some(record(id - 1)));
+        }
+        assert_eq!(graph.height(record(0)), 15);
+        assert!(!graph.too_deep(record(100), record(15)), "16 levels");
+        // Something with one level below it can't go at 15.
+        graph.place(record(101), Some(record(100)));
+        assert!(graph.too_deep(record(100), record(15)));
+        assert!(!graph.too_deep(record(100), record(14)));
+        // Shortening the chain makes room again, and lengthening it takes it.
+        graph.place(record(15), None);
+        assert_eq!(graph.height(record(0)), 14);
+        assert!(!graph.too_deep(record(100), record(14)));
+        graph.place(record(100), Some(record(14)));
+        assert_eq!(graph.height(record(0)), 16);
+        assert!(graph.too_deep(record(15), record(101)));
+        graph.place(record(100), None);
+        assert_eq!(graph.height(record(0)), 14);
+        assert_eq!(graph.height(record(100)), 1);
+
+        // Worked out from scratch, as a load does, the heights are the same.
+        let mut loaded = graph.clone();
+        loaded.items_by_height.clear();
+        loaded.count_heights();
+        for id in 0..=101 {
+            assert_eq!(loaded.height(record(id)), graph.height(record(id)), "{id}");
+        }
+    }
+
+    #[test]
+    fn a_loop_from_a_file_edited_by_hand_is_as_tall_as_heights_go() {
+        let record = RecordRef::Accessory;
+        let mut graph = MountGraph::default();
+        graph.place(record(1), Some(record(2)));
+        graph.place(record(2), Some(record(1)));
+        graph.place(record(3), Some(record(1)));
+        graph.items_by_height.clear();
+        graph.count_heights();
+        assert_eq!(graph.height(record(1)), HEIGHT_CAP);
+        // A change on the loop dies out, and the heights stay at the cap.
+        graph.place(record(4), Some(record(2)));
+        graph.place(record(3), None);
+        assert_eq!(graph.height(record(1)), HEIGHT_CAP);
+        assert_eq!(graph.height(record(2)), HEIGHT_CAP);
+    }
 }

@@ -181,6 +181,7 @@ In export order (`ACCESSORY_COLUMNS`):
     - it would be mounted on itself through others. In that case, of the
       rows forming the loop, the last one in file order (firearm table
       first) is the one left unmounted.
+    _Amended 2026-11-22: and it would put a record more than 16 levels below the top of its chain (`mounts::MAX_MOUNT_DEPTH`; wording in contracts/tauri-commands.md; code scanning alert 83)._
 - **Overwrite** takes the row's mount, or unmounts the record when the cell
   is blank (Edge Cases). A sheet with no `mounted_on` column reads as blank
   in every row, like any missing column.

@@ -41,6 +41,11 @@ pub const MAX_STYLE_TEXT_CHARS: usize = 255;
 /// no file needs more of than it has cell formats, and the theme's colour
 /// slots (Excel writes 12).
 pub const MAX_CELL_FORMATS: usize = 65_490;
+/// Firearms and accessories listed as mounted on the firearms and accessories
+/// an import's rows would replace, in all its conflicts (code scanning alert
+/// 81). Checked by the parent once the rows are saved, so it is the one limit
+/// met after them.
+pub const MAX_MOUNTED_ENTRIES: usize = 100_000;
 /// The import helper's data limit (Linux, Windows).
 pub const HELPER_MEMORY_BYTES: usize = 536_870_912;
 /// How long the parent waits with no frame from the helper.
@@ -60,11 +65,12 @@ pub enum ImportLimit {
     CellText,
     TotalText,
     SharedStrings,
+    MountedEntries,
 }
 
 impl ImportLimit {
     /// Every limit, in the order of 008 data-model.md's table.
-    pub const ALL: [ImportLimit; 10] = [
+    pub const ALL: [ImportLimit; 11] = [
         Self::FileSize,
         Self::UnpackedSize,
         Self::ZipEntries,
@@ -75,6 +81,7 @@ impl ImportLimit {
         Self::CellText,
         Self::TotalText,
         Self::SharedStrings,
+        Self::MountedEntries,
     ];
 
     /// What the file passed, and what the app imports instead, as the
@@ -128,6 +135,12 @@ impl ImportLimit {
                  shared strings.",
                 n = thousands(MAX_SHARED_STRINGS)
             ),
+            Self::MountedEntries => format!(
+                "its rows would list more than {n} mounted firearms and accessories in all, \
+                 counting a firearm's or accessory's again for each row that matches it. \
+                 HoploDex lists at most {n} for one import, and kept the rows already imported.",
+                n = thousands(MAX_MOUNTED_ENTRIES as u64)
+            ),
         }
     }
 
@@ -175,7 +188,7 @@ mod tests {
 
     #[test]
     fn every_limit_has_a_message_naming_the_file_and_its_number() {
-        assert_eq!(ImportLimit::ALL.len(), 10);
+        assert_eq!(ImportLimit::ALL.len(), 11);
         let expected = [
             "256 MiB",
             "1 GiB",
@@ -187,6 +200,7 @@ mod tests {
             "32,767",
             "256 MiB",
             "2,000,000",
+            "100,000",
         ];
         for (limit, number) in ImportLimit::ALL.into_iter().zip(expected) {
             let message = limit.message("a.csv", None);
@@ -208,7 +222,7 @@ mod tests {
         assert_eq!(
             names.join(","),
             "\"fileSize\",\"unpackedSize\",\"zipEntries\",\"sheets\",\"rows\",\"columns\",\
-             \"cells\",\"cellText\",\"totalText\",\"sharedStrings\""
+             \"cells\",\"cellText\",\"totalText\",\"sharedStrings\",\"mountedEntries\""
         );
     }
 }

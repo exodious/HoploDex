@@ -120,6 +120,8 @@ Input and `ImportResult` are unchanged. The backend now:
 `ImportLimit` = `"fileSize" | "unpackedSize" | "zipEntries" | "sheets" |
 "rows" | "columns" | "cells" | "cellText" | "totalText" | "sharedStrings"`.
 
+_Amended 2026-11-22: `ImportLimit` gains `"mountedEntries"`, which `import_collection` meets after the rows are saved, when the conflicts would list more than 100,000 firearms and accessories mounted on the firearms and accessories they would replace, counting one's list again for each row that matches it; the rows imported before stay. Its message names the file of the conflict's table, as in `firearms.csv: its rows would list more than 100,000 mounted firearms and accessories in all, counting a firearm's or accessory's again for each row that matches it. HoploDex lists at most 100,000 for one import, and kept the rows already imported.` (code scanning alert 81)._
+
 Row-level errors are unchanged (FR-009), except that the free-text field
 maximums (below) now give row errors.
 

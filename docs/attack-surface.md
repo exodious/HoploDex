@@ -106,11 +106,12 @@ and peer review catch that.
 
 ## import-export: spreadsheet import and export
 
-- **Code:** `src-tauri/src/services/import_reader/**`; `src-tauri/src/services/spreadsheet.rs`; `src-tauri/src/services/import_matching.rs`; `src-tauri/src/services/suggestions.rs`; `src-tauri/src/commands/import_export.rs`; `src-tauri/src/models/rules.rs`; `src-tauri/src/services/record_id.rs`
+- **Code:** `src-tauri/src/services/import_reader/**`; `src-tauri/src/services/spreadsheet.rs`; `src-tauri/src/services/import_matching.rs`; `src-tauri/src/services/suggestions.rs`; `src-tauri/src/commands/import_export.rs`; `src-tauri/src/models/rules.rs`; `src-tauri/src/services/record_id.rs`; `src-tauri/src/services/mounts.rs` (an import's mounts and its conflicts' mounted lists)
 - **Ask:**
   - Is all parsing in `--import-helper` and none in the app?
   - Does the parent check every frame the child sends (sizes, counts, UTF-8, limits) as if the child were compromised?
-  - Are the maximums in `import_reader/limits.rs` measured by inflating and enforced before any row is saved (#66)?
+  - Are the maximums in `import_reader/limits.rs` measured by inflating and enforced before any row is saved (#66), apart from `MAX_MOUNTED_ENTRIES`, which bounds the conflicts' mounted lists once the rows are saved?
+  - Is the work after the rows bounded and stoppable: the mounts (`mounts::MAX_MOUNT_DEPTH` keeps each chain walk to 16 steps), the conflicts' mounted lists (each record's made once), the sheet pass's spelling vote (`SheetSpellings`, linear), each loop asking `is_cancelled`?
   - Are imported amounts and dates bounded so the collection's totals can't overflow (#67, `saturating_total`)?
   - Can a crafted sheet's `record_id`s (009) collide with existing records, overwrite them, or bind a mount to the wrong record?
   - Export: are CSV cells guarded against formula injection (`FORMULA_TRIGGERS` in `spreadsheet.rs`)? Are XLSX cells written as text, never as formulas? Does a cell over 32,767 characters still export (#95)?

@@ -42,6 +42,7 @@ const FIREARM_SELF_OR_BELOW: &str =
 const ACCESSORY_SELF_OR_BELOW: &str =
     "An accessory can't be mounted on itself, or on something mounted on it.";
 const CHOOSE_ACTIVE: &str = "Choose an active firearm or accessory.";
+const TOO_DEEP: &str = "Mounts can't stack more than 16 levels deep.";
 
 // --- Building records --------------------------------------------------------------------
 
@@ -511,6 +512,57 @@ fn an_upper_cannot_be_mounted_on_its_own_optic_or_anything_further_down() {
     assert_eq!(mount_rows(&db), 2);
     assert_eq!(chain(&db, red_dot), [optic, upper]);
     assert!(chain(&db, upper).is_empty());
+}
+
+// --- How deep a chain may go (code scanning alert 83) -----------------------------------
+
+#[test]
+fn a_chain_goes_16_levels_deep_and_no_further_through_mount_record_or_the_form() {
+    let db = TestDb::new();
+    let rifle = add_firearm(&db, &rifle("R-1"));
+    let mut chain_of = vec![rifle];
+    for level in 1..=16 {
+        let item = plain_accessory(&db, OPTIC, "Make", &format!("Level {level}"));
+        mount(&db, item, Some(*chain_of.last().unwrap())).unwrap();
+        chain_of.push(item);
+    }
+    let bottom = *chain_of.last().unwrap();
+    assert_eq!(chain(&db, bottom).len(), 16);
+
+    let one_more = plain_accessory(&db, OPTIC, "Make", "Level 17");
+    assert_field_error(mount(&db, one_more, Some(bottom)).unwrap_err(), "host", TOO_DEEP);
+    assert_field_error(
+        save_mounted_on(&db, one_more, Some(bottom)).unwrap_err(),
+        "mountedOn",
+        TOO_DEEP,
+    );
+    assert_eq!(mount_rows(&db), 16, "nothing changed");
+}
+
+#[test]
+fn a_record_carrying_others_is_refused_where_they_would_go_past_16_levels() {
+    let db = TestDb::new();
+    let rifle = add_firearm(&db, &rifle("R-1"));
+    let mut host = rifle;
+    for level in 1..=14 {
+        let item = plain_accessory(&db, OPTIC, "Make", &format!("Level {level}"));
+        mount(&db, item, Some(host)).unwrap();
+        host = item;
+    }
+    // An upper carrying an optic carrying a red dot: three levels.
+    let upper = plain_accessory(&db, UPPER, "BCM", "RECCE-16");
+    let optic = plain_accessory(&db, OPTIC, "Vortex", "Razor");
+    let red_dot = plain_accessory(&db, OPTIC, "Aimpoint", "T-2");
+    mount(&db, optic, Some(upper)).unwrap();
+    mount(&db, red_dot, Some(optic)).unwrap();
+
+    // On level 14 the red dot would be at 17.
+    assert_field_error(mount(&db, upper, Some(host)).unwrap_err(), "host", TOO_DEEP);
+    assert!(chain(&db, upper).is_empty(), "the upper stays where it was");
+    // On level 13 it is at 16.
+    let level_13 = chain(&db, host)[0];
+    mount(&db, upper, Some(level_13)).unwrap();
+    assert_eq!(chain(&db, red_dot).len(), 16);
 }
 
 #[test]

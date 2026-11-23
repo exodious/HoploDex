@@ -80,6 +80,7 @@ type RecordCounts = { firearms: number; accessories: number };
     for a firearm, and "An accessory can't be mounted on itself, or on
     something mounted on it." for an accessory (worded by the kind of the
     record being mounted, FR-010).
+  _Amended 2026-11-22: a third, "Mounts can't stack more than 16 levels deep.", when the mount would put a record more than 16 levels below the top of its chain (code scanning alert 83)._
   A record that is being disposed can't be mounted: the dispose commands
   clear it.
 - **`validate_firearm_input`**: `dispositionPrice` is no longer required
@@ -419,6 +420,7 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): e
   - "Mounted on {id}: it would be mounted on itself through {name}.
     Imported unmounted."
   - "Mounted on {value}: not a record ID. Imported unmounted."
+  _Amended 2026-11-22: and "Mounted on {id}: Mounts can't stack more than 16 levels deep. Imported unmounted." (code scanning alert 83)._
 
 ### `resolve_import_conflicts`
 

@@ -1329,6 +1329,141 @@ fn skip_leaves_the_record_and_its_mount_and_warns_of_nothing() {
     assert_eq!(mount_of(&db.conn, optic), Some(uid_of(&db.conn, rifle)));
 }
 
+// --- What an import's mounts may cost (code scanning alerts 81 and 83) ----------------------------------------
+
+#[test]
+fn an_imported_chain_mounts_16_levels_deep_and_the_row_past_that_imports_unmounted() {
+    let db = TestDb::new();
+    let ids: Vec<String> = (0..20).map(|_| fresh_uid()).collect();
+    // Each row on the one before it: row 1 is the top, row 17 is 16 levels
+    // below it, and row 18 would be 17.
+    let rows: Vec<Vec<String>> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| {
+            let host = if i == 0 { "" } else { ids[i - 1].as_str() };
+            accessory_cells("Optic", &[("record_id", id), ("mounted_on", host)])
+        })
+        .collect();
+    let dir = TempDir::new().unwrap();
+    let path = sheets::csv_in(dir.path(), "accessories.csv", &accessory_table(&rows));
+
+    let result = import(&db, &ImportSessionStore::new(), &[&path]);
+
+    assert_eq!(result.imported_count, 20, "{:?}", result.row_errors);
+    assert_eq!(
+        sheets::entries(&result.warnings),
+        [(
+            "accessories".to_owned(),
+            18,
+            format!(
+                "Mounted on {}: Mounts can't stack more than 16 levels deep. Imported unmounted.",
+                ids[16]
+            )
+        )]
+    );
+    assert_eq!(mount_of(&db.conn, find(&db.conn, &ids[16])), Some(ids[15].clone()));
+    assert_eq!(mount_of(&db.conn, find(&db.conn, &ids[17])), None);
+    // Row 18 is a top of its own, so the rows on it mount.
+    assert_eq!(mount_of(&db.conn, find(&db.conn, &ids[19])), Some(ids[18].clone()));
+}
+
+/// A Rifle carrying `mounted` accessories, and a firearm table of `rows`
+/// rows, each matching the Rifle by make, model and serial number and
+/// marking it sold, so that each conflict lists everything on it.
+fn many_disposed_rows(db: &TestDb, mounted_count: usize, rows: usize) -> (TempDir, PathBuf) {
+    let rifle = new_firearm(db, &support::firearm("Ruger", "Precision", "R1"));
+    for _ in 0..mounted_count {
+        new_accessory(db, &mounted(accessory(SLING), rifle));
+    }
+    let row = firearm_cells(
+        "Ruger",
+        "Precision",
+        "R1",
+        &[
+            ("status", "disposed"),
+            ("disposition_type", "sold"),
+            ("disposition_recipient", "Jane Doe"),
+            ("disposition_date", "2025-06-15"),
+        ],
+    );
+    let dir = TempDir::new().unwrap();
+    let path = sheets::csv_in(dir.path(), "firearms.csv", &firearm_table(&vec![row; rows]));
+    (dir, path)
+}
+
+#[test]
+fn the_conflicts_list_at_most_100000_mounted_records_and_past_that_the_import_fails() {
+    // 250 conflicts listing 400 records each is the most.
+    let db = TestDb::new();
+    let (_dir, path) = many_disposed_rows(&db, 400, 250);
+    let result = import(&db, &ImportSessionStore::new(), &[&path]);
+    assert_eq!(result.conflicts.len(), 250, "{:?}", result.row_errors);
+    assert!(result.conflicts.iter().all(|c| c.mounted.len() == 400));
+
+    // One row more, before the memory of 251 lists is spent.
+    let db = TestDb::new();
+    let (_dir, path) = many_disposed_rows(&db, 400, 251);
+    let err = import_err(&db, &[&path]);
+    assert_eq!(err.code, "IMPORT_LIMIT_EXCEEDED", "{err:?}");
+    assert_eq!(
+        err.message,
+        "firearms.csv: its rows would list more than 100,000 mounted firearms and \
+         accessories in all, counting a firearm's or accessory's again for each row that \
+         matches it. HoploDex lists at most 100,000 for one import, and kept the rows \
+         already imported."
+    );
+    assert_eq!(err.details.as_ref().unwrap()["limit"], "mountedEntries");
+}
+
+#[test]
+fn a_stop_while_the_mounts_are_made_or_the_conflicts_listed_keeps_the_rows() {
+    // `is_cancelled` answers yes from its `n`th question on: one is asked
+    // before each row, so the next is the first mount's or conflict's.
+    let stop_after = |n: usize| {
+        let asked = std::cell::Cell::new(0);
+        move || {
+            asked.set(asked.get() + 1);
+            asked.get() > n
+        }
+    };
+    let stopped = |db: &TestDb, path: &Path, rows: usize| {
+        let tables = crate::support::read_files(&[sheets::import_file(path)]);
+        import_export_ops::import_collection_stoppable(
+            &db.conn,
+            tables,
+            &ImportSessionStore::new(),
+            &mut |_, _| {},
+            &stop_after(rows),
+            &|_| {},
+        )
+        .unwrap_err()
+    };
+
+    let db = TestDb::new();
+    let (top, item) = (fresh_uid(), fresh_uid());
+    let dir = TempDir::new().unwrap();
+    let path = sheets::csv_in(
+        dir.path(),
+        "accessories.csv",
+        &accessory_table(&[
+            accessory_cells("Optic", &[("record_id", &top)]),
+            accessory_cells("Optic", &[("record_id", &item), ("mounted_on", &top)]),
+        ]),
+    );
+    let err = stopped(&db, &path, 2);
+    assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
+    assert_eq!(err.details.as_ref().unwrap()["importedCount"], 2);
+    assert_eq!(count(&db.conn, "accessories"), 2);
+    assert_eq!(mount_of(&db.conn, find(&db.conn, &item)), None, "stopped before the mount");
+
+    let db = TestDb::new();
+    let fixture = disposed_row_fixture(&db, None);
+    let err = stopped(&db, &fixture.path, 1);
+    assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
+    assert_eq!(err.details.as_ref().unwrap()["importedCount"], 0);
+}
+
 // --- Row errors (006 US5-6, FR-022, FR-024) -----------------------------------------------------------------
 
 #[test]
