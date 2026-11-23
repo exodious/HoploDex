@@ -304,6 +304,35 @@ describe("code scanning alert build-ci/cwe-345 - only the generators' own inline
       ).toBe(stray(CARGO, "a script source at cargo/x.sh"));
     });
 
+    it("refuses a crate whose version would put its folder outside cargo/vendor", () => {
+      // A lockfile line this reader takes for a package (inside a [metadata]
+      // string, say) builds the folder from the version as written.
+      const f = fixture("ok");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-sources-"));
+      try {
+        const version = "1.2.3.crate#/../../../src-tauri/src";
+        const cargoLockPath = path.join(dir, "Cargo.lock");
+        fs.writeFileSync(
+          cargoLockPath,
+          fs
+            .readFileSync(f.cargoLockPath, "utf8")
+            .replace('version = "1.2.3"', `version = "${version}"`),
+        );
+        const sourcesPath = path.join(dir, "cargo-sources.json");
+        const entries = JSON.parse(fs.readFileSync(f.cargoSourcesPath, "utf8")) as Entry[];
+        for (const e of entries) {
+          if (e.dest === "cargo/vendor/foo-1.2.3") e.dest = `cargo/vendor/foo-${version}`;
+          if (e.url) e.url = String(e.url).replace("foo-1.2.3", `foo-${version}`);
+        }
+        fs.writeFileSync(sourcesPath, JSON.stringify(entries));
+        expect(checkCargoSources({ cargoLockPath, sourcesPath })).toBe(
+          `${CARGO}: crate "foo" "${version}" has a name or version crates.io doesn't allow. ${REGENERATE}`,
+        );
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
     it("refuses a crate archive with a key the generator does not write", () => {
       expect(
         changed("cargo", (e) => {

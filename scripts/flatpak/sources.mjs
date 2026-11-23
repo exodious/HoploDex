@@ -126,7 +126,10 @@ export function parseCargoLock(text) {
 
 /** The crate a crates.io archive URL names, or null for any other URL. */
 function crateOfUrl(url) {
-  const match = /^https:\/\/static\.crates\.io\/crates\/([^/]+)\/\1-(.+)\.crate$/.exec(url ?? "");
+  const match =
+    /^https:\/\/static\.crates\.io\/crates\/([A-Za-z0-9_-]+)\/\1-([0-9A-Za-z.+-]+)\.crate$/.exec(
+      url ?? "",
+    );
   return match ? { name: match[1], version: match[2] } : null;
 }
 
@@ -154,6 +157,20 @@ export function checkCargoSources({ cargoLockPath, sourcesPath }) {
 
   const registry = packages.filter((pkg) => pkg.source?.startsWith("registry+"));
   const archives = sources.filter((s) => s.type === "archive");
+
+  // A crate's name and version build its url and its folder in cargo/vendor, so
+  // only the characters crates.io allows: no `/`, `#` or `..` that climbs out.
+  const odd = registry.find(
+    (pkg) =>
+      !/^[A-Za-z0-9_-]+$/.test(pkg.name ?? "") || !/^[0-9A-Za-z.+-]+$/.test(pkg.version ?? ""),
+  );
+  if (odd) {
+    return wrongList(
+      list,
+      lock,
+      `crate ${JSON.stringify(odd.name)} ${JSON.stringify(odd.version)} has a name or version crates.io doesn't allow`,
+    );
+  }
 
   for (const pkg of registry) {
     const url = `https://static.crates.io/crates/${pkg.name}/${pkg.name}-${pkg.version}.crate`;
