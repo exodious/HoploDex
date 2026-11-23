@@ -749,11 +749,10 @@ fn free_target(folder: &str, name: &str) -> Result<PathBuf, CommandError> {
 const MAX_KEEP_COUNT: i64 = 100;
 
 /// Checks the backup settings (003 data-model.md "Validation rules") and
-/// returns the location as `collection_settings.backup_location` stores
-/// it: `default`, or the absolute path. A path that does not exist is
-/// accepted, so a location on another computer's drive can be kept; the
-/// settings then report it unavailable here.
-/// The location to store, or `None` to keep the saved one.
+/// returns the location to store as `collection_settings.backup_location`
+/// stores it: `default`, or the absolute path; `None` keeps the saved one.
+/// A path that does not exist is accepted, so a location on another
+/// computer's drive can be kept; the settings then report it unavailable here.
 pub fn validate_backup_settings_input(
     input: &BackupSettingsInput,
 ) -> Result<Option<String>, CommandError> {
