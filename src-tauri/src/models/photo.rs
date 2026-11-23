@@ -210,10 +210,11 @@ impl PhotoSummary {
     /// original, so a list or a thumbnail never reads it, and a photo larger
     /// than any connection reads (one stored before 001 FR-007's limit,
     /// amended 2026-11-21) still lists. A thumbnail over
-    /// [`MAX_THUMBNAIL_BYTES`] reads as empty, unread: SQLite has its length
-    /// without its bytes.
+    /// [`MAX_THUMBNAIL_BYTES`], or one that isn't a BLOB, reads as empty,
+    /// unread: SQLite has a BLOB's type and length without its bytes.
     pub const COLUMNS: &str = "id, firearm_id, accessory_id, original_filename, mime_type, \
-        CASE WHEN length(thumbnail_bytes) <= 1048576 THEN thumbnail_bytes ELSE X'' END AS thumbnail_bytes, \
+        CASE WHEN typeof(thumbnail_bytes) <> 'blob' THEN X'' \
+        WHEN length(thumbnail_bytes) <= 1048576 THEN thumbnail_bytes ELSE X'' END AS thumbnail_bytes, \
         sort_order, created_at";
 
     pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {

@@ -301,7 +301,7 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#li
   `thumbnailBytes` in the UI) to keep these list payloads small. Not in the original contract
   list, but necessary plumbing for `PhotoGallery`/`DocumentList` display.
 
-_Amended 2026-11-23: a photo whose stored thumbnail is over 1 MiB has an empty `thumbnailBytes` (see `get_photo_thumbnail`)._
+_Amended 2026-11-23: a photo whose stored thumbnail is over 1 MiB, or isn't a BLOB, has an empty `thumbnailBytes` (see `get_photo_thumbnail`)._
 
 ### `add_photo`
 
@@ -345,7 +345,7 @@ _Amended 2026-11-19 (code scanning alert 89): the input is unchanged, but the ba
 
 _Amended 2026-11-21: it reads the thumbnail without the original, as `list_photos` does, so a photo too large to open ([spec FR-007](../spec.md)) still shows one._
 
-_Amended 2026-11-23 (code scanning alert untrusted-images/cwe-770/src-tauri/src/commands/photos.rs#get_photo_thumbnail): the bytes come as a raw binary IPC response (an `ArrayBuffer`), not a JSON number array. A stored thumbnail over 1 MiB, which no HoploDex makes, isn't read: `ATTACHMENT_TOO_LARGE` ("This photo's thumbnail is too large to show. HoploDex shows one of at most 1 MiB.", `details` `{ limit }`), and the browse view shows the type's drawing. `list_photos` gives that photo an empty `thumbnailBytes`._
+_Amended 2026-11-23 (code scanning alert untrusted-images/cwe-770/src-tauri/src/commands/photos.rs#get_photo_thumbnail): the bytes come as a raw binary IPC response (an `ArrayBuffer`), not a JSON number array. A stored thumbnail over 1 MiB, or one that isn't a BLOB, which no HoploDex makes, isn't read: `ATTACHMENT_TOO_LARGE` ("This photo's thumbnail is too large to show. HoploDex shows one of at most 1 MiB.", `details` `{ limit }`), and the browse view shows the type's drawing. `list_photos` gives that photo an empty `thumbnailBytes`._
 
 ### `get_photo_original`
 

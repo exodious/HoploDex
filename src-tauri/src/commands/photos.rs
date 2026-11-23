@@ -57,12 +57,14 @@ pub mod ops {
     }
 
     /// A photo's thumbnail; `ATTACHMENT_TOO_LARGE` for one over
-    /// [`MAX_THUMBNAIL_BYTES`], which [`PhotoSummary::COLUMNS`] leaves unread.
+    /// [`MAX_THUMBNAIL_BYTES`] or not a BLOB, which [`PhotoSummary::COLUMNS`]
+    /// leaves unread.
     pub fn get_photo_thumbnail(conn: &Connection, id: i64) -> Result<Vec<u8>, CommandError> {
         let bytes = get_photo_summary(conn, id)?.thumbnail_bytes;
         let stored_empty = || {
             conn.query_row(
-                "SELECT length(thumbnail_bytes) = 0 FROM photos WHERE id = :id",
+                "SELECT CASE WHEN typeof(thumbnail_bytes) = 'blob' \
+                 THEN length(thumbnail_bytes) = 0 ELSE 0 END FROM photos WHERE id = :id",
                 named_params! { ":id": id },
                 |row| row.get::<_, bool>(0),
             )

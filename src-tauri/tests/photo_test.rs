@@ -545,7 +545,8 @@ fn the_photo_limit_is_each_records_own() {
 // --- Bounds on what a photo costs to read (code scanning alerts) -----------------
 
 /// code scanning alert untrusted-images/cwe-770/src-tauri/src/commands/photos.rs#get_photo_thumbnail:
-/// a stored thumbnail over 1 MiB, which no HoploDex makes, is refused by
+/// a stored thumbnail over 1 MiB, or a text one led by a NUL, which no
+/// HoploDex makes, is refused by
 /// `get_photo_thumbnail` and lists empty, and neither reads it: one longer
 /// than any connection reads (`db::MAX_VALUE_BYTES`) would fail as `TooBig`
 /// if it were. One of exactly 1 MiB still reads, and an empty one is empty.
@@ -559,11 +560,14 @@ fn a_stored_thumbnail_over_1_mib_is_refused_unread_and_lists_empty() {
     let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
     let owner = RecordRef::Firearm(firearm.id);
     let photo = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png").unwrap();
-    let store = |length: i64| {
+    let blob = "zeroblob(?1)";
+    // SQLite's `length` of this text is 0, as it stops at the first NUL.
+    let text = "CAST(zeroblob(?1) AS TEXT)";
+    let store = |value: &str, length: i64| {
         db.conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, 1_000_000_000).unwrap();
         db.conn
             .execute(
-                "UPDATE photos SET thumbnail_bytes = zeroblob(?1) WHERE id = ?2",
+                &format!("UPDATE photos SET thumbnail_bytes = {value} WHERE id = ?2"),
                 rusqlite::params![length, photo.id],
             )
             .unwrap();
@@ -572,27 +576,32 @@ fn a_stored_thumbnail_over_1_mib_is_refused_unread_and_lists_empty() {
     let max = MAX_THUMBNAIL_BYTES as i64;
 
     // An empty one is empty, not too large.
-    store(0);
+    store(blob, 0);
     assert!(photo_ops::get_photo_thumbnail(&db.conn, photo.id).unwrap().is_empty());
 
-    store(max);
+    store(blob, max);
     assert_eq!(photo_ops::get_photo_thumbnail(&db.conn, photo.id).unwrap().len() as i64, max);
     assert_eq!(
         photo_ops::list_photos(&db.conn, owner).unwrap()[0].thumbnail_bytes.len() as i64,
         max
     );
 
-    for length in [max + 1, i64::from(db::MAX_VALUE_BYTES) + 1] {
-        store(length);
+    for (value, length) in [
+        (blob, max + 1),
+        (blob, i64::from(db::MAX_VALUE_BYTES) + 1),
+        (text, max + 1),
+        (text, i64::from(db::MAX_VALUE_BYTES) + 1),
+    ] {
+        store(value, length);
         let err = photo_ops::get_photo_thumbnail(&db.conn, photo.id).unwrap_err();
-        assert_eq!(err.code, "ATTACHMENT_TOO_LARGE", "{length}");
+        assert_eq!(err.code, "ATTACHMENT_TOO_LARGE", "{value} {length}");
         assert_eq!(
             err.message,
             "This photo's thumbnail is too large to show. HoploDex shows one of at most 1 MiB."
         );
         assert_eq!(err.details.as_deref(), Some(&json!({ "limit": MAX_THUMBNAIL_BYTES })));
         let listed = photo_ops::list_photos(&db.conn, owner).unwrap();
-        assert!(listed[0].thumbnail_bytes.is_empty(), "{length}");
+        assert!(listed[0].thumbnail_bytes.is_empty(), "{value} {length}");
     }
 }
 
@@ -677,4 +686,24 @@ fn a_photo_past_the_pixel_limits_is_refused_and_nothing_is_stored() {
     }
     let real = crafted_jpeg(false, 0xC0, 16, 16, false);
     photo_ops::add_photo(&db.conn, owner, &real, "real.jpg").unwrap();
+}
+
+/// code scanning alert untrusted-images/cwe-789/src-tauri/src/models/photo.rs#generate_thumbnail,
+/// as its accepted option (a) says: a baseline JPEG every component of which
+/// is in its first scan is still added over 64 megapixels, decoded from a copy
+/// that leaves out the segments decoding doesn't need (here an APP0 of length
+/// 6 and a comment), not refused as having more pixels than HoploDex reads.
+#[test]
+fn a_baseline_jpeg_over_64_megapixels_is_still_added() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    let mut jpeg = crafted_jpeg(true, 0xC0, 8_192, 8_193, false);
+    let scan = jpeg.windows(2).position(|w| w == [0xFF, 0xDA]).unwrap();
+    let skipped = [0xFF, 0xE0, 0x00, 0x06, 0, 0, 0, 0, 0xFF, 0xFE, 0x00, 0x04, b'h', b'i'];
+    jpeg.splice(scan..scan, skipped);
+
+    let photo = photo_ops::add_photo(&db.conn, owner, &jpeg, "large.jpg").unwrap();
+    assert!(!photo_ops::get_photo_thumbnail(&db.conn, photo.id).unwrap().is_empty());
+    assert_eq!(count(&db, "photos"), 1);
 }
