@@ -128,7 +128,12 @@ don't write: one at another place than they write it, a crate's
 "files": {}}`, another `cargo/config`, or a command other than
 flatpak-node-generator's fixed node-gyp headers script and esbuild copies
 (`scripts/flatpak/sources.mjs`). Such an entry writes or runs something beside
-the checkout before the build. A list the generators wrote passes; when moving
+the checkout before the build. It fails too on a key or field type the
+generators don't write, a package's source anywhere but where its generator
+puts it (a crate in its `cargo/vendor` folder, a tarball in the npm cache, a
+tool cache copy only an `@esbuild/` package's in its own folder), and a
+`Cargo.lock` crate name or version crates.io doesn't allow. A list the
+generators wrote passes; when moving
 `FLATPAK_BUILDER_TOOLS_COMMIT` in the `Dockerfile` changes what they write,
 update `sources.mjs` to match, in the same change.
 
