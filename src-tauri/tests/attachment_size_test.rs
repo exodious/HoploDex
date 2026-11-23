@@ -324,13 +324,15 @@ fn an_attachment_past_what_a_connection_reads_still_lists_and_only_it_fails_to_o
 }
 
 /// A database from elsewhere whose `document_attachments` is a view that makes
-/// a document's bytes with `zeroblob(...)`, the review's lead for alert #108:
-/// reopened, HoploDex lists the document from its metadata and refuses to read
-/// its 900 MB with `ATTACHMENT_TOO_LARGE` (`db::MAX_VALUE_BYTES`), where a
-/// connection without the limit would make all of it.
+/// a document's bytes with `zeroblob(...)`, the review's lead for alert #108.
+/// Reopened, it is refused as damaged before any table is read
+/// (`db::check_schema`). On a connection that already holds it, HoploDex still
+/// lists the document from its metadata and refuses to read its 900 MB with
+/// `ATTACHMENT_TOO_LARGE` (`db::MAX_VALUE_BYTES`), where a connection without
+/// the limit would make all of it.
 #[test]
-fn a_crafted_view_of_a_huge_zeroblob_lists_and_is_refused_not_made() {
-    let mut db = TestDb::new();
+fn a_crafted_view_of_a_huge_zeroblob_is_refused_at_open_and_never_made() {
+    let db = TestDb::new();
     let owner = new_firearm(&db, "TS-5");
     let firearm_id = owner.owner_columns().0.unwrap();
     db.conn
@@ -343,7 +345,6 @@ fn a_crafted_view_of_a_huge_zeroblob_lists_and_is_refused_not_made() {
                         '2026-01-01T00:00:00Z' AS created_at;"
         ))
         .unwrap();
-    db.reopen();
 
     let documents = document_ops::list_documents(&db.conn, owner).unwrap();
     assert_eq!(
@@ -352,6 +353,13 @@ fn a_crafted_view_of_a_huge_zeroblob_lists_and_is_refused_not_made() {
     );
     let err = document_ops::get_document(&db.conn, documents[0].id).unwrap_err();
     assert_eq!(err.code, "ATTACHMENT_TOO_LARGE");
+
+    let path = db.path();
+    let (conn, _dir) = db.into_parts();
+    drop(conn);
+    let reopened =
+        db::open_database(&path, &support::passphrase(), &support::test_machine(), false);
+    assert!(matches!(reopened, Err(db::OpenError::Damaged)), "{reopened:?}");
 }
 
 // --- A type judged by its name and first bytes ---------------------------------

@@ -194,6 +194,14 @@ impl OpenMarker {
 const E2E_STEPS: &[(&str, &str)] =
     &[("9000_e2e_upgrade_check", "CREATE TABLE e2e_upgrade_check (id INTEGER PRIMARY KEY);")];
 
+/// The table that records the steps applied, created by the runner rather
+/// than a step. Its text is in every database's schema, which
+/// [`super::check_schema`] compares exactly: it never changes.
+pub(crate) const SCHEMA_MIGRATIONS: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )";
+
 /// Every step a build applies to the database at `database_path`, in order:
 /// [`MIGRATIONS`], plus, with `upgrade-test-steps`, the test-only steps
 /// registered for the database's folder, or, in an `e2e` build, [`E2E_STEPS`].
@@ -288,12 +296,7 @@ fn run(
 ) -> Result<(), UpgradeError> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
 
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (
-            name TEXT PRIMARY KEY,
-            applied_at TEXT NOT NULL
-        )",
-    )?;
+    conn.execute_batch(SCHEMA_MIGRATIONS)?;
     let applied = applied_steps(conn)?;
     let changes_waiting = if table_exists(conn, "app_state")? {
         conn.query_row("SELECT changes_waiting FROM app_state WHERE id = 1", [], |row| {
@@ -407,6 +410,22 @@ pub mod testing {
     /// The expression of `uid_expression!`, for a test to check against the
     /// `CHECK` and `record_id::parse`.
     pub const UID_EXPRESSION: &str = uid_expression!();
+
+    /// The one table a test may add beside the steps' own, to make a file
+    /// bigger (`grow` in the backup, lock and upgrade tests): plain, with no
+    /// constraint, index or trigger, so `db::check_schema` passes it in this
+    /// build only.
+    pub const FILLER: &str = "CREATE TABLE IF NOT EXISTS filler (content TEXT)";
+
+    /// Whether `object`, a schema row, is [`FILLER`]'s table, as SQLite
+    /// records it.
+    pub fn is_filler(object: &[Option<String>; 4]) -> bool {
+        let filler = Some("filler".to_owned());
+        object[0].as_deref() == Some("table")
+            && object[1] == filler
+            && object[2] == filler
+            && object[3].as_deref() == Some("CREATE TABLE filler (content TEXT)")
+    }
 
     /// The two test-only steps every test program shares (009 research.md §14),
     /// so `upgrade_steps_test`, `release_upgrade_test` and

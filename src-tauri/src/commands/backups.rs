@@ -328,27 +328,35 @@ pub mod ops {
         passphrase: &Passphrase,
         database_path: &Path,
     ) -> Result<InspectedBackup, CommandError> {
-        let checked = db::connect(backup, OpenFlags::SQLITE_OPEN_READ_ONLY).and_then(|conn| {
-            cipher::key(&conn, "main", passphrase)?;
-            cipher::apply_cipher_settings(&conn, "main")?;
-            conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get::<_, i64>(0))?;
-            let database_id = conn.query_row("SELECT database_id FROM app_state", [], |row| {
-                row.get::<_, String>(0)
-            })?;
-            let newer = db::has_unknown_migration(&conn, database_path)?;
-            let due = db::upgrade::steps_due(&conn, database_path)?;
-            Ok((database_id, newer, !due.is_empty()))
-        });
+        let checked = (|| {
+            let conn = db::connect(backup, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .and_then(|conn| {
+                    cipher::key(&conn, "main", passphrase)?;
+                    cipher::apply_cipher_settings(&conn, "main")?;
+                    conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| {
+                        row.get::<_, i64>(0)
+                    })?;
+                    Ok(conn)
+                })
+                .map_err(OpenError::classify)?;
+            db::check_schema(&conn, database_path)?;
+            (|| {
+                let database_id =
+                    conn.query_row("SELECT database_id FROM app_state", [], |row| {
+                        row.get::<_, String>(0)
+                    })?;
+                let due = db::upgrade::steps_due(&conn, database_path)?;
+                Ok((database_id, !due.is_empty()))
+            })()
+            .map_err(OpenError::classify)
+        })();
         match checked {
-            Ok((_, true, _)) => Err(OpenError::NewerVersion.into()),
-            Ok((database_id, false, due)) => Ok(InspectedBackup {
+            Ok((database_id, due)) => Ok(InspectedBackup {
                 database_id,
                 upgrade_to: due.then(|| crate::APP_VERSION.to_owned()),
             }),
-            Err(err) => Err(match OpenError::classify(err) {
-                OpenError::Damaged => CommandError::database_damaged(false),
-                other => other.into(),
-            }),
+            Err(OpenError::Damaged) => Err(CommandError::database_damaged(false)),
+            Err(other) => Err(other.into()),
         }
     }
 
