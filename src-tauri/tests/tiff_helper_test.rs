@@ -49,9 +49,9 @@
 //!      "landlock_enforced": bool,                 // Linux: any rule in force
 //!      "descriptors_before": [number],            // open from 3 up, before and
 //!      "descriptors_after": [number],             // once confined
-//!      "earlier_thread_open": number | null,      // Linux: opening <file> once
-//!                                                 // confined, from a thread started
-//!                                                 // before: 0 or the error
+//!      "confined_beside_a_thread": bool | null,   // Linux: whether confining worked
+//!                                                 // with a thread started before
+//!      "rlimit_as": [soft, max] | null,           // Linux, once confined
 //!      "filter": object | null }`                 // Linux: `filter_report`'s
 //!   It is the only way to look inside a confined process from outside, and it
 //!   is compiled into debug and test builds only (`cfg(debug_assertions)`): a
@@ -191,9 +191,31 @@ fn the_filter_refuses_every_listed_call_and_nothing_a_helper_needs() {
     assert_eq!(filter["udp"], eperm, "a UDP socket: {json}");
     assert_eq!(filter["unix"], eperm, "a pair of Unix sockets: {json}");
     assert_eq!(filter["start"], eperm, "starting a program: {json}");
-    // Landlock holds for the thread that confines and its new threads only,
-    // so this is the filter alone, on every thread (`SECCOMP_FILTER_FLAG_TSYNC`).
-    assert_eq!(json["earlier_thread_open"], eperm, "a thread started before: {json}");
+}
+
+/// Landlock holds for the thread that confines and the threads it starts
+/// after, not for one already running, so the helper doesn't confine itself
+/// beside another thread, and then every thread of it is under Landlock.
+#[cfg(all(debug_assertions, target_os = "linux"))]
+#[test]
+fn it_wont_confine_itself_beside_another_thread() {
+    let json = self_check().json;
+    assert_eq!(json["confined_beside_a_thread"], false, "{json}");
+}
+
+/// Code scanning alert helpers/cwe-770 (#86): `RLIMIT_DATA` doesn't count a
+/// stack or a mapping that grows down like one, so the filter refuses the
+/// mapping (`filter_report`'s "memory that grows down") and `RLIMIT_AS` bounds
+/// the rest, past the memory limit, where the helper can't raise it.
+#[cfg(all(debug_assertions, target_os = "linux"))]
+#[test]
+fn its_address_space_is_bounded_past_its_memory_limit() {
+    let json = self_check().json;
+    let limit = json["rlimit_as"].as_array().unwrap_or_else(|| panic!("{json}"));
+    let (soft, hard) = (limit[0].as_u64().unwrap(), limit[1].as_u64().unwrap());
+    assert_eq!(soft, hard, "{json}");
+    assert_ne!(soft, libc::RLIM_INFINITY, "{json}");
+    assert!(soft > hoplodex_lib::services::preview::helper::MEMORY_LIMIT as u64, "{json}");
 }
 
 /// The numbers in the filter mean other calls on another architecture, so a
@@ -248,6 +270,16 @@ fn without_its_filter_it_refuses_to_serve() {
 /// helper inherits and can't remove, answering each of `calls` with its error.
 #[cfg(target_os = "linux")]
 fn under_a_parents_filter(command: &mut std::process::Command, calls: &[(libc::c_long, i32)]) {
+    under_a_parents_filter_closing(command, calls, None);
+}
+
+/// [`under_a_parents_filter`], and closing descriptor `kills` ends the helper.
+#[cfg(target_os = "linux")]
+fn under_a_parents_filter_closing(
+    command: &mut std::process::Command,
+    calls: &[(libc::c_long, i32)],
+    kills: Option<u32>,
+) {
     use std::os::unix::process::CommandExt;
 
     let statement = |code: u32, k: u32| libc::sock_filter { code: code as u16, jt: 0, jf: 0, k };
@@ -257,6 +289,14 @@ fn under_a_parents_filter(command: &mut std::process::Command, calls: &[(libc::c
     for &(call, error) in calls {
         filter.push(libc::sock_filter { code: when_equal, jt: 0, jf: 1, k: call as u32 });
         filter.push(statement(ret, libc::SECCOMP_RET_ERRNO | error as u32));
+    }
+    if let Some(descriptor) = kills {
+        filter.extend([
+            libc::sock_filter { code: when_equal, jt: 0, jf: 3, k: libc::SYS_close as u32 },
+            statement(libc::BPF_LD | libc::BPF_W | libc::BPF_ABS, 16), // the first argument
+            libc::sock_filter { code: when_equal, jt: 0, jf: 1, k: descriptor },
+            statement(ret, libc::SECCOMP_RET_KILL_PROCESS),
+        ]);
     }
     filter.push(statement(ret, libc::SECCOMP_RET_ALLOW));
 
@@ -367,21 +407,31 @@ fn it_holds_no_descriptor_it_inherited() {
 }
 
 /// On a kernel older than Linux 5.9, which has no `close_range`, as a parent's
-/// filter makes it look: each descriptor up to the limit is closed instead.
+/// filter makes it look: the open descriptors are closed, read from
+/// `/proc/self/fd`, and no other number, so it doesn't take minutes when the
+/// hard limit is near `nr_open`. Closing the number after the inherited one,
+/// which isn't open, ends the helper.
 #[cfg(all(debug_assertions, target_os = "linux"))]
 #[test]
 fn without_close_range_it_still_holds_no_descriptor_it_inherited() {
     let mut command = HelperHandle::command(&exe());
-    under_a_parents_filter(&mut command, &[(libc::SYS_close_range, libc::ENOSYS)]);
+    under_a_parents_filter_closing(
+        &mut command,
+        &[(libc::SYS_close_range, libc::ENOSYS)],
+        Some(INHERITED as u32 + 1),
+    );
     holds_no_descriptor_it_inherited(command);
 }
+
+/// The descriptor a parent leaves inheritable, in those tests.
+#[cfg(all(debug_assertions, unix))]
+const INHERITED: i32 = 57;
 
 #[cfg(all(debug_assertions, unix))]
 fn holds_no_descriptor_it_inherited(mut command: std::process::Command) {
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
 
-    const INHERITED: i32 = 57;
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("secret.txt");
     std::fs::write(&file, b"not for the helper").unwrap();
