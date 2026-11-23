@@ -660,8 +660,9 @@ const ZIP64_RECORD_LIMIT: u64 = 44 + 1024;
 /// [`END_RECORDS_LIMIT`] end records in the last 64 KiB (zip looks in the
 /// last 64 KiB and a record's length; the window here is a little wider),
 /// and where one follows a Zip64 locator, at most as many Zip64 end records
-/// between where those locators point and themselves, none declaring more entries than a 32-bit record can or
-/// more than [`ZIP64_RECORD_LIMIT`] bytes. So for each record it tries, zip
+/// between where those locators point and themselves, none declaring more
+/// entries than a 32-bit record can or more than [`ZIP64_RECORD_LIMIT`]
+/// bytes. So for each record it tries, zip
 /// reads at most 65,535 directory headers and a kilobyte of Zip64 record.
 fn zip_archive(bytes: &[u8]) -> Option<zip::ZipArchive<Cursor<&[u8]>>> {
     let tail = bytes.len().saturating_sub((64 << 10) + 128);
