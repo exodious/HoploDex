@@ -85,7 +85,7 @@ pub fn open(
     open_then(session, machine, path, passphrase, take_over, |_| {})
 }
 
-/// [`open`], calling `opened` with the database's id once it is installed,
+/// [`open`], calling `on_opened` with the database's id once it is installed,
 /// before a lock that came meanwhile is honoured: what the passphrase opened
 /// is saved for even when it locks at once (003 FR-018).
 pub fn open_then(
@@ -94,7 +94,7 @@ pub fn open_then(
     path: &Path,
     passphrase: &Passphrase,
     take_over: bool,
-    opened: impl FnOnce(&str),
+    on_opened: impl FnOnce(&str),
 ) -> Result<(), CommandError> {
     log::debug!("opening {} (take over: {take_over})", crate::logging::place(path));
     // The generation is read as the slot is emptied, before the key is
@@ -121,7 +121,7 @@ pub fn open_then(
             let id = open.session_id;
             let database_id = open.database_id.clone();
             session.install(open);
-            opened(&database_id);
+            on_opened(&database_id);
             honour_locks(session, machine, locks, id, None)
         }
         db::Opened::UpgradeDue { conn, steps_due, marker_seen } => {
