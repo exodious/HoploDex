@@ -330,6 +330,79 @@ pub fn xls_with_vba_project() -> Generated {
     Generated::new("macros.xls", b)
 }
 
+/// A DOC that is a sound compound file with `storages` empty storages in an
+/// `ObjectPool` storage beside its `WordDocument` stream, so its directory
+/// has `storages` + 3 entries.
+pub fn doc_with_storages(storages: usize) -> Generated {
+    let pool = (0..storages).map(|i| storage(&format!("_{i}"), Vec::new())).collect();
+    let b = cfb(vec![stream("WordDocument", word97_fib()), storage("ObjectPool", pool)]);
+    Generated::new("many-objects.doc", b)
+}
+
+/// A DOC that is a sound compound file with a `WordDocument` stream and a
+/// chain of `depth` storages named `name`, each inside the one before.
+pub fn doc_with_nested_storages(name: &str, depth: usize) -> Generated {
+    let mut chain = storage(name, Vec::new());
+    for _ in 1..depth {
+        chain = storage(name, vec![chain]);
+    }
+    let b = cfb(vec![stream("WordDocument", word97_fib()), chain]);
+    Generated::new("nested.doc", b)
+}
+
+/// A version-4 compound file (4096-byte sectors) of about `len` bytes whose
+/// DIFAT lists sector 0 as every one of its FAT sectors: 109 times in the
+/// header and 1023 times in each DIFAT sector after it. A reader that takes
+/// the header at its word reads sector 0 once for each, so the FAT it builds
+/// is about 1000 times the file (code scanning alert #92).
+pub fn doc_listing_one_fat_sector_over_and_over(len: usize) -> Generated {
+    const SECTOR: usize = 4096;
+    let difat_sectors = (len / SECTOR).saturating_sub(2).max(1);
+    let mut b = vec![0u8; SECTOR];
+    b[..8].copy_from_slice(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
+    b[24..26].copy_from_slice(&le16(0x3E));
+    b[26..28].copy_from_slice(&le16(4));
+    b[28..30].copy_from_slice(&le16(0xFFFE));
+    b[30..32].copy_from_slice(&le16(12)); // 4096-byte sectors
+    b[32..34].copy_from_slice(&le16(6));
+    let fat_sectors = 109 + 1023 * difat_sectors;
+    b[44..48].copy_from_slice(&le32(fat_sectors as u32));
+    b[48..52].copy_from_slice(&le32(END_OF_CHAIN)); // no directory
+    b[56..60].copy_from_slice(&le32(4096));
+    b[60..64].copy_from_slice(&le32(END_OF_CHAIN));
+    b[68..72].copy_from_slice(&le32(1)); // the DIFAT continues in sector 1
+    b[72..76].copy_from_slice(&le32(difat_sectors as u32));
+    // The header's DIFAT entries are all 0 already.
+    // Sector 0: what is taken for the FAT, every entry free.
+    b.extend(std::iter::repeat_n(0xFF, SECTOR));
+    // Sectors 1 to difat_sectors: 1023 zeros, then the next DIFAT sector.
+    for i in 1..=difat_sectors {
+        b.extend(std::iter::repeat_n(0, SECTOR - 4));
+        let next = if i < difat_sectors { i as u32 + 1 } else { END_OF_CHAIN };
+        b.extend_from_slice(&le32(next));
+    }
+    Generated::new("fat-bomb.doc", b)
+}
+
+/// A sound DOC with a second FAT sector at its end, every entry free, which
+/// its header lists twice (and counts twice) if `twice`. `cfb` takes the FAT
+/// as each listed sector's entries in turn and drops the free ones at the
+/// end, so it opens both: only the repeat tells them apart (code scanning
+/// alert #92).
+pub fn doc_with_a_free_fat_sector(twice: bool) -> Generated {
+    let mut b = cfb(vec![stream("WordDocument", word97_fib())]);
+    let last = b.len() / 512 - 1;
+    assert!(last < 128, "the first FAT sector must cover the new one");
+    b.extend(std::iter::repeat_n(0xFF, 512));
+    b[512 + 4 * last..516 + 4 * last].copy_from_slice(&le32(FAT_SECTOR));
+    let listed = if twice { 3 } else { 2 };
+    b[44..48].copy_from_slice(&le32(listed as u32));
+    for i in 1..listed {
+        b[76 + 4 * i..80 + 4 * i].copy_from_slice(&le32(last as u32));
+    }
+    Generated::new("free-fat.doc", b)
+}
+
 /// An ODT with a `Basic/` script library.
 pub fn odt_with_basic() -> Generated {
     let entries: Vec<(&str, &[u8])> = vec![
@@ -770,6 +843,114 @@ fn patch_header(b: &mut [u8], local: bool, name: &str, field: usize, value: &[u8
     }
 }
 
+/// A DOCX of `len` bytes whose last 64 KiB is `pairs` Zip64 end-of-directory
+/// locators, each followed by an end-of-directory record that defers to it and
+/// pointing at its own Zip64 record, which declares 660,000 entries at offset
+/// 660,000. A reader that tries every record it finds there reads every Zip64
+/// record between where each locator points and itself (code scanning alert
+/// #94). The package's own records are further back than any reader looks.
+pub fn docx_with_many_end_records(len: usize, pairs: usize) -> Generated {
+    let mut b = word_package(WORD_MAIN, &[]);
+    b.resize(len - pairs * (56 + 20 + 22), 0);
+    let mut zip64_records = Vec::with_capacity(pairs);
+    for _ in 0..pairs {
+        zip64_records.push(b.len() as u64);
+        b.extend(zip64_end_record(660_000, 660_000 * 46, 660_000));
+    }
+    for at in zip64_records {
+        b.extend(deferring_end_record(at));
+    }
+    Generated::new("end-records.docx", b)
+}
+
+/// A sound DOCX in Zip64 form: its end record defers to a Zip64 one, whose
+/// extensible data holds `extra` more Zip64 end records, each declaring
+/// `entries` entries and that `record_size` bytes follow its size field (44
+/// is none beyond the fixed fields). They lie between where its locator
+/// points and the locator, where a reader looks for its Zip64 record.
+pub fn docx_in_zip64_form(extra: usize, entries: u64, record_size: u64) -> Generated {
+    zip64_docx(&[], &zip64_end_records(extra, entries, record_size))
+}
+
+/// A sound DOCX in Zip64 form with a stored part holding what reads as a
+/// Zip64 end record declaring 65,536 entries and 1,069 bytes, as any part's
+/// deflated data may by chance. It lies before where the locator points,
+/// where no reader looks for one.
+pub fn docx_in_zip64_form_with_a_stray_record() -> Generated {
+    zip64_docx(&zip64_end_records(1, 0x1_0000, 44 + 1025), &[])
+}
+
+/// `count` Zip64 end records, each declaring `entries` entries and that
+/// `record_size` bytes follow its size field.
+fn zip64_end_records(count: usize, entries: u64, record_size: u64) -> Vec<u8> {
+    (0..count)
+        .flat_map(|_| {
+            let mut record = zip64_end_record(entries, entries * 46, 0);
+            record[4..12].copy_from_slice(&record_size.to_le_bytes());
+            record
+        })
+        .collect()
+}
+
+/// A sound DOCX in Zip64 form with a stored part of `part`, and `extensible`
+/// as its Zip64 end record's extensible data.
+fn zip64_docx(part: &[u8], extensible: &[u8]) -> Generated {
+    let mut b = word_package(WORD_MAIN, &[("word/media/records.bin", part)]);
+    // The package's own end record: its entry count, directory size and offset.
+    let end = b.len() - 22;
+    let field = |at: usize, width: usize| {
+        b[end + at..end + at + width].iter().rev().fold(0u64, |v, &byte| v << 8 | u64::from(byte))
+    };
+    let (count, size, offset) = (field(10, 2), field(12, 4), field(16, 4));
+    b.truncate(end);
+    let zip64_at = b.len() as u64;
+    let mut record = zip64_end_record(count, size, offset);
+    record[4..12].copy_from_slice(&(44 + extensible.len() as u64).to_le_bytes());
+    b.extend(record);
+    b.extend_from_slice(extensible);
+    b.extend(deferring_end_record(zip64_at));
+    Generated::new("zip64.docx", b)
+}
+
+/// A Zip64 end-of-central-directory record.
+fn zip64_end_record(entries: u64, size: u64, offset: u64) -> Vec<u8> {
+    let mut b = le32(0x0606_4B50).to_vec();
+    b.extend_from_slice(&44u64.to_le_bytes()); // the size of what follows
+    b.extend_from_slice(&le16(45)); // version made by
+    b.extend_from_slice(&le16(45)); // version needed
+    b.extend_from_slice(&le32(0)); // this disk
+    b.extend_from_slice(&le32(0)); // the directory's disk
+    b.extend_from_slice(&entries.to_le_bytes()); // on this disk
+    b.extend_from_slice(&entries.to_le_bytes());
+    b.extend_from_slice(&size.to_le_bytes());
+    b.extend_from_slice(&offset.to_le_bytes());
+    b
+}
+
+/// A Zip64 locator pointing at `zip64_record`, then an end-of-central-directory
+/// record whose every field defers to Zip64.
+fn deferring_end_record(zip64_record: u64) -> Vec<u8> {
+    let mut b = le32(0x0706_4B50).to_vec();
+    b.extend_from_slice(&le32(0));
+    b.extend_from_slice(&zip64_record.to_le_bytes());
+    b.extend_from_slice(&le32(1)); // disks
+    b.extend_from_slice(&le32(0x0605_4B50));
+    b.extend_from_slice(&[0xFF; 16]);
+    b.extend_from_slice(&le16(0)); // comment length
+    b
+}
+
+/// A sound DOCX whose comment holds `records` more end-of-directory
+/// signatures, each too short to be a record.
+pub fn docx_with_end_records_in_its_comment(records: usize) -> Generated {
+    let mut b = word_package(WORD_MAIN, &[]);
+    let comment: Vec<u8> = (0..records).flat_map(|_| *b"PK\x05\x06 ").collect();
+    let length = b.len() - 2;
+    b[length..].copy_from_slice(&le16(comment.len() as u16));
+    b.extend(comment);
+    Generated::new("commented.docx", b)
+}
+
 /// A ZIP of the wrong sort (no `[Content_Types].xml`) named `.docx`.
 pub fn zip_named_docx() -> Generated {
     Generated::new("notes.docx", zip_stored(&[("readme.txt", b"hello")]))
@@ -1133,12 +1314,16 @@ impl DirEntry {
 
 /// Lays out the siblings `nodes` (and below) as a right-leaning chain in
 /// compound-file name order (shorter first, then upper case), which is a
-/// valid, if unbalanced, tree. Returns the first sibling's index.
+/// valid, if unbalanced, tree. Returns the first sibling's index, or `FREE`
+/// for none.
 fn lay_out(
     mut nodes: Vec<Node>,
     entries: &mut Vec<DirEntry>,
     data: &mut Vec<(usize, Vec<u8>)>,
 ) -> u32 {
+    if nodes.is_empty() {
+        return FREE;
+    }
     nodes.sort_by_key(|n| (n.name.encode_utf16().count(), n.name.to_uppercase()));
     let base = entries.len();
     let count = nodes.len();
@@ -1166,8 +1351,8 @@ fn lay_out(
 }
 
 /// A version-3 compound file of `root`'s entries. Every stream is padded to
-/// 4096 bytes (the mini-stream cutoff), so none needs the mini stream; one
-/// FAT sector, so the file is at most about 60 KB.
+/// 4096 bytes (the mini-stream cutoff), so none needs the mini stream. The
+/// header lists up to 109 FAT sectors, so the file is at most about 7 MB.
 fn cfb(root: Vec<Node>) -> Vec<u8> {
     const SECTOR: usize = 512;
     let mut entries = vec![DirEntry {
@@ -1184,12 +1369,23 @@ fn cfb(root: Vec<Node>) -> Vec<u8> {
     entries[0].child = child;
 
     let dir_sectors = entries.len().div_ceil(4);
-    let mut fat = vec![FREE; 128];
-    fat[0] = FAT_SECTOR;
-    for i in 0..dir_sectors {
-        fat[1 + i] = if i + 1 < dir_sectors { (2 + i) as u32 } else { END_OF_CHAIN };
+    let data_sectors: usize = data
+        .iter()
+        .map(|(_, bytes): &(usize, Vec<u8>)| bytes.len().max(4096).div_ceil(SECTOR))
+        .sum();
+    // FAT sectors first, then the directory, then the streams.
+    let mut fat_sectors = 1;
+    while fat_sectors * 128 < fat_sectors + dir_sectors + data_sectors {
+        fat_sectors += 1;
     }
-    let mut next = 1 + dir_sectors;
+    assert!(fat_sectors <= 109, "compound file too big for the header's FAT sectors");
+    let mut fat = vec![FREE; fat_sectors * 128];
+    fat[..fat_sectors].fill(FAT_SECTOR);
+    for i in 0..dir_sectors {
+        let at = fat_sectors + i;
+        fat[at] = if i + 1 < dir_sectors { (at + 1) as u32 } else { END_OF_CHAIN };
+    }
+    let mut next = fat_sectors + dir_sectors;
     let mut body = Vec::new();
     for (index, mut bytes) in data {
         let size = bytes.len().max(4096);
@@ -1203,7 +1399,6 @@ fn cfb(root: Vec<Node>) -> Vec<u8> {
         next += sectors;
         body.extend(bytes);
     }
-    assert!(next <= 128, "compound file too big for one FAT sector");
 
     let mut header = vec![0u8; SECTOR];
     header[..8].copy_from_slice(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
@@ -1212,14 +1407,15 @@ fn cfb(root: Vec<Node>) -> Vec<u8> {
     header[28..30].copy_from_slice(&le16(0xFFFE));
     header[30..32].copy_from_slice(&le16(9)); // 512-byte sectors
     header[32..34].copy_from_slice(&le16(6)); // 64-byte mini sectors
-    header[44..48].copy_from_slice(&le32(1)); // FAT sectors
-    header[48..52].copy_from_slice(&le32(1)); // first directory sector
+    header[44..48].copy_from_slice(&le32(fat_sectors as u32)); // FAT sectors
+    header[48..52].copy_from_slice(&le32(fat_sectors as u32)); // first directory sector
     header[56..60].copy_from_slice(&le32(4096)); // mini-stream cutoff
     header[60..64].copy_from_slice(&le32(END_OF_CHAIN)); // first mini FAT sector
     header[68..72].copy_from_slice(&le32(END_OF_CHAIN)); // first DIFAT sector
-    header[76..80].copy_from_slice(&le32(0)); // DIFAT[0]: the FAT is sector 0
-    for i in 1..109 {
-        header[76 + 4 * i..80 + 4 * i].copy_from_slice(&le32(FREE));
+    // The DIFAT: the FAT is sectors 0 to fat_sectors - 1.
+    for i in 0..109 {
+        let sector = if i < fat_sectors { i as u32 } else { FREE };
+        header[76 + 4 * i..80 + 4 * i].copy_from_slice(&le32(sector));
     }
 
     let mut out = header;

@@ -275,6 +275,77 @@ fn a_zip_declaring_gigabytes_is_classified_from_its_directory() {
     crate::support::assert_budget!(took < Duration::from_millis(50), "took {took:?}");
 }
 
+/// Refused, and quickly: what a hostile file costs before it is refused.
+fn refused_within(document: &hostile::Generated, budget: Duration) {
+    let started = Instant::now();
+    let result = classify(&document.name, &document.bytes);
+    let took = started.elapsed();
+    assert_eq!(result.unwrap_err().code(), "DOCUMENT_CONTENT_MISMATCH", "{}", document.name);
+    crate::support::assert_budget!(took < budget, "{} took {took:?}", document.name);
+}
+
+/// A 1 MiB DOC whose DIFAT lists one sector as every FAT sector took 1 GiB
+/// and 3 s before it was refused, and a 30 MiB one ended the app (code
+/// scanning alert #92).
+#[test]
+fn a_doc_listing_one_fat_sector_over_and_over_is_refused_from_its_header() {
+    let bomb = hostile::doc_listing_one_fat_sector_over_and_over(1 << 20);
+    assert!(bomb.bytes.len() <= 1 << 20);
+    refused_within(&bomb, Duration::from_millis(50));
+
+    // A FAT sector listed twice is refused, though `cfb` would take it.
+    let once = hostile::doc_with_a_free_fat_sector(false);
+    assert_eq!(classify(&once.name, &once.bytes).unwrap().canonical_extension, "doc");
+    let twice = hostile::doc_with_a_free_fat_sector(true);
+    assert!(cfb::CompoundFile::open(std::io::Cursor::new(&twice.bytes)).is_ok());
+    refused_within(&twice, Duration::from_millis(50));
+}
+
+/// A compound file's directory is read only up to 4,096 entries, and its
+/// storages only 32 deep: a 30 MiB DOC of nested storages took 20 minutes
+/// (code scanning alert #93).
+#[test]
+fn a_doc_is_judged_only_within_its_entry_and_depth_limits() {
+    // The root, `WordDocument` and `ObjectPool`, then the storages.
+    let at_limit = hostile::doc_with_storages(4096 - 3);
+    let started = Instant::now();
+    assert_eq!(classify(&at_limit.name, &at_limit.bytes).unwrap().canonical_extension, "doc");
+    let took = started.elapsed();
+    crate::support::assert_budget!(took < Duration::from_millis(100), "took {took:?}");
+    refused_within(&hostile::doc_with_storages(4096 - 2), Duration::from_millis(50));
+
+    let deepest = hostile::doc_with_nested_storages("Nested", 32);
+    assert_eq!(classify(&deepest.name, &deepest.bytes).unwrap().canonical_extension, "doc");
+    refused_within(&hostile::doc_with_nested_storages("Nested", 33), Duration::from_millis(50));
+    // A path drops `.` from its components, but not from the depth.
+    refused_within(&hostile::doc_with_nested_storages(".", 33), Duration::from_millis(50));
+}
+
+/// An 8 MiB DOCX ending in 1,561 end-of-directory records, each with its
+/// own Zip64 record, took seconds before it was refused (code scanning alert
+/// #94). Sixteen end records in the last 64 KiB are allowed (a document's
+/// charts each store a workbook, with its own end record), and where they
+/// defer to Zip64, sixteen Zip64 records of at most 65,535 entries and a
+/// kilobyte of extensible data.
+#[test]
+fn a_package_with_many_end_records_is_refused_from_its_tail() {
+    refused_within(&hostile::docx_with_many_end_records(8 << 20, 1561), Duration::from_millis(50));
+
+    let sixteen = hostile::docx_with_end_records_in_its_comment(15);
+    assert_eq!(classify(&sixteen.name, &sixteen.bytes).unwrap().canonical_extension, "docx");
+    refused_within(&hostile::docx_with_end_records_in_its_comment(16), Duration::from_millis(50));
+
+    let zip64 = hostile::docx_in_zip64_form(15, 0xFFFF, 44 + 1024);
+    assert_eq!(classify(&zip64.name, &zip64.bytes).unwrap().canonical_extension, "docx");
+    refused_within(&hostile::docx_in_zip64_form(16, 0xFFFF, 44), Duration::from_millis(50));
+    refused_within(&hostile::docx_in_zip64_form(1, 0x1_0000, 44), Duration::from_millis(50));
+    // zip reads a Zip64 record's whole declared length for each end record it tries.
+    refused_within(&hostile::docx_in_zip64_form(1, 0, 44 + 1025), Duration::from_millis(50));
+    // Only where the locator points is looked at: elsewhere, those bytes are a part's.
+    let stray = hostile::docx_in_zip64_form_with_a_stray_record();
+    assert_eq!(classify(&stray.name, &stray.bytes).unwrap().canonical_extension, "docx");
+}
+
 #[test]
 fn an_office_package_is_judged_by_its_main_part_and_its_parts() {
     let docx = document_fixture("sample.docx");
