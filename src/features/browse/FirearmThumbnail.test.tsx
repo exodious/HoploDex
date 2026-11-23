@@ -138,3 +138,41 @@ describe("FirearmThumbnail: no photo (001 US4-3)", () => {
     expect(vi.mocked(tauriClient.invoke)).not.toHaveBeenCalled();
   });
 });
+
+describe("FirearmThumbnail: one fetch per photo (code scanning alert)", () => {
+  // code scanning alert untrusted-images/cwe-770/src-tauri/src/commands/photos.rs#get_photo_thumbnail:
+  // every tile that shows a photo asked for its bytes before the first answer
+  // was cached. They now share one fetch, and the bytes arrive as binary IPC.
+  it("asks once for a photo many tiles show at the same time, and each tile shows it", async () => {
+    const scope = createSessionScope(1);
+    let finish!: (bytes: ArrayBuffer) => void;
+    vi.mocked(tauriClient.invoke).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+
+    const tiles = [
+      render(thumbnail(scope, 12)),
+      render(thumbnail(scope, 12)),
+      render(thumbnail(scope, 12)),
+    ];
+    await waitFor(() => expect(thumbnailCalls()).toHaveLength(1));
+    await act(async () => finish(new Uint8Array(BYTES_A).buffer));
+
+    for (const tile of tiles) {
+      await waitFor(() => expect(photo(tile.container)).toHaveAttribute("src", urlOf(BYTES_A)));
+    }
+    expect(thumbnailCalls()).toHaveLength(1);
+  });
+
+  it("asks again after a fetch failed", async () => {
+    const scope = createSessionScope(1);
+    vi.mocked(tauriClient.invoke).mockRejectedValueOnce(new Error("too large"));
+    const first = render(thumbnail(scope, 13));
+    await waitFor(() => expect(first.container.querySelector("svg")).not.toBeNull());
+    first.unmount();
+
+    vi.mocked(tauriClient.invoke).mockResolvedValue(new Uint8Array(BYTES_B).buffer);
+    const again = render(thumbnail(scope, 13));
+
+    await waitFor(() => expect(photo(again.container)).toHaveAttribute("src", urlOf(BYTES_B)));
+    expect(thumbnailCalls()).toHaveLength(2);
+  });
+});

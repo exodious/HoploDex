@@ -238,6 +238,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-23 (code scanning alerts 98, 99): a "Lock now", a screen lock or a sleep that comes while it is opened still locks it once it is open, by its own lock settings, as it would have had it been open then (FR-033, FR-037, FR-038): the command fails with `DATABASE_CLOSED` ("The database opened, and HoploDex locked it at once because …"), and the chooser has the lock's `closed` notice. The passphrase that opened it is still saved or refreshed first, as on success (FR-018)._
 
+  _Amended 2026-11-23 (code scanning alert database-files/cwe-770/src-tauri/src/commands/firearms.rs#ops.list_firearms): a database with a name in `firearm_types`, `action_types`, `registration_classes` or `accessory_kinds`, or a `generic_thumbnail_key` in `firearm_types` or `accessory_kinds`, longer than 200 characters or 800 bytes, which no HoploDex writes, is `DATABASE_DAMAGED`, before anything is written; so are a copy (restore, passphrase change) and a backup with one._
+
 ### `remove_recent_database`
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
 - Also deletes the saved keyring passphrase for it (FR-018). Never touches the file.

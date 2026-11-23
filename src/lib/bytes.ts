@@ -11,7 +11,7 @@ export async function fileToByteArray(file: File): Promise<number[]> {
 
 /** Converts bytes returned from a Tauri command into a data: URL for
  * rendering (e.g. an `<img>` thumbnail) or opening (e.g. a PDF document). */
-export function bytesToDataUrl(bytes: number[], mimeType: string): string {
+export function bytesToDataUrl(bytes: Iterable<number>, mimeType: string): string {
   let binary = "";
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);

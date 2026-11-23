@@ -461,7 +461,15 @@ pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, Op
 ///    functions `trusted_schema` off still allows (`zeroblob`, a recursive
 ///    CTE) would turn a small file into any number of rows each just under
 ///    [`MAX_VALUE_BYTES`], or into hours of work for each row;
-/// 4. `PassphraseIncorrect` without the `app_state` row.
+/// 4. `PassphraseIncorrect` without the `app_state` row;
+/// 5. `Damaged` when a name in the four lookup tables, or a type's or kind's
+///    `generic_thumbnail_key`, is longer than
+///    [`MAX_SHORT_TEXT_CHARS`](crate::models::rules::MAX_SHORT_TEXT_CHARS)
+///    characters, or than four bytes each. Only HoploDex's steps write them,
+///    far shorter, and the collection's lists repeat them on every record, so
+///    one long value times the rows would run the app out of memory at every
+///    open (code scanning alert
+///    database-files/cwe-770/src-tauri/src/commands/firearms.rs#ops.list_firearms).
 pub(crate) fn check_schema(conn: &Connection, path: &Path) -> Result<(), OpenError> {
     // `mut` only for the test hooks' filler table.
     #[cfg_attr(not(feature = "upgrade-test-steps"), allow(unused_mut))]
@@ -502,10 +510,33 @@ pub(crate) fn check_schema(conn: &Connection, path: &Path) -> Result<(), OpenErr
         log::error!("the database's schema is not the one its steps make");
         return Err(OpenError::Damaged);
     }
-    let has_row = conn
+    let has_row: bool = conn
         .query_row("SELECT EXISTS (SELECT 1 FROM app_state WHERE id = 1)", [], |row| row.get(0))
         .map_err(OpenError::classify)?;
-    if has_row { Ok(()) } else { Err(OpenError::PassphraseIncorrect) }
+    if !has_row {
+        return Err(OpenError::PassphraseIncorrect);
+    }
+    // Bytes as well as characters: `length` of text stops at a NUL, and the
+    // lists read the whole value.
+    let too_long: bool = conn
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM (
+                SELECT name AS value FROM firearm_types
+                UNION ALL SELECT generic_thumbnail_key FROM firearm_types
+                UNION ALL SELECT name FROM action_types
+                UNION ALL SELECT name FROM registration_classes
+                UNION ALL SELECT name FROM accessory_kinds
+                UNION ALL SELECT generic_thumbnail_key FROM accessory_kinds)
+             WHERE length(value) > ?1 OR length(CAST(value AS BLOB)) > 4 * ?1)",
+            [crate::models::rules::MAX_SHORT_TEXT_CHARS as i64],
+            |row| row.get(0),
+        )
+        .map_err(OpenError::classify)?;
+    if too_long {
+        log::error!("the database has a lookup value longer than HoploDex writes");
+        return Err(OpenError::Damaged);
+    }
+    Ok(())
 }
 
 /// Every object in a database's schema, in order, without its root page.

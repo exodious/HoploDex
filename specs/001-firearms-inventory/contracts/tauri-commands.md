@@ -301,11 +301,15 @@ _Amended by [spec 007](../../007-document-preview/contracts/tauri-commands.md#li
   `thumbnailBytes` in the UI) to keep these list payloads small. Not in the original contract
   list, but necessary plumbing for `PhotoGallery`/`DocumentList` display.
 
+_Amended 2026-11-23: a photo whose stored thumbnail is over 1 MiB has an empty `thumbnailBytes` (see `get_photo_thumbnail`)._
+
 ### `add_photo`
 
 _Amended 2026-10-11: `ATTACHMENT_LIMIT_REACHED` when the owner already has 50 photos ([spec FR-007](../spec.md)). The message names the owner's kind ("This firearm has 50 photos, the most it can have."), `details` is `{ limit: 50 }`, and nothing is stored. It is checked after the mime type and the owner, before the photo is decoded._
 
 _Amended 2026-11-04: `ATTACHMENT_TOO_LARGE` when the photo is over 15 MiB ("A photo can be at most 15 MiB.") or would take the owner's photos and documents past 1 GiB together ("This firearm's photos and documents can total at most 1 GiB."), checked after the count; `details` is `{ limit }` in bytes, the message names no file, and nothing is stored ([spec FR-007](../spec.md)). The type is the one the first bytes show, JPEG or PNG, whatever the name says, and `mimeType` is no longer taken; `VALIDATION_ERROR` when they show neither ("photo.jpg isn't a JPEG or PNG photo."), judged before the photo is decoded._
+
+_Amended 2026-11-23 (code scanning alert untrusted-images/cwe-789/src-tauri/src/models/photo.rs#generate_thumbnail): `VALIDATION_ERROR` ("The photo has more pixels than HoploDex reads.") for a photo over 16,384 pixels on a side, a JPEG over 64 megapixels (67,108,864 pixels) unless it is a baseline one with a single first scan of every component and headers HoploDex reads exactly (a progressive or multi-scan one never is), or any photo whose decoded pixels would pass the `image` crate's 512 MiB budget; nothing is stored ([spec FR-007](../spec.md)). The same applies to `add_photo_from_path`._
 
 - **Input**: `firearmId: number`, `fileBytes: Uint8Array`, `originalFilename: string`, `mimeType: string`.
 - **Output**: `Photo` (with generated `thumbnailBytes`). First photo added
@@ -340,6 +344,8 @@ _Amended 2026-11-19 (code scanning alert 89): the input is unchanged, but the ba
   without fetching its full photo list.
 
 _Amended 2026-11-21: it reads the thumbnail without the original, as `list_photos` does, so a photo too large to open ([spec FR-007](../spec.md)) still shows one._
+
+_Amended 2026-11-23 (code scanning alert untrusted-images/cwe-770/src-tauri/src/commands/photos.rs#get_photo_thumbnail): the bytes come as a raw binary IPC response (an `ArrayBuffer`), not a JSON number array. A stored thumbnail over 1 MiB, which no HoploDex makes, isn't read: `ATTACHMENT_TOO_LARGE` ("This photo's thumbnail is too large to show. HoploDex shows one of at most 1 MiB.", `details` `{ limit }`), and the browse view shows the type's drawing. `list_photos` gives that photo an empty `thumbnailBytes`._
 
 ### `get_photo_original`
 
