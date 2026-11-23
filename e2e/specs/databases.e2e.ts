@@ -1344,16 +1344,11 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
     console.log(`profile: ${files.length} files in the main web view's folder`);
     expect(holding(files, serial)).toEqual([]);
 
-    // What an earlier version left there goes at the next start.
+    // What an earlier version left there goes at the next start. Planted where no web view
+    // writes: WebView2 still makes its regular profile's files, `Default/Local Storage`
+    // included, when incognito, so a planted file of its own would be made again.
     const earlier = `EARLIER-${randomBytes(4).toString("hex").toUpperCase()}`;
-    const planted = path.join(
-      profile,
-      "EBWebView",
-      "Default",
-      "Local Storage",
-      "leveldb",
-      "000003.log",
-    );
+    const planted = path.join(profile, "earlier version", "Local Storage", "leveldb", "000003.log");
     fs.mkdirSync(path.dirname(planted), { recursive: true });
     fs.writeFileSync(planted, earlier);
     await relaunch();
