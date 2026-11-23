@@ -27,6 +27,7 @@ gain the session header below.
     _Amended 2026-11-06: `quit_listener_ready` is unscoped too ([003's contract](../../003-database-protection-management/contracts/tauri-commands.md#quit_application))._
   - `skip_backup`, `cancel_import`;
   - `get_document_opening`, `set_document_opening`;
+    _Amended 2026-11-23 (code scanning alert plaintext-lifetime/cwe-922): `set_appearance` is unscoped too. Input `{ appearance: { theme: "auto" | "light" | "dark", browseView: "list" | "tile" } }`, output `null`; it saves the page's color mode and layout in `machine.json` and touches no database. The page reads them at start from `window.__HOPLODEX_APPEARANCE__`, which Rust sets before its first script, not through a command._
   - `restore_backup`, which requires the header only when it restores the
     open database (no `databasePath`). The header must name the open
     session; anything else is `DATABASE_CLOSED`.

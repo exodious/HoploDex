@@ -49,6 +49,7 @@ use hoplodex_lib::services::preview::{helper as render_helper, protocol_handler,
 #[cfg(target_os = "linux")]
 use hoplodex_lib::services::sandbox::FLATPAK_INFO;
 use hoplodex_lib::services::sandbox::Reach;
+use hoplodex_lib::services::secure_delete::secure_delete_dir;
 use hoplodex_lib::session::{Session, lifecycle};
 use hoplodex_lib::window_controls;
 use hoplodex_lib::{allocator, app_dirs};
@@ -527,9 +528,29 @@ fn main() {
             // On Windows its WebView2 environment is HoploDex's own, which sends
             // no crash report to Microsoft (#166).
             let main_data_dir = app_dirs::main_webview_data_dir(app.handle())?;
+            // Incognito, it keeps no web storage, cookies or cache on disk,
+            // where a compromised page could leave record text outside the
+            // encrypted database (code scanning alert
+            // `plaintext-lifetime/cwe-922`). Its folder only keys its web
+            // context on Linux and holds the browser process's own files on
+            // Windows; what earlier versions kept there (web storage, and
+            // WebView2's autofill, code scanning alert
+            // `plaintext-lifetime/cwe-312`) is securely deleted at every start.
+            if !secure_delete_dir(&main_data_dir).is_empty() {
+                log::warn!("some of the main web view's earlier files couldn't be deleted");
+            }
+            // The page's color mode and layout, from `machine.json`, before its
+            // first script runs, so a chosen theme never flashes the other one.
+            let appearance = serde_json::to_string(&app.state::<MachineSettings>().appearance())?;
             let main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::default())
+                .incognito(true)
+                .initialization_script(format!("window.__HOPLODEX_APPEARANCE__ = {appearance};"))
                 .on_navigation(move |url| main_navigation::navigation_allowed(&origins, url))
                 .on_new_window(|_, _| NewWindowResponse::Deny)
+                // Never a download: the page shows blob URLs and never saves
+                // one, and a download skips the navigation handler and consent
+                // (code scanning alert `webview-config/cwe-1188`).
+                .on_download(|_, _| false)
                 // WebView2 saves what is typed into a form's fields, record
                 // values included, unencrypted in the profile's `Web Data`
                 // (code scanning alert `plaintext-lifetime/cwe-312`). The other
@@ -546,10 +567,6 @@ fn main() {
             let _main = main.data_directory(main_data_dir).build()?;
             #[cfg(windows)]
             main_navigation::refuse_foreign_documents(&_main, filter_origins)?;
-            // What earlier runs' autofill saved goes (code scanning alert
-            // `plaintext-lifetime/cwe-312`); this run's saves nothing.
-            #[cfg(windows)]
-            hoplodex_lib::services::autofill::clear_saved(&_main);
             // A drag that starts in the app is not a drop of the user's files
             // (`drops`). Without the refusal no drop is recorded, so the page
             // can't plant one; files are then attached with the button.
@@ -616,6 +633,7 @@ fn main() {
             hoplodex_lib::commands::troubleshooting_log::get_troubleshooting_log,
             hoplodex_lib::commands::troubleshooting_log::set_troubleshooting_log,
             hoplodex_lib::commands::troubleshooting_log::show_troubleshooting_log,
+            hoplodex_lib::commands::appearance::set_appearance,
             hoplodex_lib::commands::databases::stage_pending_changes,
             hoplodex_lib::commands::databases::resolve_pending_changes,
             hoplodex_lib::commands::databases::note_activity,

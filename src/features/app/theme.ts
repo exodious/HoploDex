@@ -1,27 +1,22 @@
-export type ThemePreference = "auto" | "light" | "dark";
+import { loadAppearance, saveAppearance } from "./appearance";
+import type { Appearance } from "./appearance";
 
-const THEME_KEY = "hoplodex.theme";
+export type ThemePreference = Appearance["theme"];
 
 export function loadTheme(): ThemePreference {
-  try {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === "light" || stored === "dark") return stored;
-  } catch {
-    // storage unavailable — follow the OS
-  }
-  return "auto";
+  return loadAppearance().theme;
 }
 
 /** Sets (or, for auto, clears) `data-theme` on <html>, which the palettes in
- * tokens.css key on, and remembers the choice. */
+ * tokens.css key on. */
 export function applyTheme(preference: ThemePreference) {
   const root = document.documentElement;
   if (preference === "auto") root.removeAttribute("data-theme");
   else root.setAttribute("data-theme", preference);
-  try {
-    if (preference === "auto") localStorage.removeItem(THEME_KEY);
-    else localStorage.setItem(THEME_KEY, preference);
-  } catch {
-    // storage unavailable — the choice just won't persist
-  }
+}
+
+/** Applies the choice and remembers it on this computer. */
+export function chooseTheme(preference: ThemePreference) {
+  applyTheme(preference);
+  saveAppearance({ theme: preference });
 }

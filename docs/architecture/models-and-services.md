@@ -49,7 +49,9 @@ insurance status, valuation, attachment storage, secure delete,
   (the rules as typed) and `strength` (the `zxcvbn` crate's estimate, which
   replaced the page's strength worker); the idle lock waits while one is up),
 - `machine_settings` (`machine.json`, which also keeps the troubleshooting log's
-  saved choice and that its notice was queued: 013 data-model.md),
+  saved choice and that its notice was queued: 013 data-model.md, and the
+  page's color mode and layout, `appearance`, since the incognito main web view
+  keeps no storage),
 - `keyring` (saved passphrases: every `Entry` is keyring-core's; outside a
   Flatpak the `keyring` crate's OS store, and inside one (011)
   `keyring/portal.rs`'s `Store`, a keyring-core store over oo7's file keyring at
@@ -111,9 +113,7 @@ insurance status, valuation, attachment storage, secure delete,
   import, the export, a new database's folder, a database file, the backup
   location and the upgrade's backup, whose answers only `session::grants`
   holds, `choose` holding them; an E2E build's `E2eChooser` answers from
-  `HOPLODEX_E2E_CHOOSER`'s queue) and, on
-  Windows, `autofill` (clears what WebView2's general autofill saved in the
-  main web view's profile, at every start; the window turns it off);
+  `HOPLODEX_E2E_CHOOSER`'s queue);
 - and for 008 `helper/` (the confinement, Windows job object and AppContainer, framing and
   spawn/kill plumbing that `--render-helper` and `--import-helper` share; the
   memory cap is a parameter) and `import_reader/` (the import reads CSV and XLSX
