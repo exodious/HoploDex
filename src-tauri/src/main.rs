@@ -540,16 +540,17 @@ fn main() {
                 log::warn!("some of the main web view's earlier files couldn't be deleted");
             }
             // On macOS an earlier version's window used WebKit's persistent
-            // default store, outside that folder (PR #230's follow-up).
+            // default store and its caches, outside that folder (PR #230's
+            // follow-up).
             #[cfg(target_os = "macos")]
-            if let Ok(home) = app_dirs::home_dir(app.handle())
-                && !secure_delete_dir(&app_dirs::earlier_webkit_store(
-                    &home,
-                    &app.config().identifier,
-                ))
-                .is_empty()
-            {
-                log::warn!("some of the earlier WebKit store's files couldn't be deleted");
+            if let Ok(home) = app_dirs::home_dir(app.handle()) {
+                let cache = app_dirs::cache_dir(app.handle())?;
+                let identifier = &app.config().identifier;
+                for folder in app_dirs::earlier_webkit_folders(&home, &cache, identifier) {
+                    if !secure_delete_dir(&folder).is_empty() {
+                        log::warn!("some of the earlier WebKit store's files couldn't be deleted");
+                    }
+                }
             }
             // The page's color mode and layout, from `machine.json`, before its
             // first script runs, so a chosen theme never flashes the other one.

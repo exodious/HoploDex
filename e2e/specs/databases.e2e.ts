@@ -1372,25 +1372,31 @@ describe("003 US1 - Protect My Collection With My Own Passphrase", () => {
   });
 
   // Before it went incognito, the window used WebKit's persistent default store on macOS,
-  // outside its folder: the page's localStorage and IndexedDB were under ~/Library/WebKit.
+  // outside its folder: 0.1.0 left the page's localStorage under ~/Library/WebKit/<bundle id>
+  // and WebKit's network cache folders under ~/Library/Caches/<bundle id>/WebKit (the
+  // layout below is what it left in the macOS VM).
   it("deletes what an earlier version's WebKit store kept, at the next start (macOS)", async function () {
     if (process.platform !== "darwin") return this.skip();
     const earlier = `EARLIER-${randomBytes(4).toString("hex").toUpperCase()}`;
-    const store = path.join(
-      process.env.HOPLODEX_E2E_HOME!,
-      "Library",
-      "WebKit",
-      "io.github.exodious.HoploDex",
-    );
-    const planted = path.join(
-      store,
-      "WebsiteData",
-      "LocalStorage",
-      "tauri_localhost_0.localstorage",
-    );
-    fs.mkdirSync(path.dirname(planted), { recursive: true });
-    fs.writeFileSync(planted, earlier);
+    const origin = randomBytes(32).toString("base64url").slice(0, 43);
+    const planted = [
+      path.join(
+        process.env.HOPLODEX_E2E_HOME!,
+        "Library/WebKit/io.github.exodious.HoploDex/WebsiteData/Default",
+        origin,
+        origin,
+        "LocalStorage/localstorage.sqlite3",
+      ),
+      path.join(
+        process.env.HOPLODEX_E2E_CACHE_HOME!,
+        "io.github.exodious.HoploDex/WebKit/NetworkCache/Version 17/salt",
+      ),
+    ];
+    for (const file of planted) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, earlier);
+    }
     await relaunch();
-    expect(fs.existsSync(planted)).toBe(false);
+    expect(planted.filter((file) => fs.existsSync(file))).toEqual([]);
   });
 });
