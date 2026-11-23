@@ -63,6 +63,35 @@ function onlyKeys(source, ...keys) {
   return Object.keys(source).every((k) => k === "type" || keys.includes(k));
 }
 
+/**
+ * Whether `source` is an object whose every field has the type the generators
+ * write: flatpak-builder skips a field of another type (an array `dest` would
+ * put the source at the build directory's root, over the checkout), while
+ * `String()` and `RegExp.test` here would read it as text.
+ */
+function isWellTyped(source) {
+  if (typeof source !== "object" || source === null || Array.isArray(source)) return false;
+  return Object.entries(source).every(([key, value]) => {
+    if (key === "commands" || key === "only-arches") {
+      return Array.isArray(value) && value.every((v) => typeof v === "string");
+    }
+    return key === "strip-components" ? Number.isInteger(value) : typeof value === "string";
+  });
+}
+
+/** The first entry of a list that is not an object with fields of the generators' types. */
+function badlyTyped(list, lock, sources) {
+  if (!Array.isArray(sources)) return wrongList(list, lock, "the list is not an array of sources");
+  const bad = sources.find((source) => !isWellTyped(source));
+  return bad === undefined
+    ? null
+    : wrongList(
+        list,
+        lock,
+        `the list has a source with a field of the wrong type: ${JSON.stringify(bad)}`,
+      );
+}
+
 /** The difference that names an entry the generator does not write. */
 function strayEntry(source) {
   const where = [source.dest, source["dest-filename"]].filter(Boolean).join("/");
@@ -111,6 +140,8 @@ export function checkCargoSources({ cargoLockPath, sourcesPath }) {
   const lock = "src-tauri/Cargo.lock";
   const packages = parseCargoLock(fs.readFileSync(cargoLockPath, "utf8"));
   const sources = readJson(sourcesPath);
+  const typeProblem = badlyTyped(list, lock, sources);
+  if (typeProblem) return typeProblem;
 
   for (const pkg of packages) {
     if (pkg.source?.startsWith("git+")) {
@@ -322,6 +353,8 @@ export function checkNodeSources({ packageLockPath, sourcesPath }) {
   const lock = "package-lock.json";
   const packages = readJson(packageLockPath).packages ?? {};
   const sources = readJson(sourcesPath);
+  const typeProblem = badlyTyped(list, lock, sources);
+  if (typeProblem) return typeProblem;
   // One tarball may sit at several places in node_modules: it is one source.
   const wanted = new Map();
   for (const [key, entry] of Object.entries(packages)) {

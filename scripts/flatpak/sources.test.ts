@@ -266,7 +266,7 @@ describe("code scanning alert build-ci/cwe-345 - only the generators' own inline
       ).toBe(stray(CARGO, at));
       expect(
         changed("cargo", (e) => {
-          checksum(e).base64 = true;
+          checksum(e).url = "https://example.invalid/checksum.json";
         }),
       ).toBe(stray(CARGO, at));
     });
@@ -410,6 +410,41 @@ describe("code scanning alert build-ci/cwe-345 - only the generators' own inline
           archive.sha512 = leftPad.sha512;
         }),
       ).toBe(stray(NODE, "a shell source at flatpak-node/cache/esbuild"));
+    });
+
+    it("refuses a field of another type than the generator writes, which flatpak-builder would skip", () => {
+      // An array `dest` reads as the text of its one element, but flatpak-builder
+      // drops it and unpacks the archive at the build directory's root.
+      const archive = (e: Entry[]) => find(e, (x) => x.type === "archive");
+      expect(
+        changed("node", (e) => {
+          archive(e).dest = ["flatpak-node/cache/x"];
+        }),
+      ).toMatch(
+        /^flatpak\/node-sources\.json does not match package-lock\.json: the list has a source with a field of the wrong type: /,
+      );
+      expect(
+        changed("node", (e) => {
+          find(e, (x) => x.type === "inline").dest = [
+            "flatpak-node/npm-cache/_cacache/index-v5/00/00",
+          ];
+        }),
+      ).toMatch(/a field of the wrong type/);
+      expect(
+        changed("node", (e) => {
+          archive(e)["strip-components"] = "1";
+        }),
+      ).toMatch(/a field of the wrong type/);
+      expect(changed("node", (e) => e.push("shell" as unknown as Entry))).toMatch(
+        /a field of the wrong type: "shell"/,
+      );
+      expect(
+        changed("cargo", (e) => {
+          find(e, (x) => x.type === "archive").dest = ["cargo/vendor/foo-1.2.3"];
+        }),
+      ).toMatch(
+        /^flatpak\/cargo-sources\.json does not match src-tauri\/Cargo\.lock: the list has a source with a field of the wrong type: /,
+      );
     });
 
     it("refuses a package's tarball with a key the generator does not write", () => {
