@@ -40,6 +40,10 @@ after fixes made in response to a review of `<reviewed commit>`.
   release review; when it is in a supported version, it is a draft private
   security advisory, whose text you print for the operator to file. The
   script refuses a pr-mode finding without `"introduced": true`.
+- **An integrity note is never uploaded.** A fault in how the app handles the
+  user's own files (a damaged, older-version or other-computer database, a
+  malformed import), which reviewers note after their JSON (the list's
+  "Threat model"), goes to the operator for an ordinary issue.
 - Reviewers and verifiers are `security-reviewer` subagents: read-only, no
   shell, no network. If the agent type isn't offered (a session can miss an
   agent file added after it started), use a read-only agent (`Explore`)
@@ -91,27 +95,35 @@ surface or CWE is a new alert: treat it as a move (below).
    fix it first (pr mode) or stop and ask for a list PR (release mode).
 2. **Carry.** `open --ref <ref> > <scratch>/open.json` lists open and
    dismissed alerts. Open ones are carried: each goes to its surface's
-   reviewer (its `rule_id` starts with the surface id). Dismissed ones are
-   context only: a dismissal survives absence and return, so they need no
-   upload, but a new finding that *is* one takes its `rule_id` and stays
-   dismissed.
+   reviewer (its `rule_id` starts with the surface id), who may answer
+   `out-of-scope` for one that only an attacker the list's "Threat model"
+   puts out of scope can reach. Dismissed ones are context only: a dismissal
+   survives absence and return, so they need no upload, but a new finding
+   that *is* one takes its `rule_id` and stays dismissed.
 3. **Review.** One `security-reviewer` per surface in scope, in parallel (at
    most 4 at once). Brief each with: the entry's text and the "Threat model"
    section (what is out of scope on every surface) from
    `docs/attack-surface.md`, the commit, the diff file (pr mode, `--after`),
    its carried alerts, the finding schema above, and what to return (new
    findings, plus a verdict per carried alert: present / fixed / moved /
-   unsure).
+   unsure / out-of-scope, and any integrity notes).
 4. **Verify.** A fresh `security-reviewer` per new finding, briefed with the
    list's "Threat model" section too (refute it, check the band, answer
-   "same as carried or dismissed #N?", and in pr mode "introduced?"), and per `fixed` or `moved` verdict. Ask for its confidence
+   "same as carried or dismissed #N?", and in pr mode "introduced?"), and
+   per `fixed`, `moved` or `out-of-scope` verdict. Ask for its confidence
    (1 to 10) in the verdict: below 8 is unconfirmed (the agent's evidence
-   bar). Unconfirmed findings are dropped; an unconfirmed fix stays carried
-   as `unsure`.
+   bar). Unconfirmed findings are dropped; an unconfirmed fix or
+   `out-of-scope` stays carried as `unsure`.
 5. **Assemble** `<scratch>/findings.json`: confirmed new findings, plus every
    carried open alert that is present or unsure, with its `rule_id` (update
-   its region and message to the reviewer's). Leave out only verified fixes,
-   and pass their alert numbers to `build --fixed <n>,…`. `build` refuses
+   its region and message to the reviewer's), plus every confirmed
+   `out-of-scope` one unchanged: its `rule_id`, severity, path, start line
+   and message as `open.json` lists them, so the upload neither closes it as
+   fixed nor re-asserts it as a new present finding. Offer each to the
+   operator for dismissal with the reason "outside the threat model"; never
+   dismiss one yourself, and carry it this way until the operator does.
+   Leave out only verified fixes, and pass their alert numbers to
+   `build --fixed <n>,…`. `build` refuses
    to go on while any open alert in `--carry` is neither a finding nor named
    fixed, and `upload` reports any open alert it closed that isn't a verified
    fix (an upload closes every open alert it leaves out; upload it again to
@@ -165,8 +177,9 @@ surface or CWE is a new alert: treat it as a move (below).
    message), which is why only introduced findings go there. Its annotation
    threads must be resolved before merge (the `Default` ruleset).
 6. **Report** (terminal only): the counts and alert numbers, each carried
-   alert's transition, the list edit, and the pre-existing findings with their
-   routing.
+   alert's transition (out of scope (offered for dismissal) included), the
+   list edit, the pre-existing findings with their routing, and the integrity
+   notes.
 
 ## release mode
 
@@ -207,7 +220,8 @@ surface or CWE is a new alert: treat it as a move (below).
 8. **Report** (terminal only): the target, the list's blob
    (`git rev-parse <commit>:docs/attack-surface.md`), the surfaces reviewed,
    one row per alert (number, rule id, band, and new / still open / fixed
-   (verified) / dismissed / moved #a → #b / unsure), the upload (SARIF id,
+   (verified) / dismissed / moved #a → #b / unsure / out of scope (offered
+   for dismissal)), the integrity notes, the upload (SARIF id,
    analysis id, results against expected), the advisory-required list, and
    the gate's verdict with its counts.
 
