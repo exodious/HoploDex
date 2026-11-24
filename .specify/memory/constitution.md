@@ -29,6 +29,8 @@ Templates requiring updates:
 Follow-up TODOs:
   - scripts/ai-security-review.mjs's release gate still fails on any draft
     or triage advisory; whether that changes is a separate decision
+    (resolved: the gate now exempts a draft advisory patched in exactly the
+    version being released; RELEASING.md, step 7)
 -->
 
 # HoploDex Constitution

@@ -180,8 +180,13 @@ request like any other; then start again from the new commit.
    a second whole review (`release.mjs review` starts it in Claude Code). Then
    run `node scripts/ai-security-review.mjs gate` (`release.mjs gate`):
    it must print PASS, with no critical or high code scanning, Dependabot or
-   secret scanning alert open and no draft or triage advisory. Each blocking
-   alert is fixed, or dismissed with its reason.
+   secret scanning alert open and no draft or triage advisory, except a draft
+   whose every vulnerability lists this version as its patched version
+   (`release.mjs gate` passes the release's x.y.z, without any `-rc.N`; run
+   directly, the gate takes `tauri.conf.json`'s): that draft waits for this
+   release, so the gate prints its GHSA id and lets it through. A triage
+   advisory always blocks, whatever patched version its reporter gave. Each
+   blocking alert is fixed, or dismissed with its reason.
 
    **How it is enforced:** the release workflow's first job refuses the tag
    unless code scanning holds the review's upload for exactly the tagged

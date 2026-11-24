@@ -16,7 +16,7 @@
 //             released_migrations_test and performance_test
 //   review    start the AI security review of --commit (default: origin/main's
 //             head) in Claude Code, with --after <reviewed commit> after fixes
-//   gate      the release gate (`ai-security-review.mjs gate`)
+//   gate      the release gate (`ai-security-review.mjs gate --version <x.y.z>`)
 //   tag       check the workflow will accept --commit (its tag check, read from
 //             the commit, and `ai-security-review.mjs reviewed`), then create the
 //             annotated tag v<version> on it and push it to origin, which starts
@@ -197,7 +197,7 @@ const UNWIND = ["env", "CARGO_PROFILE_RELEASE_PANIC=unwind"];
 
 /** What each step runs: `run` commands, or a `print` the owner acts on. */
 export function plan(step, { version, commit, after, container }) {
-  const { final, tag } = parseVersion(version);
+  const { app, final, tag } = parseVersion(version);
   const c = (cmd) => ({ run: containerised(cmd, { container }) });
   switch (step) {
     case "version":
@@ -241,7 +241,7 @@ export function plan(step, { version, commit, after, container }) {
         },
       ];
     case "gate":
-      return [{ run: ["node", "scripts/ai-security-review.mjs", "gate"] }];
+      return [{ run: ["node", "scripts/ai-security-review.mjs", "gate", "--version", app] }];
     case "tag":
       return [
         { run: ["node", "scripts/ai-security-review.mjs", "reviewed", "--commit", commit] },
