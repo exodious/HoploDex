@@ -1059,13 +1059,15 @@ export async function invokeCommand(cmd: string, args: Record<string, unknown>) 
       const status = (await internals.invoke("get_database_status", {})) as {
         sessionId?: number | null;
       };
-      return internals.invoke(
+      const result = await internals.invoke(
         name,
         data,
         status.sessionId == null
           ? undefined
           : { headers: { "HoploDex-Session": String(status.sessionId) } },
       );
+      // A binary answer, which WebDriver would hand back as `{}`.
+      return result instanceof ArrayBuffer ? Array.from(new Uint8Array(result)) : result;
     },
     cmd,
     args,

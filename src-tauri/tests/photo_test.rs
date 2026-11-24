@@ -541,3 +541,169 @@ fn the_photo_limit_is_each_records_own() {
         photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png").unwrap();
     }
 }
+
+// --- Bounds on what a photo costs to read (code scanning alerts) -----------------
+
+/// code scanning alert untrusted-images/cwe-770/src-tauri/src/commands/photos.rs#get_photo_thumbnail:
+/// a stored thumbnail over 1 MiB, or a text one led by a NUL, which no
+/// HoploDex makes, is refused by
+/// `get_photo_thumbnail` and lists empty, and neither reads it: one longer
+/// than any connection reads (`db::MAX_VALUE_BYTES`) would fail as `TooBig`
+/// if it were. One of exactly 1 MiB still reads, and an empty one is empty.
+#[test]
+fn a_stored_thumbnail_over_1_mib_is_refused_unread_and_lists_empty() {
+    use hoplodex_lib::db;
+    use hoplodex_lib::models::photo::MAX_THUMBNAIL_BYTES;
+    use rusqlite::limits::Limit;
+
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    let photo = photo_ops::add_photo(&db.conn, owner, &sample_png_bytes(), "a.png").unwrap();
+    let blob = "zeroblob(?1)";
+    // SQLite's `length` of this text is 0, as it stops at the first NUL.
+    let text = "CAST(zeroblob(?1) AS TEXT)";
+    let store = |value: &str, length: i64| {
+        db.conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, 1_000_000_000).unwrap();
+        db.conn
+            .execute(
+                &format!("UPDATE photos SET thumbnail_bytes = {value} WHERE id = ?2"),
+                rusqlite::params![length, photo.id],
+            )
+            .unwrap();
+        db.conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, db::MAX_VALUE_BYTES).unwrap();
+    };
+    let max = MAX_THUMBNAIL_BYTES as i64;
+
+    // An empty one is empty, not too large.
+    store(blob, 0);
+    assert!(photo_ops::get_photo_thumbnail(&db.conn, photo.id).unwrap().is_empty());
+
+    store(blob, max);
+    assert_eq!(photo_ops::get_photo_thumbnail(&db.conn, photo.id).unwrap().len() as i64, max);
+    assert_eq!(
+        photo_ops::list_photos(&db.conn, owner).unwrap()[0].thumbnail_bytes.len() as i64,
+        max
+    );
+
+    for (value, length) in [
+        (blob, max + 1),
+        (blob, i64::from(db::MAX_VALUE_BYTES) + 1),
+        (text, max + 1),
+        (text, i64::from(db::MAX_VALUE_BYTES) + 1),
+    ] {
+        store(value, length);
+        let err = photo_ops::get_photo_thumbnail(&db.conn, photo.id).unwrap_err();
+        assert_eq!(err.code, "ATTACHMENT_TOO_LARGE", "{value} {length}");
+        assert_eq!(
+            err.message,
+            "This photo's thumbnail is too large to show. HoploDex shows one of at most 1 MiB."
+        );
+        assert_eq!(err.details.as_deref(), Some(&json!({ "limit": MAX_THUMBNAIL_BYTES })));
+        let listed = photo_ops::list_photos(&db.conn, owner).unwrap();
+        assert!(listed[0].thumbnail_bytes.is_empty(), "{value} {length}");
+    }
+}
+
+/// A JPEG of `width` × `height` as its headers state it, made from a small
+/// real one: its frame marker set to `frame` (0xC0 baseline, 0xC2
+/// progressive), and with `first_scan_one_component` a first scan that holds
+/// only the first of its components, as a multi-scan baseline JPEG's does.
+/// Only the headers are true, as in the alert's own example: a few hundred
+/// bytes that, before the limits, took 1.5 GiB to decode and were accepted.
+fn crafted_jpeg(
+    gray: bool,
+    frame: u8,
+    width: u16,
+    height: u16,
+    first_scan_one_component: bool,
+) -> Vec<u8> {
+    use image::codecs::jpeg::JpegEncoder;
+    use image::{DynamicImage, ImageEncoder};
+
+    let image = if gray { DynamicImage::new_luma8(16, 16) } else { DynamicImage::new_rgb8(16, 16) };
+    let mut jpeg = Vec::new();
+    JpegEncoder::new(&mut jpeg)
+        .write_image(image.as_bytes(), 16, 16, image.color().into())
+        .unwrap();
+    let mut at = 2;
+    loop {
+        assert_eq!(jpeg[at], 0xFF);
+        let marker = jpeg[at + 1];
+        let length = usize::from(u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]]));
+        if marker == 0xC0 {
+            jpeg[at + 1] = frame;
+            jpeg[at + 5..at + 7].copy_from_slice(&height.to_be_bytes());
+            jpeg[at + 7..at + 9].copy_from_slice(&width.to_be_bytes());
+        }
+        if marker == 0xDA {
+            if frame == 0xC2 {
+                // A progressive JPEG's first scan is a DC one: Se is 0.
+                let components = usize::from(jpeg[at + 4]);
+                jpeg[at + 6 + 2 * components] = 0;
+            }
+            if first_scan_one_component {
+                let first = [jpeg[at + 5], jpeg[at + 6]];
+                let scan = [0xFF, 0xDA, 0x00, 0x08, 0x01, first[0], first[1], 0x00, 0x3F, 0x00];
+                jpeg.splice(at..at + 2 + length, scan);
+            }
+            return jpeg;
+        }
+        at += 2 + length;
+    }
+}
+
+/// code scanning alert untrusted-images/cwe-789/src-tauri/src/models/photo.rs#generate_thumbnail:
+/// a photo over 16,384 pixels on a side, or a progressive or multi-scan JPEG
+/// over 64 megapixels (which zune-jpeg decodes through coefficient planes
+/// outside the 512 MiB budget), is refused from its headers and nothing is
+/// stored. The alert's own example, a progressive 23,170 × 23,170 grayscale
+/// JPEG of a few KiB, took 1.5 GiB and was accepted.
+#[test]
+fn a_photo_past_the_pixel_limits_is_refused_and_nothing_is_stored() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+
+    for (name, bytes) in [
+        ("progressive", crafted_jpeg(true, 0xC2, 23_170, 23_170, false)),
+        ("progressive, one row past 64 MP", crafted_jpeg(true, 0xC2, 8_192, 8_193, false)),
+        ("multi-scan baseline", crafted_jpeg(false, 0xC0, 8_192, 8_193, true)),
+        ("baseline, one pixel past the side", crafted_jpeg(true, 0xC0, 16_385, 8, false)),
+    ] {
+        let err = photo_ops::add_photo(&db.conn, owner, &bytes, "big.jpg").unwrap_err();
+        assert_eq!(err.code, "VALIDATION_ERROR", "{name}");
+        assert_eq!(err.message, "big.jpg has more pixels than HoploDex reads.", "{name}");
+    }
+    assert_eq!(count(&db, "photos"), 0);
+
+    // At 64 MP the pixel count alone doesn't refuse a progressive one (its
+    // made-up scan data may still fail to decode), and a real baseline JPEG
+    // is added as before.
+    let at_limit = crafted_jpeg(true, 0xC2, 8_192, 8_192, false);
+    if let Err(err) = photo_ops::add_photo(&db.conn, owner, &at_limit, "at.jpg") {
+        assert_ne!(err.message, "at.jpg has more pixels than HoploDex reads.");
+    }
+    let real = crafted_jpeg(false, 0xC0, 16, 16, false);
+    photo_ops::add_photo(&db.conn, owner, &real, "real.jpg").unwrap();
+}
+
+/// code scanning alert untrusted-images/cwe-789/src-tauri/src/models/photo.rs#generate_thumbnail,
+/// as its accepted option (a) says: a baseline JPEG every component of which
+/// is in its first scan is still added over 64 megapixels, decoded from a copy
+/// that leaves out the segments decoding doesn't need (here an APP0 of length
+/// 6 and a comment), not refused as having more pixels than HoploDex reads.
+#[test]
+fn a_baseline_jpeg_over_64_megapixels_is_still_added() {
+    let db = TestDb::new();
+    let firearm = firearm_ops::create_firearm(&db.conn, &sample_firearm(), false, None).unwrap();
+    let owner = RecordRef::Firearm(firearm.id);
+    let mut jpeg = crafted_jpeg(true, 0xC0, 8_192, 8_193, false);
+    let scan = jpeg.windows(2).position(|w| w == [0xFF, 0xDA]).unwrap();
+    let skipped = [0xFF, 0xE0, 0x00, 0x06, 0, 0, 0, 0, 0xFF, 0xFE, 0x00, 0x04, b'h', b'i'];
+    jpeg.splice(scan..scan, skipped);
+
+    let photo = photo_ops::add_photo(&db.conn, owner, &jpeg, "large.jpg").unwrap();
+    assert!(!photo_ops::get_photo_thumbnail(&db.conn, photo.id).unwrap().is_empty());
+    assert_eq!(count(&db, "photos"), 1);
+}

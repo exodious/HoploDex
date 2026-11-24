@@ -335,6 +335,56 @@ fn a_database_id_hoplodex_never_writes_is_refused_as_damaged_and_left_untouched(
     }
 }
 
+/// code scanning alert database-files/cwe-770/src-tauri/src/commands/firearms.rs#ops.list_firearms:
+/// a lookup name or generic thumbnail key longer than the 200 characters
+/// HoploDex writes, which the collection's lists would repeat on every record,
+/// refuses the open as damaged, in each table and column, and the refused open
+/// writes nothing. So does a short one padded past a NUL, where SQLite's
+/// `length` stops counting though the lists read it all. 200 characters of two
+/// bytes each still open.
+#[test]
+fn a_lookup_value_longer_than_hoplodex_writes_is_refused_as_damaged_and_left_untouched() {
+    let padded = format!("Rifle\0{}", "x".repeat(1000));
+    for (table, column) in [
+        ("firearm_types", "name"),
+        ("firearm_types", "generic_thumbnail_key"),
+        ("action_types", "name"),
+        ("registration_classes", "name"),
+        ("accessory_kinds", "name"),
+        ("accessory_kinds", "generic_thumbnail_key"),
+    ] {
+        for (value, refused) in
+            [("\u{e9}".repeat(200), false), ("\u{e9}".repeat(201), true), (padded.clone(), true)]
+        {
+            let db = TestDb::new();
+            let changed = db
+                .conn
+                .execute(
+                    &format!(
+                        "UPDATE {table} SET {column} = ?1 WHERE id = (SELECT min(id) FROM {table})"
+                    ),
+                    [&value],
+                )
+                .unwrap();
+            assert_eq!(changed, 1, "{table}.{column}");
+            let path = db.path();
+            let (conn, _dir) = db.into_parts();
+            drop(conn);
+            let before = fs::read(&path).unwrap();
+
+            let result = open(&path, &passphrase());
+
+            let case = format!("{table}.{column}, {} bytes", value.len());
+            if refused {
+                assert!(matches!(result, Err(OpenError::Damaged)), "{case}: {result:?}");
+                assert_eq!(fs::read(&path).unwrap(), before, "{case}");
+            } else {
+                assert!(result.is_ok(), "{case}: {result:?}");
+            }
+        }
+    }
+}
+
 /// The same through the lifecycle: nothing is installed, and no backup is
 /// made under a name the id chose.
 #[test]

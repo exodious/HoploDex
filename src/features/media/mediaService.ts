@@ -49,8 +49,9 @@ export function deletePhoto(
   return scope.invoke<{ deleted: boolean }>("delete_photo", { photoId, confirmed });
 }
 
-export function getPhotoThumbnail(scope: SessionScope, photoId: number): Promise<number[]> {
-  return scope.invoke<number[]>("get_photo_thumbnail", { photoId });
+/** A photo's small thumbnail, as raw bytes (binary IPC). */
+export function getPhotoThumbnail(scope: SessionScope, photoId: number): Promise<ArrayBuffer> {
+  return scope.invoke<ArrayBuffer>("get_photo_thumbnail", { photoId });
 }
 
 /** Full-resolution original, delivered as raw bytes (binary IPC). */

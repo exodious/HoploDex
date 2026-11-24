@@ -6,9 +6,11 @@ use tauri::State;
 
 use crate::commands::CommandError;
 use crate::commands::firearms::DeleteResult;
-use crate::models::photo::{Photo, PhotoSummary, generate_thumbnail, photo_type};
+use crate::models::photo::{
+    MAX_THUMBNAIL_BYTES, Photo, PhotoSummary, generate_thumbnail, photo_type,
+};
 use crate::models::record::RecordRef;
-use crate::models::rules::{MAX_PHOTO_BYTES, MAX_PHOTOS_PER_RECORD};
+use crate::models::rules::{MAX_PHOTO_BYTES, MAX_PHOTOS_PER_RECORD, size_label};
 use crate::services::attachments::{
     read_attachment_file, require_room, require_size, require_total_room, safe_basename,
 };
@@ -52,6 +54,32 @@ pub mod ops {
         .optional()
         .map_err(CommandError::from_db)?
         .ok_or_else(|| CommandError::not_found("No photo was found with that id."))
+    }
+
+    /// A photo's thumbnail; `ATTACHMENT_TOO_LARGE` for one over
+    /// [`MAX_THUMBNAIL_BYTES`] or not a BLOB, which [`PhotoSummary::COLUMNS`]
+    /// leaves unread.
+    pub fn get_photo_thumbnail(conn: &Connection, id: i64) -> Result<Vec<u8>, CommandError> {
+        let bytes = get_photo_summary(conn, id)?.thumbnail_bytes;
+        let stored_empty = || {
+            conn.query_row(
+                "SELECT CASE WHEN typeof(thumbnail_bytes) = 'blob' \
+                 THEN length(thumbnail_bytes) = 0 ELSE 0 END FROM photos WHERE id = :id",
+                named_params! { ":id": id },
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(CommandError::from_db)
+        };
+        if bytes.is_empty() && !stored_empty()? {
+            return Err(CommandError::attachment_too_large(
+                format!(
+                    "This photo's thumbnail is too large to show. HoploDex shows one of at most {}.",
+                    size_label(MAX_THUMBNAIL_BYTES)
+                ),
+                MAX_THUMBNAIL_BYTES,
+            ));
+        }
+        Ok(bytes)
     }
 
     /// Fails with `NOT_FOUND` when the owner's row doesn't exist.
@@ -102,7 +130,7 @@ pub mod ops {
         // (issue #68; the export checks again, for rows made before this).
         let original_filename = safe_basename(original_filename, "photo");
         let mime_type = photo_type(&original_filename, file_bytes)?;
-        let thumbnail_bytes = generate_thumbnail(file_bytes)?;
+        let thumbnail_bytes = generate_thumbnail(&original_filename, file_bytes)?;
 
         let next_sort_order: i64 = conn
             .query_row(
@@ -321,13 +349,14 @@ pub async fn add_photo_from_path(
 
 /// Just the small cached thumbnail bytes for one photo — lets browse views
 /// (BrowseList/BrowseTiles) render a firearm's designated thumbnail
-/// without fetching every photo attached to it.
+/// without fetching every photo attached to it. Raw binary IPC, as
+/// `get_photo_original`, not a JSON number array of about four bytes a byte.
 #[tauri::command]
 pub async fn get_photo_thumbnail(
     photo_id: i64,
     session: ScopedSession,
-) -> Result<Vec<u8>, CommandError> {
-    session.read(|conn| Ok(ops::get_photo_summary(conn, photo_id)?.thumbnail_bytes))
+) -> Result<tauri::ipc::Response, CommandError> {
+    session.read(|conn| Ok(tauri::ipc::Response::new(ops::get_photo_thumbnail(conn, photo_id)?)))
 }
 
 /// The full-resolution original bytes for one photo, returned as a raw

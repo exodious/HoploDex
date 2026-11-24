@@ -2,7 +2,36 @@ import { useEffect, useRef, useState } from "react";
 import { bytesToDataUrl } from "../../lib/bytes";
 import * as mediaService from "../media/mediaService";
 import { useSessionScope } from "../session/sessionScope";
+import type { SessionScope } from "../session/sessionScope";
 import { TypeDrawing } from "./TypeDrawing";
+
+/** Each scope's thumbnail fetches still under way, by photo id: the tiles
+ * that show one photo share one fetch rather than each asking for its bytes
+ * before the first answer is cached (code scanning alert
+ * untrusted-images/cwe-770/src-tauri/src/commands/photos.rs#get_photo_thumbnail). */
+const loading = new WeakMap<SessionScope, Map<number, Promise<string>>>();
+
+function loadThumbnail(scope: SessionScope, photoId: number): Promise<string> {
+  let pending = loading.get(scope);
+  if (!pending) {
+    pending = new Map();
+    loading.set(scope, pending);
+  }
+  const inScope = pending;
+  let load = inScope.get(photoId);
+  if (!load) {
+    load = mediaService
+      .getPhotoThumbnail(scope, photoId)
+      .then((buffer) => {
+        const url = bytesToDataUrl(new Uint8Array(buffer), "image/jpeg");
+        scope.thumbnails.set(photoId, url);
+        return url;
+      })
+      .finally(() => inScope.delete(photoId));
+    inScope.set(photoId, load);
+  }
+  return load;
+}
 
 export interface FirearmThumbnailProps {
   thumbnailPhotoId: number | null;
@@ -64,11 +93,8 @@ export function FirearmThumbnail({
     if (!nearViewport) return;
 
     let cancelled = false;
-    mediaService
-      .getPhotoThumbnail(scope, thumbnailPhotoId)
-      .then((bytes) => {
-        const url = bytesToDataUrl(bytes, "image/jpeg");
-        scope.thumbnails.set(thumbnailPhotoId, url);
+    loadThumbnail(scope, thumbnailPhotoId)
+      .then((url) => {
         if (!cancelled) setSrc(url);
       })
       .catch(() => {
