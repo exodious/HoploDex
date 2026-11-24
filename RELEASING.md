@@ -150,12 +150,19 @@ request like any other; then start again from the new commit.
    - the SDK extensions' branches (`rust-stable` and `node24` on the
      manifest's branch) are still stable on Flathub;
    - the metainfo's `<release>` entry (step 1);
-   - the tag will carry `flatpak/screenshots/`, since the metainfo's screenshot
-     addresses point at the final release's tag. They are retaken only on
-     purpose (`npm run screenshots:store`);
+   - the metainfo's screenshot addresses are at the commit on `main` that last
+     changed `flatpak/screenshots/`, and `release.mjs version` checks that
+     commit is in the release's history and its images are the tree's. They
+     are retaken only on purpose (`npm run screenshots:store`), in two pull
+     requests, since `main` is squash-merged: the images, merged to `main`
+     first, then the addresses moved to that commit on `main`;
    - review the pinned flatpak-builder-tools commit (`FLATPAK_BUILDER_TOOLS_COMMIT`
-     in the `Dockerfile`) and Flathub's linter (`org.flatpak.Builder`, which
-     `scripts/flatpak/build.sh` installs unpinned);
+     in the `Dockerfile`) and Flathub's linter (`org.flatpak.Builder`, pinned
+     as `linter_commit` in `scripts/flatpak/build.sh`). Move the linter's pin by
+     hand to the current stable commit
+     (`flatpak remote-info --log flathub app/org.flatpak.Builder/x86_64/stable`)
+     in a pull request before the first release candidate, so the candidate
+     and its pull request lint alike;
    - the GNOME runtime's end of life: #129 needs its decision in time.
 6. **The local release-only tests.** `performance_test.rs` doesn't run in CI
    (its budgets need your machine): run it as [Test](docs/development/testing.md),

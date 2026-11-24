@@ -132,12 +132,26 @@ echo "installed: $app_id (from $local_repo)"
 linter=(flatpak run --command=flatpak-builder-lint org.flatpak.Builder)
 exceptions="$repo/flatpak/linter-exceptions.json"
 
-step "install Flathub's linter, org.flatpak.Builder (network, only if missing)"
-if flatpak info --user org.flatpak.Builder >/dev/null 2>&1; then
-  echo "org.flatpak.Builder: installed"
-else
+# The linter is pinned to one Flathub commit, so a PR's run, a release candidate's and
+# a final release's lint with the same rules. RELEASING.md step 5 moves it by hand
+# (`flatpak remote-info --log flathub app/org.flatpak.Builder/x86_64/stable` lists the
+# commits). If Flathub ever prunes it, the update below fails and the pin is moved.
+# The linter's runtime (org.freedesktop.Sdk) still follows its branch.
+linter_commit=41751e9b8972eff8aecdece96ef4f414a0d0379c7f133a1e60946b9dbfcc1f00
+
+step "install Flathub's linter, org.flatpak.Builder, at its pinned commit (network, only if missing or not at it)"
+if ! flatpak info --user org.flatpak.Builder >/dev/null 2>&1; then
   flatpak install --user --noninteractive --assumeyes flathub org.flatpak.Builder
 fi
+if [[ "$(flatpak info --user --show-commit org.flatpak.Builder)" != "$linter_commit" ]]; then
+  flatpak update --user --noninteractive --assumeyes --commit="$linter_commit" org.flatpak.Builder
+fi
+installed_commit="$(flatpak info --user --show-commit org.flatpak.Builder)"
+if [[ "$installed_commit" != "$linter_commit" ]]; then
+  echo "org.flatpak.Builder is at $installed_commit, not the pinned $linter_commit" >&2
+  exit 1
+fi
+echo "org.flatpak.Builder: $linter_commit"
 
 # The linter reads only the exceptions its --exceptions flag turns on, from the file
 # --user-exceptions names: {"<app id>": {"<rule>": "<reason>"}} (the linter uses the
@@ -147,11 +161,12 @@ step "flatpak-builder-lint: the manifest, with flatpak/linter-exceptions.json (0
 echo "flatpak-builder-lint manifest: ok"
 
 # The repository is linted as Flathub's pipeline would lint it, except for three
-# screenshot rules. Flathub's pipeline mirrors the metainfo's screenshots (it builds
-# with --mirror-screenshots-url, which downloads each address); the addresses are at
-# the release's tag (011 research.md §13), which does not exist while the release is
-# being made, so a local build cannot mirror them (and Flathub's linter also reports
-# them unmirrored as appstream-external-screenshot-url).
+# screenshot rules. Flathub's pipeline mirrors the metainfo's screenshots into the
+# repository (it builds with --mirror-screenshots-url, which downloads each address),
+# and a local build does not: appstream-screenshots-not-mirrored-in-ostree, and
+# appstream-external-screenshot-url for the raw.githubusercontent.com addresses (at
+# the commit on main that last changed flatpak/screenshots/), or
+# appstream-missing-screenshots when they can't be fetched (offline).
 # These three are added here, for the repository only, and the recorded exceptions in
 # the committed file stay at two.
 screenshot_rules='["appstream-missing-screenshots","appstream-screenshots-not-mirrored-in-ostree","appstream-external-screenshot-url"]'

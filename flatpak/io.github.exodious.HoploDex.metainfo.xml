@@ -39,23 +39,23 @@
   </branding>
   <screenshots>
     <screenshot type="default">
-      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/chooser.png</image>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/5288b7e5fad0f06a9609ba3c21e02133834345ca/flatpak/screenshots/chooser.png</image>
       <caption>Open a database with its passphrase</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/collection.png</image>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/5288b7e5fad0f06a9609ba3c21e02133834345ca/flatpak/screenshots/collection.png</image>
       <caption>The collection, with its replacement value and insurance coverage</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/record.png</image>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/5288b7e5fad0f06a9609ba3c21e02133834345ca/flatpak/screenshots/record.png</image>
       <caption>A firearm's record, with its photos and insurance</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/document-preview.png</image>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/5288b7e5fad0f06a9609ba3c21e02133834345ca/flatpak/screenshots/document-preview.png</image>
       <caption>Preview a scanned document without leaving the app</caption>
     </screenshot>
     <screenshot>
-      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/accessories.png</image>
+      <image type="source" width="1200" height="800">https://raw.githubusercontent.com/exodious/HoploDex/5288b7e5fad0f06a9609ba3c21e02133834345ca/flatpak/screenshots/accessories.png</image>
       <caption>Accessories, grouped by kind, with what each is mounted on</caption>
     </screenshot>
   </screenshots>
