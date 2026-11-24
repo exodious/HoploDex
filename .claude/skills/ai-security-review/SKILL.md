@@ -96,7 +96,8 @@ surface or CWE is a new alert: treat it as a move (below).
    upload, but a new finding that *is* one takes its `rule_id` and stays
    dismissed.
 3. **Review.** One `security-reviewer` per surface in scope, in parallel (at
-   most 4 at once). Brief each with: the entry's text from
+   most 4 at once). Brief each with: the entry's text and the "Threat model"
+   section (what is out of scope on every surface) from
    `docs/attack-surface.md`, the commit, the diff file (pr mode, `--after`),
    its carried alerts, the finding schema above, and what to return (new
    findings, plus a verdict per carried alert: present / fixed / moved /

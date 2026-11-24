@@ -39,8 +39,11 @@ published as security advisories.
 ## Scope
 
 HoploDex is a local-only desktop app: it runs no server and sends collection
-data nowhere. Reports about the app itself, its file formats (the encrypted
-database, backups, spreadsheet import and export) and the documents it opens
-or previews are all in scope. A vulnerability in a dependency belongs with its
+data nowhere. Reports about the app itself, the spreadsheets it imports and
+exports, and the documents and photos it attaches, opens or previews are all
+in scope. A `.hoplodex` database and its backups are private to the user and
+never shared, so an attack that needs a database or backup someone else built
+or altered is out of scope, as is one that needs code already running in one
+of HoploDex's confined helper processes. A vulnerability in a dependency belongs with its
 own project, but a report is welcome here too if HoploDex's use of it is
 exploitable.
