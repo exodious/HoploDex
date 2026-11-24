@@ -19,7 +19,8 @@ cd "$repo"
 # of any trap set before it, and that would hide the failing status.
 current_step=""
 set -E
-trap 'printf "\nbuild.sh: FAILED at step: %s\n" "$current_step" >&2; rm -f "$repo/flatpak/commit.json"' ERR
+trap 'printf "\nbuild.sh: FAILED at step: %s\n" "$current_step" >&2' ERR
+trap 'rm -f "$repo/flatpak/commit.json"' EXIT
 
 # shellcheck source=scripts/flatpak/env.sh
 source "$here/env.sh" "$@"
@@ -112,8 +113,6 @@ builder --download-only --force-clean "$build_dir" "$manifest"
 
 step "flatpak-builder --disable-download (the build; no network)"
 builder --disable-download --force-clean --repo="$local_repo" "$build_dir" "$manifest"
-# Only this build reads it: a later build without git mustn't show this commit.
-rm -f flatpak/commit.json
 
 step "contents check (011 research.md §13)"
 node scripts/flatpak/contents.mjs "$build_dir/files"
