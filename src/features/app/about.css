@@ -54,8 +54,9 @@
   font-weight: 650;
 }
 
-/* The source address: selectable at a click, as export's paths are
-   (.hd-paths dd). Not a link (010 FR-006). */
+/* The source address and the commit: selectable at a click, as export's
+   paths are (.hd-paths dd). Not a link (010 FR-006). */
+.hd-about__commit,
 .hd-about__source {
   font-family: var(--font-mono);
   font-size: var(--text-sm);

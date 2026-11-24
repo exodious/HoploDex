@@ -52,7 +52,7 @@ function ProgramBlock({
         <span className="hd-about__version">Version {program.version}</span>
         {program.commit !== null && (
           <span className="hd-about__version">
-            Commit <span className="hd-about__source">{program.commit.slice(0, 12)}</span>
+            Commit <span className="hd-about__commit">{program.commit.slice(0, 12)}</span>
             {program.commitModified && " with uncommitted changes"}
           </span>
         )}
