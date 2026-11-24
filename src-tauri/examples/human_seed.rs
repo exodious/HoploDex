@@ -395,7 +395,9 @@ pub fn seed_sandbox(
             "the documents' dates",
         );
     }
-    // Opened last, so the chooser selects it.
+    // Opened last, so the chooser selects it. Its backup folder was chosen on
+    // this computer, so it is used here.
+    machine.set_backup_location_chosen(&database_id(&main), &paths.main_backups.to_string_lossy());
     machine.touch_recent(&paths.main, MAIN_NAME, &database_id(&main), &paths.main_backups);
     if fixed_times {
         set_last_opened(&paths.config, &backups::utc_text(&now));

@@ -124,9 +124,15 @@ pub fn open_then(
             on_opened(&database_id);
             honour_locks(session, machine, locks, id, None)
         }
-        db::Opened::UpgradeDue { conn, steps_due, marker_seen } => {
-            Err(upgrade::wait_for_answer(session, conn, path, steps_due, marker_seen, generation))
-        }
+        db::Opened::UpgradeDue { conn, steps_due, marker_seen } => Err(upgrade::wait_for_answer(
+            session,
+            machine,
+            conn,
+            path,
+            steps_due,
+            marker_seen,
+            generation,
+        )),
     }
 }
 
@@ -212,11 +218,12 @@ pub(crate) fn prepare(
     }
     let mut open = OpenDatabase::new(conn, path)?;
     open.notes.opened_backup = opened_backup;
+    let location = machine.backup_location(&open.database_id, &location);
     machine.touch_recent(
         path,
         &open.name,
         &open.database_id,
-        &backups::resolve_folder(path, &location),
+        &backups::resolve_folder(path, location),
     );
     Ok(open)
 }
@@ -759,7 +766,8 @@ fn backup_at_close(
     if session.closing_immediately() {
         return CloseOutcome::backup(BackupOutcome::Skipped);
     }
-    let folder = backups::resolve_folder(&open.path, &location);
+    let location = machine.backup_location(&open.database_id, &location);
+    let folder = backups::resolve_folder(&open.path, location);
     let kept_from = |today| backups::has_backup_made_on(&folder, &open.database_id, today);
     match backups::is_due(enabled, changes_waiting, last_backup_at.as_deref(), &now, kept_from) {
         Due::Off => return CloseOutcome::backup(BackupOutcome::Off),
@@ -805,7 +813,7 @@ fn backup_at_close(
     match made {
         Ok(_) => {
             let keep = usize::try_from(keep).unwrap_or(1);
-            backups::rotate(&folder, &open.database_id, keep, None);
+            backups::rotate(machine, &open.path, &folder, &open.database_id, keep, None);
             CloseOutcome::backup(BackupOutcome::Made)
         }
         Err(BackupFailure::Stopped) => CloseOutcome::backup(BackupOutcome::Skipped),

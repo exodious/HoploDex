@@ -47,13 +47,14 @@ pub struct Upgraded {
 /// dropped, and the open fails with `DATABASE_CLOSED` (009 FR-010).
 pub fn wait_for_answer(
     session: &Session,
+    machine: &MachineSettings,
     conn: Connection,
     path: &Path,
     steps_due: Vec<&'static str>,
     marker_seen: SeenMarker,
     generation: AwaitingGeneration,
 ) -> CommandError {
-    let waiting = match describe(conn, path, steps_due, marker_seen) {
+    let waiting = match describe(machine, conn, path, steps_due, marker_seen) {
         Ok(waiting) => waiting,
         Err(err) => return err,
     };
@@ -69,6 +70,7 @@ pub fn wait_for_answer(
 /// Reads what the question and the upgrade need from the older layout, which
 /// keeps those columns (009 data-model.md "What an older layout must keep").
 fn describe(
+    machine: &MachineSettings,
     conn: Connection,
     path: &Path,
     steps_due: Vec<&'static str>,
@@ -106,6 +108,10 @@ fn describe(
         }
         None => None,
     };
+    // As the database will be known after the upgrade: a backup opened
+    // directly gets a new id, with no location chosen here.
+    let id_after = backup_stamp.as_ref().map_or(&database_id, |stamp| &stamp.new_database_id);
+    let location = machine.backup_location(id_after, &location);
     // The window between the key's derivation and the slot (009 T098).
     reach!(&conn, Point::BeforeWaiting);
     Ok(AwaitingUpgrade {
@@ -118,7 +124,7 @@ fn describe(
         marker_seen,
         backup_stamp,
         save_passphrase: None,
-        backup_folder: backups::resolve_folder(path, &location),
+        backup_folder: backups::resolve_folder(path, location),
         backup_folder_is_default: location == "default",
     })
 }

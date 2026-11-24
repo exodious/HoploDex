@@ -4,6 +4,7 @@
 //! data or secrets. The config directory is always passed in, so tests and
 //! tools use throwaway ones.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -63,6 +64,25 @@ pub struct RecentEntry {
     /// damaged restore won't replace it (SECURITY: issue #62).
     #[serde(default)]
     pub located: bool,
+}
+
+/// The backups this computer made of the database `database_id` at
+/// `database_path`, by file name, less those rotation deleted. Only these
+/// rotate: a name shows only 8 digits of an id, and a file can store any id,
+/// so a database at another path never takes them for its own (code scanning
+/// alert database-files/cwe-639/src-tauri/src/services/backups.rs#rotate).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MadeBackups {
+    pub database_path: PathBuf,
+    pub database_id: String,
+    pub file_names: Vec<String>,
+}
+
+impl MadeBackups {
+    fn is(&self, path: &Path, database_id: &str) -> bool {
+        self.database_path == path && self.database_id == database_id
+    }
 }
 
 /// The modification time of the file at `path`, as `left_modified_at`
@@ -127,6 +147,22 @@ struct MachineFile {
     machine_id: String,
     #[serde(default)]
     recent_databases: Vec<RecentEntry>,
+    /// The backup locations the user chose on this computer for each database,
+    /// by its id, as `collection_settings.backup_location` stores them. A
+    /// location stored in a database is used only when it is one recorded
+    /// here (code scanning alert
+    /// paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder). Absent
+    /// in a file an earlier version wrote, whose cached backup folders the load
+    /// then checks once ([`forget_unchosen_backup_folders`]). A value this
+    /// version can't read is absent too (009 research.md §15): nothing is then
+    /// used but the default folders until chosen again.
+    #[serde(default, deserialize_with = "lenient_backup_locations")]
+    backup_locations: Option<BTreeMap<String, Vec<String>>>,
+    /// Kept when a database leaves the recent list, so its backups still
+    /// rotate when it is opened at that path again. A value this version can't
+    /// read is empty (009 research.md §15): nothing rotates until recorded.
+    #[serde(default, deserialize_with = "lenient_made_backups")]
+    made_backups: Vec<MadeBackups>,
     #[serde(default)]
     unfinished_backup: Option<UnfinishedBackup>,
     #[serde(default)]
@@ -207,12 +243,34 @@ where
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
+/// Reads `madeBackups`, as empty for a value this version can't read.
+fn lenient_made_backups<'de, D>(deserializer: D) -> Result<Vec<MadeBackups>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// Reads `backupLocations`, as absent for a value this version can't read.
+fn lenient_backup_locations<'de, D>(
+    deserializer: D,
+) -> Result<Option<BTreeMap<String, Vec<String>>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
 impl MachineFile {
     fn fresh() -> io::Result<Self> {
         Ok(Self {
             version: VERSION,
             machine_id: random_hex(16).map_err(io::Error::other)?,
             recent_databases: Vec::new(),
+            backup_locations: Some(BTreeMap::new()),
+            made_backups: Vec::new(),
             unfinished_backup: None,
             unfinished_backup_move: None,
             notices: Vec::new(),
@@ -288,7 +346,7 @@ impl MachineSettings {
             }
             Err(_) => None,
         };
-        let file = match file {
+        let mut file = match file {
             Some(file) => file,
             None => {
                 log::warn!("{} is unreadable; starting a new one", crate::logging::place(&path));
@@ -298,6 +356,7 @@ impl MachineSettings {
                 fresh
             }
         };
+        forget_unchosen_backup_folders(&mut file);
         Ok(Self { path, file: Mutex::new(file), keyring: Keyring::off() })
     }
 
@@ -374,6 +433,74 @@ impl MachineSettings {
             if let Some(entry) = file.recent_databases.iter_mut().find(|entry| entry.path == path) {
                 entry.backup_folder = Some(backup_folder.to_owned());
             }
+        });
+    }
+
+    /// `stored`, a database's `collection_settings.backup_location`, as this
+    /// computer uses it: `default`, or a custom location only when the user
+    /// chose it here for the database `database_id`, now or before. One the
+    /// file arrived with is not used, and backups go to the default folder
+    /// instead (code scanning alert
+    /// paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder).
+    pub fn backup_location<'a>(&self, database_id: &str, stored: &'a str) -> &'a str {
+        let file = self.lock();
+        let chosen = file.backup_locations.as_ref().and_then(|chosen| chosen.get(database_id));
+        let chosen = chosen.is_some_and(|locations| locations.iter().any(|l| l == stored));
+        if chosen { stored } else { "default" }
+    }
+
+    /// Records that the user chose `location` here as the backup location of
+    /// the database `database_id`. `default` needs no record, and forgets
+    /// none: a restore can bring back any location chosen here.
+    pub fn set_backup_location_chosen(&self, database_id: &str, location: &str) {
+        if location == "default" {
+            return;
+        }
+        self.update(|file| {
+            let chosen = file.backup_locations.get_or_insert_default();
+            let chosen = chosen.entry(database_id.to_owned()).or_default();
+            if !chosen.iter().any(|l| l == location) {
+                chosen.push(location.to_owned());
+            }
+        });
+    }
+
+    /// The backups this computer recorded making of the database `database_id`
+    /// at `path` ([`MadeBackups`]).
+    pub fn made_backups(&self, path: &Path, database_id: &str) -> Vec<String> {
+        let file = self.lock();
+        let made = file.made_backups.iter().find(|made| made.is(path, database_id));
+        made.map(|made| made.file_names.clone()).unwrap_or_default()
+    }
+
+    /// Records that this computer made the backup `file_name` of the database
+    /// `database_id` at `path`, whether or not it is in the recent list yet.
+    pub fn record_backup_made(&self, path: &Path, database_id: &str, file_name: &str) {
+        self.update(|file| {
+            let index = file.made_backups.iter().position(|made| made.is(path, database_id));
+            let index = index.unwrap_or_else(|| {
+                file.made_backups.push(MadeBackups {
+                    database_path: path.to_owned(),
+                    database_id: database_id.to_owned(),
+                    file_names: Vec::new(),
+                });
+                file.made_backups.len() - 1
+            });
+            let recorded = &mut file.made_backups[index].file_names;
+            if !recorded.iter().any(|name| name == file_name) {
+                recorded.push(file_name.to_owned());
+            }
+        });
+    }
+
+    /// Forgets the recorded backups of the database `database_id` at `path`
+    /// for which `keep` is false.
+    pub fn keep_made_backups(&self, path: &Path, database_id: &str, keep: impl Fn(&str) -> bool) {
+        self.update(|file| {
+            for made in file.made_backups.iter_mut().filter(|made| made.is(path, database_id)) {
+                made.file_names.retain(|name| keep(name));
+            }
+            file.made_backups.retain(|made| !made.file_names.is_empty());
         });
     }
 
@@ -631,6 +758,26 @@ fn normalize_hold(hold: &mut Option<PdfPreviewHold>) {
     if hold.as_ref().is_some_and(|hold| hold.version.is_none() && hold.leftovers.is_empty()) {
         *hold = None;
     }
+}
+
+/// In a file an earlier version wrote, which cached whatever backup location a
+/// database stored, and which the chooser lists at every launch (code scanning
+/// alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder):
+/// drops each recent entry's cached backup folder but the default one beside
+/// it, and starts the record of chosen locations, so this runs once. The next
+/// open caches the folder again. Every folder cached since is one this
+/// computer resolved through [`MachineSettings::backup_location`].
+fn forget_unchosen_backup_folders(file: &mut MachineFile) {
+    if file.backup_locations.is_some() {
+        return;
+    }
+    for entry in &mut file.recent_databases {
+        let default = crate::services::backups::resolve_folder(&entry.path, "default");
+        if entry.backup_folder.as_deref() != Some(default.as_path()) {
+            entry.backup_folder = None;
+        }
+    }
+    file.backup_locations = Some(BTreeMap::new());
 }
 
 /// Writes to a temporary file beside `path`, flushes it, then renames it

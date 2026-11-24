@@ -138,6 +138,9 @@ interface ShownLocation {
   path: string;
   available: boolean;
   unavailableReason?: "outOfReach";
+  /** The default folder is shown because the saved one isn't set up on this
+   * computer yet. */
+  chosenElsewhere?: boolean;
 }
 
 function SettingsForm({
@@ -157,11 +160,16 @@ function SettingsForm({
   const scope = useSessionScope();
   const saved = status.settings.backups;
   const defaultFolder = joinPath(folderOf(status.path), "HoploDex backups");
+  // A folder not set up on this computer stays saved as it is: saving sends "current".
   const savedLocation = (): ShownLocation => ({
-    input: saved.location.kind === "default" ? { kind: "default" } : { kind: "current" },
+    input:
+      saved.location.kind === "default" && !saved.location.chosenElsewhere
+        ? { kind: "default" }
+        : { kind: "current" },
     path: saved.location.path,
     available: saved.location.available,
     unavailableReason: saved.location.unavailableReason,
+    chosenElsewhere: saved.location.chosenElsewhere,
   });
   const toast = useToast();
   const [enabled, setEnabled] = useState(saved.enabled);
@@ -366,7 +374,7 @@ function SettingsForm({
     setLocation(savedLocation());
   }
 
-  const isDefault = location.input.kind === "default";
+  const isDefault = location.input.kind === "default" || !!location.chosenElsewhere;
   const savedInput = savedLocation().input;
   const savedLock = status.settings.lock;
   // Whether anything differs from what is saved (#34): Save waits for it.
@@ -429,6 +437,12 @@ function SettingsForm({
                   <span className="hd-settings-location__warning">{unavailableNote(location)}</span>
                 )}
               </p>
+              {location.chosenElsewhere && (
+                <p className="hd-field__hint">
+                  The backup folder saved with this database isn&apos;t set up on this computer yet.
+                  Backups go to the default folder until you choose it again.
+                </p>
+              )}
               <div className="hd-settings-location__actions">
                 <Button
                   size="sm"

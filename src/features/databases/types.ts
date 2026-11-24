@@ -95,6 +95,10 @@ export interface BackupLocation {
   /** Set only when `available` is false because the folder is out of this
    * copy's reach (011 FR-004). */
   unavailableReason?: "outOfReach";
+  /** The database stores a folder that wasn't chosen on this computer, so
+   * backups go to the default folder (`kind` "default") until one is chosen
+   * here. Absent otherwise. */
+  chosenElsewhere?: boolean;
 }
 
 export interface CollectionSettings {

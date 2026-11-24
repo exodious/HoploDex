@@ -49,9 +49,14 @@ insurance status, valuation, attachment storage, secure delete,
   (the rules as typed) and `strength` (the `zxcvbn` crate's estimate, which
   replaced the page's strength worker); the idle lock waits while one is up),
 - `machine_settings` (`machine.json`, which also keeps the troubleshooting log's
-  saved choice and that its notice was queued: 013 data-model.md, and the
-  page's color mode and layout, `appearance`, since the incognito main web view
-  keeps no storage),
+  saved choice and that its notice was queued: 013 data-model.md, the page's
+  color mode and layout, `appearance`, since the incognito main web view keeps
+  no storage, and `backupLocations`, every backup location the user chose here
+  for each database id: `backup_location` gives a database's stored location
+  as this computer uses it, `default` unless it is one recorded, so a
+  location a file arrives with is never used until it is chosen here, while
+  one chosen here earlier and brought back by a restore still is; choosing
+  the default forgets none),
 - `keyring` (saved passphrases: every `Entry` is keyring-core's; outside a
   Flatpak the `keyring` crate's OS store, and inside one (011)
   `keyring/portal.rs`'s `Store`, a keyring-core store over oo7's file keyring at
@@ -63,7 +68,13 @@ insurance status, valuation, attachment storage, secure delete,
   `SecretPortal` seam gives tests a fixed secret),
 - `backups` (`BackupKind`: a `Regular` backup follows the settings;
   `BeforeUpgrade` is always made, whatever they say, is never the day's backup,
-  and its file name ends ` before <version>` after the id),
+  and its file name ends ` before <version>` after the id. `make_backup`
+  records each backup it makes under the database's path and id
+  (`machine.json`'s `madeBackups`), and `rotate` deletes only those: a name
+  shows only 8 digits of an id, which a file can copy, so a backup made on
+  another computer or by 0.1.0 is listed and restorable but never rotated
+  here, and neither is one made before the database was located at a new
+  path, whose record stays at the old one),
 - `file_swap` (atomic file replacement; `finish_interrupted` runs before every
   open and `remove_leftovers` once the passphrase has opened it),
 - `scratch` (scratch files are created exclusively, removed only by what created

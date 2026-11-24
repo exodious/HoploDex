@@ -472,6 +472,8 @@ sorts by date in a file manager. In-progress files end in `.partial`, which
 no listing or open dialog matches, so they cannot be mistaken for a backup
 (FR-027).
 
+_Amended 2026-11-23: rotation deletes only backups this computer recorded making of this database, at its path and with its id (`machine.json`'s `madeBackups`), since a name carries only `<id8>`, which a file can copy. Backups made on another computer or by 0.1.0 are listed and restorable but never rotated here; at most `backup_keep_count` of them stay until the user deletes them (code scanning alert database-files/cwe-639/src-tauri/src/services/backups.rs#rotate)._
+
 **Rotation**: after a new backup has been renamed into place, backups of this
 database beyond `backup_keep_count` (default 5, range 1–100) are deleted,
 oldest first, by secure deletion (§12). Excluded: the backup a restore is

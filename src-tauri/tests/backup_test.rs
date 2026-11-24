@@ -250,7 +250,13 @@ fn deleting_all_backups_lifts_the_once_a_day_limit() {
     assert_eq!(world.close().backup, BackupOutcome::Made);
 
     world.open();
-    backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
+    backups_ops::delete_all_backups(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        true,
+    )
+    .unwrap();
     world.change();
     world.clock.set("2026-09-25T18:00:00+02:00");
 
@@ -984,8 +990,12 @@ fn deleting_all_backups_needs_confirming() {
     let world = World::new();
     with_three_backups(&world);
 
-    let refused =
-        backups_ops::delete_all_backups(&world.session, world.session.current_id(), false);
+    let refused = backups_ops::delete_all_backups(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        false,
+    );
 
     assert_eq!(refused.unwrap_err().code, "CONFIRMATION_REQUIRED");
     assert_eq!(world.backups_in(&world.default_folder(), &world.database_id()).len(), 3);
@@ -1003,8 +1013,13 @@ fn deleting_all_backups_deletes_every_one_and_nothing_else() {
     let record = world.backup_record();
     let before = fs::read(world.path()).unwrap();
 
-    let deleted =
-        backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
+    let deleted = backups_ops::delete_all_backups(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        true,
+    )
+    .unwrap();
 
     assert_eq!(deleted.deleted_count, 3);
     assert!(deleted.failed_paths.is_empty());
@@ -1037,8 +1052,13 @@ fn a_backup_that_cannot_be_deleted_is_reported_and_the_rest_still_go() {
     let stuck = Path::new(&listed[1].path);
     fs::set_permissions(stuck, fs::Permissions::from_mode(0o444)).unwrap();
 
-    let deleted =
-        backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
+    let deleted = backups_ops::delete_all_backups(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        true,
+    )
+    .unwrap();
 
     assert_eq!(deleted.deleted_count, 2);
     assert_eq!(deleted.failed_paths, vec![listed[1].path.clone()]);
@@ -1058,8 +1078,13 @@ fn deleting_all_backups_can_be_stopped_between_files() {
         }
     });
 
-    let stopped = backups_ops::delete_all_backups(&world.session, world.session.current_id(), true)
-        .unwrap_err();
+    let stopped = backups_ops::delete_all_backups(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        true,
+    )
+    .unwrap_err();
 
     assert_eq!(stopped.code, "OPERATION_STOPPED");
     assert_eq!(
@@ -1553,8 +1578,13 @@ fn deleting_all_backups_removes_the_ones_made_before_an_upgrade_too() {
     assert!(before_upgrade.exists());
     assert_eq!(world.labels(&id).len(), 4);
 
-    let deleted =
-        backups_ops::delete_all_backups(&world.session, world.session.current_id(), true).unwrap();
+    let deleted = backups_ops::delete_all_backups(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        true,
+    )
+    .unwrap();
 
     assert_eq!(deleted.deleted_count, 4);
     assert!(deleted.failed_paths.is_empty());
@@ -1600,4 +1630,282 @@ fn moving_the_backup_location_moves_the_ones_made_before_an_upgrade_too() {
         bytes,
         "byte for byte, under the same name"
     );
+}
+
+// --- Backups bound to this computer (code scanning alerts 88 and 105) ---------
+
+/// Writes to the closed database at `path` as its author could, outside the
+/// app: a file from elsewhere carries whatever its author stored.
+fn author_writes(path: &Path, sql: &str, value: &str) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.pragma_update(None, "key", support::TEST_PASSPHRASE).unwrap();
+    db::cipher::apply_cipher_settings(&conn, "main").unwrap();
+    conn.execute(sql, [value]).unwrap();
+}
+
+/// The open database's backup location as the settings dialog gets it.
+fn shown_location(world: &World) -> Value {
+    let settings = world
+        .session
+        .inspect(world.session.current_id(), |open| {
+            databases::collection_settings(&world.machine, open, &Reach::Unconfined)
+        })
+        .unwrap();
+    serde_json::to_value(settings.backups.location).unwrap()
+}
+
+// Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
+#[test]
+fn a_backup_location_the_file_arrived_with_is_not_used_until_it_is_chosen_here() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.close();
+    let elsewhere = world.dir.path().join("Elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+    author_writes(
+        &world.path(),
+        "UPDATE collection_settings SET backups_enabled = 1, backup_location = ?1",
+        &path_text(&elsewhere),
+    );
+    author_writes(&world.path(), "UPDATE app_state SET changes_waiting = ?1", "1");
+
+    world.open();
+
+    let cached = world.machine.recent_entry(&world.path()).unwrap().backup_folder;
+    assert_eq!(cached, Some(world.default_folder()), "the chooser lists the default folder");
+    assert_eq!(
+        shown_location(&world),
+        json!({
+            "kind": "default",
+            "path": path_text(&world.default_folder()),
+            "available": true,
+            "chosenElsewhere": true,
+        })
+    );
+    // Saving the other settings keeps the location stored for the computer
+    // that chose it, and still doesn't use it here.
+    databases::update_backup_settings(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        &BackupSettingsInput {
+            enabled: true,
+            keep_count: 3,
+            location: BackupLocationInput::Saved,
+            existing_backups: None,
+        },
+        &Reach::Unconfined,
+    )
+    .unwrap();
+    assert_eq!(shown_location(&world)["chosenElsewhere"], true);
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    assert_eq!(world.backups_in(&world.default_folder(), &id).len(), 1);
+    assert!(World::file_names(&elsewhere).is_empty(), "nothing is written there");
+    let stored: String = peek(&world.path())
+        .query_row("SELECT backup_location FROM collection_settings", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stored, path_text(&elsewhere));
+
+    // Chosen here, it is used.
+    world.open();
+    world.set_backups(true, 3, BackupLocationInput::Custom { path: path_text(&elsewhere) });
+    assert_eq!(shown_location(&world)["kind"], "custom");
+    assert_eq!(shown_location(&world).get("chosenElsewhere"), None);
+    world.next_day();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    assert_eq!(world.backups_in(&elsewhere, &id).len(), 1);
+    let cached = world.machine.recent_entry(&world.path()).unwrap().backup_folder;
+    assert_eq!(cached, Some(elsewhere));
+}
+
+// Code scanning alert database-files/cwe-639/src-tauri/src/services/backups.rs#rotate
+#[test]
+fn a_database_copying_another_ones_id_never_rotates_that_ones_backups() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    for _ in 0..3 {
+        world.change();
+        assert_eq!(world.close().backup, BackupOutcome::Made);
+        world.open();
+        world.next_day();
+    }
+    world.close();
+    let mine = world.backups_in(&world.default_folder(), &id);
+    assert_eq!(mine.len(), 3);
+    // A file from elsewhere, saved beside it, that stores Mine's whole id (so
+    // its backups carry the same 8 digits in their names) and keeps one.
+    let crafted = world.dir.path().join("Crafted.hoplodex");
+    lifecycle::create(&world.session, &world.machine, &crafted, &passphrase()).unwrap();
+    world.set_backups(true, 1, BackupLocationInput::Default);
+    world.close();
+    author_writes(&crafted, "UPDATE app_state SET database_id = ?1", &id);
+
+    lifecycle::open(&world.session, &world.machine, &crafted, &passphrase(), false).unwrap();
+    world.next_day();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+
+    let listed = world.backups_in(&world.default_folder(), &id);
+    for backup in &mine {
+        assert!(listed.contains(backup), "Mine's {} is still there", backup.file_name);
+    }
+    assert_eq!(listed.len(), 4, "Mine's three and the crafted one's newest");
+    let crafted_made = world.machine.made_backups(&crafted, &id);
+    assert_eq!(crafted_made.len(), 1, "only its own newest is recorded as its own");
+
+    // And Mine's own rotation leaves the crafted one's backup alone.
+    world.open();
+    world.set_backups(true, 1, BackupLocationInput::Default);
+    world.next_day();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    let left: Vec<String> = world
+        .backups_in(&world.default_folder(), &id)
+        .into_iter()
+        .map(|backup| backup.file_name)
+        .collect();
+    assert_eq!(left.len(), 2, "Mine's newest and the crafted one's: {left:?}");
+    assert!(left.contains(&crafted_made[0]));
+}
+
+// Code scanning alert database-files/cwe-639/src-tauri/src/services/backups.rs#rotate
+#[test]
+fn a_backup_this_computer_did_not_make_is_listed_and_restorable_but_never_rotated() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    world.set_backups(true, 1, BackupLocationInput::Default);
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    let elsewhere = world.backups_in(&world.default_folder(), &id).remove(0);
+    // As one 0.1.0 made, or one made on another computer: not recorded here.
+    world.machine.keep_made_backups(&world.path(), &id, |_| false);
+
+    for _ in 0..2 {
+        world.open();
+        world.next_day();
+        world.change();
+        assert_eq!(world.close().backup, BackupOutcome::Made);
+    }
+
+    let listed = world.backups_in(&world.default_folder(), &id);
+    let names: Vec<&str> = listed.iter().map(|b| b.file_name.as_str()).collect();
+    assert_eq!(
+        names,
+        [format!("Mine 2026-09-27 143005 {}.hoplodex", &id[..8]), elsewhere.file_name.clone()],
+        "the newest kept, the unrecorded one listed beside it, outside the count"
+    );
+    assert_eq!(
+        world.machine.made_backups(&world.path(), &id),
+        [listed[0].file_name.clone()],
+        "the record forgets what rotation deleted"
+    );
+
+    world.open();
+    world.clock.advance(chrono::Duration::hours(1));
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        &elsewhere.path,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+        false,
+        &Reach::Unconfined,
+    )
+    .unwrap();
+    assert_eq!(world.firearm_count(), 1, "the first day's collection is back");
+    assert!(Path::new(&elsewhere.path).exists(), "a restore never rotates it away");
+}
+
+/// Restores `backup` over the open database, an hour on so the backup made
+/// first is named for a later minute.
+fn restore(world: &World, backup: &str) {
+    world.clock.advance(chrono::Duration::hours(1));
+    backups_ops::restore_backup(
+        &world.session,
+        &world.machine,
+        backup,
+        &passphrase(),
+        Target::Open(world.session.current_id()),
+        false,
+        &Reach::Unconfined,
+    )
+    .unwrap();
+}
+
+/// After a restore brought back `chosen`, a location chosen here earlier:
+/// the dialogs show it, and the next backup goes to it.
+fn assert_used_after_restore(world: &World, id: &str, chosen: &Path) {
+    let shown = shown_location(world);
+    assert_eq!(shown["kind"], "custom");
+    assert_eq!(shown["path"], json!(path_text(chosen)));
+    assert_eq!(shown.get("chosenElsewhere"), None, "it was chosen on this computer");
+    let listed = backups_ops::list_backups(
+        &world.session,
+        &world.machine,
+        Target::Open(world.session.current_id()),
+    )
+    .unwrap();
+    assert_eq!(listed.folder, path_text(chosen), "the restore dialog lists it");
+    let before = world.backups_in(chosen, id).len();
+    world.next_day();
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    assert_eq!(world.backups_in(chosen, id).len(), before + 1);
+}
+
+// Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
+#[test]
+fn a_location_chosen_here_then_changed_is_still_used_when_a_restore_brings_it_back() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    let (first, second) = (world.dir.path().join("First"), world.dir.path().join("Second"));
+    fs::create_dir(&first).unwrap();
+    fs::create_dir(&second).unwrap();
+    world.set_backups(true, 3, BackupLocationInput::Custom { path: path_text(&first) });
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    world.open();
+    databases::update_backup_settings(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        &BackupSettingsInput {
+            enabled: true,
+            keep_count: 3,
+            location: BackupLocationInput::Custom { path: path_text(&second) },
+            existing_backups: Some(ExistingBackupsChoice::Move),
+        },
+        &Reach::Unconfined,
+    )
+    .unwrap();
+    let older = world.backups_in(&second, &id).remove(0);
+
+    restore(&world, &older.path);
+
+    assert_used_after_restore(&world, &id, &first);
+}
+
+// Code scanning alert paths/cwe-73/src-tauri/src/services/backups.rs#resolve_folder
+#[test]
+fn a_location_chosen_here_then_left_for_the_default_is_still_used_when_a_restore_brings_it_back() {
+    let world = World::new();
+    world.create();
+    let id = world.database_id();
+    let chosen = world.dir.path().join("Chosen");
+    fs::create_dir(&chosen).unwrap();
+    world.set_backups(true, 3, BackupLocationInput::Custom { path: path_text(&chosen) });
+    world.change();
+    assert_eq!(world.close().backup, BackupOutcome::Made);
+    world.open();
+    world.set_backups(true, 3, BackupLocationInput::Default);
+    let older = world.backups_in(&chosen, &id).remove(0);
+
+    restore(&world, &older.path);
+
+    assert_used_after_restore(&world, &id, &chosen);
 }

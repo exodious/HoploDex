@@ -167,6 +167,7 @@ impl World {
         databases::update_lock_settings(
             &self.session,
             self.session.current_id(),
+            &self.machine,
             &LockSettingsInput { idle_enabled, idle_minutes, on_screen_lock },
         )
         .unwrap();
@@ -495,9 +496,13 @@ fn lock_settings_allow_one_to_two_hundred_and_forty_minutes() {
     }
     let world = World::new();
     world.create();
-    let refused =
-        databases::update_lock_settings(&world.session, world.session.current_id(), &input(0))
-            .unwrap_err();
+    let refused = databases::update_lock_settings(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        &input(0),
+    )
+    .unwrap_err();
     assert_eq!(refused.code, "VALIDATION_ERROR");
 }
 
@@ -861,7 +866,12 @@ fn a_sleep_stops_deleting_the_backups_between_files() {
     assert_eq!(backups::list(&world.backup_folder(), &id).unwrap().len(), 3);
     let sleeper = world.sleep_at("backups_delete:progress", |payload| payload["processed"] == 1);
 
-    let deleted = backups_ops::delete_all_backups(&world.session, world.session.current_id(), true);
+    let deleted = backups_ops::delete_all_backups(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        true,
+    );
     join(&sleeper);
     world.events.on_event(|_, _| {});
 

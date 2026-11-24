@@ -76,7 +76,7 @@ pub mod ops {
     ) -> Result<BackupList, CommandError> {
         let (folder, database_id) = match target {
             Target::Open(id) => session.inspect(id, |open| {
-                Ok((backup_settings(&open.conn, &open.path)?.folder, open.database_id.clone()))
+                Ok((backup_settings(machine, open)?.folder, open.database_id.clone()))
             })?,
             Target::At(path) => cached_backups_of(machine, Path::new(path))?,
         };
@@ -108,16 +108,21 @@ pub mod ops {
         keep: usize,
     }
 
-    fn backup_settings(conn: &Connection, path: &Path) -> Result<BackupSettings, CommandError> {
-        let (location, keep): (String, i64) = conn
+    fn backup_settings(
+        machine: &MachineSettings,
+        open: &OpenDatabase,
+    ) -> Result<BackupSettings, CommandError> {
+        let (location, keep): (String, i64) = open
+            .conn
             .query_row(
                 "SELECT backup_location, backup_keep_count FROM collection_settings",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(CommandError::from_db)?;
+        let location = machine.backup_location(&open.database_id, &location);
         Ok(BackupSettings {
-            folder: backups::resolve_folder(path, &location),
+            folder: backups::resolve_folder(&open.path, location),
             is_default: location == "default",
             keep: usize::try_from(keep).unwrap_or(1),
         })
@@ -279,8 +284,9 @@ pub mod ops {
         // keeps for the database's backups, where the dialog lists them from.
         if is_server_or_device(Path::new(backup_path)) {
             let folder = match target {
-                Target::Open(id) => session
-                    .inspect(id, |open| Ok(backup_settings(&open.conn, &open.path)?.folder))?,
+                Target::Open(id) => {
+                    session.inspect(id, |open| Ok(backup_settings(machine, open)?.folder))?
+                }
                 Target::At(path) => cached_backups_of(machine, Path::new(path))?.0,
             };
             if Path::new(backup_path).parent() != Some(folder.as_path()) {
@@ -500,7 +506,7 @@ pub mod ops {
         let events = session.events();
         let mut slot = hold_still_ours(session, id)?;
         let open = slot.as_mut().expect("held open");
-        let settings = backup_settings(&open.conn, &open.path)?;
+        let settings = backup_settings(machine, open)?;
         let path = open.path.clone();
         let database_folder = path.parent().unwrap_or(Path::new("")).to_owned();
 
@@ -614,7 +620,14 @@ pub mod ops {
             );
             return Err(err);
         }
-        backups::rotate(&settings.folder, &database_id, settings.keep, Some(backup));
+        backups::rotate(
+            machine,
+            &path,
+            &settings.folder,
+            &database_id,
+            settings.keep,
+            Some(backup),
+        );
         let conn =
             db::open_database(&path, passphrase, &machine.identity(), false)?.into_ready()?;
         let mut reopened = lifecycle::prepare(machine, conn, &path)?;
@@ -1392,6 +1405,7 @@ pub mod ops {
     pub fn delete_all_backups(
         session: &Session,
         id: SessionId,
+        machine: &MachineSettings,
         confirmed: bool,
     ) -> Result<BackupsDeleted, CommandError> {
         if !confirmed {
@@ -1400,7 +1414,7 @@ pub mod ops {
             ));
         }
         let (folder, database_id) = session.inspect(id, |open| {
-            Ok((backup_settings(&open.conn, &open.path)?.folder, open.database_id.clone()))
+            Ok((backup_settings(machine, open)?.folder, open.database_id.clone()))
         })?;
         delete_backups_in(session, &folder, &database_id)
     }
@@ -1551,8 +1565,9 @@ pub async fn drop_backup_check(
 pub async fn delete_all_backups(
     confirmed: bool,
     session: ScopedSession,
+    machine: State<'_, MachineSettings>,
 ) -> Result<BackupsDeleted, CommandError> {
-    ops::delete_all_backups(&session.session, session.id, confirmed)
+    ops::delete_all_backups(&session.session, session.id, &machine, confirmed)
 }
 
 /// The dialog blocks until answered, so not on an async thread.
