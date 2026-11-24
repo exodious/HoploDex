@@ -20,7 +20,9 @@
 //   tag       check the workflow will accept --commit (its tag check, read from
 //             the commit, and `ai-security-review.mjs reviewed`), then create the
 //             annotated tag v<version> on it and push it to origin, which starts
-//             the release workflow
+//             the release workflow; a final version's refuses a commit that has
+//             a published candidate of it (that is `promote`'s) and a version
+//             whose published candidates are on other commits
 //   all       each of the above but records, in that order, the records being on
 //             the commit already: `tag`'s check of the commit comes first of all
 //   promote   instead of `tag`, for a final release from an accepted release
@@ -611,6 +613,13 @@ function main(argv) {
       );
     console.log(`promoting ${candidate}`);
     requireCandidateFiles(candidate, commit);
+  }
+  if (final && toRun.includes("tag")) {
+    const published = candidateFor(version, commit, publishedCandidates(app));
+    if (published)
+      throw new Error(
+        `${published} is published on ${commit}, so its final tag promotes it: run release.mjs promote ${version}, which checks its files first`,
+      );
   }
   for (const s of toRun) {
     console.log(`\n== ${s}`);

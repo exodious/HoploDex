@@ -144,7 +144,11 @@ workflow's tag check, `ai-security-review.mjs reviewed` and
 check whose result changes with time, not with the code) all pass. Then it
 tags `v0.1.1` on that commit, its message naming the candidate, and pushes the
 tag. The other steps ran on that commit for the candidate already. A final
-release without a candidate is `release.mjs all 0.1.1`, like a candidate's.
+release without a candidate is `release.mjs all 0.1.1`, like a candidate's:
+its `tag` step refuses, before any step, a commit with a published candidate
+of the version (that tag is `promote`'s, which checks the candidate's files
+first) and a version whose published candidates are on other commits, as the
+workflow would.
 
 ## Before the tag
 

@@ -349,8 +349,12 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
       expect(noLine.stderr, version).toContain("no line");
     }
 
+    // A final tag asks gh for the version's published candidates: none here,
+    // stood in for by a bash script, so not on Windows.
+    const versions = process.platform === "win32" ? ["0.1.0-rc.1"] : ["0.1.0-rc.1", "0.1.0"];
+    if (process.platform !== "win32") repo.env = fakeGh({ releases: "" }).env;
     // The final tag goes on the accepted candidate's commit, with no change.
-    for (const version of ["0.1.0-rc.1", "0.1.0"]) {
+    for (const version of versions) {
       const ready = repo.release("all", version, "--commit", listed, "--dry-run");
       expect(ready.status, version).toBe(0);
       expect(ready.stdout, version).not.toContain("== records");
@@ -382,7 +386,7 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
       `${lines}0002_fix ${ABC} 0.1.0\n`,
     );
     const recordedFix = repo.commit({}, fix);
-    for (const version of ["0.1.0-rc.2", "0.1.0"]) {
+    for (const version of versions.map((v) => v.replace("rc.1", "rc.2"))) {
       expect(repo.release("tag", version, "--commit", recordedFix, "--dry-run").status).toBe(0);
     }
   });
@@ -997,6 +1001,40 @@ describe.skipIf(process.platform === "win32")(
       const named = repo.release("promote", "0.1.1", "--commit", head, "--rc", "0.1.1-rc.2");
       expect(named.status).toBe(1);
       expect(named.stderr).toContain("isn't the newest published candidate");
+      expect(repo.git(["tag", "-l"])).toBe("");
+    });
+
+    it("tags a final itself only on a commit with no published candidate of it, as the workflow's path check would", () => {
+      const { repo, head } = ready();
+      const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
+      for (const step of ["tag", "all"]) {
+        repo.env = fakeGh({ releases: listing(rc), "commit-v0.1.1-rc.1": head }).env;
+        const promoted = repo.release(step, "0.1.1", "--commit", head);
+        expect(promoted.status, step).toBe(1);
+        expect(promoted.stderr, step).toContain("run release.mjs promote 0.1.1");
+        expect(promoted.stdout, step).not.toContain("==");
+
+        repo.env = fakeGh({ releases: listing(rc), "commit-v0.1.1-rc.1": sha("e") }).env;
+        const elsewhere = repo.release(step, "0.1.1", "--commit", head);
+        expect(elsewhere.status, step).toBe(1);
+        expect(elsewhere.stderr, step).toContain("on other commits");
+        expect(elsewhere.stdout, step).not.toContain("==");
+
+        // A draft (a rejected candidate) is none: the direct path.
+        repo.env = fakeGh({
+          releases: listing({ ...rc, draft: true }),
+          "commit-v0.1.1-rc.1": head,
+        }).env;
+        const direct = repo.release(step, "0.1.1", "--commit", head, "--dry-run");
+        expect(direct.stderr, step).toBe("");
+        expect(direct.stdout, step).toContain(`$ git tag -a v0.1.1 -m "HoploDex 0.1.1" ${head}`);
+
+        // A candidate's own tag asks nothing.
+        repo.env = fakeGh({}).env;
+        expect(repo.release(step, "0.1.1-rc.2", "--commit", head, "--dry-run").status, step).toBe(
+          0,
+        );
+      }
       expect(repo.git(["tag", "-l"])).toBe("");
     });
 
