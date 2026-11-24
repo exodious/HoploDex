@@ -200,12 +200,12 @@ surface or CWE is a new alert: treat it as a move (below).
 7. **Gate.** `gate` (with `--ref` for a release branch) counts open critical
    and high code scanning alerts from every tool, Dependabot critical and high
    alerts, open secret scanning alerts, and draft or triage advisories (less
-   any whose every vulnerability is patched in exactly the app's version, in
-   `tauri.conf.json`: those wait for this release, and it lists their GHSA ids
-   only). The
-   release proceeds only on PASS; each blocking alert is fixed, or dismissed
-   by the operator with its reason (a dismissed dependency alert must match a
-   recorded exception).
+   any whose every vulnerability is patched in exactly the version being
+   released, `--version <x.y.z>`, else `tauri.conf.json`'s: those wait for
+   this release, and it lists their GHSA ids only). The release proceeds
+   only on PASS; each blocking alert is fixed, or dismissed by the operator
+   with its reason (a dismissed dependency alert must match a recorded
+   exception).
 8. **Report** (terminal only): the target, the list's blob
    (`git rev-parse <commit>:docs/attack-surface.md`), the surfaces reviewed,
    one row per alert (number, rule id, band, and new / still open / fixed

@@ -174,10 +174,11 @@ request like any other; then start again from the new commit.
    run `node scripts/ai-security-review.mjs gate` (`release.mjs gate`):
    it must print PASS, with no critical or high code scanning, Dependabot or
    secret scanning alert open and no draft or triage advisory, except one
-   whose every vulnerability lists this version (`tauri.conf.json`'s) as its
-   patched version: that advisory waits for this release, so the gate prints
-   its GHSA id and lets it through. Each blocking alert is fixed, or dismissed
-   with its reason.
+   whose every vulnerability lists this version as its patched version
+   (`release.mjs gate` passes the version it is given; run directly, the gate
+   takes `tauri.conf.json`'s): that advisory waits for this release, so the
+   gate prints its GHSA id and lets it through. Each blocking alert is fixed,
+   or dismissed with its reason.
 
    **How it is enforced:** the release workflow's first job refuses the tag
    unless code scanning holds the review's upload for exactly the tagged

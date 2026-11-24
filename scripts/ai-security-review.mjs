@@ -20,9 +20,10 @@
 //       --known alerts are only context for minting ids
 //   node scripts/ai-security-review.mjs upload --pr <n> | --release [--ref <ref>]
 //       uploads the recorded SARIF, waits for it, and checks the alerts
-//   node scripts/ai-security-review.mjs gate [--ref <ref>]
+//   node scripts/ai-security-review.mjs gate [--ref <ref>] [--version <x.y.z>]
 //       the release gate: open critical and high alerts, and draft advisories
-//       other than those patched in exactly the app's version (tauri.conf.json)
+//       other than those patched in exactly the version being released
+//       (release.mjs passes it; otherwise tauri.conf.json's)
 //   node scripts/ai-security-review.mjs reviewed --commit <sha>
 //       the release workflow's check (#19): <sha> is main's head and its
 //       newest release review, and no critical or high code scanning or
@@ -709,9 +710,11 @@ function main(argv) {
       uploadCommand(opts);
       break;
     case "gate": {
-      const version = JSON.parse(
-        fs.readFileSync(path.join(ROOT, "src-tauri/tauri.conf.json"), "utf8"),
-      ).version;
+      const version =
+        opts.version ??
+        JSON.parse(fs.readFileSync(path.join(ROOT, "src-tauri/tauri.conf.json"), "utf8")).version;
+      if (!/^\d+\.\d+\.\d+$/.test(version ?? ""))
+        throw new Error(`gate --version <x.y.z>, not ${version}`);
       const g = gate(realGh, { ref: opts.ref ?? null, version });
       console.log(JSON.stringify(g, null, 1));
       console.log(g.pass ? "PASS" : "FAIL");
