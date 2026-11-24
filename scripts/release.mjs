@@ -40,8 +40,9 @@
 // (the candidate's files against its release) and `notes` (the draft's notes).
 //
 // <version> is the app's version with the tag's suffix, if any: `0.1.0` or
-// `0.1.0-rc.1`. version, checks and all run on the working tree, so they refuse
-// unless it is clean and HEAD is --commit. With --dry-run each command, the
+// `0.1.0-rc.1`. version, checks, all and promote (whose audit reads the
+// lockfiles) run on the working tree, so they refuse unless it is clean and
+// HEAD is --commit. With --dry-run each command, the
 // tag's included, is printed instead of run, and `all` stops at the first step
 // that fails, so it tags only after every check. Commands that the development
 // docs run in the dev container go through scripts/dev-container.sh when podman
@@ -64,7 +65,7 @@ const METAINFO = "flatpak/io.github.exodious.HoploDex.metainfo.xml";
 const NOTES = ".github/release-notes.md";
 export const STEPS = ["version", "records", "checks", "review", "gate", "tag"];
 /** The steps that run on the working tree, so it must be the commit they are for. */
-const ON_THE_TREE = ["version", "checks"];
+const ON_THE_TREE = ["version", "checks", "promote"];
 
 /** `0.1.0-rc.1` → { app: "0.1.0", final: false }. */
 export function parseVersion(version) {

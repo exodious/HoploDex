@@ -127,6 +127,7 @@ published and nothing has merged since:
 
 ```bash
 git fetch origin
+git switch --detach origin/main                    # the audit reads the checkout's lockfiles
 node scripts/release.mjs promote 0.1.1 --dry-run   # print what it would run, the tag's included
 node scripts/release.mjs promote 0.1.1             # or --rc 0.1.1-rc.2 to name the candidate
 ```

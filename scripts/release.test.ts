@@ -1038,6 +1038,31 @@ describe.skipIf(process.platform === "win32")(
       expect(repo.git(["tag", "-l"])).toBe("");
     });
 
+    it("promotes only from a clean checkout of the commit, since its audit reads the lockfiles there", () => {
+      const { repo, head } = ready();
+      const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
+      const gh = fakeGh({
+        releases: listing(rc),
+        "commit-v0.1.1-rc.1": head,
+        ...candidateAnswers(goodCandidate("v0.1.1-rc.1", head)),
+      });
+      repo.env = gh.env;
+      const later = repo.commit({ "package-lock.json": "{}" }, head);
+      const elsewhere = repo.release("promote", "0.1.1", "--commit", head);
+      expect(elsewhere.status).toBe(1);
+      expect(elsewhere.stderr).toContain(`HEAD is ${later}, not ${head}`);
+      expect(elsewhere.stdout).not.toContain("==");
+
+      repo.git(["checkout", "-q", "--detach", head]);
+      fs.writeFileSync(path.join(repo.dir, "package-lock.json"), "{}");
+      const dirty = repo.release("promote", "0.1.1", "--commit", head);
+      expect(dirty.status).toBe(1);
+      expect(dirty.stderr).toContain("isn't clean");
+      expect(dirty.stdout).not.toContain("==");
+      expect(gh.calls()).toEqual([]);
+      expect(repo.git(["tag", "-l"])).toBe("");
+    });
+
     it("chooses the workflow's path: promote, build, or neither", () => {
       const { repo, head } = ready();
       const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
