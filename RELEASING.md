@@ -167,8 +167,8 @@ request like any other; then start again from the new commit.
    version (a test enforces it). A release candidate carries the version it
    is a candidate for; its tag adds the suffix. Its date is the final
    release's too, since the final tag reuses the candidate's commit.
-2. **The migration records**, merged before the version's first release
-   candidate (`src-tauri/src/db/migrations/README.md`,
+2. **The migration records**, merged before the version's first tag, its
+   first release candidate or a final with none (`src-tauri/src/db/migrations/README.md`,
    "At a release", and [Changing the data layout](docs/development/data-layout.md)):
    - add a line to `src-tauri/src/db/migrations/released.txt` for every step the
      release ships and for its stored database (`<name or path> <sha256> <release>`,
