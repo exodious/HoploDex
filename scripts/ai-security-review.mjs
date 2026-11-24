@@ -21,9 +21,9 @@
 //   node scripts/ai-security-review.mjs upload --pr <n> | --release [--ref <ref>]
 //       uploads the recorded SARIF, waits for it, and checks the alerts
 //   node scripts/ai-security-review.mjs gate [--ref <ref>] [--version <x.y.z>]
-//       the release gate: open critical and high alerts, and draft advisories
-//       other than those patched in exactly the version being released
-//       (release.mjs passes it; otherwise tauri.conf.json's)
+//       the release gate: open critical and high alerts, triage advisories, and
+//       draft advisories other than those patched in exactly the version being
+//       released (release.mjs passes its x.y.z; otherwise tauri.conf.json's)
 //   node scripts/ai-security-review.mjs reviewed --commit <sha>
 //       the release workflow's check (#19): <sha> is main's head and its
 //       newest release review, and no critical or high code scanning or
@@ -400,10 +400,12 @@ export function upload(
  * The release gate (constitution 1.5.0): no open critical or high code
  * scanning (every tool), Dependabot or secret scanning alert. Draft and triage
  * advisories count too: after a release, a finding routed to one is otherwise
- * invisible here. The exception is an advisory every one of whose
+ * invisible here. The exception is a draft advisory every one of whose
  * vulnerabilities is patched in exactly `version`, the version being released:
  * it can't be published until that release is out (RELEASING.md, "After a
- * release"), so it would otherwise block its own fix.
+ * release"), so it would otherwise block its own fix. A triage advisory is a
+ * report not yet accepted, whose patched versions the reporter may have
+ * written, so it always counts.
  */
 export function gate(gh, { ref = null, version = null } = {}) {
   const r = ref ? `&ref=${enc(ref)}` : "";
@@ -421,7 +423,7 @@ export function gate(gh, { ref = null, version = null } = {}) {
   // only, so generic-pattern alerts aren't counted; name them here if the
   // repository turns generic detection on.
   const secrets = paged(gh, `repos/${REPO}/secret-scanning/alerts?state=open&per_page=100`).length;
-  const drafts = ["draft", "triage"].flatMap((s) =>
+  const [drafts, triage] = ["draft", "triage"].map((s) =>
     paged(gh, `repos/${REPO}/security-advisories?state=${s}&per_page=100`),
   );
   const fixedHere = (a) =>
@@ -430,7 +432,7 @@ export function gate(gh, { ref = null, version = null } = {}) {
     a.vulnerabilities.every((v) => v.patched_versions?.trim() === version);
   // Only the GHSA id: a draft's summary or details must not reach a log.
   const exempted = drafts.filter(fixedHere).map((a) => a.ghsa_id);
-  const advisories = drafts.length - exempted.length;
+  const advisories = drafts.length - exempted.length + triage.length;
   const result = {
     code_scanning: { critical: scanning[0], high: scanning[1] },
     dependabot,

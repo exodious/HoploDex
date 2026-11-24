@@ -477,23 +477,23 @@ describe("release gate", () => {
     }
   });
 
-  it("exempts only an advisory every vulnerability of which is patched in the version being released", () => {
+  it("exempts only a draft advisory every vulnerability of which is patched in the version being released", () => {
     const advisory = (id: string, ...patched: (string | null)[]) => ({
       ghsa_id: id,
       summary: "never printed",
       vulnerabilities: patched.map((p) => ({ patched_versions: p })),
     });
-    const run = (version: string | null, ...drafts: object[]) =>
+    const run = (version: string | null, drafts: object[], triage: object[] = []) =>
       gate(
         fakeGh([
           [/code-scanning|dependabot|secret-scanning/, () => []],
           [/security-advisories\?state=draft/, () => drafts],
-          [/security-advisories\?state=triage/, () => []],
+          [/security-advisories\?state=triage/, () => triage],
         ]).gh,
         { version },
       );
 
-    const ok = run("0.1.1", advisory("GHSA-aaaa", "0.1.1", "0.1.1"));
+    const ok = run("0.1.1", [advisory("GHSA-aaaa", "0.1.1", "0.1.1")]);
     expect(ok.pass).toBe(true);
     expect(ok.advisories_fixed_by_this_release).toEqual(["GHSA-aaaa"]);
     expect(JSON.stringify(ok)).not.toContain("never printed");
@@ -505,12 +505,17 @@ describe("release gate", () => {
       advisory("GHSA-range", ">= 0.1.1"),
       advisory("GHSA-mixed", "0.1.1", "0.1.2"),
     ]) {
-      const g = run("0.1.1", draft);
+      const g = run("0.1.1", [draft]);
       expect(g.pass).toBe(false);
       expect(g.advisories).toBe(1);
       expect(g.advisories_fixed_by_this_release).toEqual([]);
     }
-    expect(run(null, advisory("GHSA-aaaa", "0.1.1")).pass).toBe(false);
+    expect(run(null, [advisory("GHSA-aaaa", "0.1.1")]).pass).toBe(false);
+
+    const reported = run("0.1.1", [], [advisory("GHSA-tttt", "0.1.1")]);
+    expect(reported.pass).toBe(false);
+    expect(reported.advisories).toBe(1);
+    expect(reported.advisories_fixed_by_this_release).toEqual([]);
   });
 });
 
