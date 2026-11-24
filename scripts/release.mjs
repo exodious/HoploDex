@@ -23,9 +23,17 @@
 //             the release workflow
 //   all       each of the above but records, in that order, the records being on
 //             the commit already: `tag`'s check of the commit comes first of all
+//   promote   instead of `tag`, for a final release from an accepted release
+//             candidate: find the newest published v<version>-rc.<n> on --commit
+//             (or --rc <version>-rc.<n>), which must be an immutable pre-release,
+//             run `reviewed`, `gate` and `npm run audit`, then tag v<version> on
+//             it, which has the release workflow promote that candidate's files
 //   tag-check release.yml's tag check, of the working tree: the tag names the
 //             app's version, and the commit has its stored database and a
 //             released.txt line for it and for every step in MIGRATIONS
+//
+// release.yml also runs `path` (build, or promote a candidate), `promote-check`
+// (the candidate's files against its release) and `notes` (the draft's notes).
 //
 // <version> is the app's version with the tag's suffix, if any: `0.1.0` or
 // `0.1.0-rc.1`. version, checks and all run on the working tree, so they refuse
@@ -48,6 +56,7 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const RELEASED = "src-tauri/src/db/migrations/released.txt";
 const MIGRATIONS = "src-tauri/src/db/mod.rs";
 const METAINFO = "flatpak/io.github.exodious.HoploDex.metainfo.xml";
+const NOTES = ".github/release-notes.md";
 export const STEPS = ["version", "records", "checks", "review", "gate", "tag"];
 /** The steps that run on the working tree, so it must be the commit they are for. */
 const ON_THE_TREE = ["version", "checks"];
@@ -179,6 +188,136 @@ export function tagProblems(version, { read: show, has }) {
   ];
 }
 
+/** The files a release of `app` publishes (#209), SHA256SUMS last. */
+export const releaseFiles = (app) => [
+  `HoploDex-${app}-x86_64-setup.exe`,
+  `HoploDex-${app}-aarch64.dmg`,
+  `HoploDex-${app}-x86_64.deb`,
+  `HoploDex-${app}-x86_64.rpm`,
+  `HoploDex-${app}-x86_64.flatpak`,
+  "SHA256SUMS",
+];
+
+const RC = /^v(\d+\.\d+\.\d+)-rc\.(\d+)$/;
+const SHA = /^[0-9a-f]{40}$/;
+
+/**
+ * The release candidate a final tag of `version` on `commit` promotes
+ * (RELEASING.md, "Release candidates"), or null when the version has no
+ * published candidate, so the tag builds its own. `releases` are the published
+ * v<app>-rc.<n> releases, each with its tag's commit; the newest on `commit`
+ * is taken, or `rc` (`0.1.1-rc.2`). Refuses one that isn't an immutable
+ * pre-release, and a version whose published candidates are all on other
+ * commits: that tag isn't on the accepted candidate.
+ */
+export function candidateFor(version, commit, releases, rc) {
+  const { app, final } = parseVersion(version);
+  if (!final) return null;
+  const ours = releases.filter((r) => !r.draft && RC.exec(r.tag)?.[1] === app);
+  const named = rc && ours.find((r) => r.tag === `v${rc}`);
+  if (rc && !named) throw new Error(`v${rc} isn't a published release candidate of ${app}`);
+  if (named && named.commit !== commit)
+    throw new Error(`v${rc} was built from ${named.commit}, not ${commit}`);
+  const here = named
+    ? [named]
+    : ours.filter((r) => r.commit === commit).sort((a, b) => RC.exec(b.tag)[2] - RC.exec(a.tag)[2]);
+  if (!here.length) {
+    if (!ours.length) return null;
+    throw new Error(
+      `${app}'s published release candidates are on other commits (${ours.map((r) => `${r.tag} on ${r.commit}`).join(", ")}): tag the accepted candidate's commit`,
+    );
+  }
+  const [c] = here;
+  if (!c.prerelease || !c.immutable)
+    throw new Error(`${c.tag} isn't an immutable pre-release, so it can't be promoted`);
+  return c.tag;
+}
+
+/**
+ * What stops the promotion of release `rc` (`v0.1.1-rc.1`), whose files were
+ * downloaded to `dir`: `release` is its GitHub release (the API's JSON) and
+ * `runs` its successful release runs. It must be published and immutable, a
+ * pre-release, with exactly a release's files, each uploaded by a release run,
+ * which passed on `commit`, and SHA256SUMS must list every other file with its
+ * hash. A rehearsal (`rehearsal`, an earlier final such as v0.1.0, whose files
+ * have other names) checks all but the pre-release and the names.
+ */
+export function candidateProblems({ rc, commit, release, runs, dir, rehearsal }) {
+  const { app } = parseVersion(rc.slice(1));
+  const problems = [];
+  if (release.tag_name !== rc) problems.push(`the release is ${release.tag_name}, not ${rc}`);
+  if (release.draft || release.immutable !== true)
+    problems.push(`${rc} isn't a published, immutable release`);
+  if (!rehearsal && release.prerelease !== true) problems.push(`${rc} isn't a pre-release`);
+  const names = (release.assets ?? []).map((a) => a.name).sort();
+  const expected = releaseFiles(app).sort();
+  if (!rehearsal && names.join("\n") !== expected.join("\n"))
+    problems.push(`${rc}'s files are ${names.join(", ")}, not ${expected.join(", ")}`);
+  for (const a of release.assets ?? [])
+    if (a.uploader?.login !== "github-actions[bot]")
+      problems.push(
+        `${a.name} was uploaded by ${a.uploader?.login ?? "nobody"}, not a release run`,
+      );
+  const here = fs.readdirSync(dir).sort();
+  if (here.join("\n") !== names.join("\n"))
+    problems.push(`the download has ${here.join(", ")}, not ${rc}'s ${names.join(", ")}`);
+  const passed = (runs.workflow_runs ?? []).some(
+    (r) =>
+      r.head_sha === commit &&
+      r.head_branch === rc &&
+      r.event === "push" &&
+      r.conclusion === "success",
+  );
+  if (!passed) problems.push(`no release run of ${rc} passed on ${commit}`);
+  if (!here.includes("SHA256SUMS")) return [...problems, `${rc} has no SHA256SUMS`];
+  const listed = read(dir, "SHA256SUMS")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => /^([0-9a-f]{64}) [ *](.+)$/.exec(l) ?? [l, null, null]);
+  const packages = here.filter((f) => f !== "SHA256SUMS");
+  if (
+    listed
+      .map((m) => m[2])
+      .sort()
+      .join("\n") !== packages.join("\n")
+  )
+    return [
+      ...problems,
+      `SHA256SUMS lists ${listed.map((m) => m[2] ?? m[0]).join(", ")}, not ${packages.join(", ")}`,
+    ];
+  for (const [, hash, f] of listed)
+    if (sha256(path.join(dir, f)) !== hash) problems.push(`${f} doesn't match SHA256SUMS`);
+  return problems;
+}
+
+/**
+ * The draft release's notes: .github/release-notes.md with the version, tag
+ * and where the files came from filled in, as data, and a release candidate's
+ * note first.
+ */
+export function releaseNotes(template, { version, commit, promotedFrom }) {
+  const { app, final, tag } = parseVersion(version);
+  const from = promotedFrom
+    ? `Promoted from ${promotedFrom}, built from commit ${commit}: the same files and checksums as that release candidate.`
+    : `Built from commit ${commit} by this tag's release run.`;
+  const candidate = final
+    ? ""
+    : `**This is a release candidate, for testing.** Try it on a copy of your collection.
+Every candidate of ${app} carries the version ${app}, so installing it over an earlier candidate needs a reinstall:
+\`sudo apt install --reinstall ./HoploDex-${app}-x86_64.deb\`, \`sudo dnf reinstall ./HoploDex-${app}-x86_64.rpm\`,
+\`flatpak install --user --reinstall HoploDex-${app}-x86_64.flatpak\`, or the Windows installer's reinstall option.
+
+`;
+  return (
+    candidate +
+    template
+      .replaceAll("{{version}}", version)
+      .replaceAll("{{app_version}}", app)
+      .replaceAll("{{tag}}", tag)
+      .replaceAll("{{provenance}}", from)
+  );
+}
+
 const inContainer = () =>
   process.env.HOSTNAME === "hoplodex-dev" || fs.existsSync("/run/.containerenv");
 const hasPodman = () => spawnSync("podman", ["--version"], { stdio: "ignore" }).status === 0;
@@ -196,7 +335,7 @@ const MANIFEST = ["--manifest-path", "src-tauri/Cargo.toml"];
 const UNWIND = ["env", "CARGO_PROFILE_RELEASE_PANIC=unwind"];
 
 /** What each step runs: `run` commands, or a `print` the owner acts on. */
-export function plan(step, { version, commit, after, container }) {
+export function plan(step, { version, commit, after, candidate, container }) {
   const { app, final, tag } = parseVersion(version);
   const c = (cmd) => ({ run: containerised(cmd, { container }) });
   switch (step) {
@@ -253,8 +392,33 @@ export function plan(step, { version, commit, after, container }) {
           ],
         },
       ];
+    case "promote":
+      if (!final || !candidate) throw new Error(`promote takes a final version and its candidate`);
+      return [
+        { run: ["node", "scripts/ai-security-review.mjs", "reviewed", "--commit", commit] },
+        { run: ["node", "scripts/ai-security-review.mjs", "gate", "--version", app] },
+        // The one release check whose result changes with time, not the code.
+        c(["npm", "run", "audit"]),
+        {
+          run: [
+            "git",
+            "tag",
+            "-a",
+            tag,
+            "-m",
+            `HoploDex ${version}, promoted from ${candidate}`,
+            commit,
+          ],
+        },
+        { run: ["git", "push", "origin", `refs/tags/${tag}`] },
+        {
+          print: [
+            `Pushed ${tag}: the release workflow drafts the release from ${candidate}'s files; publish it once you approve it.`,
+          ],
+        },
+      ];
     default:
-      throw new Error(`no step ${step} (${[...STEPS, "all"].join(", ")})`);
+      throw new Error(`no step ${step} (${[...STEPS, "promote", "all"].join(", ")})`);
   }
 }
 
@@ -264,6 +428,32 @@ export function steps(step) {
 
 function git(args) {
   return execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
+}
+
+const gh = (args) => execFileSync("gh", args, { cwd: ROOT, encoding: "utf8" }).trim();
+// gh fills in {owner}/{repo} from the checkout's remote.
+const repo = () => process.env.GITHUB_REPOSITORY || "{owner}/{repo}";
+const commitOf = (tag) => gh(["api", `repos/${repo()}/commits/${tag}`, "--jq", ".sha"]);
+
+/** The published release candidates of `app`, each with its tag's commit. */
+function publishedCandidates(app) {
+  return gh([
+    "api",
+    "--paginate",
+    `repos/${repo()}/releases?per_page=100`,
+    "--jq",
+    ".[] | select(.draft | not) | {tag: .tag_name, draft, prerelease, immutable}",
+  ])
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
+    .filter((r) => RC.exec(r.tag)?.[1] === app)
+    .map((r) => ({ ...r, commit: commitOf(r.tag) }));
+}
+
+function requireSha(sha) {
+  if (!SHA.test(sha ?? "")) throw new Error(`not a commit: ${sha}`);
+  return sha;
 }
 
 function requireCheckoutAt(commit) {
@@ -296,15 +486,72 @@ function main(argv) {
       commit: { type: "string" },
       after: { type: "string" },
       "dry-run": { type: "boolean" },
+      rc: { type: "string" },
+      // release.yml's own steps.
+      rehearsal: { type: "boolean" },
+      release: { type: "string" },
+      runs: { type: "string" },
+      files: { type: "string" },
+      "promoted-from": { type: "string" },
     },
   });
   const [step, version, ...rest] = positionals;
   if (!step || !version || rest.length) {
     throw new Error(
-      "usage: release.mjs <step> <version> [--commit <sha>] [--after <sha>] [--dry-run]",
+      "usage: release.mjs <step> <version> [--commit <sha>] [--after <sha>] [--rc <version>] [--dry-run]",
     );
   }
-  parseVersion(version);
+  const { app, tag, final } = parseVersion(version);
+  if (step === "promote" && !final)
+    throw new Error(`promote takes the final version, not ${version}`);
+  if (step === "notes") {
+    const template = read(ROOT, NOTES);
+    const promotedFrom = values["promoted-from"];
+    if (promotedFrom !== undefined && !RC.test(promotedFrom))
+      throw new Error(`not a release candidate's tag: ${promotedFrom}`);
+    process.stdout.write(
+      releaseNotes(template, { version, commit: requireSha(values.commit), promotedFrom }),
+    );
+    return;
+  }
+  if (step === "path") {
+    // release.yml's review job: build the packages, or promote a candidate.
+    // Its lines go to GITHUB_OUTPUT.
+    const out = (p, candidate = "", commit = "", summary) =>
+      console.log(`path=${p}\ncandidate=${candidate}\ncommit=${commit}\nsummary=${summary}`);
+    if (values.rehearsal) {
+      out("promote", tag, requireSha(commitOf(tag)), `A rehearsal of promoting ${tag}: no draft.`);
+      return;
+    }
+    const commit = requireSha(values.commit);
+    const candidate = final && candidateFor(version, commit, publishedCandidates(app));
+    if (candidate)
+      out("promote", candidate, commit, `${tag} promotes ${candidate}: nothing is built.`);
+    else
+      out(
+        "build",
+        "",
+        commit,
+        final
+          ? `${tag} builds its packages: ${app} has no published release candidate.`
+          : `${tag}, a release candidate, builds its packages.`,
+      );
+    return;
+  }
+  if (step === "promote-check") {
+    const json = (f) => JSON.parse(fs.readFileSync(f, "utf8"));
+    const problems = candidateProblems({
+      rc: tag,
+      commit: requireSha(values.commit),
+      release: json(values.release),
+      runs: json(values.runs),
+      dir: values.files,
+      rehearsal: values.rehearsal,
+    });
+    if (problems.length) throw new Error(`${tag} can't be promoted:\n  ${problems.join("\n  ")}`);
+    console.log(`${tag}'s files are its release's, checked against its SHA256SUMS`);
+    return;
+  }
   if (step === "tag-check") {
     const has = (f) => fs.existsSync(path.join(ROOT, f));
     requireNoProblems(tagProblems(version, { read: (f) => read(ROOT, f), has }), "the checkout");
@@ -315,10 +562,20 @@ function main(argv) {
   const commit = git(["rev-parse", "--verify", `${values.commit ?? "origin/main"}^{commit}`]);
   const toRun = steps(step);
   if (toRun.some((s) => ON_THE_TREE.includes(s))) requireCheckoutAt(commit);
-  if (toRun.includes("tag")) requireTaggable(version, commit);
+  if (toRun.includes("tag") || toRun.includes("promote")) requireTaggable(version, commit);
+  let candidate;
+  if (step === "promote") {
+    if (values.rc) parseVersion(values.rc);
+    candidate = candidateFor(version, commit, publishedCandidates(app), values.rc);
+    if (!candidate)
+      throw new Error(
+        `${app} has no published release candidate on ${commit}: publish the accepted one's pre-release first, or tag the final itself (release.mjs tag)`,
+      );
+    console.log(`promoting ${candidate}`);
+  }
   for (const s of toRun) {
     console.log(`\n== ${s}`);
-    for (const p of plan(s, { version, commit, after: values.after })) {
+    for (const p of plan(s, { version, commit, after: values.after, candidate })) {
       if (p.print) {
         if (!dryRun) console.log(p.print.join("\n"));
       } else if (p.internal === "version") {

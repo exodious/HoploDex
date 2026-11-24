@@ -3,6 +3,13 @@
 # and opens a draft GitHub release with the packages and their checksums. A
 # person publishes the draft. RELEASING.md is the written process around it.
 #
+# A final tag (no suffix) whose commit has a published release candidate of
+# its version promotes that candidate instead: the review and the dependency
+# audit run, nothing is built, and the promote job drafts the release from the
+# candidate's own files and SHA256SUMS. A final tag with no published candidate
+# builds as above. The review job's "Choose the path" step decides, and says
+# which in the run's summary.
+#
 # - The tag's commit must have had the release's AI security review: its
 #   upload to code scanning for exactly that commit, on main, whose head the
 #   commit still is, with no critical or high code scanning alert open
@@ -21,7 +28,9 @@
 #
 # Run by hand (workflow_dispatch) on a branch, it is a dry run: every job but
 # the draft, with the tag check skipped and the review check reporting
-# without failing the run. GitHub dispatches it only from a branch where this
+# without failing the run. With `rehearse` set to a published release's tag
+# (v0.1.0), it rehearses promotion against that release instead: every check
+# of its files, but no draft. GitHub dispatches it only from a branch where this
 # file exists, so the first dry run is on main once it has merged.
 # Nothing is signed beyond the macOS build's own ad-hoc signature, which
 # ci.yml's macOS package job checks. A failed job can be re-run; the draft is
@@ -32,6 +41,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      rehearse:
+        description: "A published release's tag, such as v0.1.0, to rehearse promotion against (it drafts nothing)"
+        type: string
+        default: ""
 
 concurrency:
   group: release-${{ github.ref }}
@@ -52,6 +66,10 @@ jobs:
       contents: read
       security-events: read
       vulnerability-alerts: read
+    outputs:
+      path: ${{ steps.path.outputs.path }}
+      candidate: ${{ steps.path.outputs.candidate }}
+      commit: ${{ steps.path.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -78,6 +96,27 @@ jobs:
           node scripts/release.mjs tag-check "${TAG#v}" || {
             echo "::error::$TAG fails the tag check (above)"; exit 1; }
 
+      # build: the build, test and surface jobs, then the draft job. promote:
+      # the audit, then the promote job. Only published releases count, so a
+      # candidate's draft is never promoted.
+      - name: Choose the path
+        id: path
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+          REHEARSE: ${{ inputs.rehearse }}
+        run: |
+          if [[ -n "$REHEARSE" ]]; then
+            out=$(node scripts/release.mjs path "${REHEARSE#v}" --rehearsal)
+          elif [[ "$EVENT" == push ]]; then
+            out=$(node scripts/release.mjs path "${TAG#v}" --commit "$(git rev-parse 'HEAD^{commit}')")
+          else
+            out=$'path=build\nsummary=A dry run: it builds, and drafts nothing.'
+          fi
+          echo "$out" >> "$GITHUB_OUTPUT"
+          sed -n 's/^summary=//p' <<< "$out" | tee -a "$GITHUB_STEP_SUMMARY"
+
       # The commit checked out, the tag's own. A dry run reports whether the
       # commit could be released without failing on the commit it ran on.
       - name: Check the release's AI security review
@@ -88,14 +127,18 @@ jobs:
 
   ci:
     name: CI
+    needs: review
+    if: needs.review.outputs.path == 'build'
     uses: ./.github/workflows/ci.yml
     with:
       release: true
     permissions:
       contents: read
 
+  # Both paths: the audit's result changes with time, not with the code.
   checks:
     name: Release checks
+    needs: review
     runs-on: ubuntu-26.04
     timeout-minutes: 90
     permissions:
@@ -121,12 +164,15 @@ jobs:
         run: npm run audit
       # docs/development/testing.md, "Release-only tests".
       - name: import_largest_test
+        if: needs.review.outputs.path == 'build'
         env:
           CARGO_PROFILE_RELEASE_PANIC: unwind
         run: cargo test --manifest-path src-tauri/Cargo.toml --release --test import_largest_test -- --ignored --nocapture
 
   linux-surface:
     name: Surface checks (Linux)
+    needs: review
+    if: needs.review.outputs.path == 'build'
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
@@ -159,6 +205,8 @@ jobs:
 
   windows-surface:
     name: Surface checks (Windows)
+    needs: review
+    if: needs.review.outputs.path == 'build'
     runs-on: windows-2025
     timeout-minutes: 60
     permissions:
@@ -188,6 +236,8 @@ jobs:
 
   macos-surface:
     name: Surface checks (macOS)
+    needs: review
+    if: needs.review.outputs.path == 'build'
     runs-on: macos-26
     timeout-minutes: 60
     permissions:
@@ -228,7 +278,7 @@ jobs:
 
   draft:
     name: Draft the release
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.review.outputs.path == 'build'
     needs: [review, ci, checks, linux-surface, windows-surface, macos-surface]
     runs-on: ubuntu-26.04
     timeout-minutes: 15
@@ -257,26 +307,17 @@ jobs:
           path: packages/
           if-no-files-found: error
 
-      # The notes are .github/release-notes.md with the version and tag filled
-      # in as data, never as part of a program, and for a pre-release the
-      # release-candidate note first. The file names carry the app's version,
-      # the tag's without its suffix (#209).
+      # The notes are .github/release-notes.md with the version, tag and commit
+      # filled in as data, never as part of a program, and for a pre-release
+      # the release-candidate note first (`release.mjs notes`). The file names
+      # carry the app's version, the tag's without its suffix (#209).
       - name: Open the draft release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           version=${TAG#v}
-          {
-            if [[ "$TAG" == *-* ]]; then
-              echo "**This is a release candidate, for testing.** Try it on a copy of your collection."
-              echo
-            fi
-            VERSION="$version" APP_VERSION="${version%%-*}" node -e 'const fs = require("node:fs");
-              process.stdout.write(fs.readFileSync(".github/release-notes.md", "utf8")
-                .replaceAll("{{version}}", process.env.VERSION).replaceAll("{{app_version}}", process.env.APP_VERSION)
-                .replaceAll("{{tag}}", process.env.TAG));'
-          } > "$RUNNER_TEMP/notes.md"
+          node scripts/release.mjs notes "$version" --commit "$(git rev-parse 'HEAD^{commit}')" > "$RUNNER_TEMP/notes.md"
           prerelease=()
           [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
@@ -285,3 +326,68 @@ jobs:
             gh release create "$TAG" packages/* --draft --verify-tag "${prerelease[@]}" \
               --title "HoploDex $version" --notes-file "$RUNNER_TEMP/notes.md" --repo "$GITHUB_REPOSITORY"
           fi
+
+  # A final tag on a published release candidate's commit (RELEASING.md,
+  # "Release candidates"): the release is that candidate's own files and
+  # SHA256SUMS, built and tested by its own release run. They are checked
+  # against its immutable, attested release, and nothing is built. Any problem
+  # stops the job before the draft. Run by hand with `rehearse`, it does
+  # everything but open the draft.
+  promote:
+    name: Promote the release candidate
+    if: needs.review.outputs.path == 'promote'
+    needs: [review, checks]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.21.0
+
+      # `release.mjs promote-check`: a published, immutable pre-release with
+      # exactly a release's files, each uploaded by a release run that passed
+      # on this commit, and matching SHA256SUMS. Then GitHub's attestation of
+      # each file.
+      - name: Check the release candidate's files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC: ${{ needs.review.outputs.candidate }}
+          COMMIT: ${{ needs.review.outputs.commit }}
+          REHEARSAL: ${{ github.event_name != 'push' }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RC" > "$RUNNER_TEMP/release.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?event=push&status=success&branch=$RC&per_page=100" > "$RUNNER_TEMP/runs.json"
+          gh release download "$RC" --dir "$RUNNER_TEMP/candidate" --repo "$GITHUB_REPOSITORY"
+          rehearsal=()
+          [[ "$REHEARSAL" == true ]] && rehearsal=(--rehearsal)
+          node scripts/release.mjs promote-check "${RC#v}" --commit "$COMMIT" --release "$RUNNER_TEMP/release.json" \
+            --runs "$RUNNER_TEMP/runs.json" --files "$RUNNER_TEMP/candidate" "${rehearsal[@]}"
+          for f in "$RUNNER_TEMP"/candidate/*; do
+            gh release verify-asset "$RC" "$f" --repo "$GITHUB_REPOSITORY"
+          done
+          echo "$RC's files passed every check." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open the draft release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          RC: ${{ needs.review.outputs.candidate }}
+          COMMIT: ${{ needs.review.outputs.commit }}
+        run: |
+          version=${TAG#v}
+          node scripts/release.mjs notes "$version" --commit "$COMMIT" --promoted-from "$RC" > "$RUNNER_TEMP/notes.md"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
+            gh release upload "$TAG" "$RUNNER_TEMP"/candidate/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$RUNNER_TEMP"/candidate/* --draft --verify-tag \
+              --title "HoploDex $version" --notes-file "$RUNNER_TEMP/notes.md" --repo "$GITHUB_REPOSITORY"
+          fi
+          echo "Drafted $TAG from $RC's files." >> "$GITHUB_STEP_SUMMARY"

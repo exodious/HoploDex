@@ -1,5 +1,7 @@
 # HoploDex {{version}}
 
+{{provenance}}
+
 Which systems this release supports, and which package is for which, is in
 [Supported platforms](https://github.com/exodious/HoploDex/blob/{{tag}}/README.md#supported-platforms).
 
