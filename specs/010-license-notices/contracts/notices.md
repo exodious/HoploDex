@@ -169,6 +169,8 @@ notices: can't tell the target (<reason>); give --target.
 }
 ```
 
+_Amended 2026-11-24: `program` also ends with `"commit"` (the build's 40-character commit, or null with no git) and `"commitModified"` (true when the working tree had uncommitted changes); see [data-model.md](../data-model.md), "Program block" (#210). `NOTICES.txt` doesn't carry them._
+
 - **Text ids** are opaque, stable within one document only.
 - **The order**: `components` by `name` in lower case, then `version`. Within
   a component, the license text comes first, then NOTICE and attribution
