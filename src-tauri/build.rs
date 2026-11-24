@@ -20,9 +20,10 @@ fn main() {
     let sqlite_flags = std::env::var("LIBSQLITE3_FLAGS").unwrap_or_default();
     let last_memlock_flag =
         sqlite_flags.split_whitespace().rfind(|flag| flag.contains("OMIT_MEMLOCK"));
+    // The message doesn't echo the variable: it is outside input (CodeQL rust/log-injection).
     assert!(
         last_memlock_flag.is_some_and(|flag| flag.starts_with("-DOMIT_MEMLOCK")),
-        "LIBSQLITE3_FLAGS must end up defining OMIT_MEMLOCK, as .cargo/config.toml sets it; got {sqlite_flags:?}"
+        "LIBSQLITE3_FLAGS must end up defining OMIT_MEMLOCK, as .cargo/config.toml sets it"
     );
     assert!(
         std::env::var_os("LIBSQLITE3_SYS_USE_PKG_CONFIG").is_none_or(|value| value == "0"),
