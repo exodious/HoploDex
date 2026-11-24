@@ -102,9 +102,9 @@ surface or CWE is a new alert: treat it as a move (below).
    its carried alerts, the finding schema above, and what to return (new
    findings, plus a verdict per carried alert: present / fixed / moved /
    unsure).
-4. **Verify.** A fresh `security-reviewer` per new finding (refute it, check
-   the band, answer "same as carried or dismissed #N?", and in pr mode
-   "introduced?"), and per `fixed` or `moved` verdict. Ask for its confidence
+4. **Verify.** A fresh `security-reviewer` per new finding, briefed with the
+   list's "Threat model" section too (refute it, check the band, answer
+   "same as carried or dismissed #N?", and in pr mode "introduced?"), and per `fixed` or `moved` verdict. Ask for its confidence
    (1 to 10) in the verdict: below 8 is unconfirmed (the agent's evidence
    bar). Unconfirmed findings are dropped; an unconfirmed fix stays carried
    as `unsure`.
