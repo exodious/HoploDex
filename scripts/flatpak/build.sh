@@ -19,7 +19,7 @@ cd "$repo"
 # of any trap set before it, and that would hide the failing status.
 current_step=""
 set -E
-trap 'printf "\nbuild.sh: FAILED at step: %s\n" "$current_step" >&2' ERR
+trap 'printf "\nbuild.sh: FAILED at step: %s\n" "$current_step" >&2; rm -f "$repo/flatpak/commit.json"' ERR
 
 # shellcheck source=scripts/flatpak/env.sh
 source "$here/env.sh" "$@"
