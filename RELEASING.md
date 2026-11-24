@@ -150,11 +150,12 @@ request like any other; then start again from the new commit.
    - the SDK extensions' branches (`rust-stable` and `node24` on the
      manifest's branch) are still stable on Flathub;
    - the metainfo's `<release>` entry (step 1);
-   - the metainfo's screenshot addresses are at the commit that last changed
-     `flatpak/screenshots/`, and `release.mjs version` checks that commit's
-     images are the tree's. They are retaken only on purpose
-     (`npm run screenshots:store`), in two commits: the images, then the
-     addresses at that commit;
+   - the metainfo's screenshot addresses are at the commit on `main` that last
+     changed `flatpak/screenshots/`, and `release.mjs version` checks that
+     commit is in the release's history and its images are the tree's. They
+     are retaken only on purpose (`npm run screenshots:store`), in two pull
+     requests, since `main` is squash-merged: the images, merged to `main`
+     first, then the addresses moved to that commit on `main`;
    - review the pinned flatpak-builder-tools commit (`FLATPAK_BUILDER_TOOLS_COMMIT`
      in the `Dockerfile`) and Flathub's linter (`org.flatpak.Builder`, pinned
      as `linter_commit` in `scripts/flatpak/build.sh`). Move the linter's pin by

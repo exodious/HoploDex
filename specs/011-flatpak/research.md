@@ -885,8 +885,10 @@ _Amended 2026-10-19 (owner's decision):_
     not `v<version>`, so a release candidate's build, which can become the
     release, fetches them while the release's tag doesn't exist yet.
     `metainfo.test.ts` checks each is at a 40-hex commit and names a file
-    here; `release.mjs version` checks that commit's files are the working
-    tree's. Retaking them takes two commits: the images, then the addresses._
+    here; `release.mjs version` checks that commit is in the release's
+    history and its files are the working tree's. Retaking them takes two
+    pull requests, since `main` is squash-merged: the images, merged to
+    `main` first, then the addresses moved to that commit on `main`._
     _Amended 2026-10-19 (T106; constitution Licensing): no screenshot shows a
     photo that needs a credit line (`src-tauri/examples/seed-photos/README.md`:
     CC BY, OGL). The collection shot was the first one to, with the Benelli

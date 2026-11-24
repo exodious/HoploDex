@@ -122,17 +122,19 @@ describe("release script", () => {
     expect(versionProblems(ROOT, "9.9.9")).toHaveLength(7);
   });
 
-  it("011 US4-4: checks each screenshot address's commit has the working tree's image", () => {
+  it("011 US4-4: checks each screenshot address's commit is merged and has the working tree's image", () => {
     const dir = tempDir();
     const sha = "a".repeat(40);
-    const at = (file: string) =>
-      `<image>https://raw.githubusercontent.com/exodious/HoploDex/${sha}/flatpak/screenshots/${file}</image>`;
+    const unmerged = "b".repeat(40);
+    const at = (file: string, commit = sha) =>
+      `<image>https://raw.githubusercontent.com/exodious/HoploDex/${commit}/flatpak/screenshots/${file}</image>`;
     writeAll(dir, {
       "flatpak/io.github.exodious.HoploDex.metainfo.xml": [
         at("same.png"),
         at("changed.png"),
         at("gone.png"),
         "<image>https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/same.png</image>",
+        at("same.png", unmerged),
       ].join("\n"),
       "flatpak/screenshots/same.png": "one",
       "flatpak/screenshots/changed.png": "new",
@@ -143,11 +145,12 @@ describe("release script", () => {
       const file = rev.replace(`${sha}:flatpak/screenshots/`, "");
       return file in there ? Buffer.from(there[file]) : null;
     };
-    const problems = screenshotProblems(dir, show);
-    expect(problems).toHaveLength(3);
+    const problems = screenshotProblems(dir, { show, merged: (c: string) => c === sha });
+    expect(problems).toHaveLength(4);
     expect(problems[0]).toContain("changed.png differs");
     expect(problems[1]).toContain(`${sha} has no flatpak/screenshots/gone.png`);
     expect(problems[2]).toContain("v0.1.0/flatpak/screenshots/same.png isn't");
+    expect(problems[3]).toContain(`${unmerged} isn't in the released commit's history`);
   });
 
   it("writes a version's records before a release candidate: each unreleased step in MIGRATIONS' order, then its database unless listed", () => {
@@ -292,6 +295,20 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
     const r = repo.release("version", "0.1.0", "--commit", retaken);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain(`flatpak/screenshots/a.png differs from ${images}'s`);
+  });
+
+  it("011 US4-4: the version step refuses a screenshot address at a commit outside the released history", () => {
+    const repo = scratchRepo();
+    const metainfo = "flatpak/io.github.exodious.HoploDex.metainfo.xml";
+    const shot = (sha: string) =>
+      `<release version="0.1.0" />\n<image>https://raw.githubusercontent.com/exodious/HoploDex/${sha}/flatpak/screenshots/a.png</image>`;
+    const main = repo.commit({ ...carrying("0.1.0"), "flatpak/screenshots/a.png": "one" });
+    // A branch's images commit, squash-merged as another commit, so main never holds it.
+    const branch = repo.commit({ "flatpak/screenshots/a.png": "two" }, main);
+    const squashed = repo.commit({ [metainfo]: shot(branch) }, main);
+    const r = repo.release("version", "0.1.0", "--commit", squashed);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`${branch} isn't in the released commit's history`);
   });
 
   it("applies the workflow's tag check to the commit, not the working tree", () => {

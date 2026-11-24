@@ -139,8 +139,11 @@ Look at the five files before committing them. A different WebKitGTK, font or
 Mesa in the dev container image can change every pixel, so retake all five
 together, never one.
 
-The metainfo's addresses are at the commit that last changed
+The metainfo's addresses are at the commit on `main` that last changed
 `flatpak/screenshots/`, not at a tag, so a release candidate's build can fetch
-them. A retake therefore takes two commits: the images first, then the five
-addresses changed to that commit's full hash. `release.mjs version` fails until
-the addresses' commit has the working tree's images.
+them. A retake therefore takes two pull requests, since `main` is
+squash-merged and a branch's own commits never reach it: the images first,
+merged to `main`, then the five addresses changed to the full hash of the
+commit that merge made on `main`. `release.mjs version` fails until the
+addresses' commit is in the release's history and has the working tree's
+images.

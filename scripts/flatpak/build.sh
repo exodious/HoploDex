@@ -165,8 +165,8 @@ echo "flatpak-builder-lint manifest: ok"
 # repository (it builds with --mirror-screenshots-url, which downloads each address),
 # and a local build does not: appstream-screenshots-not-mirrored-in-ostree, and
 # appstream-external-screenshot-url for the raw.githubusercontent.com addresses (at
-# the commit that last changed flatpak/screenshots/), or appstream-missing-screenshots
-# when they can't be fetched (offline, or that commit not yet pushed).
+# the commit on main that last changed flatpak/screenshots/), or
+# appstream-missing-screenshots when they can't be fetched (offline).
 # These three are added here, for the repository only, and the recorded exceptions in
 # the committed file stay at two.
 screenshot_rules='["appstream-missing-screenshots","appstream-screenshots-not-mirrored-in-ostree","appstream-external-screenshot-url"]'

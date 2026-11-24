@@ -92,17 +92,23 @@ const SCREENSHOT =
   /^https:\/\/raw\.githubusercontent\.com\/exodious\/HoploDex\/([0-9a-f]{40})\/flatpak\/screenshots\/([^/]+)$/;
 
 /**
- * Each metainfo screenshot address is at a commit (011 research.md §13), and the
- * file there must be the working tree's, or a software centre shows an old image.
- * `show(rev)` is `git show <rev>`'s bytes, or null when it has none. CI's shallow
- * checkout can't see that commit, so this runs here and not in metainfo.test.ts.
+ * Each metainfo screenshot address is at a commit (011 research.md §13) in the
+ * released commit's history, so GitHub keeps serving it, and the file there must
+ * be the working tree's, or a software centre shows an old image. `merged(sha)`
+ * says whether that commit is in the history, and `show(rev)` is `git show <rev>`'s
+ * bytes, or null when it has none. CI's shallow checkout can't see that commit, so
+ * this runs here and not in metainfo.test.ts.
  */
-export function screenshotProblems(root, show) {
+export function screenshotProblems(root, { show, merged }) {
   const addresses = [...read(root, METAINFO).matchAll(/<image[^>]*>([^<]*)<\/image>/g)];
   return addresses.flatMap(([, address]) => {
     const m = SCREENSHOT.exec(address.trim());
     if (!m) return [`${address.trim()} isn't a flatpak/screenshots/ file at a commit`];
     const [, sha, file] = m;
+    if (!merged(sha))
+      return [
+        `${sha} isn't in the released commit's history: merge the images to main first, then point the addresses at that commit`,
+      ];
     const there = show(`${sha}:flatpak/screenshots/${file}`);
     if (!there) return [`${sha} has no flatpak/screenshots/${file}`];
     const here = path.join(root, "flatpak/screenshots", file);
@@ -320,16 +326,25 @@ function main(argv) {
         if (problems.length)
           throw new Error(`the version isn't ${version} everywhere:\n  ${problems.join("\n  ")}`);
         console.log(`${parseVersion(version).app} everywhere`);
-        const shots = screenshotProblems(ROOT, (rev) => {
-          const r = spawnSync("git", ["show", rev], {
-            cwd: ROOT,
-            stdio: ["ignore", "pipe", "ignore"],
-          });
-          return r.status === 0 ? r.stdout : null;
+        const shots = screenshotProblems(ROOT, {
+          show: (rev) => {
+            const r = spawnSync("git", ["show", rev], {
+              cwd: ROOT,
+              stdio: ["ignore", "pipe", "ignore"],
+            });
+            return r.status === 0 ? r.stdout : null;
+          },
+          merged: (sha) =>
+            spawnSync("git", ["merge-base", "--is-ancestor", sha, commit], {
+              cwd: ROOT,
+              stdio: "ignore",
+            }).status === 0,
         });
         if (shots.length)
           throw new Error(`the metainfo's screenshot addresses:\n  ${shots.join("\n  ")}`);
-        console.log("the screenshot addresses are at commits with the working tree's images");
+        console.log(
+          "the screenshot addresses are at commits in its history with the working tree's images",
+        );
       } else if (p.internal === "records") {
         const lines = recordLines(ROOT, version);
         if (!lines.length) {
