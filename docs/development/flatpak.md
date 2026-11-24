@@ -55,7 +55,7 @@ The build is of the checkout as it is, uncommitted changes included, except
 reach the `.flatpak` file there. Since `.git` stays out, `build.sh` first writes
 the checkout's commit, and whether it has uncommitted changes, to the
 git-ignored `flatpak/commit.json`, which the build's program block reads for
-the About dialog (#210).
+the About dialog (#210), and removes it once the build is done.
 
 ## Where it runs
 

@@ -112,6 +112,8 @@ builder --download-only --force-clean "$build_dir" "$manifest"
 
 step "flatpak-builder --disable-download (the build; no network)"
 builder --disable-download --force-clean --repo="$local_repo" "$build_dir" "$manifest"
+# Only this build reads it: a later build without git mustn't show this commit.
+rm -f flatpak/commit.json
 
 step "contents check (011 research.md §13)"
 node scripts/flatpak/contents.mjs "$build_dir/files"
