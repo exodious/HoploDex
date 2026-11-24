@@ -1,16 +1,23 @@
 // @vitest-environment node
 // scripts/release.mjs (#19): the version check, the migration records, that
 // only the last step tags and none publishes, and, run on a scratch repository,
-// what it refuses before running anything.
+// what it refuses before running anything. Then a release candidate's
+// promotion: the candidate a final tag takes, and release.yml's promote job,
+// run with a stand-in for gh, which stops before the draft on any problem.
 import { afterAll, describe, expect, it } from "vitest";
 import yaml from "js-yaml";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  candidateFor,
+  candidateProblems,
   parseVersion,
   plan,
+  releaseFiles,
+  releaseNotes,
   recordLines,
   ROOT,
   screenshotProblems,
@@ -98,10 +105,12 @@ function scratchRepo() {
       git(["update-ref", "HEAD", sha]);
       return sha;
     },
+    env: {} as Record<string, string>,
     release(...args: string[]) {
       const r = spawnSync(process.execPath, ["scripts/release.mjs", ...args], {
         cwd: dir,
         encoding: "utf8",
+        env: { ...process.env, ...this.env },
       });
       return { status: r.status, stdout: r.stdout, stderr: r.stderr };
     },
@@ -340,8 +349,12 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
       expect(noLine.stderr, version).toContain("no line");
     }
 
+    // A final tag asks gh for the version's published candidates: none here,
+    // stood in for by a bash script, so not on Windows.
+    const versions = process.platform === "win32" ? ["0.1.0-rc.1"] : ["0.1.0-rc.1", "0.1.0"];
+    if (process.platform !== "win32") repo.env = fakeGh({ releases: "" }).env;
     // The final tag goes on the accepted candidate's commit, with no change.
-    for (const version of ["0.1.0-rc.1", "0.1.0"]) {
+    for (const version of versions) {
       const ready = repo.release("all", version, "--commit", listed, "--dry-run");
       expect(ready.status, version).toBe(0);
       expect(ready.stdout, version).not.toContain("== records");
@@ -373,7 +386,7 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
       `${lines}0002_fix ${ABC} 0.1.0\n`,
     );
     const recordedFix = repo.commit({}, fix);
-    for (const version of ["0.1.0-rc.2", "0.1.0"]) {
+    for (const version of versions.map((v) => v.replace("rc.1", "rc.2"))) {
       expect(repo.release("tag", version, "--commit", recordedFix, "--dry-run").status).toBe(0);
     }
   });
@@ -544,3 +557,545 @@ describe("Quit cleanup on a release's build", () => {
     },
   );
 });
+
+/**
+ * A stand-in for gh on PATH, answering from `answers` by what the call asks
+ * for, and logging every call. `releases` is the release list (one JSON
+ * object a line, as the real call's --jq writes it), `commit-<tag>` a tag's
+ * commit, `release.json` and `runs.json` the promote job's API reads, and
+ * `assets/` what `release download` fetches. `verify-status` is what
+ * `release verify-asset` exits with.
+ */
+function fakeGh(answers: Record<string, string>) {
+  const dir = tempDir();
+  writeAll(path.join(dir, "answers"), answers);
+  const gh = path.join(dir, "bin/gh");
+  writeAll(dir, {
+    "bin/gh": `#!/usr/bin/env bash
+a="$FAKE_GH/answers"
+echo "$*" >> "$FAKE_GH/log"
+case "$*" in
+  api*/releases\\?*) cat "$a/releases" ;;
+  api*/commits/*) s="$*"; t=\${s##*/commits/}; cat "$a/commit-\${t%% *}" ;;
+  api*/releases/tags/*) cat "$a/release.json" ;;
+  api*/actions/workflows/*) cat "$a/runs.json" ;;
+  "release download "*) s="$*"; d=\${s##*--dir }; mkdir -p "\${d%% *}"; cp "$a"/assets/* "\${d%% *}/" ;;
+  "release verify-asset "*) exit "$(cat "$a/verify-status" 2>/dev/null || echo 0)" ;;
+  "release view "*) exit 1 ;;
+  "release create "*|"release upload "*) ;;
+  *) echo "fake gh: $*" >&2; exit 2 ;;
+esac
+`,
+  });
+  fs.chmodSync(gh, 0o755);
+  return {
+    env: { FAKE_GH: dir, PATH: `${path.dirname(gh)}${path.delimiter}${process.env.PATH}` },
+    calls: () =>
+      fs.existsSync(path.join(dir, "log"))
+        ? fs.readFileSync(path.join(dir, "log"), "utf8").trim().split("\n")
+        : [],
+  };
+}
+
+const sha = (s: string) => s.repeat(40).slice(0, 40);
+const published = (tag: string, commit: string, more = {}) => ({
+  tag,
+  commit,
+  draft: false,
+  prerelease: true,
+  immutable: true,
+  ...more,
+});
+
+describe("promoting a release candidate", () => {
+  it("promotes the newest published candidate on the tag's commit, and builds when the version has none", () => {
+    const [here, there] = [sha("a"), sha("b")];
+    expect(candidateFor("0.1.1", here, [])).toBeNull();
+    expect(candidateFor("0.1.1-rc.2", here, [published("v0.1.1-rc.1", here)])).toBeNull();
+    // Another version's candidates don't count.
+    expect(candidateFor("0.1.1", here, [published("v0.1.0-rc.1", there)])).toBeNull();
+    const both = [
+      published("v0.1.1-rc.2", here),
+      published("v0.1.1-rc.10", here),
+      published("v0.1.1-rc.1", there),
+    ];
+    expect(candidateFor("0.1.1", here, both)).toBe("v0.1.1-rc.10");
+    expect(candidateFor("0.1.1", here, both, "0.1.1-rc.10")).toBe("v0.1.1-rc.10");
+    // The workflow promotes the newest, so --rc can't name an older one.
+    expect(() => candidateFor("0.1.1", here, both, "0.1.1-rc.2")).toThrow(
+      "isn't the newest published candidate",
+    );
+    expect(() => candidateFor("0.1.1", here, both, "0.1.1-rc.1")).toThrow(`built from ${there}`);
+    expect(() => candidateFor("0.1.1", here, both, "0.1.1-rc.3")).toThrow(/isn't a published/);
+    // A tag on another commit than the accepted candidate's builds nothing.
+    expect(() => candidateFor("0.1.1", here, [published("v0.1.1-rc.1", there)])).toThrow(
+      /on other commits/,
+    );
+    for (const more of [{ immutable: false }, { prerelease: false }])
+      expect(() => candidateFor("0.1.1", here, [published("v0.1.1-rc.1", here, more)])).toThrow(
+        /isn't an immutable pre-release/,
+      );
+    // A draft (a candidate not yet accepted) is no candidate.
+    expect(
+      candidateFor("0.1.1", here, [published("v0.1.1-rc.1", here, { draft: true })]),
+    ).toBeNull();
+  });
+
+  it("tags the final on the candidate's commit after reviewed, gate and the audit, naming the candidate, and makes no release", () => {
+    const promote = plan("promote", {
+      version: "0.1.1",
+      commit,
+      candidate: "v0.1.1-rc.2",
+      container: false,
+    });
+    const runs = promote.map((p: { run?: string[] }) => p.run).filter(Boolean);
+    expect(runs).toEqual([
+      ["node", "scripts/ai-security-review.mjs", "reviewed", "--commit", commit],
+      ["node", "scripts/ai-security-review.mjs", "gate", "--version", "0.1.1"],
+      ["bash", "-c", "npm run audit"],
+      ["git", "tag", "-a", "v0.1.1", "-m", "HoploDex 0.1.1, promoted from v0.1.1-rc.2", commit],
+      ["git", "push", "origin", "refs/tags/v0.1.1"],
+    ]);
+    expect(runs.flat().join(" ")).not.toMatch(/gh release/);
+    expect(() =>
+      plan("promote", { version: "0.1.1-rc.2", commit, candidate: "v0.1.1-rc.2" }),
+    ).toThrow();
+    expect(() => plan("promote", { version: "0.1.1", commit })).toThrow();
+    expect(STEPS).not.toContain("promote");
+  });
+
+  it("writes the notes: which commit, how the files were made, and a candidate's reinstall line", () => {
+    const template = fs.readFileSync(path.join(ROOT, ".github/release-notes.md"), "utf8");
+    const built = releaseNotes(template, { version: "0.1.1", commit });
+    expect(built).toMatch(/^# HoploDex 0\.1\.1\n/);
+    expect(built).toContain(`Built from commit ${commit} by this tag's release run.`);
+    expect(built).not.toMatch(/\{\{|release candidate/);
+    const promoted = releaseNotes(template, {
+      version: "0.1.1",
+      commit,
+      promotedFrom: "v0.1.1-rc.2",
+    });
+    expect(promoted).toContain(`Promoted from v0.1.1-rc.2, built from commit ${commit}`);
+    expect(promoted).toContain("HoploDex-0.1.1-x86_64.deb");
+    const rc = releaseNotes(template, { version: "0.1.1-rc.2", commit });
+    expect(rc).toMatch(/^\*\*This is a release candidate/);
+    expect(rc).toContain("sudo apt install --reinstall ./HoploDex-0.1.1-x86_64.deb");
+    expect(rc).toContain("# HoploDex 0.1.1-rc.2\n");
+    expect(rc).toContain("/blob/v0.1.1-rc.2/README.md");
+  });
+});
+
+/** A candidate's release, its runs and its downloaded files, all as they should be. */
+function goodCandidate(rc = "v0.1.1-rc.1", at = commit) {
+  const app = parseVersion(rc.slice(1)).app;
+  const dir = tempDir();
+  const packages = releaseFiles(app).filter((f) => f !== "SHA256SUMS");
+  for (const f of packages) fs.writeFileSync(path.join(dir, f), `the bytes of ${f}`);
+  const hash = (f: string) =>
+    createHash("sha256")
+      .update(fs.readFileSync(path.join(dir, f)))
+      .digest("hex");
+  fs.writeFileSync(
+    path.join(dir, "SHA256SUMS"),
+    packages.map((f) => `${hash(f)}  ${f}\n`).join(""),
+  );
+  return {
+    rc,
+    commit: at,
+    dir,
+    rehearsal: false,
+    release: {
+      tag_name: rc,
+      draft: false,
+      prerelease: true,
+      immutable: true,
+      assets: releaseFiles(app).map((name) => ({
+        name,
+        uploader: { login: "github-actions[bot]" },
+      })),
+    },
+    runs: {
+      workflow_runs: [{ head_sha: at, head_branch: rc, event: "push", conclusion: "success" }],
+    },
+  };
+}
+
+/** fakeGh's answers for the promote job's reads of candidate `c`. */
+function candidateAnswers(c: ReturnType<typeof goodCandidate>, verify = "0") {
+  const answers: Record<string, string> = {
+    "release.json": JSON.stringify(c.release),
+    "runs.json": JSON.stringify(c.runs),
+    "verify-status": verify,
+  };
+  for (const f of fs.readdirSync(c.dir))
+    answers[`assets/${f}`] = fs.readFileSync(path.join(c.dir, f), "utf8");
+  return answers;
+}
+
+describe("a candidate's files", () => {
+  it("pass only as a published, immutable pre-release's, uploaded by a release run that passed on the commit, matching SHA256SUMS", () => {
+    expect(candidateProblems(goodCandidate())).toEqual([]);
+    const fails = (
+      change: (c: ReturnType<typeof goodCandidate>) => void,
+      problem: string | RegExp,
+    ) => {
+      const c = goodCandidate();
+      change(c);
+      expect(candidateProblems(c).join("\n")).toMatch(problem);
+    };
+    fails((c) => (c.release.draft = true), "isn't a published, immutable release");
+    fails((c) => (c.release.immutable = false), "isn't a published, immutable release");
+    fails((c) => (c.release.prerelease = false), "isn't a pre-release");
+    fails((c) => (c.release.tag_name = "v0.1.1-rc.2"), "not v0.1.1-rc.1");
+    fails((c) => (c.release.assets[0].uploader.login = "someone"), "uploaded by someone");
+    fails((c) => c.release.assets.pop(), "files are");
+    fails((c) => (c.runs.workflow_runs = []), "no release run");
+    fails((c) => (c.runs.workflow_runs[0].head_sha = sha("d")), "no release run");
+    fails((c) => (c.runs.workflow_runs[0].head_branch = "main"), "no release run");
+    fails(
+      (c) => fs.appendFileSync(path.join(c.dir, "HoploDex-0.1.1-x86_64.deb"), "x"),
+      ".deb doesn't match",
+    );
+    fails((c) => fs.writeFileSync(path.join(c.dir, "extra"), ""), "the download has");
+    fails(
+      (c) => fs.writeFileSync(path.join(c.dir, "SHA256SUMS"), `${"0".repeat(64)}  ../elsewhere\n`),
+      "SHA256SUMS lists",
+    );
+    fails((c) => fs.rmSync(path.join(c.dir, "SHA256SUMS")), "has no SHA256SUMS");
+  });
+
+  it("are checked in a rehearsal against an earlier final, whatever its files are named", () => {
+    const c = { ...goodCandidate("v0.1.0"), rehearsal: true };
+    c.release.prerelease = false;
+    expect(candidateProblems(c)).toEqual([]);
+    expect(candidateProblems({ ...c, rehearsal: false }).join("\n")).toContain(
+      "isn't a pre-release",
+    );
+    c.release.immutable = false;
+    expect(candidateProblems(c).join("\n")).toContain("immutable");
+  });
+});
+
+type Job = {
+  if?: string;
+  needs?: string | string[];
+  permissions?: Record<string, string>;
+  steps?: (Step & { run?: string; if?: string; id?: string })[];
+};
+const releaseJobs = () =>
+  (
+    yaml.load(fs.readFileSync(path.join(ROOT, ".github/workflows/release.yml"), "utf8")) as {
+      jobs: Record<string, Job>;
+    }
+  ).jobs;
+
+describe("release.yml's two paths", () => {
+  it("builds, tests and drafts only on the build path, and promotes only on the promote path", () => {
+    const jobs = releaseJobs();
+    for (const name of ["ci", "linux-surface", "windows-surface", "macos-surface"]) {
+      expect(jobs[name].needs, name).toBe("review");
+      expect(jobs[name].if, name).toBe("needs.review.outputs.path == 'build'");
+    }
+    expect(jobs.draft.if).toBe(
+      "github.event_name == 'push' && needs.review.outputs.path == 'build'",
+    );
+    expect(jobs.promote.if).toBe("needs.review.outputs.path == 'promote'");
+    expect(jobs.promote.needs).toEqual(["review", "checks"]);
+    // The audit runs on both paths; the release build's test only when it builds.
+    expect(jobs.checks.if).toBeUndefined();
+    const checks = jobs.checks.steps!;
+    expect(checks.find((s) => s.name === "Dependency audit")!.if).toBeUndefined();
+    expect(checks.find((s) => s.name === "import_largest_test")!.if).toBe(
+      "needs.review.outputs.path == 'build'",
+    );
+    const writers = Object.entries(jobs)
+      .filter(([, j]) => j.permissions?.contents === "write")
+      .map(([n]) => n);
+    expect(writers.sort()).toEqual(["draft", "promote"]);
+    const create = jobs.promote.steps!.find((s) => s.run?.includes("gh release create"))!;
+    expect(create.if).toBe("github.event_name == 'push'");
+  });
+
+  const promoteSteps = () =>
+    releaseJobs().promote.steps!.filter((s): s is Step & { run: string; if?: string } => !!s.run);
+
+  /**
+   * Runs the promote job's steps as Actions does, each with bash -e, stopping
+   * at the first that fails, in a scratch checkout with gh stood in for.
+   */
+  function runPromote(c: ReturnType<typeof goodCandidate>, { push = true, verify = "0" } = {}) {
+    const work = tempDir();
+    writeAll(work, {
+      "scripts/release.mjs": fs.readFileSync(path.join(ROOT, "scripts/release.mjs"), "utf8"),
+      ".github/release-notes.md": fs.readFileSync(
+        path.join(ROOT, ".github/release-notes.md"),
+        "utf8",
+      ),
+    });
+    const gh = fakeGh(candidateAnswers(c, verify));
+    const temp = tempDir();
+    const env = {
+      ...process.env,
+      ...gh.env,
+      GH_TOKEN: "token",
+      GITHUB_REPOSITORY: "owner/repo",
+      GITHUB_STEP_SUMMARY: path.join(temp, "summary"),
+      RUNNER_TEMP: temp,
+      RC: c.rc,
+      COMMIT: c.commit,
+      TAG: "v0.1.1",
+      REHEARSAL: String(!push),
+    };
+    for (const step of promoteSteps()) {
+      if (step.if === "github.event_name == 'push'" && !push) continue;
+      const r = spawnSync("bash", ["-e", "-c", step.run], { cwd: work, encoding: "utf8", env });
+      if (r.status !== 0) return { ok: false, calls: gh.calls(), out: r.stdout + r.stderr, temp };
+    }
+    return { ok: true, calls: gh.calls(), out: "", temp };
+  }
+
+  const drafted = (calls: string[]) => calls.filter((c) => /^release (create|upload)/.test(c));
+
+  it.skipIf(process.platform === "win32")(
+    "drafts the final from the candidate's own files and checksums, after every check",
+    { timeout: 60_000 },
+    () => {
+      const r = runPromote(goodCandidate());
+      expect(r.out).toBe("");
+      expect(r.ok).toBe(true);
+      const [create] = drafted(r.calls);
+      expect(create).toMatch(/^release create v0\.1\.1 /);
+      for (const f of releaseFiles("0.1.1")) expect(create).toContain(`/candidate/${f}`);
+      expect(create).toContain("--draft");
+      expect(create).not.toContain("--prerelease");
+      expect(r.calls.filter((c) => c.startsWith("release verify-asset v0.1.1-rc.1 "))).toHaveLength(
+        6,
+      );
+      expect(fs.readFileSync(path.join(r.temp, "notes.md"), "utf8")).toContain(
+        `Promoted from v0.1.1-rc.1, built from commit ${commit}`,
+      );
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "drafts nothing in a rehearsal, or when any check fails",
+    { timeout: 60_000 },
+    () => {
+      const rehearsal = runPromote(goodCandidate(), { push: false });
+      expect(rehearsal.ok).toBe(true);
+      expect(rehearsal.calls.filter((c) => c.startsWith("release verify-asset"))).toHaveLength(6);
+      expect(drafted(rehearsal.calls)).toEqual([]);
+
+      const failing: [string, (c: ReturnType<typeof goodCandidate>) => void, string?][] = [
+        ["a file someone uploaded", (c) => (c.release.assets[1].uploader.login = "someone")],
+        [
+          "a changed file",
+          (c) => fs.appendFileSync(path.join(c.dir, "HoploDex-0.1.1-x86_64.rpm"), "x"),
+        ],
+        ["no passing run", (c) => (c.runs.workflow_runs = [])],
+        ["a mutable release", (c) => (c.release.immutable = false)],
+        ["an attestation that doesn't verify", () => {}, "1"],
+      ];
+      for (const [what, change, verify] of failing) {
+        const c = goodCandidate();
+        change(c);
+        const r = runPromote(c, { verify });
+        expect(r.ok, what).toBe(false);
+        expect(drafted(r.calls), what).toEqual([]);
+      }
+    },
+  );
+});
+
+describe.skipIf(process.platform === "win32")(
+  "release script's promote and path, run on a repository",
+  { timeout: 60_000 },
+  () => {
+    function ready() {
+      const repo = scratchRepo();
+      const head = repo.commit({ ...carrying("0.1.1"), ...recorded("0.1.1") });
+      return { repo, head };
+    }
+    const listing = (...rs: object[]) => rs.map((r) => JSON.stringify(r)).join("\n");
+
+    it("promotes the published candidate on the commit, and refuses without one, tagging nothing", () => {
+      const { repo, head } = ready();
+      const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
+      const gh = fakeGh({
+        releases: listing(rc),
+        "commit-v0.1.1-rc.1": head,
+        ...candidateAnswers(goodCandidate("v0.1.1-rc.1", head)),
+      });
+      repo.env = gh.env;
+      const ok = repo.release("promote", "0.1.1", "--commit", head, "--dry-run");
+      expect(ok.stderr).toBe("");
+      expect(ok.stdout).toContain("promoting v0.1.1-rc.1");
+      expect(
+        gh.calls().filter((c) => c.startsWith("release verify-asset v0.1.1-rc.1 ")),
+      ).toHaveLength(6);
+      expect(ok.stdout).toContain(
+        `$ git tag -a v0.1.1 -m "HoploDex 0.1.1, promoted from v0.1.1-rc.1" ${head}`,
+      );
+      expect(ok.stdout).toContain("ai-security-review.mjs gate");
+      expect(ok.stdout).toContain("npm run audit");
+
+      const rcVersion = repo.release("promote", "0.1.1-rc.1", "--commit", head, "--dry-run");
+      expect(rcVersion.stderr).toContain("takes the final version");
+
+      repo.env = fakeGh({ releases: "" }).env;
+      const none = repo.release("promote", "0.1.1", "--commit", head);
+      expect(none.status).toBe(1);
+      expect(none.stderr).toContain("no published release candidate");
+      expect(none.stdout).not.toContain("==");
+
+      repo.env = fakeGh({
+        releases: listing({ ...rc, immutable: false }),
+        "commit-v0.1.1-rc.1": head,
+      }).env;
+      const mutable = repo.release("promote", "0.1.1", "--commit", head);
+      expect(mutable.status).toBe(1);
+      expect(mutable.stderr).toContain("isn't an immutable pre-release");
+      expect(repo.git(["tag", "-l"])).toBe("");
+    });
+
+    it("refuses, before any step, a candidate whose files would fail the workflow's promote checks, or an older one named by --rc", () => {
+      const { repo, head } = ready();
+      const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
+      const failing: [string, (c: ReturnType<typeof goodCandidate>) => void, string, string?][] = [
+        [
+          "a file someone uploaded",
+          (c) => (c.release.assets[1].uploader.login = "someone"),
+          "uploaded by someone",
+        ],
+        [
+          "a changed file",
+          (c) => fs.appendFileSync(path.join(c.dir, "HoploDex-0.1.1-x86_64.rpm"), "x"),
+          ".rpm doesn't match",
+        ],
+        ["no passing run", (c) => (c.runs.workflow_runs = []), "no release run"],
+        ["an attestation that doesn't verify", () => {}, "fails gh release verify-asset", "1"],
+      ];
+      for (const [what, change, problem, verify] of failing) {
+        const c = goodCandidate("v0.1.1-rc.1", head);
+        change(c);
+        repo.env = fakeGh({
+          releases: listing(rc),
+          "commit-v0.1.1-rc.1": head,
+          ...candidateAnswers(c, verify),
+        }).env;
+        for (const dryRun of [["--dry-run"], []]) {
+          const r = repo.release("promote", "0.1.1", "--commit", head, ...dryRun);
+          expect(r.status, what).toBe(1);
+          expect(r.stderr, what).toContain(problem);
+          expect(r.stdout, what).not.toContain("==");
+        }
+      }
+
+      const older = { ...rc, tag: "v0.1.1-rc.2" };
+      const newer = { ...rc, tag: "v0.1.1-rc.3" };
+      repo.env = fakeGh({
+        releases: listing(older, newer),
+        "commit-v0.1.1-rc.2": head,
+        "commit-v0.1.1-rc.3": head,
+      }).env;
+      const named = repo.release("promote", "0.1.1", "--commit", head, "--rc", "0.1.1-rc.2");
+      expect(named.status).toBe(1);
+      expect(named.stderr).toContain("isn't the newest published candidate");
+      expect(repo.git(["tag", "-l"])).toBe("");
+    });
+
+    it("tags a final itself only on a commit with no published candidate of it, as the workflow's path check would", () => {
+      const { repo, head } = ready();
+      const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
+      for (const step of ["tag", "all"]) {
+        repo.env = fakeGh({ releases: listing(rc), "commit-v0.1.1-rc.1": head }).env;
+        const promoted = repo.release(step, "0.1.1", "--commit", head);
+        expect(promoted.status, step).toBe(1);
+        expect(promoted.stderr, step).toContain("run release.mjs promote 0.1.1");
+        expect(promoted.stdout, step).not.toContain("==");
+
+        repo.env = fakeGh({ releases: listing(rc), "commit-v0.1.1-rc.1": sha("e") }).env;
+        const elsewhere = repo.release(step, "0.1.1", "--commit", head);
+        expect(elsewhere.status, step).toBe(1);
+        expect(elsewhere.stderr, step).toContain("on other commits");
+        expect(elsewhere.stdout, step).not.toContain("==");
+
+        // A draft (a rejected candidate) is none: the direct path.
+        repo.env = fakeGh({
+          releases: listing({ ...rc, draft: true }),
+          "commit-v0.1.1-rc.1": head,
+        }).env;
+        const direct = repo.release(step, "0.1.1", "--commit", head, "--dry-run");
+        expect(direct.stderr, step).toBe("");
+        expect(direct.stdout, step).toContain(`$ git tag -a v0.1.1 -m "HoploDex 0.1.1" ${head}`);
+
+        // A candidate's own tag asks nothing.
+        repo.env = fakeGh({}).env;
+        expect(repo.release(step, "0.1.1-rc.2", "--commit", head, "--dry-run").status, step).toBe(
+          0,
+        );
+      }
+      expect(repo.git(["tag", "-l"])).toBe("");
+    });
+
+    it("promotes only from a clean checkout of the commit, since its audit reads the lockfiles there", () => {
+      const { repo, head } = ready();
+      const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
+      const gh = fakeGh({
+        releases: listing(rc),
+        "commit-v0.1.1-rc.1": head,
+        ...candidateAnswers(goodCandidate("v0.1.1-rc.1", head)),
+      });
+      repo.env = gh.env;
+      const later = repo.commit({ "package-lock.json": "{}" }, head);
+      const elsewhere = repo.release("promote", "0.1.1", "--commit", head);
+      expect(elsewhere.status).toBe(1);
+      expect(elsewhere.stderr).toContain(`HEAD is ${later}, not ${head}`);
+      expect(elsewhere.stdout).not.toContain("==");
+
+      repo.git(["checkout", "-q", "--detach", head]);
+      fs.writeFileSync(path.join(repo.dir, "package-lock.json"), "{}");
+      const dirty = repo.release("promote", "0.1.1", "--commit", head);
+      expect(dirty.status).toBe(1);
+      expect(dirty.stderr).toContain("isn't clean");
+      expect(dirty.stdout).not.toContain("==");
+      expect(gh.calls()).toEqual([]);
+      expect(repo.git(["tag", "-l"])).toBe("");
+    });
+
+    it("chooses the workflow's path: promote, build, or neither", () => {
+      const { repo, head } = ready();
+      const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
+      const path_ = (answers: Record<string, string>, ...args: string[]) => {
+        repo.env = fakeGh(answers).env;
+        return repo.release("path", ...args);
+      };
+      const promote = path_(
+        { releases: listing(rc), "commit-v0.1.1-rc.1": head },
+        "0.1.1",
+        "--commit",
+        head,
+      );
+      expect(promote.stdout).toContain(`path=promote\ncandidate=v0.1.1-rc.1\ncommit=${head}\n`);
+      const build = path_({ releases: "" }, "0.1.1", "--commit", head);
+      expect(build.stdout).toContain("path=build\ncandidate=\n");
+      const candidate = path_(
+        { releases: listing(rc), "commit-v0.1.1-rc.1": head },
+        "0.1.1-rc.2",
+        "--commit",
+        head,
+      );
+      expect(candidate.stdout).toContain("path=build\n");
+      const elsewhere = path_(
+        { releases: listing(rc), "commit-v0.1.1-rc.1": sha("e") },
+        "0.1.1",
+        "--commit",
+        head,
+      );
+      expect(elsewhere.status).toBe(1);
+      expect(elsewhere.stdout).toBe("");
+      const rehearsal = path_({ "commit-v0.1.0": sha("f") }, "0.1.0", "--rehearsal");
+      expect(rehearsal.stdout).toContain(`path=promote\ncandidate=v0.1.0\ncommit=${sha("f")}\n`);
+    });
+  },
+);

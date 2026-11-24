@@ -106,8 +106,8 @@ lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4'
 ## At a release
 
 `released.txt` lists, one per line, `<step name or fixture path> <sha256 of its
-bytes> <release>`. Before a version's first release candidate is tagged
-([RELEASING.md](../../../../RELEASING.md), step 2), add a line for every step it
+bytes> <release>`. Before a version's first tag, its first release candidate
+or a final with none ([RELEASING.md](../../../../RELEASING.md), step 2), add a line for every step it
 ships (`sha256sum` of the step's file, LF line endings) and one for its stored
 database `tests/fixtures/releases/<release>.hoplodex`, in `MIGRATIONS`' order,
 with the version without its suffix, and never edit a line after that. The

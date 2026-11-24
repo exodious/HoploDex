@@ -3,7 +3,9 @@
 How a release is made (#19). Pushing a `v*` tag starts the release workflow
 (`.github/workflows/release.yml`), which checks the release, builds every
 package, runs the release-time checks and opens a **draft** GitHub release.
-A person checks the draft and publishes it. Which systems a release supports
+A person checks the draft and publishes it. A final tag on an accepted
+release candidate's commit builds nothing: the workflow promotes that
+candidate's own files ([Release candidates](#release-candidates)). Which systems a release supports
 is in the README's [Supported platforms](README.md#supported-platforms), and
 nowhere else.
 
@@ -42,12 +44,34 @@ keeps its own ad-hoc signature, without which Apple silicon runs nothing:
 Linux packages and the `.flatpak` are unsigned. The release notes say how to
 open an unsigned build.
 
-**Release candidates.** A tag with a pre-release suffix, such as
-`v0.1.0-rc.1`, makes a GitHub pre-release. The first tag of a version is a
-release candidate, and once one is accepted, its commit is tagged as the final
-release with no changes: `v0.1.0` goes on the same commit as the accepted
-`v0.1.0-rc.<n>`. So everything below, the migration records and the AI security
-review included, is done for the first release candidate, not the final:
+## Release candidates
+
+A tag with a pre-release suffix, such as `v0.1.1-rc.1`, makes a GitHub
+pre-release, a release candidate. It carries the final version (`0.1.1`
+everywhere, its files named `HoploDex-0.1.1-…`); only its tag has the suffix.
+A release can be made two ways, and the release workflow picks by what is
+published:
+
+- **Through a release candidate**, when the packages need testing by hand
+  before they ship: a change to packaging, the Flatpak, the database layout,
+  or anything a person should try on each system first. The owner tests the
+  candidate's files and **accepts it by publishing its pre-release**, which
+  makes its files immutable and gives them GitHub's release attestation. Then
+  `release.mjs promote` puts the final tag on the same commit, and the
+  workflow makes the final release from that candidate's own files and
+  `SHA256SUMS`, checked against its release, building nothing. What ships is
+  byte for byte what was tested: the builds aren't reproducible, so a rebuild
+  would ship files nobody tried.
+- **Directly**, when no candidate is needed: a final tag on a commit with no
+  published candidate of its version builds, tests and drafts the release, as
+  a candidate's tag does.
+
+A published candidate of the version on another commit than the final tag's
+stops the workflow before anything runs: tag the accepted candidate's commit.
+A candidate's draft that is never published (a rejected one) counts for
+nothing. Everything below, the migration records and the AI security review
+included, is done for the first tag of a version, a candidate or the final
+itself:
 
 - **The database layout freezes at the first release candidate.** Its
   migration records are merged before it (step 2), and from then on a released
@@ -60,6 +84,11 @@ review included, is done for the first release candidate, not the final:
   candidate, with its own review (`--after`) and its own testing.
 - **The final release carries the release candidate's metainfo `<release>`
   date** (step 1), since its commit is the same.
+- **Testers replace an earlier candidate by reinstalling it.** Every candidate
+  of a version carries the same version, so a package manager won't install
+  one over another; each candidate's notes say how
+  (`apt install --reinstall`, `dnf reinstall`, `flatpak install --reinstall`,
+  or the Windows installer's reinstall option), and name its commit.
 
 ## The release script
 
@@ -78,11 +107,13 @@ node scripts/release.mjs checks 0.1.0               # or one step
 Its steps are `version`, `records` (before a release candidate: it adds a line
 for each step not yet listed and for the stored database unless it is listed,
 and says so when there is nothing to add), `checks`,
-`review`, `gate` and `tag`. `all` runs them in that order, all but `records`, whose lines
+`review`, `gate` and `tag`, and `promote` in place of `tag` for a final
+release from an accepted candidate. `all` runs them in that order, all but `records`, whose lines
 must already be on the commit (step 2). `--commit <sha>` names another commit
 than `origin/main`'s head, and `--after <reviewed commit>` goes to the review.
-`version`, `checks` and `all` refuse unless the working tree is clean and `HEAD`
-is that commit, so what they test is what gets tagged. `tag`, and `all` before anything else, read the commit itself and refuse
+`version`, `checks`, `all` and `promote` (whose audit reads the checkout's
+lockfiles) refuse unless the working tree is clean and `HEAD` is that commit,
+so what they test is what gets tagged. `tag`, and `all` before anything else, read the commit itself and refuse
 what the workflow would: a tag that doesn't name its version, or one whose
 commit has no stored database, or no `released.txt` line for it or for a step
 in `MIGRATIONS`.
@@ -92,16 +123,41 @@ release workflow runs to the workflow: the [dry run](#the-release-workflow) is
 the check before a tag, on every OS. The version, its `<release>` entry and the checks a person makes (steps 1, 3 to 5)
 are still yours.
 
-For the final release, once a release candidate is accepted and nothing has
-merged since, tag its commit: `release.mjs gate 0.1.0`, for any alert opened
-during testing, then `release.mjs tag 0.1.0 --commit <the candidate's commit>`.
-The steps before ran on that commit already.
+For the final release from an accepted candidate, once its pre-release is
+published and nothing has merged since:
+
+```bash
+git fetch origin
+git switch --detach origin/main                    # the audit reads the checkout's lockfiles
+node scripts/release.mjs promote 0.1.1 --dry-run   # print what it would run, the tag's included
+node scripts/release.mjs promote 0.1.1             # or --rc 0.1.1-rc.2 to name the candidate
+```
+
+It finds the newest published `v0.1.1-rc.<n>` on `origin/main`'s head (or
+`--commit`); `--rc` must name that one, since it is the one the workflow
+promotes, and refuses an older candidate on the same commit. It refuses unless
+the working tree is clean and `HEAD` is that commit, the candidate is an immutable pre-release built from that commit, its files
+pass the checks the workflow's promote job makes (downloaded, they are exactly
+a release's files, each uploaded by `github-actions[bot]`, from a release run
+of the candidate's tag that passed on that commit, matching its `SHA256SUMS`,
+and each passes `gh release verify-asset`), a dry run included, and the
+workflow's tag check, `ai-security-review.mjs reviewed` and
+`gate` (for any alert opened during testing) and `npm run audit` (the one
+check whose result changes with time, not with the code) all pass. Then it
+tags `v0.1.1` on that commit, its message naming the candidate, and pushes the
+tag. The other steps ran on that commit for the candidate already. A final
+release without a candidate is `release.mjs all 0.1.1`, like a candidate's:
+its `tag` step refuses, before any step, a commit with a published candidate
+of the version (that tag is `promote`'s, which checks the candidate's files
+first) and a version whose published candidates are on other commits, as the
+workflow would.
 
 ## Before the tag
 
 Work through these on the commit you will tag, on `main`, for a version's
-first release candidate (a later one repeats them on its own commit, and the
-final release reuses the accepted one's). A fix made along the way is a pull
+first tag, its first release candidate or the final itself (a later
+candidate repeats them on its own commit, and a promoted final reuses the
+accepted one's). A fix made along the way is a pull
 request like any other; then start again from the new commit.
 
 1. **The version.** Set it in `package.json` (and `package-lock.json`),
@@ -111,8 +167,8 @@ request like any other; then start again from the new commit.
    version (a test enforces it). A release candidate carries the version it
    is a candidate for; its tag adds the suffix. Its date is the final
    release's too, since the final tag reuses the candidate's commit.
-2. **The migration records**, merged before the version's first release
-   candidate (`src-tauri/src/db/migrations/README.md`,
+2. **The migration records**, merged before the version's first tag, its
+   first release candidate or a final with none (`src-tauri/src/db/migrations/README.md`,
    "At a release", and [Changing the data layout](docs/development/data-layout.md)):
    - add a line to `src-tauri/src/db/migrations/released.txt` for every step the
      release ships and for its stored database (`<name or path> <sha256> <release>`,
@@ -212,8 +268,18 @@ git tag -a v0.1.0-rc.1 -m "HoploDex 0.1.0-rc.1" <commit>
 git push origin refs/tags/v0.1.0-rc.1
 ```
 
-A tag is never moved. If the release needs another commit, it gets a new tag
-(the next release candidate, say), after its own review (`--after`).
+A release candidate's tag is never moved, nor a final tag once its run has
+drafted a release; immutable releases enforce it for anything published. If
+the release needs another commit, it gets a new tag (the next release
+candidate, say), after its own review (`--after`).
+
+The one exception: **a final tag whose run drafted no release** (it stopped
+before the draft, on an alert opened since `release.mjs promote`, say) may be
+deleted and pushed again, on a new accepted candidate's commit or the same one,
+by an admin, since the `version tags` ruleset lets only admins delete one. A
+transient failure (the API, the network) needs no new tag: re-run the failed
+job. A final draft that fails its own testing means a new patch version,
+since its tag drafted a release.
 
 ## The release workflow
 
@@ -223,7 +289,12 @@ On the tag, `release.yml` runs:
   `v<version>-<suffix>`); the commit has that version's stored database and
   `released.txt` lines for it and every step in `MIGRATIONS`, for a release
   candidate too; and the AI security review
-  covers the commit (step 7).
+  covers the commit (step 7). It then chooses the path, and the run's summary
+  says which: a final tag on a published candidate's commit promotes it, and
+  every other tag builds.
+
+On the build path:
+
 - **CI**, ci.yml called with `release` set, from clean release builds: format,
   lint and the tests on every OS; E2E against the shipping profile
   (`HOPLODEX_E2E_PROFILE=release`) on all three, macOS's counting too; the
@@ -241,7 +312,18 @@ On the tag, `release.yml` runs:
   and a draft release (a pre-release for a suffixed tag) with every file
   attached, the Flatpak included. Its notes are `.github/release-notes.md`,
   with the version and tag filled in (`{{app_version}}`, in the file names, is
-  the version without a release candidate's suffix).
+  the version without a release candidate's suffix), the commit it was built
+  from, and for a candidate how to reinstall it over an earlier one.
+
+On the promote path, nothing is built, tested or surface-checked: the release
+candidate's own release run did that. **Release checks** runs `npm run audit`
+only, and **Promote the release candidate** checks the candidate's release is
+published, immutable and a pre-release, with exactly a release's six files,
+each uploaded by `github-actions[bot]` and passing
+`gh release verify-asset`, from a release run of the candidate's tag that
+passed on this commit, and matching its `SHA256SUMS`. Then it opens the draft
+release with those files and that `SHA256SUMS` unchanged, its notes saying
+which candidate it was promoted from. Any problem stops it before the draft.
 
 A failed job can be re-run from the run's page; the draft is opened when they
 all pass, and a re-run replaces the draft's files. The workflow never
@@ -257,10 +339,19 @@ the release's AI security review" step, not just the run's result: that step
 doesn't fail a dry run, so a refusal there, such as a 403 listing Dependabot
 alerts, shows only in its log.
 
+**A rehearsal of promotion.**
+`gh workflow run release.yml --ref main -f rehearse=v0.1.0` takes the promote
+path against a published release's files instead of building: every check of
+them but the pre-release and the file names (0.1.0's predate #209), and no
+draft.
+
 ## Publish
 
 1. Download the packages from the draft and try them: install each on a
    system it supports, open a throwaway collection, and check About HoploDex.
+   A promoted final's files are the accepted candidate's, already tried:
+   check its notes name that candidate and its files are the candidate's
+   (`SHA256SUMS` is the same), with no install check.
 2. Edit the draft's notes: add what changed. Keep the install instructions;
    they are the ones each release publishes:
    - **Windows:** the setup `.exe` isn't signed, so Windows may show
@@ -273,7 +364,9 @@ alerts, shows only in its log.
      GNOME runtime; a newer version installs the same way, over the old one,
      keeping everything; `flatpak update` updates the runtime but not a HoploDex
      installed from a file.
-3. Publish the draft once you approve it. Nothing else publishes it.
+3. Publish the draft once you approve it. Nothing else publishes it. A
+   release candidate's pre-release is published only when it is accepted
+   ([Release candidates](#release-candidates)); a rejected one stays a draft.
 
 ## After a release
 

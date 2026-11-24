@@ -130,6 +130,12 @@ changes only this: E2E runs against the shipping profile
 jobs keep what they built as artifacts. Its own jobs check the tag and the
 release's AI security review, run `npm run audit`, `import_largest_test` and
 the [surface checks](surface-checks.md) on each OS, then draft the release.
-Run by hand (`workflow_dispatch`), it is a dry run of every job but the draft.
+A final tag on a published release candidate's commit takes the promote path
+instead: no build, CI or surface check, only the review, `npm run audit`, and
+the promote job, which checks the candidate's own files against its
+immutable, attested release and drafts the release from them. Run by hand
+(`workflow_dispatch`), it is a dry run of every job but the draft; with
+`rehearse` set to a published release's tag, it rehearses the promote path
+against that release instead, and drafts nothing.
 Keep the job names in `ci.yml` as they are: the `Default` ruleset requires
 them by name.
