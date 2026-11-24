@@ -1417,6 +1417,96 @@ fn the_conflicts_list_at_most_100000_mounted_records_and_past_that_the_import_fa
 }
 
 #[test]
+fn past_the_mounted_records_limit_a_workbook_names_its_file_and_sheet_apart_and_the_rows_saved() {
+    // PR 229's follow-ups: `details.file` and `details.sheet` stay apart
+    // (008 contracts/tauri-commands.md), and the rows saved before the
+    // limit are counted, so the files aren't offered again as if nothing
+    // was imported.
+    let db = TestDb::new();
+    let (dir, csv) = many_disposed_rows(&db, 400, 251);
+    let mut firearms = sheets::read_csv(&csv);
+    firearms.push(firearm_cells("Glock", "19", "NEW1", &[]));
+    let accessories = accessory_table(&[accessory_cells("Optic", &[])]);
+    let path = dir.path().join("inventory.xlsx");
+    sheets::write_workbook(&path, &[("Firearms", &firearms), ("Accessories", &accessories)]);
+
+    let err = import_err(&db, &[&path]);
+
+    assert_eq!(err.code, "IMPORT_LIMIT_EXCEEDED", "{err:?}");
+    assert!(
+        err.message.starts_with("inventory.xlsx, sheet \"Firearms\": its rows would list"),
+        "{}",
+        err.message
+    );
+    let details = err.details.as_ref().unwrap();
+    assert_eq!(details["file"], "inventory.xlsx");
+    assert_eq!(details["sheet"], "Firearms");
+    assert_eq!(details["limit"], "mountedEntries");
+    assert_eq!(details["importedCount"], 2);
+    assert_eq!(err.imported_count(), Some(2));
+    assert_eq!(count(&db.conn, "firearms"), 2, "the Rifle and the new row");
+}
+
+#[test]
+fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
+    let db = TestDb::new();
+    new_firearm(&db, &support::firearm("Ruger", "Precision", "R1"));
+    new_firearm(&db, &support::firearm("Ruger", "Precision", "R2"));
+    let dir = TempDir::new().unwrap();
+    let path = sheets::csv_in(
+        dir.path(),
+        "firearms.csv",
+        &firearm_table(&[
+            firearm_cells("Ruger", "Precision", "R1", &[("notes", "From the sheet")]),
+            firearm_cells("Ruger", "Precision", "R2", &[("notes", "From the sheet")]),
+        ]),
+    );
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&path]);
+    assert_eq!(result.conflicts.len(), 2, "{:?}", result.row_errors);
+
+    // Asked before each conflict: the second is stopped.
+    let asked = std::cell::Cell::new(0);
+    let saved = std::cell::Cell::new(0);
+    let err = import_export_ops::resolve_import_conflicts_stoppable(
+        &db.conn,
+        &store,
+        &result.session_id,
+        &[],
+        Some("overwrite"),
+        &|| {
+            asked.set(asked.get() + 1);
+            asked.get() > 1
+        },
+        &|n| saved.set(n),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
+    assert_eq!(err.details.as_ref().unwrap()["operation"], "import");
+    assert_eq!(err.details.as_ref().unwrap()["importedCount"], 1);
+    assert_eq!(saved.get(), 1);
+    let notes: Vec<Option<String>> = db
+        .conn
+        .prepare("SELECT notes FROM firearms ORDER BY serial_number")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(notes, [Some("From the sheet".to_owned()), None]);
+    // The import is closed: its files are imported again for the rest.
+    let again = import_export_ops::resolve_import_conflicts(
+        &db.conn,
+        &store,
+        &result.session_id,
+        &[],
+        Some("overwrite"),
+    );
+    assert_eq!(again.unwrap_err().code, "NOT_FOUND");
+}
+
+#[test]
 fn a_stop_while_the_mounts_are_made_or_the_conflicts_listed_keeps_the_rows() {
     // `is_cancelled` answers yes from its `n`th question on: one is asked
     // before each row, so the next is the first mount's or conflict's.

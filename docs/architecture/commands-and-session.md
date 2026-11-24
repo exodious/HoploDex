@@ -87,7 +87,8 @@ database's `awaitingId`. `add_photo_from_path` and `add_document_from_path`
 take a drop once (`take_drop`); `import_collection`, `export_collection`,
 `create_database`, `update_backup_settings` and `upgrade_database` take picks by
 token (`take_pick`), and all but the upgrade put them back when the operation
-fails (`put_back_pick`); `open_database` and `locate_database` take a
+fails (`put_back_pick`), except an import that fails or is stopped after saving
+rows (`details.importedCount`), which uses them up; `open_database` and `locate_database` take a
 `choose_database_file` pick by its path (`take_pick_at`) for a path that names a
 server or a device (`grants::is_server_or_device`), which a page-named path may
 otherwise be only when `open_database` finds it on the recent list

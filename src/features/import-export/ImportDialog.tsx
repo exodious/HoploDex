@@ -151,6 +151,22 @@ function count(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** How many records an import or a resolution that failed or was stopped had
+ * saved (`details.importedCount`, 008 contracts/tauri-commands.md). */
+function savedBefore(e: unknown): number {
+  const saved = e instanceof CommandFailure ? e.details?.importedCount : undefined;
+  return typeof saved === "number" ? saved : 0;
+}
+
+/** The banner after an import that failed or was stopped once it had saved
+ * `saved` records: they stay, so it never says nothing was imported. */
+function importEndedMessage(e: CommandFailure, saved: number) {
+  const imported = `${count(saved, "record was", "records were")} imported before it stopped.`;
+  return e.code === "OPERATION_STOPPED"
+    ? `The import was stopped. ${imported}`
+    : `${e.message} ${imported}`;
+}
+
 /** Fields the report names by label rather than by column (005 contracts/ui-registration.md §9). */
 const SNAPPED_FIELD_LABELS: Partial<Record<SnappedValue["field"], string>> = {
   registrationForm: "Form",
@@ -188,7 +204,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const notify = useToast();
   // The files picked in the backend's chooser (one, or the firearm and
   // accessory files together), by the tokens the import takes them by. An
-  // import that finishes uses them up; one that fails leaves them chosen.
+  // import that finishes uses them up, as does one that fails or is stopped
+  // after saving rows; one that fails before then leaves them chosen.
   const [files, setFiles] = useState<ChosenPath[]>([]);
   const [fileError, setFileError] = useState<string | undefined>();
   const [importing, setImporting] = useState(false);
@@ -251,18 +268,19 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       setResult(imported);
       await refresh();
     } catch (e) {
+      const saved = savedBefore(e);
       setError(
         e instanceof CommandFailure
-          ? e.code === "OPERATION_STOPPED"
-            ? IMPORT_CANCELLED
-            : e.message
+          ? saved > 0
+            ? importEndedMessage(e, saved)
+            : e.code === "OPERATION_STOPPED"
+              ? IMPORT_CANCELLED
+              : e.message
           : "The import didn't finish.",
       );
-      if (
-        e instanceof CommandFailure &&
-        e.code === "IMPORT_LIMIT_EXCEEDED" &&
-        e.details?.limit === "mountedEntries"
-      ) {
+      if (saved > 0) {
+        // Importing the same files again would add these rows twice.
+        setFiles([]);
         await refresh();
       }
     } finally {
@@ -314,10 +332,16 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       await refresh();
       notify(`Resolved ${count(resolved.resolvedCount, "matching row", "matching rows")}.`);
     } catch (e) {
+      const saved = savedBefore(e);
+      const message =
+        e instanceof CommandFailure ? e.message : "The matching rows couldn't be resolved.";
       notify(
-        e instanceof CommandFailure ? e.message : "The matching rows couldn't be resolved.",
+        saved > 0
+          ? `${message} ${count(saved, "matching row was", "matching rows were")} saved before it stopped.`
+          : message,
         "error",
       );
+      if (saved > 0) await refresh();
     } finally {
       setResolving(false);
     }

@@ -312,7 +312,7 @@ fn a_valid_workbook_and_a_valid_csv_read_as_firearm_tables() {
     for path in [&workbook, &csv] {
         let tables = read(&[import_file(path)]).unwrap();
         assert_eq!(tables.len(), 1, "{}", path.display());
-        assert_eq!(tables[0].source, file_name(path));
+        assert_eq!(tables[0].source(), file_name(path));
         assert_eq!(makes(&tables[0]), ["Springfield"; 3], "{}", path.display());
     }
     assert!(no_helper_runs());
@@ -474,8 +474,13 @@ fn an_export_as_a_workbook_reads_back_as_its_two_tables() {
 
     assert_eq!(tables.len(), 2);
     let name = file_name(&workbook);
-    assert_eq!(tables[0].source, format!("{name}, sheet \"Firearms\""));
-    assert_eq!(tables[1].source, format!("{name}, sheet \"Accessories\""));
+    assert_eq!(tables[0].source(), format!("{name}, sheet \"Firearms\""));
+    assert_eq!(tables[1].source(), format!("{name}, sheet \"Accessories\""));
+    // The file and the sheet are kept apart (008 contracts/tauri-commands.md).
+    assert_eq!(
+        (tables[0].file.as_str(), tables[0].sheet.as_deref()),
+        (name.as_str(), Some("Firearms"))
+    );
     let mut firearms = makes(&tables[0]);
     firearms.sort();
     assert_eq!(firearms, ["Colt", "Glock", "Sig Sauer"]);
@@ -495,8 +500,9 @@ fn an_export_as_two_csv_files_reads_back_as_one_table_each() {
     let tables = read(&[import_file(&firearms), import_file(&accessories)]).unwrap();
 
     assert_eq!(tables.len(), 2);
-    assert_eq!(tables[0].source, file_name(&firearms));
-    assert_eq!(tables[1].source, file_name(&accessories));
+    assert_eq!(tables[0].source(), file_name(&firearms));
+    assert_eq!(tables[1].source(), file_name(&accessories));
+    assert_eq!(tables[0].sheet, None);
     assert_eq!(makes(&tables[0]).len(), 3);
     assert_eq!(makes(&tables[1]), ["Leupold"]);
 }

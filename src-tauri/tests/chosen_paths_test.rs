@@ -19,6 +19,7 @@ use hoplodex_lib::commands::import_export::ops as import_export_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
 use hoplodex_lib::drops;
+use hoplodex_lib::models::database::OperationKind;
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::consent::{Consent, ConsentAnswer, ConsentRequest};
 use hoplodex_lib::services::machine_settings::MachineSettings;
@@ -375,6 +376,31 @@ fn a_failed_import_leaves_its_files_chosen_and_a_finished_one_uses_them_up() {
     refused(import(&world, &[held.clone(), "nope".into()], true));
     assert_eq!(import(&world, std::slice::from_ref(&held), true).unwrap().len(), 1);
     refused(import(&world, &[held], true));
+}
+
+#[test]
+fn an_import_that_fails_or_stops_after_saving_rows_uses_its_files_up() {
+    // Importing them again would add the rows without a `record_id` twice.
+    let world = World::new();
+    let id = world.id();
+    let path = world.file("firearms.csv", b"make\n");
+    let fail_with = |error: CommandError| {
+        let held = world.session.hold_pick(id, PickKind::ImportFile, path.clone()).unwrap();
+        let tokens = std::slice::from_ref(&held);
+        let failed = import_export_ops::import_chosen_files(&world.session, id, tokens, |_| {
+            Err::<(), _>(error)
+        });
+        assert!(failed.is_err());
+        import(&world, tokens, true)
+    };
+    let stopped = |saved| CommandError::operation_stopped(OperationKind::Import, Some(saved), None);
+
+    refused(fail_with(stopped(3)));
+    refused(fail_with(
+        CommandError::new("IMPORT_LIMIT_EXCEEDED", "too big").with_imported_count(2),
+    ));
+    // A stop before any row was saved puts them back.
+    assert_eq!(fail_with(stopped(0)).unwrap().len(), 1);
 }
 
 #[test]

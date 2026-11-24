@@ -30,7 +30,7 @@ use crate::services::mounts::{self, MountGraph};
 use crate::services::record_id;
 use crate::services::sandbox::{Need, Reach};
 use crate::services::spreadsheet::{
-    AccessoryExportRow, FirearmExportRow, RawAccessoryRow, RawImportRow, ReadTable,
+    self, AccessoryExportRow, FirearmExportRow, RawAccessoryRow, RawImportRow, ReadTable,
     SpreadsheetFormat, TableKind, TableRows, dollars_to_string, parse_scaled_decimal,
     parse_whole_dollars, scaled_to_string, write_accessory_csv, write_firearm_csv, write_workbook,
 };
@@ -1876,13 +1876,14 @@ pub mod ops {
     /// dispose of the record, once this import's own mounts are made, so
     /// the list is what replacing it would find. Each record's list is made
     /// once, however many rows match it, and the lists together stay within
-    /// `MAX_MOUNTED_ENTRIES`, past which the import fails naming `source`'s
-    /// file (code scanning alert 81). `stop` is asked before each conflict.
+    /// `MAX_MOUNTED_ENTRIES`, past which the import fails naming the file
+    /// and sheet `source` gives (code scanning alert 81). `stop` is asked
+    /// before each conflict.
     fn list_mounted(
         conn: &Connection,
         conflicts: &mut [ImportConflict],
         pending: &[PendingConflict],
-        source: &dyn Fn(ImportTable) -> String,
+        source: &dyn Fn(ImportTable) -> Place,
         stop: &dyn Fn() -> Result<(), CommandError>,
     ) -> Result<(), CommandError> {
         if !pending.iter().any(|p| p.new_input.disposition().is_some()) {
@@ -1905,9 +1906,10 @@ pub mod ops {
             };
             listed += mounted.len();
             if listed > MAX_MOUNTED_ENTRIES {
+                let (file, sheet) = source(conflict.table);
                 return Err(CommandError::import_limit_exceeded(
-                    &source(conflict.table),
-                    None,
+                    &file,
+                    sheet.as_deref(),
                     ImportLimit::MountedEntries,
                 ));
             }
@@ -2049,9 +2051,11 @@ pub mod ops {
     /// file is looked at. A file's format is its extension's, as the chooser
     /// offered them.
     ///
-    /// A pick is used up by an import that finishes. One that fails imports
-    /// nothing, and puts the picks back, so the dialog's files can be imported
-    /// again (008 contracts/ui.md §2).
+    /// A pick is used up by an import that finishes. One that fails before
+    /// saving a row puts the picks back, so the dialog's files can be imported
+    /// again (008 contracts/ui.md §2); one that fails or is stopped after
+    /// saving some (`details.importedCount`) uses them up as well, since
+    /// importing them again would add those rows twice.
     pub fn import_chosen_files<T>(
         session: &Session,
         id: SessionId,
@@ -2075,7 +2079,7 @@ pub mod ops {
                 check_files(&files)?;
                 import(files)
             });
-        if result.is_err() {
+        if result.as_ref().is_err_and(|e| e.imported_count().unwrap_or(0) == 0) {
             for (token, path) in taken {
                 session.put_back_pick(id, PickKind::ImportFile, token, path);
             }
@@ -2174,8 +2178,11 @@ pub mod ops {
         Ok(())
     }
 
-    /// A table's rows and the name of its source.
-    type Named<T> = Option<(String, Vec<T>)>;
+    /// The file a table was read from, and its sheet if it is named.
+    type Place = (String, Option<String>);
+
+    /// A table's rows and where they were read from.
+    type Named<T> = Option<(Place, Vec<T>)>;
 
     /// 006 FR-022: the tables read from the files (`import_reader::read_files`),
     /// as the firearm table and the accessory table, each with its source's
@@ -2186,12 +2193,14 @@ pub mod ops {
     ) -> Result<(Named<RawImportRow>, Named<RawAccessoryRow>), CommandError> {
         let mut firearms: Named<RawImportRow> = None;
         let mut accessories: Named<RawAccessoryRow> = None;
-        let same_table = |first: &str, second: &str, noun: &str| {
+        let same_table = |(file, sheet): &Place, second: &ReadTable, noun: &str| {
             CommandError::new(
                 "VALIDATION_ERROR",
                 format!(
-                    "{first} and {second} both hold {noun}. \
-                     Pick one firearm table and at most one accessory table."
+                    "{} and {} both hold {noun}. \
+                     Pick one firearm table and at most one accessory table.",
+                    spreadsheet::source(file, sheet.as_deref()),
+                    second.source(),
                 ),
             )
         };
@@ -2200,19 +2209,19 @@ pub mod ops {
                 table.rows.kind(),
                 TableKind::Firearms | TableKind::Accessories
             ));
+            match (&table.rows, &firearms, &accessories) {
+                (TableRows::Firearms(_), Some((first, _)), _) => {
+                    return Err(same_table(first, &table, "firearms"));
+                }
+                (TableRows::Accessories(_), _, Some((first, _))) => {
+                    return Err(same_table(first, &table, "accessories"));
+                }
+                _ => {}
+            }
+            let place = (table.file, table.sheet);
             match table.rows {
-                TableRows::Firearms(rows) => {
-                    if let Some((first, _)) = &firearms {
-                        return Err(same_table(first, &table.source, "firearms"));
-                    }
-                    firearms = Some((table.source, rows));
-                }
-                TableRows::Accessories(rows) => {
-                    if let Some((first, _)) = &accessories {
-                        return Err(same_table(first, &table.source, "accessories"));
-                    }
-                    accessories = Some((table.source, rows));
-                }
+                TableRows::Firearms(rows) => firearms = Some((place, rows)),
+                TableRows::Accessories(rows) => accessories = Some((place, rows)),
             }
         }
         Ok((firearms, accessories))
@@ -2303,6 +2312,10 @@ pub mod ops {
     /// [`resolve_import_conflicts`] against the session's open database, which
     /// finds only the imports made in this open: `NOT_FOUND` for one made in
     /// another database, or before this one was last opened or unlocked.
+    ///
+    /// Registered as the session's `Import` operation, so a lock, sleep or
+    /// quit stops it between rows as it stops an import's saving, and the
+    /// idle clock pauses meanwhile.
     pub fn resolve_in_session(
         session: &Session,
         id: SessionId,
@@ -2310,13 +2323,16 @@ pub mod ops {
         resolutions: &[ConflictResolution],
         apply_to_remaining: Option<&str>,
     ) -> Result<ResolveResult, CommandError> {
+        let operation = session.operations().begin(OperationKind::Import, None)?;
         session.write_open(id, |open| {
-            resolve_import_conflicts(
+            resolve_import_conflicts_stoppable(
                 &open.conn,
                 &open.imports,
                 session_id,
                 resolutions,
                 apply_to_remaining,
+                &|| operation.is_cancelled(),
+                &|saved| operation.record_done(saved),
             )
         })
     }
@@ -2341,7 +2357,9 @@ pub mod ops {
     /// `is_cancelled` between rows and
     /// reporting each imported row to `record_imported`. Each row is saved
     /// on its own, so a stop keeps every row imported before it, and fails
-    /// with `OPERATION_STOPPED` and their number (003 FR-037). The firearm
+    /// with `OPERATION_STOPPED` and their number (003 FR-037); any other
+    /// error after a row is saved carries their number too
+    /// (`details.importedCount`). The firearm
     /// table's rows come first, then the accessory table's, then the mounts
     /// (006 research.md §17, §18).
     pub fn import_collection_stoppable(
@@ -2354,8 +2372,8 @@ pub mod ops {
     ) -> Result<ImportResult, CommandError> {
         log::debug!("import: matching and saving what was read");
         let (firearm_table, accessory_table) = collect_tables(tables)?;
-        let (firearm_source, firearm_rows) = firearm_table.unwrap_or_default();
-        let (accessory_source, accessory_rows) = accessory_table.unwrap_or_default();
+        let (firearm_place, firearm_rows) = firearm_table.unwrap_or_default();
+        let (accessory_place, accessory_rows) = accessory_table.unwrap_or_default();
         let snapping = Snapping::new(conn, &firearm_rows, &accessory_rows)?;
         let total = firearm_rows.len() + accessory_rows.len();
         let session_id = format!("import-{}", chrono::Utc::now().timestamp_micros());
@@ -2388,7 +2406,8 @@ pub mod ops {
                 return Err(stopped(&run));
             }
             let result = import_firearm_row(conn, &snapping, raw, &run.seen);
-            run.land(ImportTable::Firearms, index + 1, result, record_imported)?;
+            let landed = run.land(ImportTable::Firearms, index + 1, result, record_imported);
+            landed.map_err(|e| e.with_imported_count(run.imported_count as u64))?;
             done += 1;
             on_progress(done, total);
         }
@@ -2397,7 +2416,8 @@ pub mod ops {
                 return Err(stopped(&run));
             }
             let result = import_accessory_row(conn, &snapping, raw, &run.seen);
-            run.land(ImportTable::Accessories, index + 1, result, record_imported)?;
+            let landed = run.land(ImportTable::Accessories, index + 1, result, record_imported);
+            landed.map_err(|e| e.with_imported_count(run.imported_count as u64))?;
             done += 1;
             on_progress(done, total);
         }
@@ -2411,16 +2431,18 @@ pub mod ops {
                 Ok(())
             }
         };
-        resolve_mounts(conn, &run.mount_requests, &run.outcomes, &mut run.warnings, &stop)?;
+        let saved = |e: CommandError| e.with_imported_count(imported);
+        resolve_mounts(conn, &run.mount_requests, &run.outcomes, &mut run.warnings, &stop)
+            .map_err(saved)?;
         let source = |table| match table {
-            ImportTable::Firearms => firearm_source.clone(),
-            ImportTable::Accessories => accessory_source.clone(),
+            ImportTable::Firearms => firearm_place.clone(),
+            ImportTable::Accessories => accessory_place.clone(),
         };
-        list_mounted(conn, &mut run.conflicts, &run.pending, &source, &stop)?;
+        list_mounted(conn, &mut run.conflicts, &run.pending, &source, &stop).map_err(saved)?;
 
         if !run.pending.is_empty() {
             for conflict in &mut run.pending {
-                conflict.existing_uid = record_uid(conn, conflict.existing)?;
+                conflict.existing_uid = record_uid(conn, conflict.existing).map_err(saved)?;
             }
             store.keep(
                 &session_id,
@@ -2484,6 +2506,34 @@ pub mod ops {
         resolutions: &[ConflictResolution],
         apply_to_remaining: Option<&str>,
     ) -> Result<ResolveResult, CommandError> {
+        let never = || false;
+        resolve_import_conflicts_stoppable(
+            conn,
+            store,
+            session_id,
+            resolutions,
+            apply_to_remaining,
+            &never,
+            &|_| {},
+        )
+    }
+
+    /// [`resolve_import_conflicts`], checking `is_cancelled` before each
+    /// conflict and each mount, and reporting the number of records saved so
+    /// far (each overwrite and duplicate) to `record_saved`. Each is saved on
+    /// its own, so a stop keeps every one saved before it, and fails with
+    /// `OPERATION_STOPPED` and their number in `importedCount`; any other
+    /// error after one is saved carries their number too. The import is
+    /// closed either way: its files are imported again to decide the rest.
+    pub fn resolve_import_conflicts_stoppable(
+        conn: &Connection,
+        store: &ImportSessionStore,
+        session_id: &str,
+        resolutions: &[ConflictResolution],
+        apply_to_remaining: Option<&str>,
+        is_cancelled: &dyn Fn() -> bool,
+        record_saved: &dyn Fn(u64),
+    ) -> Result<ResolveResult, CommandError> {
         log::debug!("import: resolving conflicts");
         // An import this store doesn't hold is gone, whatever the reason: it
         // was resolved, dropped for a newer one, or belongs to an open that
@@ -2500,7 +2550,13 @@ pub mod ops {
         let mut still_open = Vec::new();
         let mut warnings = Vec::new();
         let mut mount_requests = Vec::new();
+        let mut saved_count = 0;
+        let stopped =
+            |saved: u64| CommandError::operation_stopped(OperationKind::Import, Some(saved), None);
         for conflict in pending {
+            if is_cancelled() {
+                return Err(stopped(saved_count));
+            }
             let chosen = explicit.get(conflict.conflict_id.as_str());
             let action = chosen.map(|r| r.action.as_str()).or(apply_to_remaining).unwrap_or("skip");
             let with_mounted = chosen.map_or(&[][..], |r| &r.with_mounted[..]);
@@ -2561,6 +2617,8 @@ pub mod ops {
             match outcome {
                 Ok((saved, message)) => {
                     resolved_count += 1;
+                    saved_count += 1;
+                    record_saved(saved_count);
                     if let Some(message) = message {
                         warnings.push(RowError {
                             table: conflict.table,
@@ -2585,11 +2643,13 @@ pub mod ops {
                     });
                     still_open.push(conflict);
                 }
-                Err(e) => return Err(e),
+                Err(e) => return Err(e.with_imported_count(saved_count)),
             }
         }
 
-        resolve_mounts(conn, &mount_requests, &outcomes, &mut warnings, &|| Ok(()))?;
+        let stop = || if is_cancelled() { Err(stopped(saved_count)) } else { Ok(()) };
+        resolve_mounts(conn, &mount_requests, &outcomes, &mut warnings, &stop)
+            .map_err(|e| e.with_imported_count(saved_count))?;
 
         if !still_open.is_empty() {
             store.keep(session_id, ImportSession { pending: still_open, outcomes });

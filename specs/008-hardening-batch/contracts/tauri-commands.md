@@ -122,6 +122,8 @@ Input and `ImportResult` are unchanged. The backend now:
 
 _Amended 2026-11-22: `ImportLimit` gains `"mountedEntries"`, which `import_collection` meets after the rows are saved, when the conflicts would list more than 100,000 firearms and accessories mounted on the firearms and accessories they would replace, counting one's list again for each row that matches it; the rows imported before stay. Its message names the file of the conflict's table, as in `firearms.csv: its rows would list more than 100,000 mounted firearms and accessories in all, counting a firearm's or accessory's again for each row that matches it. HoploDex lists at most 100,000 for one import, and kept the rows already imported.` (code scanning alert 81)._
 
+_Amended 2026-11-24 (PR 229's follow-ups, milestone 0.1.1): for a workbook whose table sheets are named, the `"mountedEntries"` error's `details.file` is the file alone and `details.sheet` the sheet, as for every other limit; the message is unchanged (`inventory.xlsx, sheet "Firearms": its rows would list …`). Any error once a row is saved, `OPERATION_STOPPED` from a sleep while rows are saved included, carries `details.importedCount`, the number of records saved, beside its own details; such an import uses its chosen files up rather than putting them back, since importing them again would add those rows twice. Only an error with no `importedCount`, or `importedCount: 0`, puts them back._
+
 Row-level errors are unchanged (FR-009), except that the free-text field
 maximums (below) now give row errors.
 
@@ -142,6 +144,8 @@ message as a row error.
   `OPERATION_STOPPED` (`importedCount: 0`).
 - Does nothing if no import is running, or once rows are being saved: that
   phase is stopped only by a sleep, as before.
+
+_Amended 2026-11-24 (PR 229's follow-ups, milestone 0.1.1): `resolve_import_conflicts` now registers the `Import` operation too (`OPERATION_IN_PROGRESS` while another runs), so a sleep, lock or quit stops it between conflicts and between mounts, as it stops an import's saving. Each overwrite or duplicate is saved on its own; a stop keeps the ones saved and fails with `OPERATION_STOPPED` `{ operation: "import", importedCount }`, their number, and any other error after one is saved carries `importedCount` too. The import is closed either way. `cancel_import` doesn't stop it._
 
 Registered in `generate_handler!`, `COMMANDS` and
 `capabilities/default.json` (`allow-cancel_import`, main web view only), so

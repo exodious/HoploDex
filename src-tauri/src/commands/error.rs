@@ -198,6 +198,29 @@ impl CommandError {
         SessionId::from_request(raw)
     }
 
+    /// An import's or conflict resolution's error after it saved `count`
+    /// records says how many in `details.importedCount`, beside the error's
+    /// own details (008 contracts/tauri-commands.md). Unchanged when
+    /// `count` is 0 or the error says already.
+    pub fn with_imported_count(mut self, count: u64) -> Self {
+        if count == 0 || self.imported_count().is_some() {
+            return self;
+        }
+        let mut details = match self.details.take().map(|details| *details) {
+            Some(Value::Object(details)) => details,
+            _ => serde_json::Map::new(),
+        };
+        details.insert("importedCount".into(), count.into());
+        self.details = Some(Box::new(Value::Object(details)));
+        self
+    }
+
+    /// `details.importedCount`: how many records an import that failed or
+    /// was stopped had saved.
+    pub fn imported_count(&self) -> Option<u64> {
+        self.details.as_ref()?.get("importedCount")?.as_u64()
+    }
+
     /// A text detail, such as `machineName` of a `DATABASE_OPEN_ELSEWHERE`.
     pub fn details_str(&self, key: &str) -> Option<String> {
         self.details.as_ref()?.get(key)?.as_str().map(str::to_owned)
