@@ -6,7 +6,8 @@
 //   node scripts/release.mjs <step> <version> [--commit <sha>] [--after <sha>] [--dry-run]
 //
 //   version   check the version is the same everywhere it is written, with a
-//             metainfo <release> entry for it
+//             metainfo <release> entry for it, and that each metainfo screenshot
+//             address's commit has the working tree's image
 //   records   add the version's migration records to released.txt in the working
 //             tree, for a pull request merged before a release candidate: each
 //             step not yet listed, then the stored database, which must exist,
@@ -85,6 +86,32 @@ export function versionProblems(root, version) {
   return Object.entries(versionsIn(root))
     .filter(([, v]) => v !== app)
     .map(([file, v]) => `${file} says ${v ?? "nothing"}, not ${app}`);
+}
+
+const SCREENSHOT =
+  /^https:\/\/raw\.githubusercontent\.com\/exodious\/HoploDex\/([0-9a-f]{40})\/flatpak\/screenshots\/([^/]+)$/;
+
+/**
+ * Each metainfo screenshot address is at a commit (011 research.md §13), and the
+ * file there must be the working tree's, or a software centre shows an old image.
+ * `show(rev)` is `git show <rev>`'s bytes, or null when it has none. CI's shallow
+ * checkout can't see that commit, so this runs here and not in metainfo.test.ts.
+ */
+export function screenshotProblems(root, show) {
+  const addresses = [...read(root, METAINFO).matchAll(/<image[^>]*>([^<]*)<\/image>/g)];
+  return addresses.flatMap(([, address]) => {
+    const m = SCREENSHOT.exec(address.trim());
+    if (!m) return [`${address.trim()} isn't a flatpak/screenshots/ file at a commit`];
+    const [, sha, file] = m;
+    const there = show(`${sha}:flatpak/screenshots/${file}`);
+    if (!there) return [`${sha} has no flatpak/screenshots/${file}`];
+    const here = path.join(root, "flatpak/screenshots", file);
+    if (!fs.existsSync(here) || !fs.readFileSync(here).equals(there))
+      return [
+        `flatpak/screenshots/${file} differs from ${sha}'s: point the address at the commit that changed it`,
+      ];
+    return [];
+  });
 }
 
 /** The step names in `MIGRATIONS`' order, from src-tauri/src/db/mod.rs's text. */
@@ -293,6 +320,16 @@ function main(argv) {
         if (problems.length)
           throw new Error(`the version isn't ${version} everywhere:\n  ${problems.join("\n  ")}`);
         console.log(`${parseVersion(version).app} everywhere`);
+        const shots = screenshotProblems(ROOT, (rev) => {
+          const r = spawnSync("git", ["show", rev], {
+            cwd: ROOT,
+            stdio: ["ignore", "pipe", "ignore"],
+          });
+          return r.status === 0 ? r.stdout : null;
+        });
+        if (shots.length)
+          throw new Error(`the metainfo's screenshot addresses:\n  ${shots.join("\n  ")}`);
+        console.log("the screenshot addresses are at commits with the working tree's images");
       } else if (p.internal === "records") {
         const lines = recordLines(ROOT, version);
         if (!lines.length) {

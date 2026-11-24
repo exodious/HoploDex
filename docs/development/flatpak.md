@@ -35,10 +35,16 @@ naming it:
    differ, because `git` isn't in the build.
 7. Installs the build into the container's Flatpak installation.
 8. Installs Flathub's linter (`org.flatpak.Builder`, network, only if missing)
-   and runs `flatpak-builder-lint` on the manifest and on the repository with
+   at the commit pinned in `build.sh` (`linter_commit`), updating to it with
+   `flatpak update --commit` when it is at another, and fails unless
+   `flatpak info --show-commit` reports the pin. It runs `flatpak-builder-lint`
+   on the manifest and on the repository with
    `flatpak/linter-exceptions.json` (`--exceptions --user-exceptions`; the
-   repository also gets the two screenshot rules a local build cannot satisfy,
-   `011 research.md` §4).
+   repository also gets the three screenshot rules a local build cannot satisfy,
+   `011 research.md` §4). The pin is moved by hand at
+   [RELEASING.md](../../RELEASING.md) step 5, or when Flathub prunes it and the
+   update fails: `flatpak remote-info --log flathub app/org.flatpak.Builder/x86_64/stable`
+   lists the commits. The linter's runtime still follows its branch.
 9. Writes `flatpak/out/HoploDex-<version>-x86_64.flatpak` with
    `flatpak build-bundle --runtime-repo=<Flathub's>` and prints its path. It
    attaches and publishes nothing (`011 SC-009`).

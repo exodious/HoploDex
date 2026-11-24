@@ -13,6 +13,7 @@ import {
   plan,
   recordLines,
   ROOT,
+  screenshotProblems,
   STEPS,
   steps,
   versionProblems,
@@ -119,6 +120,34 @@ describe("release script", () => {
     expect(versionProblems(ROOT, version)).toEqual([]);
     expect(versionProblems(ROOT, `${version}-rc.1`)).toEqual([]);
     expect(versionProblems(ROOT, "9.9.9")).toHaveLength(7);
+  });
+
+  it("011 US4-4: checks each screenshot address's commit has the working tree's image", () => {
+    const dir = tempDir();
+    const sha = "a".repeat(40);
+    const at = (file: string) =>
+      `<image>https://raw.githubusercontent.com/exodious/HoploDex/${sha}/flatpak/screenshots/${file}</image>`;
+    writeAll(dir, {
+      "flatpak/io.github.exodious.HoploDex.metainfo.xml": [
+        at("same.png"),
+        at("changed.png"),
+        at("gone.png"),
+        "<image>https://raw.githubusercontent.com/exodious/HoploDex/v0.1.0/flatpak/screenshots/same.png</image>",
+      ].join("\n"),
+      "flatpak/screenshots/same.png": "one",
+      "flatpak/screenshots/changed.png": "new",
+      "flatpak/screenshots/gone.png": "here",
+    });
+    const there: Record<string, string> = { "same.png": "one", "changed.png": "old" };
+    const show = (rev: string) => {
+      const file = rev.replace(`${sha}:flatpak/screenshots/`, "");
+      return file in there ? Buffer.from(there[file]) : null;
+    };
+    const problems = screenshotProblems(dir, show);
+    expect(problems).toHaveLength(3);
+    expect(problems[0]).toContain("changed.png differs");
+    expect(problems[1]).toContain(`${sha} has no flatpak/screenshots/gone.png`);
+    expect(problems[2]).toContain("v0.1.0/flatpak/screenshots/same.png isn't");
   });
 
   it("writes a version's records before a release candidate: each unreleased step in MIGRATIONS' order, then its database unless listed", () => {
@@ -248,6 +277,21 @@ describe("release script, run on a repository", { timeout: 60_000 }, () => {
     const dirty = repo.release("version", "0.2.0", "--commit", head);
     expect(dirty.status).toBe(1);
     expect(dirty.stderr).toContain("isn't clean");
+  });
+
+  it("011 US4-4: the version step refuses a screenshot that differs from its address's commit", () => {
+    const repo = scratchRepo();
+    const metainfo = "flatpak/io.github.exodious.HoploDex.metainfo.xml";
+    const shot = (sha: string) =>
+      `<release version="0.1.0" />\n<image>https://raw.githubusercontent.com/exodious/HoploDex/${sha}/flatpak/screenshots/a.png</image>`;
+    const images = repo.commit({ ...carrying("0.1.0"), "flatpak/screenshots/a.png": "one" });
+    const pointed = repo.commit({ [metainfo]: shot(images) }, images);
+    expect(repo.release("version", "0.1.0", "--commit", pointed)).toMatchObject({ status: 0 });
+
+    const retaken = repo.commit({ "flatpak/screenshots/a.png": "two" }, pointed);
+    const r = repo.release("version", "0.1.0", "--commit", retaken);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`flatpak/screenshots/a.png differs from ${images}'s`);
   });
 
   it("applies the workflow's tag check to the commit, not the working tree", () => {

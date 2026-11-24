@@ -3,7 +3,7 @@
 // 011 US4-4, 011 FR-017; 011 data-model.md "AppStream metadata" and "The
 // desktop entry", 011 research.md §13). These are the rules `appstreamcli
 // validate` and the linter cannot know: the newest release is this build's
-// version, the screenshots are files in the repository at that version's tag,
+// version, the screenshots are files in the repository at a commit,
 // the colours are the design tokens', and the desktop entry agrees with the
 // metadata and the manifest. The files are written by 011 T020 and T021, so
 // these tests are red until then.
@@ -182,15 +182,22 @@ describe("011 US3-3, 011 US4-4 - the AppStream metadata", () => {
       }
     });
 
-    it("011 US4-4: every address names a file under flatpak/screenshots/ at v<version>", () => {
-      const prefix = `https://raw.githubusercontent.com/exodious/HoploDex/v${version}/flatpak/screenshots/`;
+    // At a commit, not the release's tag, so the release candidate's build (which
+    // becomes the release) can fetch them; `release.mjs version` checks that
+    // commit's files are these, which CI's shallow checkout can't.
+    it("011 US4-4: every address names a file under flatpak/screenshots/ at a commit", () => {
+      const atACommit =
+        /^https:\/\/raw\.githubusercontent\.com\/exodious\/HoploDex\/[0-9a-f]{40}\/flatpak\/screenshots\/([^/]+)$/;
       const images = [...doc.querySelectorAll("screenshots > screenshot > image")];
       expect(images.length).toBeGreaterThan(0);
       for (const image of images) {
         const address = image.textContent?.trim() ?? "";
-        expect(address.startsWith(prefix), `${address} must start with ${prefix}`).toBe(true);
-        const file = address.slice(prefix.length);
-        expect(file, `${address} must name a file, not a folder`).toMatch(/^[^/]+$/);
+        const file = atACommit.exec(address)?.[1];
+        expect(
+          file,
+          `${address} must name a flatpak/screenshots/ file at a 40-hex commit`,
+        ).toBeTruthy();
+        if (!file) continue;
         expect(
           fs.existsSync(path.join(SCREENSHOTS, file)),
           `flatpak/screenshots/${file} must exist`,

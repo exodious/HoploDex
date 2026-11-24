@@ -251,6 +251,7 @@ the newest on the day), cloned into `/opt/flatpak-builder-tools` by the
     two (`manifest.test.ts`). A submission to Flathub gets the screenshots
     mirrored by its own pipeline (§19, item 7).
     _Amended 2026-11-21: the repository lint also sets aside `appstream-external-screenshot-url`, which Flathub's linter raised against the same unmirrored addresses in the v0.1.0 release run, so `build.sh` adds three screenshot rules, not two; the committed file still holds two._
+    _Amended 2026-11-23: the screenshot addresses are now at the commit that last changed `flatpak/screenshots/`, not the release's tag (see §13's amendment), so they resolve on every build that can reach GitHub; the same three rules are still set aside, since a local build still doesn't mirror them. `build.sh` also pins `org.flatpak.Builder` to one Flathub commit and fails unless it is installed at it; RELEASING.md step 5 moves the pin by hand._
     _Amended 2026-10-19 (011 T078): checked against what was built.
     `flatpak/io.github.exodious.HoploDex.yml`'s `finish-args` are this table's
     rows, in this order (twelve arguments: the `/media`, `/run/media` and `/mnt`
@@ -879,6 +880,13 @@ _Amended 2026-10-19 (owner's decision):_
     A test checks every address names a file in the repository. Before the
     first release is tagged, the addresses don't resolve yet, which the
     validator's offline mode doesn't check.
+    _Amended 2026-11-23: the addresses are at the commit that last changed
+    `flatpak/screenshots/` (`https://raw.githubusercontent.com/exodious/HoploDex/<commit>/flatpak/screenshots/…`),
+    not `v<version>`, so a release candidate's build, which can become the
+    release, fetches them while the release's tag doesn't exist yet.
+    `metainfo.test.ts` checks each is at a 40-hex commit and names a file
+    here; `release.mjs version` checks that commit's files are the working
+    tree's. Retaking them takes two commits: the images, then the addresses._
     _Amended 2026-10-19 (T106; constitution Licensing): no screenshot shows a
     photo that needs a credit line (`src-tauri/examples/seed-photos/README.md`:
     CC BY, OGL). The collection shot was the first one to, with the Benelli
