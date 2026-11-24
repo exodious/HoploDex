@@ -3,6 +3,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { render, TEST_SESSION_ID } from "../../test/sessionScope";
 import userEvent from "@testing-library/user-event";
 import { CommandFailure } from "../../services/tauriClient";
+import { ToastContext } from "../../components/toastContext";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { ImportDialog } from "./ImportDialog";
@@ -218,6 +219,46 @@ describe("ImportDialog: deciding matching rows (001 FR-026)", () => {
     );
     expect(screen.queryByRole("button", { name: "Apply decisions" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+});
+
+describe("ImportDialog: a resolution stopped part way (PR 229's follow-ups)", () => {
+  it("says how many matching rows were saved and refreshes the collection", async () => {
+    const user = userEvent.setup();
+    const notify = vi.fn();
+    vi.mocked(collection.refresh).mockClear();
+    vi.mocked(importExportService.importCollection).mockResolvedValue(result);
+    vi.mocked(importExportService.resolveImportConflicts)
+      .mockReset()
+      .mockRejectedValue(
+        new CommandFailure({
+          code: "OPERATION_STOPPED",
+          message: "The operation was stopped before it finished.",
+          details: { operation: "import", importedCount: 1 },
+        }),
+      );
+    render(
+      <ToastContext.Provider value={notify}>
+        <CollectionContext.Provider value={collection}>
+          <ImportDialog open onOpenChange={vi.fn()} />
+        </CollectionContext.Provider>
+      </ToastContext.Provider>,
+    );
+    await chooseFile(user, "/tmp/import.csv");
+    await user.click(screen.getByRole("button", { name: "Import" }));
+    await screen.findByText(/matches a firearm|match firearms/);
+    vi.mocked(collection.refresh).mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Keep existing" }));
+    await user.click(screen.getByRole("button", { name: "Apply decisions" }));
+
+    await waitFor(() =>
+      expect(notify).toHaveBeenCalledWith(
+        "The operation was stopped before it finished. 1 matching row was saved before it stopped.",
+        "error",
+      ),
+    );
+    expect(collection.refresh).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1035,7 +1076,7 @@ describe("ImportDialog reading the files (008 US2)", () => {
     expect(collection.refresh).not.toHaveBeenCalled();
   });
 
-  it("refreshes the collection when the mounted lists' limit stops an import whose rows were kept", async () => {
+  it("says how many rows were kept when the mounted lists' limit stops an import after saving them", async () => {
     vi.mocked(collection.refresh).mockClear();
     const { settle } = await startImport();
     const message =
@@ -1047,11 +1088,37 @@ describe("ImportDialog reading the files (008 US2)", () => {
       new CommandFailure({
         code: "IMPORT_LIMIT_EXCEEDED",
         message,
-        details: { file: "firearms.csv", limit: "mountedEntries" },
+        details: { file: "firearms.csv", limit: "mountedEntries", importedCount: 2 },
       }),
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      `${message} 2 records were imported before it stopped.`,
+    );
     await waitFor(() => expect(collection.refresh).toHaveBeenCalledTimes(1));
+    // Importing them again would add the rows twice (PR 229's follow-ups).
+    expect(screen.queryByRole("list", { name: "Files to import" })).not.toBeInTheDocument();
+  });
+
+  it("never says nothing was imported for a stop once rows are saved", async () => {
+    vi.mocked(collection.refresh).mockClear();
+    const { settle } = await startImport();
+    progress("importing", 3, 10);
+
+    settle.reject(
+      new CommandFailure({
+        code: "OPERATION_STOPPED",
+        message: "The operation was stopped before it finished.",
+        details: { operation: "import", importedCount: 3 },
+      }),
+    );
+
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent(
+      "The import was stopped. 3 records were imported before it stopped.",
+    );
+    expect(banner).not.toHaveTextContent("Nothing was imported");
+    await waitFor(() => expect(collection.refresh).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("list", { name: "Files to import" })).not.toBeInTheDocument();
   });
 });

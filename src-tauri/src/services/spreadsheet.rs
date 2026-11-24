@@ -750,12 +750,29 @@ pub enum TableKind {
     Accessories,
 }
 
-/// A recognised table and where it was read from, as the stop messages name
-/// it: the file, and the sheet of a workbook that holds several.
+/// A recognised table and where it was read from: the file, and the sheet of
+/// a workbook that holds several, kept apart as 008 contracts/tauri-commands.md
+/// keeps `details.file` and `details.sheet`.
 #[derive(Debug)]
 pub struct ReadTable {
-    pub source: String,
+    pub file: String,
+    pub sheet: Option<String>,
     pub rows: TableRows,
+}
+
+impl ReadTable {
+    /// Where the table was read from, as the stop messages name it.
+    pub fn source(&self) -> String {
+        source(&self.file, self.sheet.as_deref())
+    }
+}
+
+/// `inventory.xlsx`, or `inventory.xlsx, sheet "Firearms"`.
+pub fn source(file: &str, sheet: Option<&str>) -> String {
+    match sheet {
+        Some(sheet) => format!("{file}, sheet \"{sheet}\""),
+        None => file.to_owned(),
+    }
 }
 
 /// 006 FR-022: the header row decides. `firearm_type` without `kind` is the
@@ -777,11 +794,11 @@ fn recognise(headers: &[String], source: &str) -> Result<TableKind, CommandError
     }
 }
 
-/// One sheet's header and data rows, as text.
+/// One sheet's header and data rows, as text, read from `file`.
 pub fn read_table(
     headers: &[String],
     data: impl Iterator<Item = Vec<String>>,
-    source: String,
+    file: String,
 ) -> Result<ReadTable, CommandError> {
     let mut reader = TableReader::new();
     reader.push_row(headers.to_vec());
@@ -789,7 +806,7 @@ pub fn read_table(
         reader.push_row(row);
     }
     reader
-        .finish(source)?
+        .finish(file, None)?
         .ok_or_else(|| CommandError::new("VALIDATION_ERROR", "The table has no header row."))
 }
 
@@ -898,28 +915,27 @@ impl TableReader {
         !matches!(self.rows, Rows::Waiting | Rows::Blank)
     }
 
-    /// The table, named `source`; `None` for a sheet with no header; an error
-    /// naming `source` for a header that is no table.
-    pub fn finish(self, source: String) -> Result<Option<ReadTable>, CommandError> {
-        match self.rows {
-            Rows::Waiting | Rows::Blank => Ok(None),
-            Rows::Failed => match start(&self.headers, &source) {
-                Err(err) => Err(err),
-                Ok(_) => Err(CommandError::new("INTERNAL_ERROR", "A table's header changed.")),
-            },
-            Rows::Discarded(TableKind::Firearms) => {
-                Ok(Some(ReadTable { source, rows: TableRows::Firearms(Vec::new()) }))
+    /// The table, read from `file` and `sheet`; `None` for a sheet with no
+    /// header; an error naming them for a header that is no table.
+    pub fn finish(
+        self,
+        file: String,
+        sheet: Option<String>,
+    ) -> Result<Option<ReadTable>, CommandError> {
+        let rows = match self.rows {
+            Rows::Waiting | Rows::Blank => return Ok(None),
+            Rows::Failed => {
+                return match start(&self.headers, &source(&file, sheet.as_deref())) {
+                    Err(err) => Err(err),
+                    Ok(_) => Err(CommandError::new("INTERNAL_ERROR", "A table's header changed.")),
+                };
             }
-            Rows::Discarded(TableKind::Accessories) => {
-                Ok(Some(ReadTable { source, rows: TableRows::Accessories(Vec::new()) }))
-            }
-            Rows::Firearms(_, rows) => {
-                Ok(Some(ReadTable { source, rows: TableRows::Firearms(rows) }))
-            }
-            Rows::Accessories(_, rows) => {
-                Ok(Some(ReadTable { source, rows: TableRows::Accessories(rows) }))
-            }
-        }
+            Rows::Discarded(TableKind::Firearms) => TableRows::Firearms(Vec::new()),
+            Rows::Discarded(TableKind::Accessories) => TableRows::Accessories(Vec::new()),
+            Rows::Firearms(_, rows) => TableRows::Firearms(rows),
+            Rows::Accessories(_, rows) => TableRows::Accessories(rows),
+        };
+        Ok(Some(ReadTable { file, sheet, rows }))
     }
 }
 

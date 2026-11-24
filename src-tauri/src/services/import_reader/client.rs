@@ -261,11 +261,7 @@ impl Sheets {
         let several = self.sheets.iter().filter(|(_, table)| table.has_header()).count() > 1;
         let mut tables = Vec::new();
         for (sheet, reader) in self.sheets {
-            let source = match sheet {
-                Some(sheet) if several => format!("{file}, sheet \"{sheet}\""),
-                _ => file.to_owned(),
-            };
-            tables.extend(reader.finish(source)?);
+            tables.extend(reader.finish(file.to_owned(), sheet.filter(|_| several))?);
         }
         Ok(tables)
     }
