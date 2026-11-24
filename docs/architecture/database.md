@@ -31,7 +31,8 @@ A policy's name is unique ignoring A-Z case and surrounding spaces
 backs it).
 
 Every connection to a database, a backup or a copy is opened by
-`db::connect`, since any of them can be a database from elsewhere:
+`db::connect`, as a layer against a damaged one or another version's (a
+crafted one is outside the threat model, `docs/attack-surface.md`):
 `trusted_schema` off, `SQLITE_DBCONFIG_DEFENSIVE` on, and `SQLITE_LIMIT_LENGTH`
 at `db::MAX_VALUE_BYTES`, 31 MiB, just above the largest attachment (a 30 MiB
 document), so no value read or made is longer. A list of photos or documents
@@ -40,8 +41,8 @@ so a longer one stored before the limits still lists, and only opening it, or
 an export holding it, fails (`ATTACHMENT_TOO_LARGE`,
 `CommandError::from_attachment_read`). `sqlcipher_export` copies it unchanged,
 so a passphrase change still works. A stored thumbnail over 1 MiB
-(`MAX_THUMBNAIL_BYTES`), or one that isn't a BLOB, which only a database from
-elsewhere holds, reads as empty without being read, and `get_photo_thumbnail`
+(`MAX_THUMBNAIL_BYTES`), or one that isn't a BLOB, which HoploDex never
+writes, reads as empty without being read, and `get_photo_thumbnail`
 refuses it (`ATTACHMENT_TOO_LARGE`).
 
 Those settings don't bound how many rows a view makes, or how long an
