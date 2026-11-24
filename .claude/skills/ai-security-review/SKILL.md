@@ -118,7 +118,11 @@ surface or CWE is a new alert: treat it as a move (below).
    carried open alert that is present or unsure, with its `rule_id` (update
    its region and message to the reviewer's), plus every confirmed
    `out-of-scope` one unchanged: its `rule_id`, severity, path, start line
-   and message as `open.json` lists them, so the upload neither closes it as
+   and message as `open.json` lists them; its `surface`, `cwe` and `symbol`
+   from its `rule_id` (`<surface>/cwe-<n>/<path>#<symbol>`) or the
+   reviewer's entry for it; `endLine` the start line; `title` the reviewer's;
+   and in pr mode `"introduced": true`, as for any carried alert of the pull
+   request. So the upload neither closes it as
    fixed nor re-asserts it as a new present finding. Offer each to the
    operator for dismissal with the reason "outside the threat model"; never
    dismiss one yourself, and carry it this way until the operator does.
