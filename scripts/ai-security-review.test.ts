@@ -476,6 +476,42 @@ describe("release gate", () => {
       expect(gate(gateGh(n).gh).pass).toBe(false);
     }
   });
+
+  it("exempts only an advisory every vulnerability of which is patched in the version being released", () => {
+    const advisory = (id: string, ...patched: (string | null)[]) => ({
+      ghsa_id: id,
+      summary: "never printed",
+      vulnerabilities: patched.map((p) => ({ patched_versions: p })),
+    });
+    const run = (version: string | null, ...drafts: object[]) =>
+      gate(
+        fakeGh([
+          [/code-scanning|dependabot|secret-scanning/, () => []],
+          [/security-advisories\?state=draft/, () => drafts],
+          [/security-advisories\?state=triage/, () => []],
+        ]).gh,
+        { version },
+      );
+
+    const ok = run("0.1.1", advisory("GHSA-aaaa", "0.1.1", "0.1.1"));
+    expect(ok.pass).toBe(true);
+    expect(ok.advisories_fixed_by_this_release).toEqual(["GHSA-aaaa"]);
+    expect(JSON.stringify(ok)).not.toContain("never printed");
+
+    for (const draft of [
+      advisory("GHSA-none"),
+      advisory("GHSA-null", null),
+      advisory("GHSA-other", "0.1.2"),
+      advisory("GHSA-range", ">= 0.1.1"),
+      advisory("GHSA-mixed", "0.1.1", "0.1.2"),
+    ]) {
+      const g = run("0.1.1", draft);
+      expect(g.pass).toBe(false);
+      expect(g.advisories).toBe(1);
+      expect(g.advisories_fixed_by_this_release).toEqual([]);
+    }
+    expect(run(null, advisory("GHSA-aaaa", "0.1.1")).pass).toBe(false);
+  });
 });
 
 describe("the release workflow's review check", () => {

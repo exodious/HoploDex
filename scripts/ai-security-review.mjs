@@ -22,6 +22,7 @@
 //       uploads the recorded SARIF, waits for it, and checks the alerts
 //   node scripts/ai-security-review.mjs gate [--ref <ref>]
 //       the release gate: open critical and high alerts, and draft advisories
+//       other than those patched in exactly the app's version (tauri.conf.json)
 //   node scripts/ai-security-review.mjs reviewed --commit <sha>
 //       the release workflow's check (#19): <sha> is main's head and its
 //       newest release review, and no critical or high code scanning or
@@ -43,7 +44,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
-import { globToRegExp, LIST, parseList } from "./attack-surface.mjs";
+import { globToRegExp, LIST, parseList, ROOT } from "./attack-surface.mjs";
 
 export const REPO = "exodious/HoploDex";
 /** Never change these: a new name or category orphans every existing alert. */
@@ -398,9 +399,12 @@ export function upload(
  * The release gate (constitution 1.5.0): no open critical or high code
  * scanning (every tool), Dependabot or secret scanning alert. Draft and triage
  * advisories count too: after a release, a finding routed to one is otherwise
- * invisible here.
+ * invisible here. The exception is an advisory every one of whose
+ * vulnerabilities is patched in exactly `version`, the version being released:
+ * it can't be published until that release is out (RELEASING.md, "After a
+ * release"), so it would otherwise block its own fix.
  */
-export function gate(gh, { ref = null } = {}) {
+export function gate(gh, { ref = null, version = null } = {}) {
   const r = ref ? `&ref=${enc(ref)}` : "";
   const scanning = ["critical", "high"].map(
     (s) =>
@@ -416,15 +420,22 @@ export function gate(gh, { ref = null } = {}) {
   // only, so generic-pattern alerts aren't counted; name them here if the
   // repository turns generic detection on.
   const secrets = paged(gh, `repos/${REPO}/secret-scanning/alerts?state=open&per_page=100`).length;
-  const advisories = ["draft", "triage"].reduce(
-    (n, s) => n + paged(gh, `repos/${REPO}/security-advisories?state=${s}&per_page=100`).length,
-    0,
+  const drafts = ["draft", "triage"].flatMap((s) =>
+    paged(gh, `repos/${REPO}/security-advisories?state=${s}&per_page=100`),
   );
+  const fixedHere = (a) =>
+    !!version &&
+    a.vulnerabilities?.length > 0 &&
+    a.vulnerabilities.every((v) => v.patched_versions?.trim() === version);
+  // Only the GHSA id: a draft's summary or details must not reach a log.
+  const exempted = drafts.filter(fixedHere).map((a) => a.ghsa_id);
+  const advisories = drafts.length - exempted.length;
   const result = {
     code_scanning: { critical: scanning[0], high: scanning[1] },
     dependabot,
     secret_scanning: secrets,
     advisories,
+    advisories_fixed_by_this_release: exempted,
   };
   return { ...result, pass: scanning[0] + scanning[1] + dependabot + secrets + advisories === 0 };
 }
@@ -698,7 +709,10 @@ function main(argv) {
       uploadCommand(opts);
       break;
     case "gate": {
-      const g = gate(realGh, { ref: opts.ref ?? null });
+      const version = JSON.parse(
+        fs.readFileSync(path.join(ROOT, "src-tauri/tauri.conf.json"), "utf8"),
+      ).version;
+      const g = gate(realGh, { ref: opts.ref ?? null, version });
       console.log(JSON.stringify(g, null, 1));
       console.log(g.pass ? "PASS" : "FAIL");
       if (!g.pass) process.exitCode = 1;

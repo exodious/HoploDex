@@ -199,7 +199,10 @@ surface or CWE is a new alert: treat it as a move (below).
    <scratch>/open.json [--fixed <n>,…]`, then `upload --release --ref <ref>`.
 7. **Gate.** `gate` (with `--ref` for a release branch) counts open critical
    and high code scanning alerts from every tool, Dependabot critical and high
-   alerts, open secret scanning alerts, and draft or triage advisories. The
+   alerts, open secret scanning alerts, and draft or triage advisories (less
+   any whose every vulnerability is patched in exactly the app's version, in
+   `tauri.conf.json`: those wait for this release, and it lists their GHSA ids
+   only). The
    release proceeds only on PASS; each blocking alert is fixed, or dismissed
    by the operator with its reason (a dismissed dependency alert must match a
    recorded exception).
