@@ -40,6 +40,26 @@
       "id": "CVE-2026-124709",
       "reason": "QUIC server memory retention. OpenSSL 3.6.5 is assumed affected, since it shares this code with 3.5 and 4.0. Not reached: the Windows build links OpenSSL only as SQLCipher's crypto provider (libsqlite3-sys 0.40.0 links libcrypto alone, never libssl), and that provider calls only AES-256-CBC, HMAC-SHA1/256/512, PBKDF2-HMAC and RAND. Checked 2026-11-22 in the SQLCipher 4.20.0 it compiles (sqlcipher-src 420.0.0's sqlcipher.c), which calls the same OpenSSL functions as the 4.14.0 checked on 2026-11-19: QUIC is in libssl, which isn't linked.",
       "review": "2026-12-17"
+    },
+    {
+      "id": "CVE-2026-107494",
+      "reason": "QUIC RETIRE_CONNECTION_ID frame queue. OpenSSL 3.6.5 is affected: checked 2026-11-24, its source at the openssl-3.6.5 tag lacks the fix the 3.5 and 4.0 commits add. Not reached: the Windows build links OpenSSL only as SQLCipher's crypto provider (libsqlite3-sys 0.40.0 links libcrypto alone, never libssl), and that provider calls only AES-256-CBC, HMAC-SHA1/256/512, PBKDF2-HMAC and RAND. Checked 2026-11-24 in the SQLCipher 4.20.0 it compiles (sqlcipher-src 420.0.0's sqlcipher.c): QUIC is in libssl, which isn't linked.",
+      "review": "2026-12-17"
+    },
+    {
+      "id": "CVE-2026-121482",
+      "reason": "CRL distribution point names rebuilt per CRL in X.509 verification. OpenSSL 3.6.5 is affected: checked 2026-11-24, its source at the openssl-3.6.5 tag lacks the fix the 3.5 and 4.0 commits add. Not reached: the Windows build links OpenSSL only as SQLCipher's crypto provider (libsqlite3-sys 0.40.0 links libcrypto alone, never libssl), and that provider calls only AES-256-CBC, HMAC-SHA1/256/512, PBKDF2-HMAC and RAND. Checked 2026-11-24 in the SQLCipher 4.20.0 it compiles (sqlcipher-src 420.0.0's sqlcipher.c): it makes no X509_, CMS_ or PKCS7_ call, so nothing verifies a certificate or checks a CRL.",
+      "review": "2026-12-17"
+    },
+    {
+      "id": "CVE-2026-84785",
+      "reason": "QUIC out-of-order stream fragment reassembly. OpenSSL 3.6.5 is affected: checked 2026-11-24, its source at the openssl-3.6.5 tag lacks the fix the 3.5 and 4.0 commits add. Not reached: the Windows build links OpenSSL only as SQLCipher's crypto provider (libsqlite3-sys 0.40.0 links libcrypto alone, never libssl), and that provider calls only AES-256-CBC, HMAC-SHA1/256/512, PBKDF2-HMAC and RAND. Checked 2026-11-24 in the SQLCipher 4.20.0 it compiles (sqlcipher-src 420.0.0's sqlcipher.c): QUIC is in libssl, which isn't linked.",
+      "review": "2026-12-17"
+    },
+    {
+      "id": "CVE-2026-84786",
+      "reason": "NULL dereference in non-SMTP DANE clients. OpenSSL 3.6.5 is affected: checked 2026-11-24, its source at the openssl-3.6.5 tag lacks the fix the 3.5 and 4.0 commits add. Not reached: the Windows build links OpenSSL only as SQLCipher's crypto provider (libsqlite3-sys 0.40.0 links libcrypto alone, never libssl), and that provider calls only AES-256-CBC, HMAC-SHA1/256/512, PBKDF2-HMAC and RAND. Checked 2026-11-24 in the SQLCipher 4.20.0 it compiles (sqlcipher-src 420.0.0's sqlcipher.c): DANE is used only by TLS clients, and TLS is in libssl, which isn't linked; it makes no X509_ or SSL_ call.",
+      "review": "2026-12-17"
     }
   ]
 }
