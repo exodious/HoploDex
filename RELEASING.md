@@ -111,8 +111,9 @@ and says so when there is nothing to add), `checks`,
 release from an accepted candidate. `all` runs them in that order, all but `records`, whose lines
 must already be on the commit (step 2). `--commit <sha>` names another commit
 than `origin/main`'s head, and `--after <reviewed commit>` goes to the review.
-`version`, `checks` and `all` refuse unless the working tree is clean and `HEAD`
-is that commit, so what they test is what gets tagged. `tag`, and `all` before anything else, read the commit itself and refuse
+`version`, `checks`, `all` and `promote` (whose audit reads the checkout's
+lockfiles) refuse unless the working tree is clean and `HEAD` is that commit,
+so what they test is what gets tagged. `tag`, and `all` before anything else, read the commit itself and refuse
 what the workflow would: a tag that doesn't name its version, or one whose
 commit has no stored database, or no `released.txt` line for it or for a step
 in `MIGRATIONS`.
@@ -135,7 +136,7 @@ node scripts/release.mjs promote 0.1.1             # or --rc 0.1.1-rc.2 to name 
 It finds the newest published `v0.1.1-rc.<n>` on `origin/main`'s head (or
 `--commit`); `--rc` must name that one, since it is the one the workflow
 promotes, and refuses an older candidate on the same commit. It refuses unless
-the candidate is an immutable pre-release built from that commit, its files
+the working tree is clean and `HEAD` is that commit, the candidate is an immutable pre-release built from that commit, its files
 pass the checks the workflow's promote job makes (downloaded, they are exactly
 a release's files, each uploaded by `github-actions[bot]`, from a release run
 of the candidate's tag that passed on that commit, matching its `SHA256SUMS`,
