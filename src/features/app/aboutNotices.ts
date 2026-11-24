@@ -15,6 +15,8 @@ export interface ProgramBlock {
   copyrightYears: string;
   copyrightHolder: string;
   sourceUrl: string;
+  commit: string | null;
+  commitModified: boolean;
 }
 
 export interface ComponentCarrier {

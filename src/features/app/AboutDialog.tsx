@@ -50,6 +50,12 @@ function ProgramBlock({
       <div className="hd-about__name">
         <h3 className="hd-about__title">{program.name}</h3>
         <span className="hd-about__version">Version {program.version}</span>
+        {program.commit !== null && (
+          <span className="hd-about__version">
+            Commit <span className="hd-about__source">{program.commit.slice(0, 12)}</span>
+            {program.commitModified && " with uncommitted changes"}
+          </span>
+        )}
       </div>
       <p>
         Copyright © {program.copyrightYears} {program.copyrightHolder}

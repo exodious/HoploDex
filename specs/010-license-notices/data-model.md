@@ -30,6 +30,8 @@ Compiled into the interface with Vite `define`, and repeated in
 | `copyrightHolder` | constant | "exodious and the HoploDex contributors" (spec Clarifications) |
 | `sourceUrl` | `package.json` `repository.url` | Without the `git+` prefix and `.git` suffix: `https://github.com/exodious/HoploDex` |
 
+_Amended 2026-11-24: the block also holds `commit`, the build's commit (null with no git; the Flatpak build reads `flatpak/commit.json`, which `scripts/flatpak/build.sh` writes), and `commitModified`, true when the working tree had changes git doesn't ignore (#210, `scripts/licenses/notices.mjs` `commitOf`)._
+
 The license statement and the no-warranty statement are the interface's own
 fixed text (contracts/ui.md §2). The additional permission comes from
 `licenses/additional-permission.txt`, through `notices.json`.
