@@ -346,6 +346,17 @@ impl Reach {
         }
     }
 
+    /// The folders a chooser that stays inside the sandbox offers (code
+    /// scanning alert `flatpak/cwe-272` on `Reach::check_portal`): the writable
+    /// grants, those in Documents first. `None` outside a Flatpak.
+    pub fn sandbox_folders(&self) -> Option<Vec<PathBuf>> {
+        let Self::Flatpak { grants, documents, .. } = self else { return None };
+        let mut folders: Vec<PathBuf> =
+            grants.iter().filter(|grant| grant.writable).map(|grant| grant.root.clone()).collect();
+        folders.sort_by_key(|root| !documents.as_deref().is_some_and(|d| root.starts_with(d)));
+        Some(folders)
+    }
+
     /// One line for the log at startup.
     pub fn describe(&self) -> String {
         match self {
@@ -834,6 +845,26 @@ mod tests {
 
     fn grant(root: &str, writable: bool) -> Grant {
         Grant { root: PathBuf::from(root), writable }
+    }
+
+    /// The shipped grants, as the sandbox's own chooser offers them: writable
+    /// ones only, `<Documents>/HoploDex` first, and none outside a Flatpak
+    /// (code scanning alert `flatpak/cwe-272` on `Reach::check_portal`).
+    /// Unix only: its paths are POSIX absolute, which Windows does not count
+    /// as absolute; a Flatpak runs only on Linux.
+    #[cfg(unix)]
+    #[test]
+    fn the_sandbox_chooser_offers_the_writable_grants_documents_first() {
+        let reach = Reach::from_flatpak_info(
+            &info("/media;/run/media;/srv:ro;xdg-documents/HoploDex:create;"),
+            &home(),
+            &dirs(),
+        );
+        assert_eq!(
+            reach.sandbox_folders().unwrap(),
+            ["/home/someone/Dokumente/HoploDex", "/media", "/run/media"].map(PathBuf::from)
+        );
+        assert_eq!(Reach::Unconfined.sandbox_folders(), None);
     }
 
     // 011 data-model.md "Reach": one test per row of the entry table.

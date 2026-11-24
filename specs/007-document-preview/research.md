@@ -771,6 +771,8 @@ _Amended by [spec 008](../008-hardening-batch/research.md): the helper's core (c
 
   _Amended 2026-11-22 (code scanning alert helpers/cwe-770): on Linux the memory cap is `RLIMIT_DATA` with `RLIMIT_AS` as its outer bound, and the seccomp filter refuses a mapping that grows down like a stack, which `RLIMIT_DATA` doesn't count; the helper also refuses to confine itself beside another thread, so Landlock holds for all of its threads (`services/helper/confine.rs`, [docs/attack-surface.md](../../docs/attack-surface.md))._
 
+  _Amended 2026-11-23 (code scanning alert helpers/cwe-770 on `container`): on Windows the container's own access to its profile, folder and registry key, is cut to reading before the helper starts, so a hostile helper can't fill the disk there (`services/helper/job.rs`, `read_only_profile`)._
+
 - **Rationale**:
   - The release profile is `panic = "abort"`. The decoders are memory-safe
     but can panic or try huge allocations on hostile input (a TIFF

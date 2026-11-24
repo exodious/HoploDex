@@ -471,7 +471,38 @@ mod self_check {
             "udp": [send(address), send(IpAddr::V4(Ipv4Addr::LOCALHOST))],
             "pipe": open(true).or_else(|_| open(false)).map_or_else(|e| e.raw_os_error(), |_| Some(0)),
             "credential": credential_error(),
+            "profile": profile_writes(),
         }))
+    }
+
+    /// What the helper can write in its own AppContainer profile (code scanning
+    /// alert `helpers/cwe-770` on `container`): `file` is the OS error making a
+    /// file in its `TEMP` failed with, or 0 if it made one; `key` is what
+    /// `GetAppContainerRegistryLocation` answers asked to read its registry
+    /// storage and asked to write there (`HRESULT`s, 0 for opened).
+    #[cfg(windows)]
+    fn profile_writes() -> serde_json::Value {
+        use windows_sys::Win32::Security::Isolation::GetAppContainerRegistryLocation;
+        use windows_sys::Win32::System::Registry::{
+            HKEY, KEY_CREATE_SUB_KEY, KEY_READ, KEY_SET_VALUE, RegCloseKey,
+        };
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(std::env::temp_dir().join("hoplodex-profile-probe"))
+            .map_or_else(|e| e.raw_os_error(), |_| Some(0));
+        let open = |access: u32| {
+            let mut key: HKEY = std::ptr::null_mut();
+            // SAFETY: a pointer to a local; a key it opens is closed once.
+            unsafe {
+                let answer = GetAppContainerRegistryLocation(access, &mut key);
+                if answer == 0 {
+                    RegCloseKey(key);
+                }
+                answer
+            }
+        };
+        json!({ "file": file, "key": [open(KEY_READ), open(KEY_CREATE_SUB_KEY | KEY_SET_VALUE)] })
     }
 
     /// The error `CredReadW` gives for a generic credential nobody has, or 0 if

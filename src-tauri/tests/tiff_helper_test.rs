@@ -41,7 +41,10 @@
 //!                                                 //   "delete": bool, "udp": [number |
 //!                                                 //   null, number | null], "tcp": number
 //!                                                 //   | null, "pipe": number | null,
-//!                                                 //   "credential": number }
+//!                                                 //   "credential": number, "profile":
+//!                                                 //   { "file": number | null, "key":
+//!                                                 //   [number, number] } }: its own
+//!                                                 //   profile, made, or the error
 //!      "env_vars": number,                        // variables in its environment
 //!      "rlimit_core": [soft, max] | null,         // unix
 //!      "dumpable": bool | null,                   // Linux
@@ -570,6 +573,20 @@ fn once_confined_it_can_reach_no_file_network_pipe_credential_program_or_parent(
     assert_eq!(
         reach["credential"], ERROR_ACCESS_DENIED,
         "a confined helper reached the user's Credential Manager: {json}"
+    );
+    // Its own profile is read-only to it, so it can't fill the disk there (code
+    // scanning alert `helpers/cwe-770` on `container`). Reading its registry
+    // storage works, so the refused write means something.
+    let profile = &reach["profile"];
+    assert_eq!(
+        profile["file"], ERROR_ACCESS_DENIED,
+        "a confined helper made a file in its own profile: {json}"
+    );
+    assert_eq!(profile["key"][0], 0, "the helper couldn't read its registry storage: {json}");
+    assert_eq!(
+        profile["key"][1],
+        windows_sys::Win32::Foundation::E_ACCESSDENIED,
+        "a confined helper could write its registry storage: {json}"
     );
 }
 

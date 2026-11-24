@@ -28,8 +28,11 @@
 //!
 //! Each helper has a container of its own, so one helper can't open another,
 //! which may hold another document or another database's. Its profile (a
-//! per-user folder and registry key) is the one place it can write, nothing the
-//! helpers run writes there. It is deleted when the [`JobChild`] is dropped, which
+//! per-user folder and registry key) is the one place Windows lets it write, nothing the
+//! helpers run writes there. So, as soon as the profile is made and before the
+//! helper starts, the container's own access to its folder and registry key is
+//! cut to reading ([`read_only_profile`]), and a hostile helper can't fill the
+//! disk there. It is deleted when the [`JobChild`] is dropped, which
 //! waits a bounded time and lets the delete finish behind it. If HoploDex ended
 //! first or the delete failed, the next start's [`sweep_profiles`] deletes it.
 
@@ -46,14 +49,22 @@ use std::thread;
 use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_INVALID_PARAMETER, FALSE, GetLastError, HANDLE, HANDLE_FLAG_INHERIT, S_OK,
-    SetHandleInformation, TRUE, WAIT_OBJECT_0,
+    CloseHandle, ERROR_INVALID_PARAMETER, ERROR_NO_MORE_ITEMS, FALSE, GetLastError, HANDLE,
+    HANDLE_FLAG_INHERIT, LocalFree, S_OK, SetHandleInformation, TRUE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Globalization::lstrlenW;
+use windows_sys::Win32::Security::Authorization::{
+    EXPLICIT_ACCESS_W, GetNamedSecurityInfoW, NO_MULTIPLE_TRUSTEE, SE_FILE_OBJECT, SE_OBJECT_TYPE,
+    SE_REGISTRY_KEY, SET_ACCESS, SetEntriesInAclW, SetNamedSecurityInfoW, TRUSTEE_IS_SID,
+    TRUSTEE_IS_UNKNOWN, TRUSTEE_W,
+};
 use windows_sys::Win32::Security::Isolation::{
     CreateAppContainerProfile, DeleteAppContainerProfile,
 };
-use windows_sys::Win32::Security::{FreeSid, PSID, SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES};
+use windows_sys::Win32::Security::{
+    ACL, DACL_SECURITY_INFORMATION, FreeSid, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES,
+    SECURITY_CAPABILITIES,
+};
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::JobObjects::{
     CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
@@ -399,7 +410,173 @@ fn container() -> io::Result<(Container, ContainerSid)> {
     if answer != 0 {
         return Err(io::Error::from_raw_os_error(answer));
     }
-    Ok((Container { name }, ContainerSid(sid)))
+    // Made first, so the profile goes if the helper never starts.
+    let (container, sid) = (Container { name }, ContainerSid(sid));
+    read_only_profile(&container.name, sid.0)?;
+    Ok((container, sid))
+}
+
+/// Where a container's registry storage is, under `HKEY_CURRENT_USER`.
+const STORAGE: &str = r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppContainer\Storage";
+
+/// Cuts the container `sid`'s access to its own profile, the folder and the
+/// registry key `CreateAppContainerProfile` gave it full control of, to reading
+/// (code scanning alert `helpers/cwe-770` on `container`): nothing the helpers
+/// run writes there, and otherwise a hostile helper could fill the disk until
+/// the profile's delete. Each folder, file and key in the new profile has its
+/// own entries for the container replaced, so none is left writable. A
+/// reparse point is passed over, though a new profile has none. A failure is
+/// the helper's: it doesn't start.
+fn read_only_profile(name: &str, sid: PSID) -> io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::{FILE_GENERIC_EXECUTE, FILE_GENERIC_READ};
+    use windows_sys::Win32::System::Registry::KEY_READ;
+
+    let name = name.to_lowercase();
+    let packages = packages_folder().ok_or_else(|| io::Error::other("no Local AppData folder"))?;
+    let folder = packages.join(&name).canonicalize()?;
+    read_only_tree(&folder, sid, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE)?;
+    read_only_key(&format!(r"{STORAGE}\{name}"), sid, KEY_READ)
+}
+
+fn read_only_tree(folder: &Path, sid: PSID, rights: u32) -> io::Result<()> {
+    use windows_sys::Win32::Security::{NO_INHERITANCE, SUB_CONTAINERS_AND_OBJECTS_INHERIT};
+
+    let object = |path: &Path| path.as_os_str().encode_wide().chain([0]).collect::<Vec<u16>>();
+    read_only(&object(folder), SE_FILE_OBJECT, sid, rights, SUB_CONTAINERS_AND_OBJECTS_INHERIT)?;
+    for entry in std::fs::read_dir(folder)? {
+        let entry = entry?;
+        // Not followed: `is_dir` and `is_file` are false for a link or junction.
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            // Kept below the canonical `folder`, so the walk changes only the profile.
+            let path = entry.path().canonicalize()?;
+            if path.starts_with(folder) {
+                read_only_tree(&path, sid, rights)?;
+            } else {
+                return Err(io::Error::other("a folder outside the profile"));
+            }
+        } else if kind.is_file() {
+            read_only(&object(&entry.path()), SE_FILE_OBJECT, sid, rights, NO_INHERITANCE)?;
+        }
+    }
+    Ok(())
+}
+
+/// `key` is under `HKEY_CURRENT_USER`.
+fn read_only_key(key: &str, sid: PSID, rights: u32) -> io::Result<()> {
+    use windows_sys::Win32::Security::SUB_CONTAINERS_ONLY_INHERIT;
+    use windows_sys::Win32::System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_ENUMERATE_SUB_KEYS, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW,
+    };
+
+    let object = wide(&format!(r"CURRENT_USER\{key}"));
+    read_only(&object, SE_REGISTRY_KEY, sid, rights, SUB_CONTAINERS_ONLY_INHERIT)?;
+    let mut opened: HKEY = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated name that outlives the call and a pointer to a
+    // local; the key it opens is closed below.
+    let answer = unsafe {
+        RegOpenKeyExW(HKEY_CURRENT_USER, wide(key).as_ptr(), 0, KEY_ENUMERATE_SUB_KEYS, &mut opened)
+    };
+    if answer != 0 {
+        return Err(io::Error::from_raw_os_error(answer as i32));
+    }
+    let mut subkeys = Vec::new();
+    // A key's name is at most 255 characters.
+    let mut buffer = [0u16; 256];
+    let listed = loop {
+        let mut length = buffer.len() as u32;
+        // SAFETY: the key is open, and the buffer and its length are locals.
+        let answer = unsafe {
+            RegEnumKeyExW(
+                opened,
+                subkeys.len() as u32,
+                buffer.as_mut_ptr(),
+                &mut length,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        match answer {
+            0 => subkeys.push(String::from_utf16_lossy(&buffer[..length as usize])),
+            ERROR_NO_MORE_ITEMS => break Ok(()),
+            err => break Err(io::Error::from_raw_os_error(err as i32)),
+        }
+    };
+    // SAFETY: opened above and closed once.
+    unsafe { RegCloseKey(opened) };
+    listed?;
+    subkeys.iter().try_for_each(|subkey| read_only_key(&format!(r"{key}\{subkey}"), sid, rights))
+}
+
+/// Replaces the entries `object`'s own DACL has for `sid` with one allowing
+/// `rights`, inherited as `inheritance` says; entries it inherits follow its
+/// parent's.
+fn read_only(
+    object: &[u16],
+    kind: SE_OBJECT_TYPE,
+    sid: PSID,
+    rights: u32,
+    inheritance: u32,
+) -> io::Result<()> {
+    let error = |code: u32| Err(io::Error::from_raw_os_error(code as i32));
+    let mut old: *mut ACL = std::ptr::null_mut();
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated name that outlives the call and pointers to
+    // locals; the descriptor it allocates, which `old` points into, is freed once.
+    let got = unsafe {
+        GetNamedSecurityInfoW(
+            object.as_ptr(),
+            kind,
+            DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut old,
+            std::ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if got != 0 {
+        return error(got);
+    }
+    let access = EXPLICIT_ACCESS_W {
+        grfAccessPermissions: rights,
+        grfAccessMode: SET_ACCESS,
+        grfInheritance: inheritance,
+        Trustee: TRUSTEE_W {
+            pMultipleTrustee: std::ptr::null_mut(),
+            MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
+            TrusteeForm: TRUSTEE_IS_SID,
+            TrusteeType: TRUSTEE_IS_UNKNOWN,
+            ptstrName: sid.cast(),
+        },
+    };
+    let mut new: *mut ACL = std::ptr::null_mut();
+    // SAFETY: one entry whose SID outlives the call, the DACL just read, and a
+    // pointer to a local that receives a LocalAlloc'd ACL, freed below.
+    let made = unsafe { SetEntriesInAclW(1, &access, old, &mut new) };
+    // SAFETY: from GetNamedSecurityInfoW, freed once, and `old` isn't used again.
+    unsafe { LocalFree(descriptor) };
+    if made != 0 {
+        return error(made);
+    }
+    // SAFETY: the name as above and the ACL just made; owner, group and SACL
+    // are left as they are.
+    let set = unsafe {
+        SetNamedSecurityInfoW(
+            object.as_ptr(),
+            kind,
+            DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            new,
+            std::ptr::null(),
+        )
+    };
+    // SAFETY: from SetEntriesInAclW, freed once.
+    unsafe { LocalFree(new.cast()) };
+    if set != 0 { error(set) } else { Ok(()) }
 }
 
 /// A job object holding the limits, and no inheritable handle to itself.
@@ -573,8 +750,8 @@ mod tests {
     use windows_sys::Win32::Security::{FreeSid, Isolation::CreateAppContainerProfile};
 
     /// A real profile named as a helper's of process `id`, and its folder.
-    fn profile(id: u32) -> (String, std::path::PathBuf) {
-        let name = format!("{CONTAINER}.{id}.999");
+    fn profile(id: u32, counter: u32) -> (String, std::path::PathBuf) {
+        let name = format!("{CONTAINER}.{id}.{counter}");
         // One an interrupted run left.
         delete_profile(&name);
         let mut sid = std::ptr::null_mut();
@@ -615,8 +792,8 @@ mod tests {
     #[test]
     fn the_sweep_deletes_only_the_profiles_of_processes_that_have_gone() {
         // Process ids are multiples of 4, so no process has this one.
-        let (_, gone) = profile(4_294_967_291);
-        let (running_name, running) = profile(std::process::id());
+        let (_, gone) = profile(4_294_967_291, 999);
+        let (running_name, running) = profile(std::process::id(), 999);
 
         sweep_profiles();
 
@@ -624,6 +801,33 @@ mod tests {
         delete_profile(&running_name);
         assert!(!gone_there, "{} is still there", gone.display());
         assert!(running_there, "the sweep deleted a running HoploDex's profile");
+    }
+
+    /// Deleting a profile removes a junction planted in it without following it
+    /// (code scanning alert `helpers/cwe-770` on `container`), so a delete that
+    /// did follow one, such as a hand-written recursive one, fails here. Named for
+    /// this running process, so the sweep test beside it leaves it alone.
+    #[test]
+    fn deleting_a_profile_leaves_what_a_junction_in_it_points_to() {
+        let outside = tempfile::TempDir::new().unwrap();
+        let canary = outside.path().join("canary.txt");
+        std::fs::write(&canary, b"canary").unwrap();
+        let (name, folder) = profile(std::process::id(), 998);
+        let link = folder.join("escape");
+        let made = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&link)
+            .arg(outside.path())
+            .output()
+            .unwrap();
+        let led_out = std::fs::read(link.join("canary.txt")).ok();
+
+        delete_profile(&name);
+
+        assert!(made.status.success(), "no junction: {made:?}");
+        assert_eq!(led_out.as_deref(), Some(&b"canary"[..]), "the junction doesn't lead out");
+        assert!(!folder.exists(), "{} is still there", folder.display());
+        assert_eq!(std::fs::read(&canary).unwrap(), b"canary");
     }
 
     /// Without `LOCALAPPDATA` no AppContainer can start, so no helper is tried.

@@ -245,6 +245,20 @@ fn read_reach(_app: &AppHandle) -> Reach {
     Reach::Unconfined
 }
 
+#[cfg(all(target_os = "linux", not(feature = "e2e")))]
+fn native_chooser(app: &AppHandle, reach: &Reach) -> Arc<dyn Chooser> {
+    use hoplodex_lib::services::chooser::SandboxChooser;
+    match reach.sandbox_folders() {
+        Some(folders) => Arc::new(SandboxChooser::new(app.clone(), folders)),
+        None => Arc::new(NativeChooser::new(app.clone())),
+    }
+}
+
+#[cfg(all(not(target_os = "linux"), not(feature = "e2e")))]
+fn native_chooser(app: &AppHandle, _reach: &Reach) -> Arc<dyn Chooser> {
+    Arc::new(NativeChooser::new(app.clone()))
+}
+
 /// Tauri panics with a failed `setup`'s error, and a release build's panic gives
 /// only its location (013 FR-027), so the reason is logged first.
 fn saying_why_it_failed(
@@ -445,8 +459,10 @@ fn main() {
             // databases' and backups' folders, whose answers only Rust sees
             // (code scanning alerts `paths/cwe-73` on `import_collection` and
             // `export_collection`). An E2E build answers from the spec's queue.
+            // Inside a Flatpak, only where the Documents portal's grant is of use
+            // (code scanning alert `flatpak/cwe-272` on `Reach::check_portal`).
             #[cfg(not(feature = "e2e"))]
-            app.manage::<Arc<dyn Chooser>>(Arc::new(NativeChooser::new(app.handle().clone())));
+            app.manage::<Arc<dyn Chooser>>(native_chooser(app.handle(), &reach));
             #[cfg(feature = "e2e")]
             app.manage::<Arc<dyn Chooser>>(Arc::new(E2eChooser));
             // WebDriver can't drop a file from the desktop, so the specs send

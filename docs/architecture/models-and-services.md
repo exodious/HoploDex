@@ -124,7 +124,9 @@ insurance status, valuation, attachment storage, secure delete,
 - `chooser` (`Chooser`: the native file and folder choosers Rust opens for the
   import, the export, a new database's folder, a database file, the backup
   location and the upgrade's backup, whose answers only `session::grants`
-  holds, `choose` holding them; an E2E build's `E2eChooser` answers from
+  holds, `choose` holding them; inside a Flatpak, `SandboxChooser` opens
+  GTK's own chooser, which makes no Documents-portal grant, for all but the
+  import and the export; an E2E build's `E2eChooser` answers from
   `HOPLODEX_E2E_CHOOSER`'s queue);
 - and for 008 `helper/` (the confinement, Windows job object and AppContainer, framing and
   spawn/kill plumbing that `--render-helper` and `--import-helper` share; the
