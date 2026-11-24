@@ -132,8 +132,14 @@ node scripts/release.mjs promote 0.1.1             # or --rc 0.1.1-rc.2 to name 
 ```
 
 It finds the newest published `v0.1.1-rc.<n>` on `origin/main`'s head (or
-`--commit`), and refuses unless it is an immutable pre-release built from that
-commit, and the workflow's tag check, `ai-security-review.mjs reviewed` and
+`--commit`); `--rc` must name that one, since it is the one the workflow
+promotes, and refuses an older candidate on the same commit. It refuses unless
+the candidate is an immutable pre-release built from that commit, its files
+pass the checks the workflow's promote job makes (downloaded, they are exactly
+a release's files, each uploaded by `github-actions[bot]`, from a release run
+of the candidate's tag that passed on that commit, matching its `SHA256SUMS`,
+and each passes `gh release verify-asset`), a dry run included, and the
+workflow's tag check, `ai-security-review.mjs reviewed` and
 `gate` (for any alert opened during testing) and `npm run audit` (the one
 check whose result changes with time, not with the code) all pass. Then it
 tags `v0.1.1` on that commit, its message naming the candidate, and pushes the

@@ -25,9 +25,11 @@
 //             the commit already: `tag`'s check of the commit comes first of all
 //   promote   instead of `tag`, for a final release from an accepted release
 //             candidate: find the newest published v<version>-rc.<n> on --commit
-//             (or --rc <version>-rc.<n>), which must be an immutable pre-release,
-//             run `reviewed`, `gate` and `npm run audit`, then tag v<version> on
-//             it, which has the release workflow promote that candidate's files
+//             (--rc <version>-rc.<n> must name that one), which must be an
+//             immutable pre-release, make the release workflow's checks of its
+//             files (promote-check and `gh release verify-asset`), run
+//             `reviewed`, `gate` and `npm run audit`, then tag v<version> on it,
+//             which has the release workflow promote that candidate's files
 //   tag-check release.yml's tag check, of the working tree: the tag names the
 //             app's version, and the commit has its stored database and a
 //             released.txt line for it and for every step in MIGRATIONS
@@ -48,6 +50,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -206,7 +209,8 @@ const SHA = /^[0-9a-f]{40}$/;
  * (RELEASING.md, "Release candidates"), or null when the version has no
  * published candidate, so the tag builds its own. `releases` are the published
  * v<app>-rc.<n> releases, each with its tag's commit; the newest on `commit`
- * is taken, or `rc` (`0.1.1-rc.2`). Refuses one that isn't an immutable
+ * is taken, and `rc` (`0.1.1-rc.2`), when given, must be that one, since it is
+ * the one the release workflow promotes. Refuses one that isn't an immutable
  * pre-release, and a version whose published candidates are all on other
  * commits: that tag isn't on the accepted candidate.
  */
@@ -218,9 +222,13 @@ export function candidateFor(version, commit, releases, rc) {
   if (rc && !named) throw new Error(`v${rc} isn't a published release candidate of ${app}`);
   if (named && named.commit !== commit)
     throw new Error(`v${rc} was built from ${named.commit}, not ${commit}`);
-  const here = named
-    ? [named]
-    : ours.filter((r) => r.commit === commit).sort((a, b) => RC.exec(b.tag)[2] - RC.exec(a.tag)[2]);
+  const here = ours
+    .filter((r) => r.commit === commit)
+    .sort((a, b) => RC.exec(b.tag)[2] - RC.exec(a.tag)[2]);
+  if (named && here[0] !== named)
+    throw new Error(
+      `v${rc} isn't the newest published candidate on ${commit} (${here[0].tag} is), which the release workflow promotes`,
+    );
   if (!here.length) {
     if (!ours.length) return null;
     throw new Error(
@@ -451,6 +459,36 @@ function publishedCandidates(app) {
     .map((r) => ({ ...r, commit: commitOf(r.tag) }));
 }
 
+/**
+ * release.yml's promote job's checks of candidate `rc`'s files, made before its
+ * final tag is pushed, so a candidate that would fail them never strands one.
+ */
+function requireCandidateFiles(rc, commit) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoplodex-candidate-"));
+  try {
+    const release = JSON.parse(gh(["api", `repos/${repo()}/releases/tags/${rc}`]));
+    const runs = JSON.parse(
+      gh([
+        "api",
+        `repos/${repo()}/actions/workflows/release.yml/runs?event=push&status=success&branch=${rc}&per_page=100`,
+      ]),
+    );
+    gh(["release", "download", rc, "--dir", dir]);
+    const problems = candidateProblems({ rc, commit, release, runs, dir });
+    if (problems.length) throw new Error(`${rc} can't be promoted:\n  ${problems.join("\n  ")}`);
+    for (const f of fs.readdirSync(dir).sort()) {
+      const r = spawnSync("gh", ["release", "verify-asset", rc, path.join(dir, f)], {
+        cwd: ROOT,
+        stdio: "inherit",
+      });
+      if (r.status !== 0) throw new Error(`${rc}'s ${f} fails gh release verify-asset`);
+    }
+    console.log(`${rc}'s files pass the release workflow's checks`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function requireSha(sha) {
   if (!SHA.test(sha ?? "")) throw new Error(`not a commit: ${sha}`);
   return sha;
@@ -572,6 +610,7 @@ function main(argv) {
         `${app} has no published release candidate on ${commit}: publish the accepted one's pre-release first, or tag the final itself (release.mjs tag)`,
       );
     console.log(`promoting ${candidate}`);
+    requireCandidateFiles(candidate, commit);
   }
   for (const s of toRun) {
     console.log(`\n== ${s}`);

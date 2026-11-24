@@ -616,7 +616,11 @@ describe("promoting a release candidate", () => {
       published("v0.1.1-rc.1", there),
     ];
     expect(candidateFor("0.1.1", here, both)).toBe("v0.1.1-rc.10");
-    expect(candidateFor("0.1.1", here, both, "0.1.1-rc.2")).toBe("v0.1.1-rc.2");
+    expect(candidateFor("0.1.1", here, both, "0.1.1-rc.10")).toBe("v0.1.1-rc.10");
+    // The workflow promotes the newest, so --rc can't name an older one.
+    expect(() => candidateFor("0.1.1", here, both, "0.1.1-rc.2")).toThrow(
+      "isn't the newest published candidate",
+    );
     expect(() => candidateFor("0.1.1", here, both, "0.1.1-rc.1")).toThrow(`built from ${there}`);
     expect(() => candidateFor("0.1.1", here, both, "0.1.1-rc.3")).toThrow(/isn't a published/);
     // A tag on another commit than the accepted candidate's builds nothing.
@@ -710,6 +714,18 @@ function goodCandidate(rc = "v0.1.1-rc.1", at = commit) {
       workflow_runs: [{ head_sha: at, head_branch: rc, event: "push", conclusion: "success" }],
     },
   };
+}
+
+/** fakeGh's answers for the promote job's reads of candidate `c`. */
+function candidateAnswers(c: ReturnType<typeof goodCandidate>, verify = "0") {
+  const answers: Record<string, string> = {
+    "release.json": JSON.stringify(c.release),
+    "runs.json": JSON.stringify(c.runs),
+    "verify-status": verify,
+  };
+  for (const f of fs.readdirSync(c.dir))
+    answers[`assets/${f}`] = fs.readFileSync(path.join(c.dir, f), "utf8");
+  return answers;
 }
 
 describe("a candidate's files", () => {
@@ -812,14 +828,7 @@ describe("release.yml's two paths", () => {
         "utf8",
       ),
     });
-    const answers: Record<string, string> = {
-      "release.json": JSON.stringify(c.release),
-      "runs.json": JSON.stringify(c.runs),
-      "verify-status": verify,
-    };
-    for (const f of fs.readdirSync(c.dir))
-      answers[`assets/${f}`] = fs.readFileSync(path.join(c.dir, f), "utf8");
-    const gh = fakeGh(answers);
+    const gh = fakeGh(candidateAnswers(c, verify));
     const temp = tempDir();
     const env = {
       ...process.env,
@@ -908,11 +917,18 @@ describe.skipIf(process.platform === "win32")(
     it("promotes the published candidate on the commit, and refuses without one, tagging nothing", () => {
       const { repo, head } = ready();
       const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
-      const gh = fakeGh({ releases: listing(rc), "commit-v0.1.1-rc.1": head });
+      const gh = fakeGh({
+        releases: listing(rc),
+        "commit-v0.1.1-rc.1": head,
+        ...candidateAnswers(goodCandidate("v0.1.1-rc.1", head)),
+      });
       repo.env = gh.env;
       const ok = repo.release("promote", "0.1.1", "--commit", head, "--dry-run");
       expect(ok.stderr).toBe("");
       expect(ok.stdout).toContain("promoting v0.1.1-rc.1");
+      expect(
+        gh.calls().filter((c) => c.startsWith("release verify-asset v0.1.1-rc.1 ")),
+      ).toHaveLength(6);
       expect(ok.stdout).toContain(
         `$ git tag -a v0.1.1 -m "HoploDex 0.1.1, promoted from v0.1.1-rc.1" ${head}`,
       );
@@ -935,6 +951,52 @@ describe.skipIf(process.platform === "win32")(
       const mutable = repo.release("promote", "0.1.1", "--commit", head);
       expect(mutable.status).toBe(1);
       expect(mutable.stderr).toContain("isn't an immutable pre-release");
+      expect(repo.git(["tag", "-l"])).toBe("");
+    });
+
+    it("refuses, before any step, a candidate whose files would fail the workflow's promote checks, or an older one named by --rc", () => {
+      const { repo, head } = ready();
+      const rc = { tag: "v0.1.1-rc.1", draft: false, prerelease: true, immutable: true };
+      const failing: [string, (c: ReturnType<typeof goodCandidate>) => void, string, string?][] = [
+        [
+          "a file someone uploaded",
+          (c) => (c.release.assets[1].uploader.login = "someone"),
+          "uploaded by someone",
+        ],
+        [
+          "a changed file",
+          (c) => fs.appendFileSync(path.join(c.dir, "HoploDex-0.1.1-x86_64.rpm"), "x"),
+          ".rpm doesn't match",
+        ],
+        ["no passing run", (c) => (c.runs.workflow_runs = []), "no release run"],
+        ["an attestation that doesn't verify", () => {}, "fails gh release verify-asset", "1"],
+      ];
+      for (const [what, change, problem, verify] of failing) {
+        const c = goodCandidate("v0.1.1-rc.1", head);
+        change(c);
+        repo.env = fakeGh({
+          releases: listing(rc),
+          "commit-v0.1.1-rc.1": head,
+          ...candidateAnswers(c, verify),
+        }).env;
+        for (const dryRun of [["--dry-run"], []]) {
+          const r = repo.release("promote", "0.1.1", "--commit", head, ...dryRun);
+          expect(r.status, what).toBe(1);
+          expect(r.stderr, what).toContain(problem);
+          expect(r.stdout, what).not.toContain("==");
+        }
+      }
+
+      const older = { ...rc, tag: "v0.1.1-rc.2" };
+      const newer = { ...rc, tag: "v0.1.1-rc.3" };
+      repo.env = fakeGh({
+        releases: listing(older, newer),
+        "commit-v0.1.1-rc.2": head,
+        "commit-v0.1.1-rc.3": head,
+      }).env;
+      const named = repo.release("promote", "0.1.1", "--commit", head, "--rc", "0.1.1-rc.2");
+      expect(named.status).toBe(1);
+      expect(named.stderr).toContain("isn't the newest published candidate");
       expect(repo.git(["tag", "-l"])).toBe("");
     });
 
