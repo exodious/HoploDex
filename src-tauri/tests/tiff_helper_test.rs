@@ -1028,10 +1028,12 @@ fn a_page_that_does_not_fit_the_request_kills_the_helper_and_fails_alone() {
 
 #[test]
 fn a_load_over_its_limit_is_killed_by_the_parent() {
-    let limits = HelperLimits { load: Duration::from_millis(1), render: Duration::from_secs(10) };
+    // A zero limit, not a millisecond: Windows rounds a wait up to its timer tick
+    // (about 15.6 ms), in which a fast pipe can carry the whole load.
+    let limits = HelperLimits { load: Duration::ZERO, render: Duration::from_secs(10) };
     let mut helper = HelperHandle::spawn(&exe(), limits).unwrap();
     let pid = helper.pid();
-    // Writing 32 MB down a pipe alone takes longer than a millisecond.
+    // Writing 32 MB down a pipe takes longer than starting the watchdog's thread.
     let large = hostile::large_tiff(32_000_000);
 
     let result = helper.load(&large.bytes);
@@ -1042,10 +1044,11 @@ fn a_load_over_its_limit_is_killed_by_the_parent() {
 
 #[test]
 fn a_render_over_its_limit_is_killed_by_the_parent() {
-    let limits = HelperLimits { load: Duration::from_secs(60), render: Duration::from_millis(1) };
+    // Zero, as for the load above.
+    let limits = HelperLimits { load: Duration::from_secs(60), render: Duration::ZERO };
     let mut helper = HelperHandle::spawn(&exe(), limits).unwrap();
     let pid = helper.pid();
-    // 8192 x 2000 pixels: a page that takes far longer than a millisecond.
+    // 8192 x 2000 pixels: a page that takes far longer than starting a thread.
     let large = hostile::large_tiff(8192 * 2000);
     assert_eq!(helper.load(&large.bytes).unwrap().len(), 1);
 

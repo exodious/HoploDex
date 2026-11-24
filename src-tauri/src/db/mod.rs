@@ -152,8 +152,15 @@ pub const MAX_VALUE_BYTES: i32 = (MAX_DOCUMENT_BYTES + 1024 * 1024) as i32;
 /// (`trusted_schema` off), its SQL can't write the schema or FTS5's tables
 /// directly (`SQLITE_DBCONFIG_DEFENSIVE`), and no value is longer than
 /// [`MAX_VALUE_BYTES`] (`SQLITE_LIMIT_LENGTH`), a crafted view's included.
+/// It also turns on SQLCipher's memory security, for the whole process and
+/// for good: every block SQLite frees, decrypted pages and row values among
+/// them, is filled with random bytes first, so a lock leaves none of the
+/// collection in the heap (003 FR-020; code scanning alert
+/// plaintext-lifetime/cwe-244/src-tauri/src/db/mod.rs#configure). SQLCipher is
+/// built without `mlock` (`.cargo/config.toml`), so nothing is locked out of swap.
 pub fn connect(path: &Path, flags: OpenFlags) -> rusqlite::Result<Connection> {
     let conn = Connection::open_with_flags(path, flags)?;
+    conn.pragma_update(None, "cipher_memory_security", "ON")?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA, false)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)?;
     conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_VALUE_BYTES)?;
@@ -650,12 +657,17 @@ mod tests {
     }
 
     /// A created, an opened and a checked database's connections all come from
-    /// `connect`: no untrusted schema, defensive, and no value past the limit.
+    /// `connect`: no untrusted schema, defensive, no value past the limit, and
+    /// SQLCipher's memory security on (code scanning alert
+    /// plaintext-lifetime/cwe-244/src-tauri/src/db/mod.rs#configure).
     #[test]
     fn every_connection_is_hardened() {
         let dir = tempfile::TempDir::new().unwrap();
         let db_path = dir.path().join("test.hoplodex");
         let hardened = |conn: &Connection| {
+            let memory_security: String =
+                conn.pragma_query_value(None, "cipher_memory_security", |r| r.get(0)).unwrap();
+            assert_eq!(memory_security, "1");
             assert!(!conn.db_config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA).unwrap());
             assert!(conn.db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE).unwrap());
             assert_eq!(conn.limit(Limit::SQLITE_LIMIT_LENGTH).unwrap(), MAX_VALUE_BYTES);

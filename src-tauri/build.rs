@@ -10,6 +10,25 @@ fn main() {
     // an `e2e` one that is not the check variant (`E2eOpener` logs instead).
     println!("cargo::rustc-check-cfg=cfg(mock_keyring)");
     println!("cargo::rustc-check-cfg=cfg(app_opener)");
+    // SQLCipher is the bundled one, built without `mlock` (`.cargo/config.toml`'s
+    // `[env]`, which cargo gives every build script, libsqlite3-sys's included):
+    // refuse a build that didn't read it, that undoes it with a later `-U`, or
+    // that links a system library no flag reaches (code scanning alert
+    // plaintext-lifetime/cwe-244/src-tauri/src/db/mod.rs#configure).
+    println!("cargo:rerun-if-env-changed=LIBSQLITE3_FLAGS");
+    println!("cargo:rerun-if-env-changed=LIBSQLITE3_SYS_USE_PKG_CONFIG");
+    let sqlite_flags = std::env::var("LIBSQLITE3_FLAGS").unwrap_or_default();
+    let last_memlock_flag =
+        sqlite_flags.split_whitespace().rfind(|flag| flag.contains("OMIT_MEMLOCK"));
+    // The message doesn't echo the variable: it is outside input (CodeQL rust/log-injection).
+    assert!(
+        last_memlock_flag.is_some_and(|flag| flag.starts_with("-DOMIT_MEMLOCK")),
+        "LIBSQLITE3_FLAGS must end up defining OMIT_MEMLOCK, as .cargo/config.toml sets it"
+    );
+    assert!(
+        std::env::var_os("LIBSQLITE3_SYS_USE_PKG_CONFIG").is_none_or(|value| value == "0"),
+        "LIBSQLITE3_SYS_USE_PKG_CONFIG links a system SQLite, built without OMIT_MEMLOCK"
+    );
     let has = |feature: &str| std::env::var_os(format!("CARGO_FEATURE_{feature}")).is_some();
     if has("MOCK_KEYRING") && !has("FLATPAK_CHECK") {
         println!("cargo::rustc-cfg=mock_keyring");

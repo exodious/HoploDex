@@ -43,6 +43,13 @@ so a passphrase change still works. A stored thumbnail over 1 MiB
 (`MAX_THUMBNAIL_BYTES`), or one that isn't a BLOB, which only a database from
 elsewhere holds, reads as empty without being read, and `get_photo_thumbnail`
 refuses it (`ATTACHMENT_TOO_LARGE`).
+`connect` also turns on SQLCipher's memory security (`cipher_memory_security`),
+which is process-wide and can't be turned off: every block SQLite frees,
+decrypted pages and row values included, is filled with random bytes first
+(003 FR-020). SQLCipher is built with `OMIT_MEMLOCK` (`LIBSQLITE3_FLAGS` in
+`.cargo/config.toml`, which `src-tauri/build.rs` refuses to build without), so
+it locks nothing in memory, its own key buffers included: locking every block
+cost a system call per allocation and missed the performance budgets.
 
 Those settings don't bound how many rows a view makes, or how long an
 expression takes, so an open, a copy's check and a backup's first look go
