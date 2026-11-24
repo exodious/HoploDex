@@ -44,11 +44,86 @@ and peer review catch that.
 ## Threat model
 
 - A compromised main web view.
-- Hostile files the user brings in: spreadsheets, documents, photos and
-  databases from elsewhere.
+- Hostile files the user attaches: documents (office files, spreadsheets,
+  PDFs, TIFFs, text) and photos. An attachment stays hostile after it is
+  stored, each time the app reads, previews, opens or exports it again.
 - Other local processes running as the same user, where the app claims to
-  resist them (the WebDriver, the helpers, the Flatpak).
+  resist them: wherever an entry's **Ask** names another process, a file,
+  folder or link it could plant, or an environment variable, argument or
+  launcher it could set (for example the WebDriver, which only an `e2e` build
+  carries; the helpers' command lines and Windows profiles; the macOS
+  keychain's check of the app's signature; the troubleshooting log's file;
+  the Flatpak's sandbox). Elsewhere, what such a process can already do as
+  the user is no finding.
 - Anything that can change what ships: CI, the build and dev servers.
+
+Out of scope, by the owner's decision (2026-11-23), whatever surface a review
+covers:
+
+- **A crafted database.** A `.hoplodex` database and its backups are private
+  to the user, and never shared or passed around: each one HoploDex opens is
+  one it wrote, for this user. The review treats its schema and contents as
+  what HoploDex itself would write (made by its migrations, with values the
+  commands and imports of any released HoploDex admitted), and raises no
+  finding that needs a database or backup someone else built or altered. A
+  database that is damaged, from an older or newer released HoploDex, or the
+  user's own from another computer, or kept on a network share, USB stick or
+  synced folder, is still the user's own: the review checks that the app
+  refuses it or handles it without losing data, crashing or hanging, and a
+  fault there is an ordinary GitHub issue, not a code scanning finding.
+  Damage is what happens without anyone choosing the bytes (a torn or
+  partial write, a full disk, a truncated or interrupted copy, a sync
+  conflict, an older schema); a fault that needs chosen bytes needs a crafted
+  database. Values a compromised web view or an attached file can store
+  through the app's own commands (any field's text, a draft, a file's name, a
+  photo's or document's bytes) stay in scope, with the attacker who stored
+  them.
+- **A crafted spreadsheet.** A spreadsheet the user imports is their own
+  data: one from their own inventory, HoploDex's template, or an export they
+  are bringing back. The review raises no finding that needs a spreadsheet
+  someone built to attack the import, or a compromised computer or
+  spreadsheet tool that wrote it. How the import handles a malformed,
+  mistyped, oversized or stale one (an export from another database or an
+  earlier version) is reviewed for integrity: a clear error, no change to the
+  existing collection unless the import succeeds, and no hang the user can't
+  cancel. A spreadsheet kept on a network share, USB stick or synced folder
+  is still the user's own, and a fault in how the import handles one is an
+  ordinary GitHub issue, not a code scanning finding. A spreadsheet attached
+  as a document is an attachment, not an import, and stays hostile. What an
+  export writes stays in scope wherever its contents came from a compromised
+  web view or an attached file's name.
+- **A crafted `machine.json`, config folder or scratch folder.** Writing or
+  altering one needs a compromised machine, so the review raises no finding
+  that needs a `machine.json`, config folder or scratch folder someone else
+  wrote or altered, except where an entry's **Ask** names a file, folder or
+  link another process running as the user could plant there (the
+  troubleshooting log's, for one). What the page can put in `machine.json`,
+  and one an older or newer HoploDex wrote or left damaged, stay in scope
+  (`database-files`).
+- **A helper hijacked from outside the app.** The confined helpers
+  (`--import-helper`, `--render-helper`) parse files so that the app doesn't,
+  and the review checks that the parsing stays there. The review raises no
+  finding that needs a helper or the sandbox probe (`--webkit-sandbox-probe`)
+  hijacked from outside the app, by code put there other than through a file
+  the app gave it, which needs a compromised machine. A render helper a
+  hostile attachment takes over (its TIFF parser) stays in scope as far as
+  its confinement: memory corruption or code running there is medium while
+  the confinement holds and high where it would not contain it, and a change
+  that weakens the confinement is medium (`helpers`). Also in scope: what the
+  render helper relays (page sizes, pixels, a failure reason), held to
+  `read_frame`'s limits and the app's own checks; what a hostile attachment
+  makes it use, hang on or leave behind; and steering a helper or the probe
+  from outside, through its arguments, its environment or anything that can
+  start one. The `--import-helper` parses only the user's own spreadsheets
+  (A crafted spreadsheet), so what its parser does is integrity. The PDF
+  surface's web view is not a helper: a hostile PDF that runs code there
+  stays in scope (`document-preview`).
+
+A finding is in scope only when one of the attackers above can reach it
+without any of these. A fault in how the app handles the user's own files (a
+damaged, older-version or other-computer database, a malformed import) is
+integrity: the review notes it for an ordinary GitHub issue, never a code
+scanning finding.
 
 ## ipc-commands: what the web view can call
 
@@ -74,7 +149,7 @@ and peer review catch that.
   - `devCsp` allows `'unsafe-inline'` scripts, which `tauri dev`'s Vite server needs (`@vitejs/plugin-react` injects its refresh preamble inline). Tauri applies `devCsp` only to a build without its `custom-protocol` (one that loads the page from `devUrl`): does every build that bundles the page, shipped or E2E, get `csp` instead?
   - Can any top-level navigation or new window leave the app's origin (#73)? Does Windows' filter act only on document requests, so IPC works and nothing else loads?
   - In release builds, are dev tools, reload, history, print, save, find and view-source off, and is only the context-menu allowlist left?
-  - Does `src/` have no HTML sink (`dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`) outside tests? Is everything the page shows from a database, a spreadsheet, a file name or `notices.json` rendered as text?
+  - Does `src/` have no HTML sink (`dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function`) outside tests? Is everything the page shows from a database (what the page, an import or an attachment stored), an attached file's name or `notices.json` rendered as text?
   - Does the main window refuse every download (`on_download` answering false, code scanning alert `webview-config/cwe-1188`), so a page's `<a download>` writes nothing to Downloads on macOS and Windows, where a download skips the navigation handler? `e2e/specs/browser-controls.e2e.ts` checks a blob download saves nothing.
   - Is WebView2's general autofill off for the main window (`general_autofill_enabled(false)` in `main.rs`), and does every text field of the page (`TextField`, `TextArea` and the others) ask for `autocomplete="off"` as well?
   - On Windows, the main window's WebView2 environment is HoploDex's own (`crash_reports::web_view_environment`): is it the one the main window actually uses, with its own data folder, and are its browser arguments (`main_browser_args`) only wry's defaults and the autoplay policy, with nothing that loosens the web view (a debugging port, a switch that turns off a protection)?
@@ -97,10 +172,10 @@ and peer review catch that.
   - An export to a folder that may be on another computer (`disk_space::is_on_network`: a UNC path or mapped drive on Windows, an NFS, SMB, AFS, Ceph, Coda or 9P mount or any FUSE mount (gvfs, kio-fuse, sshfs, the Flatpak document portal) on Linux, a volume not marked local on macOS) asks first in `services::consent`'s native dialog, with text Rust builds naming the folder and how many records the export holds (`confirm_export_folder`). Is it asked before anything is written, and is nothing written on Cancel? Can the page answer it, skip it, or change what it names? Does `is_on_network` miss a kind of share a user would export to?
   - For each command that takes a location from the web view (`create_database`, `open_database`, `upgrade_database` for its backup folder, `locate_database`, `remove_recent_database`, `forget_saved_passphrase`, `update_backup_settings`, `list_backups`, `check_backup`, `restore_backup`, and for the dropped or picked location they use, `export_collection`, `import_collection`, `add_photo_from_path` and `add_document_from_path`): does it accept only what its purpose needs (absolute; an existing directory or a regular file)? Where it writes, does it create exclusively and follow no symlink or reparse point?
   - Is a target the web view names authorized before it is replaced or removed (#62)? Are only files the app created recovered or removed (#63)? Does a restore of the open database take only a backup carrying that database's id, checked by `check_backup` and again in `restore_open` before anything is copied, as the damaged restore's is?
-  - Is a name from inside a database or a spreadsheet ever joined to a path (#68)? Does a colliding export leave no stale photos (#74)?
-  - A database from another computer carries `collection_settings.backup_location`. A custom location is used only when it is one of the folders `machine.json`'s `backupLocations` records the user choosing for that database's id on this computer (every one chosen here stays recorded, so a restore that brings back an earlier one keeps using it) (`MachineSettings::backup_location`, recorded when `update_backup_settings` saves a `choose_backup_folder` pick); otherwise backups go to the default folder beside the database, and the settings dialog says the saved one isn't set up on this computer yet. A `machine.json` an earlier version wrote has its cached custom backup folders dropped once at load. Does every place that resolves the backup folder (the open's recent entry, the close's backup and rotation, `list_backups`, `check_backup`'s server-path check, `restore_backup`, `delete_all_backups`, the upgrade's question, the settings and their save) go through it? Can the page or a file get a location recorded, or a server or device path probed, without the user's pick here?
+  - Is an attached file's name, or a value the page stored in the database, ever joined to a path (#68)? Does a value from the user's own spreadsheet stay inside the export's folder too (integrity)? Does a colliding export leave no stale photos (#74)?
+  - A database from another computer carries `collection_settings.backup_location`. A custom location is used only when it is one of the folders `machine.json`'s `backupLocations` records the user choosing for that database's id on this computer (every one chosen here stays recorded, so a restore that brings back an earlier one keeps using it) (`MachineSettings::backup_location`, recorded when `update_backup_settings` saves a `choose_backup_folder` pick); otherwise backups go to the default folder beside the database, and the settings dialog says the saved one isn't set up on this computer yet. A `machine.json` an earlier version wrote has its cached custom backup folders dropped once at load. Does every place that resolves the backup folder (the open's recent entry, the close's backup and rotation, `list_backups`, `check_backup`'s server-path check, `restore_backup`, `delete_all_backups`, the upgrade's question, the settings and their save) go through it? Can the page get a location recorded without the user's pick here? Does a database from another of the user's computers never have backups written to, listed from or probed at a folder chosen only on that computer?
   - Does every location go through `Reach::check` with the right `Need` before anything is written (011)?
-  - Regression: #62, #63, #68, #74, #207; code scanning alerts 89 and 110 (a path the page named read for an attachment or an import, and an export to a folder the page named), 88 (a backup location stored in the file used without the user choosing it here), 90 (a database id from the file in a backup's name) and 91 (the open database restored from a file that isn't its backup).
+  - Regression: #62, #63, #68, #74, #207; code scanning alerts 89 and 110 (a path the page named read for an attachment or an import, and an export to a folder the page named), 88 (a backup location stored in the file used without the user choosing it here) and 91 (the open database restored from a file that isn't its backup).
 - **Rerun:** the drop check on each OS (`docs/development/surface-checks.md`, "Drop check"), and again after any web view engine update.
 - **Since:** 001, 003; Flatpak reach 011; drops and choosers held in Rust 2026-11-19; drops recorded from the main web view, and drags from the app refused, 2026-11-20; Explorer's drags taken again on Windows, #207; the databases' and backups' folders held in Rust, server and device paths only from what Rust holds, and the network export's confirmation, 2026-11-21; a stored backup location used only once chosen on this computer, 2026-11-23.
 
@@ -108,18 +183,14 @@ and peer review catch that.
 
 - **Code:** `src-tauri/src/services/import_reader/**`; `src-tauri/src/services/spreadsheet.rs`; `src-tauri/src/services/import_matching.rs`; `src-tauri/src/services/suggestions.rs`; `src-tauri/src/commands/import_export.rs`; `src-tauri/src/models/rules.rs`; `src-tauri/src/services/record_id.rs`; `src-tauri/src/services/mounts.rs` (an import's mounts and its conflicts' mounted lists)
 - **Ask:**
-  - Is all parsing in `--import-helper` and none in the app?
-  - Does the parent check every frame the child sends (sizes, counts, UTF-8, limits) as if the child were compromised?
-  - Are the maximums in `import_reader/limits.rs` measured by inflating and enforced before any row is saved (#66), apart from `MAX_MOUNTED_ENTRIES`, which bounds the conflicts' mounted lists once the rows are saved?
-  - Is the work after the rows bounded and stoppable: the mounts (`mounts::MAX_MOUNT_DEPTH` keeps each chain walk to 16 steps), the conflicts' mounted lists (each record's made once), the sheet pass's spelling vote (`SheetSpellings`, linear), each loop asking `is_cancelled`?
-  - Are imported amounts and dates bounded so the collection's totals can't overflow (#67, `saturating_total`)?
-  - Can a crafted sheet's `record_id`s (009) collide with existing records, overwrite them, or bind a mount to the wrong record?
-  - Export: are CSV cells guarded against formula injection (`FORMULA_TRIGGERS` in `spreadsheet.rs`)? Are XLSX cells written as text, never as formulas? Does a cell over 32,767 characters still export (#95)?
-  - Regression: #64, #66, #67, #68, #74.
-- **Accepted** ([008 research.md §22](../specs/008-hardening-batch/research.md)):
-  - The parent's memory bound rests on `MAX_CELLS` and the total-text limit together.
-  - A collection at every field's maximum in 3- or 4-byte characters passes the 256 MB total-text limit.
-- **Rerun:** `import_largest_test` in release (`docs/development/testing.md`). Open: #126 (the zip-bomb memory check fails under plain `cargo test`).
+  - Is all parsing in `--import-helper` and none in the app, so a spreadsheet the parser can't read, or one that makes it panic or run out of memory, ends in a clear error and leaves the app and the collection as they were? (integrity)
+  - Does a spreadsheet over a maximum in `import_reader/limits.rs` (#66) end in `IMPORT_LIMIT_EXCEEDED` naming the limit, before any row is saved, so the collection is unchanged, apart from `MAX_MOUNTED_ENTRIES`, which bounds the conflicts' mounted lists once the rows are saved?
+  - (integrity: a large or mistyped sheet, such as one whose mounts form a cycle) Is the work after the rows bounded and stoppable: the mounts (`mounts::MAX_MOUNT_DEPTH` keeps each chain walk to 16 steps), the conflicts' mounted lists (each record's made once), the sheet pass's spelling vote (`SheetSpellings`, linear), each loop asking `is_cancelled`?
+  - Are amounts and dates, imported or sent by the page, bounded so the collection's totals can't overflow (#67, `saturating_total`)?
+  - Can a mistyped `record_id` (009), or one from a stale export or another database's, make an import overwrite a record it doesn't match, or bind a mount to the wrong record?
+  - Export: a compromised web view can store any text in a field, and an attached file's name reaches the export, so an exported cell must open as text in the user's spreadsheet tool. Are CSV cells guarded against formula injection (`FORMULA_TRIGGERS` and `protect_csv_cell` in `spreadsheet.rs`), and does import take the guard off again on a round trip? Are XLSX cells written as text, never as formulas? (Integrity:) Does a cell over 32,767 characters still export (#95)?
+  - Regression: #64 (the page, against another session's conflicts), #67 and #68 (values the page or an attachment stored), #66 and #74 (integrity).
+- **Rerun:** `import_largest_test` in release (`docs/development/testing.md`).
 - **Since:** 001; helper and limits 008; identifiers 009.
 
 ## key-passphrase: the database key, the passphrase and saved passphrases
@@ -128,7 +199,7 @@ and peer review catch that.
 - **Ask:**
   - Are the cipher settings pinned and unchanged (`CIPHER_SETTINGS`, `src-tauri/tests/portability_test.rs`)?
   - Is every database keyed through `cipher::key` (`sqlite3_key_v2`), never `PRAGMA key` or `ATTACH … KEY` with the passphrase, so it never becomes SQL text?
-  - Is a passphrase typed only into the native dialog (`services::passphrase_dialog`: GTK, AppKit's `NSSecureTextField`, Win32 `ES_PASSWORD`), never into the page, and is no passphrase an argument or result of any command? Is every word of the dialog built in Rust, so the page chooses at most which database or backup it names? Is each name that reaches it from the page or a file (a database's or backup's file name, the machine name an open marker carries) cleaned and cut as `consent::display_name` does, and set as plain text, never markup?
+  - Is a passphrase typed only into the native dialog (`services::passphrase_dialog`: GTK, AppKit's `NSSecureTextField`, Win32 `ES_PASSWORD`), never into the page, and is no passphrase an argument or result of any command? Is every word of the dialog built in Rust, so the page chooses at most which database or backup it names? Is each name that reaches it (a database's or backup's file name, which the page or the user's folders give it; the machine name an open marker carries from another of the user's computers) cleaned and cut as `consent::display_name` does, and set as plain text, never markup?
   - Is the dialog's text copied once per press into a `Passphrase` (NFC, zeroized, never logged), and are the checks' reads borrowed (GTK) or wiped straight after (AppKit, Win32)? Is every field emptied when the dialog closes? What does each OS's toolkit still keep of what was typed (GTK's text layout of a shown passphrase; Win32's own buffers; AppKit's, when `stringValue()` of the field being edited is read at each change, pause and press and when Show is toggled: what does AppKit keep of it beyond the accepted `NSString` copies below, and for how long?), and what does SQLCipher leave of it in the app's heap?
   - Is every Rust block it passes through (the dialog's copies and `checks`' NFC copies, zxcvbn's scoring, a saved passphrase's D-Bus messages and zvariant values on Linux and oo7's decrypted keyring file in the Flatpak) zeroed when freed, by the one global allocator `main.rs` installs (`allocator.rs`)? What it can't reach (the toolkits' buffers, the OS keyring's on macOS and Windows; SQLCipher wipes its own when freed but, built with `OMIT_MEMLOCK`, keeps the key out of swap no longer: `plaintext-lifetime`) is the Ask above's.
   - Does the session hold only the derived key, never the passphrase, except one being saved until its upgrade ends (009 research.md §4) and a checked backup's until its restore (`backup_check`, dropped at Cancel, a screen lock, a sleep, a shutdown or a close)?
@@ -199,8 +270,8 @@ and peer review catch that.
   - On macOS, are the WebKit SPI switches (`webkit_switches`) and their startup check, the watch and the `pdfPreviewHold` in place?
   - Is `tripwire.rs` intact?
   - Does `sandbox_probe.rs` fail closed and resist steering by the environment? (It skips only containers, and runs in Flatpak since 011.)
-  - Does the main web view receive only PNGs HoploDex encoded? A helper answers a page with raw pixels: does the app check them against the request (`helper_handle.rs`'s `fits_the_request`) before it encodes them, and is that all it reads of them?
-  - The app reads and encodes a helper's page outside the helper's memory cap, and encodes it after `exchange`'s time limit: what can a hostile helper make it spend, from `read_frame_by_tag`, which holds each response to `max_response`'s limit before its payload is read, through `fits_the_request` and `encode_png`?
+  - Does the main web view receive only PNGs HoploDex encoded? A render helper answers a page with raw pixels: does the app check them against the request (`helper_handle.rs`'s `fits_the_request`) before it encodes them, and is that all it reads of them, from a render helper a hostile attachment took over too?
+  - The app reads and encodes a helper's page outside the helper's memory cap, and encodes it after `exchange`'s time limit: what can a render helper a hostile attachment took over make it spend, from `read_frame_by_tag`, which holds each response to `max_response`'s limit before its payload is read, through `fits_the_request` and `encode_png`?
 - **Accepted:**
   - [007 research.md §1](../specs/007-document-preview/research.md), macOS: WebKit's PDF code runs where Tauri injects IPC, and the ACL manifest is the guard.
   - [007 research.md §1](../specs/007-document-preview/research.md), Linux without WebKit's sandbox (a container, or where the system forbids it): a PDF exploit runs with the user's access.
@@ -214,17 +285,18 @@ and peer review catch that.
 - **Code:** `src-tauri/src/services/helper/**`; `src-tauri/src/services/preview/helper.rs`; `src-tauri/src/services/preview/helper_handle.rs`; `src-tauri/src/services/preview/helper_protocol.rs`; `src-tauri/src/services/crash_reports.rs` (`quiet_error_reporting`, `end_process_on_panic`); `src-tauri/src/main.rs` (`--render-helper`, `--import-helper`, `--webkit-sandbox-probe`, the helper profile sweep)
 - **Ask:**
   - Does no database, key or IPC reach a child? Are core dumps off, and on Windows are Windows Error Reporting's box, heap and snapshot off (`quiet_error_reporting`)? On Windows, does a child that hits its job's memory cap end without Windows Error Reporting (`allocator.rs`)?
-  - Linux: confining refuses to run beside another thread (counted in `/proc/self/task`), so Landlock holds for every thread of the helper; inherited descriptors closed from 3 up (`close_range`, or before Linux 5.9 the open ones listed in `/proc/self/fd`, and a helper that can read neither reads no document), then a seccomp filter (`confine.rs`) that allows by default and answers a list of calls with `EPERM`: sockets, other processes and their memory, a mapping that is shared or grows down like a stack (`MAP_SHARED`, `MAP_GROWSDOWN`), a file's owner, starting a program, namespaces and mounts, kernel interfaces, shared memory, metadata changes, opening files and path lookups. It refuses a call from another architecture or x32, holds for every thread of the helper (`SECCOMP_FILTER_FLAG_TSYNC`), and a helper that can't install it reads no document. It is installed so as to leave the CPU speculation settings as they were, which is what a filter does by default from Linux 5.16: before that a filter tied them to itself and a helper ran over three times slower. Under it, as a second layer, Landlock where the kernel has it (no opening a file to read or write it, no creating or removing one, no starting a program; TCP refused from ABI 4, kernel 6.7; abstract Unix sockets from ABI 6, kernel 6.12; pathname Unix sockets from ABI 9, kernel 7.1; below those, only the filter refuses them), `RLIMIT_DATA`, and `RLIMIT_AS` as the outer bound: the address space mapped at confinement, plus the data limit, plus a fixed headroom, which the helper can't raise. macOS: inherited descriptors closed from 3 up, then `sandbox_init` with the profile `(version 1)(deny default)`. Windows: an AppContainer with no capabilities, set by `CreateProcessW` before the helper's first instruction, with `LOCALAPPDATA` the only variable given and no fallback if it can't start, one container per helper, and that container's profile, made read-only to it before it starts (`read_only_profile`: its folder, files and registry keys), deleted when the helper ends, behind a bounded wait so a close or lock doesn't wait on it, or, if HoploDex ended first or the delete failed, at the next start (`sweep_profiles`), until which it stays on disk; a job object (kill on close, one process, UI limits, 2 GiB for the render helper and 512 MiB for the import helper); and process mitigations.
-  - What can a confined helper still reach on each OS: files, file metadata, TCP and UDP, sockets, credential stores, and on kernels without Landlock? On Windows, can one helper reach another, and can a helper write anything in its AppContainer profile, its folder or its registry storage (the self-check's `profile` probe)?
-  - On Windows the app, unconfined, deletes a helper's profile (`job.rs`: `Container`'s drop and `sweep_profiles`, both through `DeleteAppContainerProfile`). Can what a hostile helper leaves there (a junction, a symbolic link, a hard link to a file outside, a file held open, a deep or wide tree) make that delete remove, change or follow anything outside the profile, or hold the app up beyond `DELETE_WAIT`? (Measured 2026-11: a junction is removed without being followed, which `deleting_a_profile_leaves_what_a_junction_in_it_points_to` keeps.) Can a folder planted under `Packages` steer `sweep_profiles` to delete a profile that isn't a gone helper's (#190)?
+  - Does the confinement below still hold on each OS? It is the main limit on what a hostile attachment can do through a parser bug in a helper, so a change that weakens it is a medium finding (Threat model). Linux: confining refuses to run beside another thread (counted in `/proc/self/task`), so Landlock holds for every thread of the helper; inherited descriptors closed from 3 up (`close_range`, or before Linux 5.9 the open ones listed in `/proc/self/fd`, and a helper that can read neither reads no document), then a seccomp filter (`confine.rs`) that allows by default and answers a list of calls with `EPERM`: sockets, other processes and their memory, a mapping that is shared or grows down like a stack (`MAP_SHARED`, `MAP_GROWSDOWN`), a file's owner, starting a program, namespaces and mounts, kernel interfaces, shared memory, metadata changes, opening files and path lookups. It refuses a call from another architecture or x32, holds for every thread of the helper (`SECCOMP_FILTER_FLAG_TSYNC`), and a helper that can't install it reads no document. It is installed so as to leave the CPU speculation settings as they were, which is what a filter does by default from Linux 5.16: before that a filter tied them to itself and a helper ran over three times slower. Under it, as a second layer, Landlock where the kernel has it (no opening a file to read or write it, no creating or removing one, no starting a program; TCP refused from ABI 4, kernel 6.7; abstract Unix sockets from ABI 6, kernel 6.12; pathname Unix sockets from ABI 9, kernel 7.1; below those, only the filter refuses them), `RLIMIT_DATA`, and `RLIMIT_AS` as the outer bound: the address space mapped at confinement, plus the data limit, plus a fixed headroom, which the helper can't raise. macOS: inherited descriptors closed from 3 up, then `sandbox_init` with the profile `(version 1)(deny default)`. Windows: an AppContainer with no capabilities, set by `CreateProcessW` before the helper's first instruction, with `LOCALAPPDATA` the only variable given and no fallback if it can't start, one container per helper, and that container's profile, made read-only to it before it starts (`read_only_profile`: its folder, files and registry keys), deleted when the helper ends, behind a bounded wait so a close or lock doesn't wait on it, or, if HoploDex ended first or the delete failed, at the next start (`sweep_profiles`), until which it stays on disk; a job object (kill on close, one process, UI limits, 2 GiB for the render helper and 512 MiB for the import helper); and process mitigations.
+    - Known limits of the confinement ([007 research.md §11](../specs/007-document-preview/research.md), amended 2026-11-17, the owner's decision), Windows: a volume without ACLs (FAT32, exFAT, such as a USB stick holding backups) is open to a helper as to any process.
+    - Known limits of the confinement ([007 research.md §11](../specs/007-document-preview/research.md), amended 2026-11-17, the owner's decision), Windows: whatever grants ALL APPLICATION PACKAGES (much of the registry, many system files, and the pipes and RPC or COM servers that admit any AppContainer) is open to a helper, since its AppContainer isn't a low-privilege one.
+  - What can a render helper a hostile attachment took over still reach on each OS: files, file metadata, TCP and UDP, sockets, credential stores, and on kernels without Landlock? On Windows, can one helper reach another, and can a helper write anything in its AppContainer profile, its folder or its registry storage (the self-check's `profile` probe)?
+  - On Windows the app, unconfined, deletes a helper's profile (`job.rs`: `Container`'s drop and `sweep_profiles`, both through `DeleteAppContainerProfile`). Can what a render helper a hostile attachment took over leaves there (a junction, a symbolic link, a hard link to a file outside, a file held open, a deep or wide tree) make that delete remove, change or follow anything outside the profile, or hold the app up beyond `DELETE_WAIT`? (Measured 2026-11: a junction is removed without being followed, which `deleting_a_profile_leaves_what_a_junction_in_it_points_to` keeps.) Can a folder another process plants under `Packages` steer `sweep_profiles` to delete a profile that isn't a gone helper's (#190)?
   - Does the filter's list cover the system calls of current kernels (a call it doesn't name is allowed), and does its allowance for `clone`, `mmap`, `fcntl`, `kill`, `tgkill` and `prlimit64` still hold only for what a helper needs?
+  - Does a helper's memory bound (`RLIMIT_DATA` and `RLIMIT_AS` on Linux, the job's cap on Windows) end a render helper that a hostile attachment drives past it, or an import helper given an oversized spreadsheet, without a core or a Windows Error Reporting report, and with a clear error?
   - Does each child die with the app (`PR_SET_PDEATHSIG`, the job, `kqueue`)?
-  - Are frames bounded both ways, and is each render-helper response refused from its length and tag alone (`helper_protocol::max_response` through `frames::read_frame_by_tag`) before its payload is read?
+  - Are frames bounded both ways, and is each render-helper response refused from its length and tag alone (`helper_protocol::max_response` through `frames::read_frame_by_tag`) before its payload is read, from a render helper a hostile attachment took over too?
   - Can anything but the app start a helper mode (for example a desktop file or shell association passing `--import-helper`)? Is the mode harmless if one does?
 - **Accepted:**
   - [008 research.md §22](../specs/008-hardening-batch/research.md): the macOS helper has no enforced memory cap.
-  - [007 research.md §11](../specs/007-document-preview/research.md) (amended 2026-11-17, the owner's decision), Windows: a volume without ACLs (FAT32, exFAT, such as a USB stick holding backups) is open to a helper as to any process.
-  - [007 research.md §11](../specs/007-document-preview/research.md) (amended 2026-11-17, the owner's decision), Windows: whatever grants ALL APPLICATION PACKAGES (much of the registry, many system files, and the pipes and RPC or COM servers that admit any AppContainer) is open to a helper, since its AppContainer isn't a low-privilege one.
 - **Since:** 007; shared with import 008; AppContainer #190.
 
 ## untrusted-images: photos
@@ -234,7 +306,7 @@ and peer review catch that.
   - JPEG and PNG are decoded in the app's own process, unconfined (`models/photo.rs`, and `image` in `src-tauri/Cargo.toml`), with the `image` crate's 512 MiB budget for the decoded pixels, at most 16,384 pixels a side, and for a JPEG over 64 megapixels, which zune-jpeg would decode through coefficient planes it allocates outside that budget if it were progressive or its first scan lacked a component, a decode of `baseline_copy`: one baseline frame whose first scan holds every component, with only the segments decoding needs, each exactly as long as it says (the other APPn and COM left out, since zune-jpeg reads some its own way), or a refusal. Is that bounded against decompression bombs and decoder bugs? Can zune-jpeg read `baseline_copy`'s copy, or a JPEG of 64 megapixels or fewer, other than as that walk does, and allocate planes past the budget? Should decoding move into the render helper as TIFF did?
   - Originals are shown in the main web view, which holds IPC. Is the type checked by content, not by name?
   - Does a list of photos, or a thumbnail, read no original (`PhotoSummary::COLUMNS`), so only the photo viewer and export read one?
-  - Is a stored thumbnail over 1 MiB (`MAX_THUMBNAIL_BYTES`), or one that isn't a BLOB, which only a database from elsewhere can hold, left unread by every list and thumbnail (`PhotoSummary::COLUMNS` reads its type and length first, since SQLite's `length` of text stops at a NUL), and does `get_photo_thumbnail` send the bytes as binary IPC, fetched once per photo however many browse tiles show it (`src/features/browse/FirearmThumbnail.tsx`)?
+  - Is every stored thumbnail one HoploDex made (`generate_thumbnail`, at most `THUMBNAIL_MAX_DIMENSION` a side), whatever photo it was made from, and does `get_photo_thumbnail` send the bytes as binary IPC, fetched once per photo however many browse tiles show it (`src/features/browse/FirearmThumbnail.tsx`)?
   - Beside the 50-per-record cap (#98), is every photo and document judged against its byte cap (15 MiB, 30 MiB) and the record's 1 GiB total from the opened file's size before any of it is read, on every path (a drop's path, the picker's bytes), and is the read bounded at the size admitted (`services::attachments::read_attachment_file`)? Is a photo's type taken from its first bytes, not its name, and anything but JPEG or PNG refused before it is decoded?
 - **Since:** 001 (in the baseline review's scope, but on no list until this one).
 
@@ -242,16 +314,14 @@ and peer review catch that.
 
 - **Code:** `src-tauri/src/db/mod.rs`; `src-tauri/src/db/upgrade.rs`; `src-tauri/src/db/migrations/**`; `src-tauri/src/db/raw_file.rs`; `src-tauri/src/session/upgrade.rs`; `src-tauri/src/session/pending.rs`; `src-tauri/src/commands/databases.rs`; `src-tauri/src/commands/backups.rs`; `src-tauri/src/services/backups.rs`; `src-tauri/src/services/machine_settings.rs`
 - **Ask:**
-  - With an older or crafted database whose passphrase the user has, does the open or upgrade trust anything beyond data? That covers schema objects (triggers, views) that could fire during a step; `schema_migrations` names (an unknown one must mean `NewerVersion`); and the `app_state` and `collection_settings` values read before any step (009 research.md §13).
-  - Is every connection to a database, a backup or a copy opened through `db::connect`, with `trusted_schema` off, `SQLITE_DBCONFIG_DEFENSIVE` on and `SQLITE_LIMIT_LENGTH` at `db::MAX_VALUE_BYTES` (31 MiB, just above the largest attachment), so no stored or computed value is longer? An open, a copy's check (restore, passphrase change) and a backup's first look (`inspect_backup`) go through `db::check_schema`, which reads only `sqlite_schema` until it has seen the runner's own `schema_migrations` table exactly as `upgrade::SCHEMA_MIGRATIONS` makes it, then reads that table's step names, and refuses as damaged a schema that isn't exactly what those steps make (every table, view, trigger and index by type, name and SQL text), before `app_state` is read or a copy's `integrity_check` works out any row's CHECK constraints and index keys. So a view, a generated column, a trigger, a CHECK or an expression index can't stand where HoploDex's own is and turn a small file into rows each just under the limit, with no bound on their number, or into hours of work per row. Does any path read a table or run an expression from the file before that check, or does the comparison let through anything a step didn't make (`upgrade::testing::FILLER` passes only in the test hooks' build)? After it, `check_schema` refuses as damaged a name in the four lookup tables (`firearm_types`, `action_types`, `registration_classes`, `accessory_kinds`), or a type's or kind's `generic_thumbnail_key`, longer than the 200 characters HoploDex writes or than 800 bytes (SQLite's `length` of text stops at a NUL), since the collection's lists repeat them on every record: is any other value from the file repeated per row, or read whole, without a bound?
-  - Is `app_state.database_id`, which names a database's backups and its keyring entry, refused as damaged in any form but the 32 lowercase hex digits HoploDex writes (`db::read_database_id`), at the open before anything is written, at an older layout's question (`upgrade::describe`), at a backup's first look (`inspect_backup`) and in `OpenDatabase::new`?
-  - Does rotation delete only backups this computer recorded making of the open database, at its path and with its id (`machine.json`'s `madeBackups`, `MachineSettings::made_backups`, recorded by `make_backup` whether or not the database is in the recent list, and kept when it leaves the list; `locate_database` carries none to the new path, so a located database's earlier backups are never rotated)? A name carries only the first 8 digits of the id, and a file can store any id, so nothing a file controls may make another database's backup its own. Backups made on another computer or by 0.1.0 are listed and restorable (a restore still checks the id inside, `check_backup`) but never rotated. Does anything else delete or move files by the name's prefix without the user asking (`delete_all_backups` and a location change's `delete` or `move` take them at the user's request)?
+  - Does an open refuse a database a newer HoploDex wrote (an unknown `schema_migrations` name means `NewerVersion`) rather than upgrade or change it?
+  - Does rotation delete only backups this computer recorded making of the open database, at its path and with its id (`machine.json`'s `madeBackups`, `MachineSettings::made_backups`, recorded by `make_backup` whether or not the database is in the recent list, and kept when it leaves the list; `locate_database` carries none to the new path, so a located database's earlier backups are never rotated)? A name carries only the first 8 digits of the id, and a copy keeps its database's id (a copy the user made, a backup opened as its own database, one from another of their computers), so neither may make another database's backups its own. Backups made on another computer or by 0.1.0 are listed and restorable (a restore still checks the id inside, `check_backup`) but never rotated. Does anything else delete or move files by the name's prefix without the user asking (`delete_all_backups` and a location change's `delete` or `move` take them at the user's request)?
   - Regression: code scanning alert 105 (rotation deleting another database's backups by the first 8 digits of its id, or by a copied id).
   - Is a pending draft from another HoploDex version (#78) parsed safely?
   - Is the awaiting-upgrade slot unreachable by collection commands, and dropped on any open, lock, sleep, shutdown or quit?
   - Does the before-upgrade backup's folder go through the `paths` checks, with an exclusive create and secure deletion of a partial file?
   - Are test-only steps impossible in a shipped build (`upgrade-test-steps`, the `compile_error!` in `db/upgrade.rs`)? Is `9000_e2e_upgrade_check` E2E-only?
-  - Is `machine.json` (recent paths, `backupLocations`, `madeBackups`, `pdfPreviewHold`, the opening setting, the log's `troubleshootingLog` and `troubleshootingLogNoticeShown`) read as untrusted?
+  - Can the page put in `machine.json` (recent paths, `backupLocations`, `madeBackups`, `pdfPreviewHold`, the opening setting, the log's `troubleshootingLog` and `troubleshootingLogNoticeShown`) only what its commands admit (`set_appearance`'s two enums, a location only from a pick)? Does one an older or newer HoploDex wrote, or one left damaged, open no database, rotate no backup and use no folder the user didn't choose? A `machine.json`, config folder or scratch folder someone else wrote or altered is out of scope (Threat model: it needs a compromised machine).
 - **Accepted** ([009 research.md §19](../specs/009-upgrade-readiness/research.md)): an `fsync`-ignoring filesystem; the lock held while the upgrade question is open; the restored-from backup rotating out; case folding only for A to Z; a backup opened directly becoming its own database. These are integrity limits; reassess whether any is a security issue.
 - **Since:** 003; upgrade 009; rotation of only the backups this computer made, 2026-11-23.
 
@@ -361,5 +431,7 @@ Until 1.5.0 the constitution listed seven areas inline. Each is an entry here:
 - handling of the database key and passphrase: `key-passphrase`
 - secure deletion: `plaintext-lifetime`
 - decrypted document copies: `document-copies`
+
+Since 2026-11-23 an imported spreadsheet is the user's own (Threat model): `import-export` reviews import for integrity and export against a compromised web view.
 
 The other nine entries are what the seven missed: `document-preview`, `helpers`, `untrusted-images`, `database-files`, `flatpak`, `logging`, `shipped-build`, `unsafe-ffi` and `build-ci`.
