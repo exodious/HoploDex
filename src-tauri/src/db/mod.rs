@@ -731,6 +731,42 @@ mod tests {
         }
     }
 
+    /// The same objects written as other SQL text, as another SQLite version
+    /// could write them, are not damaged: an open and a copy's check accept them.
+    #[test]
+    fn a_schema_written_as_other_text_opens() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_path = dir.path().join("rewritten.hoplodex");
+        drop(create_database(&db_path, &passphrase(PASSPHRASE), &machine()).unwrap());
+        // Not `connect`: `SQLITE_DBCONFIG_DEFENSIVE` refuses `writable_schema`.
+        let crafter = Connection::open(&db_path).unwrap();
+        cipher::key(&crafter, "main", &passphrase(PASSPHRASE)).unwrap();
+        cipher::apply_cipher_settings(&crafter, "main").unwrap();
+        let rewritten = crafter
+            .execute_batch(
+                "PRAGMA writable_schema = ON;
+                 UPDATE sqlite_schema SET sql = 'CREATE   TABLE' || substr(sql, 13)
+                 WHERE name = 'app_state' AND sql LIKE 'CREATE TABLE %';",
+            )
+            .and_then(|()| {
+                crafter.query_row(
+                    "SELECT sql LIKE 'CREATE   TABLE %' FROM sqlite_schema WHERE name = 'app_state'",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )
+            })
+            .unwrap();
+        assert!(rewritten);
+        drop(crafter);
+
+        drop(
+            open_database(&db_path, &passphrase(PASSPHRASE), &machine(), false)
+                .unwrap()
+                .expect_ready(),
+        );
+        check_copy(&db_path, &passphrase(PASSPHRASE)).unwrap();
+    }
+
     #[test]
     fn creates_migrates_and_reopens_a_real_temp_database() {
         let dir = tempfile::TempDir::new().unwrap();
