@@ -9,7 +9,8 @@ Synthetic gradient images are still used for size and count testing.
 The showcase collection (`../support/showcase_collection.rs`, `human_seed
 --showcase`), which the GitHub Pages site and the README show, gives every
 record a photo, and uses only the public domain and CC0 ones
-(`scripts/showcase.test.ts` checks), so its page needs no credit line.
+(`../../tests/human_seed_coverage_test.rs` checks), so its page needs no
+credit line.
 
 Every photo is public domain, CC0, CC BY or the UK Open Government Licence
 v3.0. None are ShareAlike, NonCommercial or NoDerivatives, so they can also

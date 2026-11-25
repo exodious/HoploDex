@@ -616,6 +616,47 @@ fn the_showcase_collection_has_photos_variety_and_steady_policies() {
         assert!(types.contains(wanted), "no {wanted} in {types:?}");
     }
 
+    // The site's footer says its photos are public domain and CC0: every stored
+    // photo is a file in seed-photos/ that its README's table licenses so.
+    let photos_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/seed-photos");
+    let readme = std::fs::read_to_string(photos_dir.join("README.md")).unwrap();
+    let licence = |file: &str| {
+        readme.lines().find_map(|line| {
+            let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+            (cells.len() == 5 && cells[1] == format!("`{file}`")).then(|| cells[3].to_string())
+        })
+    };
+    let files: Vec<(String, Vec<u8>)> = std::fs::read_dir(&photos_dir)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                std::fs::read(&path).unwrap(),
+            )
+        })
+        .collect();
+    let stored: Vec<Vec<u8>> = conn
+        .prepare("SELECT original_bytes FROM photos")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(!stored.is_empty());
+    for bytes in &stored {
+        let (file, _) = files
+            .iter()
+            .find(|(_, file_bytes)| file_bytes == bytes)
+            .expect("a photo that is no file in seed-photos/");
+        let licence =
+            licence(file).unwrap_or_else(|| panic!("{file} is not in the seed photos' README"));
+        assert!(
+            licence.starts_with("Public domain") || licence.starts_with("CC0"),
+            "{file} is {licence}"
+        );
+    }
+
     let first = NaiveDate::from_ymd_opt(2026, 11, 25).unwrap();
     let last = NaiveDate::from_ymd_opt(2028, 11, 30).unwrap();
     for day in first.iter_days().take_while(|day| *day <= last) {

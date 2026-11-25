@@ -6,7 +6,7 @@
 //! exercises every rule and edge case:
 //! - every firearm and accessory has a real photo from `seed-photos/`, and
 //!   only public domain or CC0 ones, which the site's footer says (checked by
-//!   `scripts/showcase.test.ts`);
+//!   `tests/human_seed_coverage_test.rs`);
 //! - handguns, rifles, a shotgun and a suppressor, so the collection's first
 //!   screen mixes them;
 //! - the policies' dates are fixed, so no screen depends on the day: two run

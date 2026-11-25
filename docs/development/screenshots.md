@@ -168,8 +168,8 @@ collection is small and made to be looked at:
 
 - Every firearm and accessory has a real photo, and only public domain or
   CC0 ones from `src-tauri/examples/seed-photos/` (the site's footer says
-  so, and `scripts/showcase.test.ts` checks each one's licence in that
-  folder's README). The spec fails rather than shoot a list or tiles with a
+  so, and `src-tauri/tests/human_seed_coverage_test.rs` checks each stored
+  photo's licence in that folder's README). The spec fails rather than shoot a list or tiles with a
   type's drawing in view.
 - Handguns, rifles, a shotgun and a suppressor, shown as ungrouped tiles so
   they sit side by side.
