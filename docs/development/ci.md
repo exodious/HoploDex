@@ -127,7 +127,8 @@ It calls this CI workflow (`workflow_call`) with its `release` input set, which
 changes only this: E2E runs against the shipping profile
 (`HOPLODEX_E2E_PROFILE=release`), macOS E2E counts, the Flatpak job runs
 `test:flatpak` and then `test:flatpak -- --fresh-install`, and the package
-jobs keep what they built as artifacts. Its own jobs check the tag and the
+jobs keep what they built as artifacts, whose ids the workflow's outputs
+return for the draft job to download. Its own jobs check the tag and the
 release's AI security review, run `npm run audit`, `import_largest_test` and
 the [surface checks](surface-checks.md) on each OS, then draft the release.
 A final tag on a published release candidate's commit takes the promote path

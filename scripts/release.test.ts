@@ -515,6 +515,49 @@ describe("the package jobs' artifacts", () => {
     ]);
     for (const s of uploads) expect(s.with!.path.trim(), s.with!.name).not.toContain("\n");
   });
+
+  it("reach the draft job only by the ids their uploads returned, one download each", () => {
+    type CiJob = { outputs?: Record<string, string>; steps: (Step & { id?: string })[] };
+    const ci = yaml.load(fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8")) as {
+      on: { workflow_call: { outputs: Record<string, { value: string }> } };
+      jobs: Record<string, CiJob>;
+    };
+    const expr = (s: string) => /^\$\{\{\s*(.+?)\s*\}\}$/.exec(s)?.[1];
+    // Each ci.yml output that resolves to an upload step's artifact-id, keyed
+    // by the artifact name that step uploads.
+    const idOutputs = new Map<string, string>();
+    for (const [output, { value }] of Object.entries(ci.on.workflow_call.outputs)) {
+      const [, job, key] = /^jobs\.([\w-]+)\.outputs\.([\w-]+)$/.exec(expr(value) ?? "") ?? [];
+      const [, step] =
+        /^steps\.([\w-]+)\.outputs\.artifact-id$/.exec(
+          expr(ci.jobs[job]?.outputs?.[key] ?? "") ?? "",
+        ) ?? [];
+      const upload = ci.jobs[job]?.steps.find((s) => s.id === step);
+      if (upload?.uses?.startsWith("actions/upload-artifact"))
+        idOutputs.set(upload.with!.name, output);
+    }
+    expect([...idOutputs.keys()].sort()).toEqual([
+      "packages-deb",
+      "packages-flatpak",
+      "packages-macos",
+      "packages-rpm",
+      "packages-windows",
+    ]);
+
+    const downloads = releaseJobs().draft.steps!.filter((s) =>
+      s.uses?.startsWith("actions/download-artifact"),
+    );
+    for (const d of downloads) {
+      expect(d.with!.name, "no download by name").toBeUndefined();
+      expect(d.with!.pattern, "no download by pattern").toBeUndefined();
+      expect(d.with!.path).toBe("packages");
+    }
+    // One id per step: a download of several ids only warns on a missing one,
+    // and an empty one (no output) becomes a value that isn't an id.
+    expect(downloads.map((d) => d.with!["artifact-ids"]).sort()).toEqual(
+      [...idOutputs.values()].map((o) => `\${{ needs.ci.outputs.${o} || 'missing' }}`).sort(),
+    );
+  });
 });
 
 describe("Quit cleanup on a release's build", () => {
