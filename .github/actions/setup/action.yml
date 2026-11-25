@@ -65,9 +65,9 @@ runs:
         shared-key: ${{ runner.os }}-${{ inputs.rust-cache }}
         save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
-    # v2.87.31, the prebuilt cargo-nextest at the Dockerfile's version.
+    # v2.90.5, the prebuilt cargo-nextest at the Dockerfile's version.
     - if: inputs.nextest == 'true'
-      uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+      uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
       with:
         tool: cargo-nextest@0.9.146
 
