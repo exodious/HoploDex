@@ -288,11 +288,30 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # Each artifact by the id its package job's upload returned, one at a
+      # time: a download of one id fails when the run doesn't hold it, and an
+      # empty id is no number, so it fails too (it would otherwise download
+      # every artifact in the run).
       - uses: actions/download-artifact@v8
         with:
-          pattern: packages-*
+          artifact-ids: ${{ needs.ci.outputs.packages-deb || 'missing' }}
           path: packages
-          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.ci.outputs.packages-rpm || 'missing' }}
+          path: packages
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.ci.outputs.packages-windows || 'missing' }}
+          path: packages
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.ci.outputs.packages-macos || 'missing' }}
+          path: packages
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.ci.outputs.packages-flatpak || 'missing' }}
+          path: packages
 
       - name: Write the checksums
         working-directory: packages
