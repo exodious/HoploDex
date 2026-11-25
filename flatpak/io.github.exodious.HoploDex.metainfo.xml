@@ -66,7 +66,7 @@
         <ul>
           <li>About HoploDex shows the commit the build came from.</li>
           <li>Files dragged from File Explorer on Windows are taken again.</li>
-          <li>A lock that comes while a database is opened, created or restored is honoured.</li>
+          <li>A lock that comes while a database is opened, created or restored is honored.</li>
           <li>What was saved stays visible when an import or its conflict resolution fails or stops.</li>
           <li>The Linux package is now named hoplodex and replaces hoplo-dex, and declares everything it needs to run.</li>
           <li>Stricter limits on photos, documents and imports, and less left on disk by the web view.</li>
