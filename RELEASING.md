@@ -307,8 +307,9 @@ On the build path:
   WebKit's PDF HUD on), the window controls check and the drop check, its
   app part included on macOS and Windows
   ([PDF surface, window controls, drops](docs/development/surface-checks.md)).
-- **Draft the release,** only when every job above passed: `SHA256SUMS`, the
-  packages and the checksums kept together as the run's `release` artifact,
+- **Draft the release,** only when every job above passed: exactly the
+  package jobs' `packages-*` artifacts, by name, one file each (a missing or
+  extra one stops it), `SHA256SUMS`, the packages and the checksums kept together as the run's `release` artifact,
   and a draft release (a pre-release for a suffixed tag) with every file
   attached, the Flatpak included. Its notes are `.github/release-notes.md`,
   with the version and tag filled in (`{{app_version}}`, in the file names, is

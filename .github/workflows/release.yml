@@ -288,11 +288,28 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # Each artifact in its own folder, named for it, so the next step can see
+      # which ones the run holds.
       - uses: actions/download-artifact@v8
         with:
           pattern: packages-*
-          path: packages
-          merge-multiple: true
+          path: artifacts
+      # Exactly the artifacts ci.yml's package jobs keep, by name, each holding
+      # one file: a missing or extra packages-* artifact stops the draft.
+      - name: Take the package jobs' packages
+        run: |
+          expected="packages-deb packages-flatpak packages-macos packages-rpm packages-windows"
+          found=$(find artifacts -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | xargs)
+          [[ "$found" == "$expected" ]] || {
+            echo "::error::The run's packages-* artifacts are '$found', not '$expected'"; exit 1; }
+          mkdir packages
+          for a in $expected; do
+            files=("artifacts/$a"/*)
+            [[ ${#files[@]} -eq 1 && -f ${files[0]} ]] || {
+              echo "::error::$a holds ${#files[@]} entries, not one file"; exit 1; }
+            mv -n -- "${files[0]}" packages/
+          done
+          [[ $(ls packages | wc -l) -eq 5 ]] || { echo "::error::Two packages share a name"; exit 1; }
 
       - name: Write the checksums
         working-directory: packages
