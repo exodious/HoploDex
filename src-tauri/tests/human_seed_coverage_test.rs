@@ -559,3 +559,73 @@ fn fixed_times_stamp_the_backups_the_last_open_and_the_documents() {
         conn.query_row("SELECT last_backup_at FROM app_state", [], |row| row.get(0)).unwrap();
     assert_eq!(last_backup, machine_json["recentDatabases"][0]["lastOpenedAt"].as_str().unwrap());
 }
+
+/// The showcase collection (`human_seed --showcase`, docs/development/
+/// screenshots.md "The showcase"): a photo on every firearm and accessory,
+/// handguns, rifles, a shotgun and a suppressor, and policies whose status
+/// is the same on every day until December 2028, so the shots never show a
+/// day-dependent "Expires in" (checked on fixed days, not today).
+#[test]
+fn the_showcase_collection_has_photos_variety_and_steady_policies() {
+    use chrono::NaiveDate;
+    use hoplodex_lib::services::insurance_status::load_context_as_of;
+
+    let dir = TempDir::new().unwrap();
+    let paths = human_seed::seed_sandbox_with(
+        dir.path(),
+        None,
+        true,
+        human_seed::showcase_collection::seed_showcase,
+    );
+    let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
+    let conn = db::open_database(
+        &paths.main,
+        &Passphrase::from_input(human_seed::PASSPHRASE.into()),
+        &machine,
+        true,
+    )
+    .unwrap()
+    .expect_ready();
+
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |row| row.get(0)).unwrap() };
+    assert_eq!(
+        count(
+            "SELECT COUNT(*) FROM firearms f WHERE f.status = 'active'
+             AND NOT EXISTS (SELECT 1 FROM photos p WHERE p.firearm_id = f.id)"
+        ),
+        0,
+        "an active firearm without a photo"
+    );
+    assert_eq!(
+        count(
+            "SELECT COUNT(*) FROM accessories a WHERE a.status = 'active'
+             AND NOT EXISTS (SELECT 1 FROM photos p WHERE p.accessory_id = a.id)"
+        ),
+        0,
+        "an active accessory without a photo"
+    );
+    assert!(count("SELECT COUNT(*) FROM accessories") > 0);
+    let types: BTreeSet<String> = conn
+        .prepare("SELECT DISTINCT t.name FROM firearms f JOIN firearm_types t ON t.id = f.firearm_type_id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    for wanted in ["Handgun", "Rifle", "Shotgun", "Suppressor"] {
+        assert!(types.contains(wanted), "no {wanted} in {types:?}");
+    }
+
+    let first = NaiveDate::from_ymd_opt(2026, 11, 25).unwrap();
+    let last = NaiveDate::from_ymd_opt(2028, 11, 30).unwrap();
+    for day in first.iter_days().take_while(|day| *day <= last) {
+        let context = load_context_as_of(&conn, day).unwrap();
+        for status in context.policies.values() {
+            assert!(
+                status.is_expired || (status.is_in_force && !status.is_expiring_soon),
+                "{} on {day}: {status:?}",
+                status.name
+            );
+        }
+    }
+}

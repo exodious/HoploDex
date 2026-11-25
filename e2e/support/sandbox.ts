@@ -293,7 +293,12 @@ function runSeed(args: string[], stdio: "inherit" | "pipe") {
  * chooser shows its path); it is emptied again by {@link removeSandbox}.
  */
 export function seedCollection(
-  options: { pendingFrom?: string; fixedTimes?: boolean; seedDir?: string } = {},
+  options: {
+    pendingFrom?: string;
+    fixedTimes?: boolean;
+    seedDir?: string;
+    showcase?: boolean;
+  } = {},
 ): string {
   if (!state.dir) throw new Error("seedCollection() needs isolateAppData() first");
   const dir = options.seedDir
@@ -303,6 +308,7 @@ export function seedCollection(
   const seedArgs = ["--dir", dir];
   if (options.pendingFrom) seedArgs.push("--pending-from", options.pendingFrom);
   if (options.fixedTimes) seedArgs.push("--fixed-times");
+  if (options.showcase) seedArgs.push("--showcase");
   if (runSeed(seedArgs, "inherit").status !== 0) {
     throw new Error("seeding the screenshot collection failed");
   }

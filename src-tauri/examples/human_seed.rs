@@ -30,9 +30,13 @@
 //! the seed's times reads the same on any day: see [`FIXED_DOCUMENT_ADDED`] and
 //! [`FIXED_CLOCK`].
 //!
+//! With `--showcase` (`npm run screenshots:showcase`), "Main collection" is the
+//! small showcase collection of `support/showcase_collection.rs` instead: a
+//! real photo on every record, and nothing that tests an edge case.
+//!
 //! Usage: cargo run --example human_seed -- [--dir <path>] [--extra <n>] [--reset]
 //!                                          [--pending-from <version>] [--older]
-//!                                          [--fixed-times]
+//!                                          [--fixed-times] [--showcase]
 //!        cargo run --example human_seed -- --print-passphrase
 
 use std::path::{Path, PathBuf};
@@ -58,6 +62,8 @@ use rusqlite::Connection;
 mod main_collection;
 #[path = "support/sandbox.rs"]
 mod sandbox;
+#[path = "support/showcase_collection.rs"]
+pub mod showcase_collection;
 
 use main_collection::*;
 
@@ -107,6 +113,8 @@ struct Args {
     /// Stamp the times the screens show with ones that read the same on any
     /// day (011 FR-017): the store shots are retaken only on purpose.
     fixed_times: bool,
+    /// Make "Main collection" the showcase collection.
+    showcase: bool,
 }
 
 fn parse_args() -> Args {
@@ -117,6 +125,7 @@ fn parse_args() -> Args {
         pending_from: None,
         older: false,
         fixed_times: false,
+        showcase: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -138,6 +147,7 @@ fn parse_args() -> Args {
             }
             "--older" => args.older = true,
             "--fixed-times" => args.fixed_times = true,
+            "--showcase" => args.showcase = true,
             "--print-passphrase" => {
                 println!("{PASSPHRASE}");
                 std::process::exit(0);
@@ -165,6 +175,7 @@ fn usage(problem: &str) -> ! {
          \x20                     (passphrase \"release fixture 0.1.0\"), which needs an upgrade to open\n\
          --fixed-times         stamp the backups, the last open and the documents' dates so the\n\
          \x20                     screens read the same on any day (the store shots)\n\
+         --showcase            make \"Main collection\" the showcase collection (the showcase shots)\n\
          --print-passphrase    print the seeded databases' passphrase and exit"
     );
     std::process::exit(if problem.is_empty() { 0 } else { 2 });
@@ -197,7 +208,16 @@ fn main() {
         paths.remove();
     }
 
-    seed_sandbox(&args.dir, args.extra, args.pending_from.as_deref(), args.fixed_times);
+    if args.showcase {
+        seed_sandbox_with(
+            &args.dir,
+            args.pending_from.as_deref(),
+            args.fixed_times,
+            showcase_collection::seed_showcase,
+        );
+    } else {
+        seed_sandbox(&args.dir, args.extra, args.pending_from.as_deref(), args.fixed_times);
+    }
     let samples = write_import_samples(&args.dir.join("import-samples"));
     if args.older {
         let older = seed_older(&args.dir);
@@ -273,6 +293,17 @@ pub fn seed_sandbox(
     pending_from: Option<&str>,
     fixed_times: bool,
 ) -> SandboxPaths {
+    seed_sandbox_with(dir, pending_from, fixed_times, |main| seed(main, extra, Images::Photos))
+}
+
+/// [`seed_sandbox`], with `seed_main` filling "Main collection" (the full
+/// collection, or `--showcase`'s).
+pub fn seed_sandbox_with(
+    dir: &Path,
+    pending_from: Option<&str>,
+    fixed_times: bool,
+    seed_main: impl FnOnce(&Connection),
+) -> SandboxPaths {
     let paths = SandboxPaths::new(dir);
     must(std::fs::create_dir_all(&paths.databases), "the databases folder");
     let machine = must(MachineSettings::load(&paths.config), "machine.json");
@@ -338,7 +369,7 @@ pub fn seed_sandbox(
         db::create_database(&paths.main, &passphrase(), &identity),
         "creating the main database",
     );
-    seed(&main, extra, Images::Photos);
+    seed_main(&main);
     must(
         main.execute(
             "UPDATE collection_settings SET backups_enabled = 1, backup_keep_count = 3,

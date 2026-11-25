@@ -37,7 +37,7 @@ function researchBullets(): Map<string, string> {
   return bullets;
 }
 
-/** The seed-photos README's "Which firearm uses which" table: file to
+/** The seed-photos README's "Which record uses which" table: file to
  * { firearm, licence }. */
 function readmeTable(): Map<string, { firearm: string; licence: string }> {
   const readme = fs.readFileSync(path.join(SEED_PHOTOS, "README.md"), "utf8");

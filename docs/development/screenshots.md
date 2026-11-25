@@ -147,3 +147,49 @@ merged to `main`, then the five addresses changed to the full hash of the
 commit that merge made on `main`. `release.mjs version` fails until the
 addresses' commit is in the release's history and has the working tree's
 images.
+
+## The showcase
+
+The GitHub Pages site (`site/`, published by `.github/workflows/pages.yml`)
+and the README's opening show the app with the shots in `docs/showcase/`, a
+light and a dark one of each. Like the store shots, they are retaken only on
+purpose (to show a new feature, say):
+
+```bash
+scripts/dev-container.sh --store-shots bash -c 'npm run build && npm run screenshots:showcase'
+```
+
+It runs `e2e/screenshots/showcase.e2e.ts` in the store shots' setting (the
+sandbox at one path, the seed in `/home/alex/Documents`, `--fixed-times`,
+1200×800) on the seed's showcase collection (`human_seed --showcase`,
+`src-tauri/examples/support/showcase_collection.rs`), and only when the run
+passes replaces every image in `docs/showcase/` with the new set. The
+collection is small and made to be looked at:
+
+- Every firearm and accessory has a real photo, and only public domain or
+  CC0 ones from `src-tauri/examples/seed-photos/` (the site's footer says
+  so, and `scripts/showcase.test.ts` checks each one's licence in that
+  folder's README). The spec fails rather than shoot a list or tiles with a
+  type's drawing in view.
+- Handguns, rifles, a shotgun and a suppressor, shown as ungrouped tiles so
+  they sit side by side.
+- The policies' dates are fixed: two run to the end of 2028 and one ended in
+  2024, which leaves one firearm under-insured and one uninsured. From
+  December 2028 the in-force pair is "expiring", and the spec refuses to
+  shoot until the seed's dates move on.
+
+To add a shot, take it in the spec in both themes and name it in
+`site/index.html` (and the README, if it shows it):
+`scripts/showcase.test.ts` fails when the page and the README name other
+images than `docs/showcase/` holds. Look at the shots before committing them.
+
+To see the site before it is published, put it together as `pages.yml` does
+and open `index.html` in a browser:
+
+```bash
+mkdir -p /tmp/site/showcase && cp -R site/. /tmp/site/ &&
+  cp docs/showcase/*.png /tmp/site/showcase/ && cp src-tauri/icons/128x128@2x.png /tmp/site/icon.png
+```
+
+The site is published once the repository's Settings › Pages › Source is
+GitHub Actions; until then `pages.yml` leaves a notice and publishes nothing.

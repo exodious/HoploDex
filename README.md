@@ -1,10 +1,31 @@
-# HoploDex
-Firearm Collection Inventory App
+<p align="center"><img src="src-tauri/icons/128x128@2x.png" width="96" alt=""></p>
 
-A local-only desktop app for keeping an inventory of a firearm collection,
-built with Tauri 2: a Rust backend (`src-tauri/`) owns persistence,
-encryption, and business logic; a React + TypeScript frontend (`src/`)
-owns the UI.
+<h1 align="center">HoploDex</h1>
+
+<p align="center"><b>A private inventory of your firearm collection.</b></p>
+
+<p align="center">
+<a href="https://github.com/exodious/HoploDex/releases/latest"><b>Download</b></a> ·
+<a href="https://exodious.github.io/HoploDex/"><b>See what it does</b></a> ·
+Linux, macOS and Windows · Free and open source
+</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/showcase/tiles-dark.png">
+  <img src="docs/showcase/tiles-light.png" alt="The collection as photo tiles: handguns, rifles and a shotgun, each with its value and insurance coverage.">
+</picture>
+
+Record every firearm and accessory with its photos, papers and value, and see
+what your insurance covers. It all stays on your computer, encrypted with your
+passphrase.
+
+- **Your whole collection:** search it, group it, and see what it's worth.
+- **Insurance:** spot anything uninsured, under-insured or about to expire.
+- **Paperwork:** photos and documents (PDF, TIFF, Word, Excel and more) with
+  each record: bills of sale, receipts, manuals.
+- **Accessories:** optics, lights, suppressors, etc., and what they're mounted on.
+- **Peace of mind:** AES-256 encrypted, offline, backed up, and locked when you
+  step away.
 
 ## Supported platforms
 
@@ -66,6 +87,10 @@ The file is `hoplodex.log` in the `logs` folder of HoploDex's cache:
 usual level.
 
 ## Development
+
+HoploDex is built with Tauri 2: a Rust backend (`src-tauri/`) owns
+persistence, encryption, and business logic; a React + TypeScript frontend
+(`src/`) owns the UI.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the development container,
 prerequisites, and how to build, test, lint, take screenshots and run the

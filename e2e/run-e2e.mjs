@@ -22,44 +22,69 @@ const SCREENSHOT_SPECS = ["e2e/screenshots/screens.e2e.ts", "e2e/screenshots/fir
 const STORE_SPEC = "e2e/screenshots/store.e2e.ts";
 const STORE_STAGING = path.join(repoRoot, "e2e/screenshots-out/store");
 const STORE_TARGET = path.join(repoRoot, "flatpak/screenshots");
+// --showcase-shots (`npm run screenshots:showcase`) retakes the showcase's
+// shots, light and dark (e2e/screenshots/showcase.e2e.ts): the GitHub Pages
+// site's (site/) and the README's. When the run passes they replace
+// docs/showcase/'s images. Like the store shots, nothing else retakes them.
+const SHOWCASE_SPEC = "e2e/screenshots/showcase.e2e.ts";
+const SHOWCASE_STAGING = path.join(repoRoot, "e2e/screenshots-out/showcase");
+const SHOWCASE_TARGET = path.join(repoRoot, "docs/showcase");
 const argv = process.argv.slice(2);
 const storeShots = argv.includes("--store-shots");
-if (storeShots) {
+const showcaseShots = argv.includes("--showcase-shots");
+/** The one spec, and where it writes, of --store-shots or --showcase-shots. */
+const fixedShots = storeShots
+  ? {
+      option: "--store-shots",
+      script: "screenshots:store",
+      spec: STORE_SPEC,
+      staging: STORE_STAGING,
+    }
+  : showcaseShots
+    ? {
+        option: "--showcase-shots",
+        script: "screenshots:showcase",
+        spec: SHOWCASE_SPEC,
+        staging: SHOWCASE_STAGING,
+      }
+    : null;
+if (fixedShots) {
   if (argv.length > 1) {
-    console.error("--store-shots takes no other option");
+    console.error(`${fixedShots.option} takes no other option`);
     process.exit(2);
   }
   if (process.platform !== "linux") {
     // The shots are the Linux dev container's (Xvfb, 1200 x 800, WebKitGTK),
     // the engine the Flatpak ships.
     console.error(
-      "--store-shots runs on Linux, in the dev container (docs/development/screenshots.md)",
+      `${fixedShots.option} runs on Linux, in the dev container (docs/development/screenshots.md)`,
     );
     process.exit(2);
   }
   // The chooser's shot shows the seed's folder, so it is the same every time:
-  // a tmpfs the dev container mounts for this one command (and no other).
+  // a tmpfs the dev container mounts for these commands (and no other).
   const { seedDir } = JSON.parse(
     fs.readFileSync(path.join(repoRoot, "e2e/screenshots/store-shots.json"), "utf8"),
   );
   if (!fs.existsSync(seedDir)) {
     console.error(
-      `${seedDir} is not here: run through \`scripts/dev-container.sh --store-shots npm run screenshots:store\``,
+      `${seedDir} is not here: run through \`scripts/dev-container.sh --store-shots npm run ${fixedShots.script}\``,
     );
     process.exit(2);
   }
-  fs.rmSync(STORE_STAGING, { recursive: true, force: true });
+  fs.rmSync(fixedShots.staging, { recursive: true, force: true });
 }
 
 let screenshotDir;
-const extraArgs = (storeShots ? ["--screenshots=" + STORE_STAGING] : argv).filter((arg) => {
+const extraArgs = (fixedShots ? ["--screenshots=" + fixedShots.staging] : argv).filter((arg) => {
   const match = /^--screenshots(?:=(.+))?$/.exec(arg);
   if (!match) return true;
   screenshotDir = path.resolve(match[1] ?? path.join(repoRoot, "e2e/screenshots-out"));
   return false;
 });
 if (screenshotDir && !extraArgs.some((arg) => arg === "--spec" || arg.startsWith("--spec="))) {
-  for (const spec of storeShots ? [STORE_SPEC] : SCREENSHOT_SPECS) extraArgs.push("--spec", spec);
+  for (const spec of fixedShots ? [fixedShots.spec] : SCREENSHOT_SPECS)
+    extraArgs.push("--spec", spec);
 }
 
 // On Linux, each worker starts an isolated Xvfb virtual display of its own
@@ -107,5 +132,23 @@ if (storeShots && result.status === 0) {
     fs.copyFileSync(path.join(STORE_STAGING, file), path.join(STORE_TARGET, file));
   }
   console.log(`Retook ${files.join(", ")} in ${path.relative(repoRoot, STORE_TARGET)}/`);
+}
+if (showcaseShots && result.status === 0) {
+  // The whole set goes in together, replacing the last one, so a shot the
+  // spec no longer takes doesn't linger (scripts/showcase.test.ts checks the
+  // page and the README name exactly these).
+  const files = fs.readdirSync(SHOWCASE_STAGING).filter((file) => file.endsWith(".png"));
+  if (files.length === 0) {
+    console.error("The showcase run took no shots; nothing was copied");
+    process.exit(1);
+  }
+  fs.mkdirSync(SHOWCASE_TARGET, { recursive: true });
+  for (const file of fs.readdirSync(SHOWCASE_TARGET).filter((f) => f.endsWith(".png"))) {
+    fs.rmSync(path.join(SHOWCASE_TARGET, file));
+  }
+  for (const file of files) {
+    fs.copyFileSync(path.join(SHOWCASE_STAGING, file), path.join(SHOWCASE_TARGET, file));
+  }
+  console.log(`Retook ${files.length} shots in ${path.relative(repoRoot, SHOWCASE_TARGET)}/`);
 }
 process.exit(result.status ?? 1);
