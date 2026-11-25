@@ -45,13 +45,22 @@
 //        --check --all-targets           "notices: L N, W N, M N components; 0 failures"
 //        --out <dir> [--target T]        writes notices.json and NOTICES.txt to <dir>
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { fakeCargo, PROJECT, TRIPLES } from "./fixtures/fakeCargo.mjs";
-import { buildNotices, main, programBlock, renderJson, renderText } from "./notices.mjs";
+import { buildNotices, commitOf, main, programBlock, renderJson, renderText } from "./notices.mjs";
 import { isAllowed } from "./policy.mjs";
 import { npmShipped, targetTriple } from "./shipped.mjs";
 import { choose } from "./spdx.mjs";
@@ -542,6 +551,8 @@ describe("010 FR-011 - notices.json", () => {
       "copyrightYears",
       "copyrightHolder",
       "sourceUrl",
+      "commit",
+      "commitModified",
     ]);
     for (const c of doc.components) {
       expect(Object.keys(c), idOf(c)).toEqual(COMPONENT_KEYS.filter((k) => k in c));
@@ -756,6 +767,8 @@ describe("010 FR-002 - the program block", () => {
       "copyrightYears",
       "copyrightHolder",
       "sourceUrl",
+      "commit",
+      "commitModified",
     ]);
     expect(program.name).toBe("HoploDex");
     expect(program.version).toBe(JSON.parse(read(PROJECT, "package.json")).version);
@@ -778,9 +791,11 @@ describe("010 FR-002 - the program block", () => {
       calls.push(args);
       return "2026-10-18\n";
     });
-    expect(calls).toHaveLength(1);
+    // then the commit (#210): rev-parse, which this answer fails, so not status
+    expect(calls).toHaveLength(2);
     expect(calls[0]).toContain("log");
     expect(calls[0]).toContain("--format=%cs");
+    expect(calls[1]).toEqual(["rev-parse", "HEAD"]);
   });
 
   it("uses the build's own year when git throws", () => {
@@ -802,6 +817,85 @@ describe("010 FR-002 - the program block", () => {
     expect(program.version).toBe(pkg.version);
     expect(program.sourceUrl).toBe("https://github.com/exodious/HoploDex");
     expect(program.copyrightYears).toMatch(/^2026(–\d{4})?$/);
+  });
+});
+
+describe("#210 - the build's commit in the program block", () => {
+  const SHA = "87e8109c5a2f0d1e2b3c4a5f6e7d8c9b0a1f2e3d";
+  const gitAt =
+    (status: string) =>
+    (args: string[]): string => {
+      if (args[0] === "rev-parse") return `${SHA}\n`;
+      if (args[0] === "status") return status;
+      return "2026-10-18\n";
+    };
+
+  it("takes HEAD's commit from a clean tree", () => {
+    expect(commitOf({ git: gitAt("") })).toEqual({ commit: SHA, commitModified: false });
+  });
+
+  it("marks a tree with changes, untracked files included, but not ignored ones", () => {
+    // Real git answers the status question, so the arguments commitOf passes are what's tested.
+    const root = mkdtempSync(path.join(os.tmpdir(), "hoplodex-untracked-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: root });
+      // a user's setting that hides untracked files mustn't hide them from the build
+      execFileSync("git", ["config", "status.showUntrackedFiles", "no"], { cwd: root });
+      const git = (args: string[]): string =>
+        args[0] === "rev-parse"
+          ? `${SHA}\n`
+          : execFileSync("git", args, { cwd: root, encoding: "utf8" });
+      writeFileSync(path.join(root, ".gitignore"), ".gitignore\nignored.txt\n");
+      writeFileSync(path.join(root, "ignored.txt"), "");
+      expect(commitOf({ git })).toEqual({ commit: SHA, commitModified: false });
+      writeFileSync(path.join(root, "new.txt"), "");
+      expect(commitOf({ git })).toEqual({ commit: SHA, commitModified: true });
+    } finally {
+      rmSync(root, { recursive: true });
+    }
+  });
+
+  it("is null when there is no git", () => {
+    const noGit = () => {
+      throw new Error("not a git repository");
+    };
+    expect(commitOf({ git: noGit })).toEqual({ commit: null, commitModified: false });
+  });
+
+  it("reads flatpak/commit.json when there is no git, as the Flatpak build has none", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "hoplodex-commit-"));
+    cpSync(path.join(PROJECT, "package.json"), path.join(root, "package.json"));
+    const noGit = () => {
+      throw new Error("not a git repository");
+    };
+    expect(programBlock({ root, git: noGit }).commit).toBeNull();
+    mkdirSync(path.join(root, "flatpak"));
+    writeFileSync(
+      path.join(root, "flatpak", "commit.json"),
+      JSON.stringify({ commit: SHA, commitModified: true }),
+    );
+    expect(programBlock({ root, git: noGit })).toMatchObject({ commit: SHA, commitModified: true });
+    // git wins over the file
+    expect(programBlock({ root, git: gitAt("") })).toMatchObject({
+      commit: SHA,
+      commitModified: false,
+    });
+    rmSync(root, { recursive: true });
+  });
+
+  it("is the checkout's own commit by default, or null where git can't read it", () => {
+    let head: string | null;
+    try {
+      head = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+    } catch {
+      // a worktree whose main repository isn't mounted (the dev container)
+      head = null;
+    }
+    expect(commitOf().commit).toBe(head);
   });
 });
 

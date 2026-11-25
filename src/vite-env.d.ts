@@ -9,4 +9,8 @@ declare const __HOPLODEX_PROGRAM__: {
   copyrightYears: string;
   copyrightHolder: string;
   sourceUrl: string;
+  /** The commit the build came from, or null with no git (#210). */
+  commit: string | null;
+  /** Whether the working tree had uncommitted changes. */
+  commitModified: boolean;
 };

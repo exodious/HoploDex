@@ -20,6 +20,7 @@ cd "$repo"
 current_step=""
 set -E
 trap 'printf "\nbuild.sh: FAILED at step: %s\n" "$current_step" >&2' ERR
+trap 'rm -f "$repo/flatpak/commit.json"' EXIT
 
 # shellcheck source=scripts/flatpak/env.sh
 source "$here/env.sh" "$@"
@@ -98,6 +99,14 @@ mkdir -p "$state/state" "$repo/flatpak/out"
 
 step "install the runtime, SDK and extensions (network, only if missing)"
 install_missing_refs
+
+# The build has no .git, so the commit it shows in About comes from this file (#210).
+step "record the checkout's commit in flatpak/commit.json"
+node --input-type=module -e '
+  import { commitOf } from "./scripts/licenses/notices.mjs";
+  process.stdout.write(JSON.stringify(commitOf()));
+' >flatpak/commit.json
+cat flatpak/commit.json; echo
 
 step "flatpak-builder --download-only (fetches every source; network)"
 builder --download-only --force-clean "$build_dir" "$manifest"

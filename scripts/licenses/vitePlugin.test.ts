@@ -279,7 +279,9 @@ describe("010 FR-002 - __HOPLODEX_PROGRAM__ holds the program block", () => {
     const entry = output.find((o) => o.type === "chunk" && o.code?.includes("console.log"));
     expect(entry?.code).not.toContain("__HOPLODEX_PROGRAM__");
     // every field of the block is in the entry chunk (the fixture's years are plain ASCII)
-    for (const value of Object.values(expected())) expect(entry?.code).toContain(value);
+    for (const value of Object.values(expected())) {
+      if (typeof value === "string") expect(entry?.code).toContain(value);
+    }
     expect(JSON.parse(asText(named(output, "notices.json"))).program).toEqual(expected());
   });
 

@@ -32,6 +32,7 @@ From top to bottom:
 
 1. **Program block** (always shown, from compiled-in constants):
    - "HoploDex" as an `h3`, with "Version 0.1.0" beside it.
+     _Amended 2026-11-24: then "Commit " and the build's commit's first 12 characters in its own monospace span (`.hd-about__commit`), styled as the source address's is, followed by " with uncommitted changes" for a build from a modified working tree, and nothing when the build had no commit (#210)._
    - "Copyright © 2026 exodious and the HoploDex contributors". The years are
      "2026–YYYY" from the year after 2026 on. The screen uses the © sign;
      `NOTICES.txt` and the README keep the GPL's plain-text "Copyright (C)".

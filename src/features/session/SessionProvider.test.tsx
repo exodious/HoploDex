@@ -1312,6 +1312,8 @@ describe("SessionProvider and About HoploDex (010 FR-001)", () => {
       copyrightYears: "2026",
       copyrightHolder: "exodious and the HoploDex contributors",
       sourceUrl: "https://github.com/exodious/HoploDex",
+      commit: null,
+      commitModified: false,
     });
     fetchNotices.mockReset().mockReturnValue(new Promise(() => {}));
     vi.stubGlobal("fetch", fetchNotices);

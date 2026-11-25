@@ -52,7 +52,10 @@ naming it:
 The build is of the checkout as it is, uncommitted changes included, except
 `node_modules`, `dist`, `src-tauri/target`, `.git`, `.claude`, `flatpak/out`,
 `.human-testing` and `.wdio`. `flatpak/out/` is git-ignored, so the host can
-reach the `.flatpak` file there.
+reach the `.flatpak` file there. Since `.git` stays out, `build.sh` first writes
+the checkout's commit, and whether it has uncommitted changes, to the
+git-ignored `flatpak/commit.json`, which the build's program block reads for
+the About dialog (#210), and removes it when the script exits, however it ends.
 
 ## Where it runs
 

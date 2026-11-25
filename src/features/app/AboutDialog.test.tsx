@@ -22,6 +22,8 @@ const PROGRAM = {
   copyrightYears: "2026",
   copyrightHolder: "exodious and the HoploDex contributors",
   sourceUrl: "https://github.com/exodious/HoploDex",
+  commit: "87e8109c5a2f0d1e2b3c4a5f6e7d8c9b0a1f2e3d",
+  commitModified: false,
 };
 
 const GPL =
@@ -219,6 +221,30 @@ describe("010 US1 - AboutDialog's program block (010 US1-1, 010 FR-002, 010 FR-0
     expect(
       screen.getByText(hasText("Copyright © 2026–2028 exodious and the HoploDex contributors")),
     ).toBeInTheDocument();
+  });
+
+  it("shows the build's commit beside the version (#210)", () => {
+    neverAnswer();
+    renderAbout();
+    expect(dialog().querySelector(".hd-about__name")).toHaveTextContent(
+      /^HoploDexVersion 0\.1\.0Commit 87e8109c5a2f$/,
+    );
+  });
+
+  it("says when the build's working tree had uncommitted changes (#210)", () => {
+    vi.stubGlobal("__HOPLODEX_PROGRAM__", { ...PROGRAM, commitModified: true });
+    neverAnswer();
+    renderAbout();
+    expect(dialog().querySelector(".hd-about__name")).toHaveTextContent(
+      "Commit 87e8109c5a2f with uncommitted changes",
+    );
+  });
+
+  it("leaves the commit out when the build had no git (#210)", () => {
+    vi.stubGlobal("__HOPLODEX_PROGRAM__", { ...PROGRAM, commit: null });
+    neverAnswer();
+    renderAbout();
+    expect(dialog().querySelector(".hd-about__name")).not.toHaveTextContent("Commit");
   });
 
   it("shows the additional permission after the statements once loaded, its heading as a strong run-in", async () => {

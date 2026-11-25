@@ -58,6 +58,44 @@ function realGit(root) {
     execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 }
 
+/** Where `scripts/flatpak/build.sh` writes `commitOf`'s answer for the Flatpak
+ * build, which has no `.git` (#210). Git-ignored. */
+export const COMMIT_FILE = path.join("flatpak", "commit.json");
+
+/**
+ * The commit the checkout is at, and whether its working tree has changes git
+ * doesn't ignore, untracked files included (#210). `commit` is null when there
+ * is no git.
+ */
+export function commitOf({ git = realGit(REPO) } = {}) {
+  try {
+    const commit = String(git(["rev-parse", "HEAD"])).trim();
+    if (!/^[0-9a-f]{40}$/.test(commit)) return { commit: null, commitModified: false };
+    return {
+      commit,
+      commitModified:
+        String(git(["status", "--porcelain", "--untracked-files=normal"])).trim() !== "",
+    };
+  } catch {
+    return { commit: null, commitModified: false };
+  }
+}
+
+/** `commitOf` from git, or, when there is no git (the Flatpak build), from `COMMIT_FILE`. */
+function buildCommit(root, git) {
+  const found = commitOf({ git });
+  if (found.commit !== null) return found;
+  try {
+    const saved = JSON.parse(readFileSync(path.join(root, COMMIT_FILE), "utf8"));
+    if (typeof saved.commit === "string" && /^[0-9a-f]{40}$/.test(saved.commit)) {
+      return { commit: saved.commit, commitModified: saved.commitModified === true };
+    }
+  } catch {
+    // no file: the commit is unknown
+  }
+  return found;
+}
+
 /**
  * The program block compiled into the interface and repeated in `notices.json`
  * (010 data-model.md, "Program block"; 010 research.md §13). `git(args)` returns a
@@ -82,6 +120,7 @@ export function programBlock({ root = REPO, git = realGit(root), now = new Date(
     sourceUrl: String(url ?? "")
       .replace(/^git\+/, "")
       .replace(/\.git$/, ""),
+    ...buildCommit(root, git),
   };
 }
 
