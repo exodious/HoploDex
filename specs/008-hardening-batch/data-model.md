@@ -158,6 +158,8 @@ Lifetime: from `opened(status)` to the first of `session:closing` or
 
 _Amended 2026-11-04: a workbook's styles are bounded too (`MAX_STYLE_TEXT_CHARS`, 255 characters per number format code or font name; `MAX_CELL_FORMATS`, 65,490 `<xf>`, `<numFmt>`, `<font>`, `<fill>` or `<border>` records of each kind) and so is its theme (65,490 colour slots, where Excel writes 12), and a file past them is unreadable, not a limit (calamine 0.38, RUSTSEC-2026-0436)._
 
+_Amended 2026-11-24: the styles and theme bounds are gone (`MAX_STYLE_TEXT_CHARS`, `MAX_CELL_FORMATS`): only a spreadsheet built to attack the import passes them, which [`docs/attack-surface.md`](../../docs/attack-surface.md)'s threat model puts out of scope, and the import helper's memory limit (Linux, Windows) still ends such a read as unreadable._
+
 `ImportLimit` (serialized camelCase, for `IMPORT_LIMIT_EXCEEDED.details.limit`):
 `fileSize`, `unpackedSize`, `zipEntries`, `sheets`, `rows`, `columns`,
 `cells`, `cellText`, `totalText`, `sharedStrings`.

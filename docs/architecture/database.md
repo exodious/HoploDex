@@ -52,28 +52,23 @@ decrypted pages and row values included, is filled with random bytes first
 it locks nothing in memory, its own key buffers included: locking every block
 cost a system call per allocation and missed the performance budgets.
 
-Those settings don't bound how many rows a view makes, or how long an
-expression takes, so an open, a copy's check and a backup's first look go
-through `db::check_schema`, which reads nothing but the schema until it is
-shown to be HoploDex's own. A database without the runner's own
-`schema_migrations` table, exactly as `upgrade::SCHEMA_MIGRATIONS` makes it
-(so a plain table whose rows the file holds), or without `app_state`, is not a
-HoploDex database; a step this build doesn't know means `NewerVersion`; and a
-schema that isn't exactly what the steps it records make, every table, view,
-trigger and index by type, name and SQL text, against those steps applied to
-an empty in-memory database, is damaged. Only then is `app_state` read; then
-a name in the four lookup tables, or a type's or kind's
-`generic_thumbnail_key`, longer than the 200 characters HoploDex writes (or
-800 bytes, since `length` of text stops at a NUL) is damaged too, since the
-collection's lists repeat it on every record; and only then is a
-copy's `integrity_check` (which works out every row's CHECK constraints and
-index keys) run. The test hooks' build alone also passes
+An open, a copy's check and a backup's first look go through
+`db::check_schema`, which reads nothing but the schema until it has told
+what the file is. A database without the runner's own `schema_migrations`
+table (as `upgrade::SCHEMA_MIGRATIONS` makes it) or without `app_state` is not
+a HoploDex database; a step this build doesn't know means `NewerVersion`; and
+a schema without exactly the tables, views, triggers and indexes the steps it
+records make, by type, name and table, against those steps applied to an
+empty in-memory database, is damaged. Their SQL text isn't compared: SQLite
+writes some of it itself (FTS5's own tables, the text an `ALTER TABLE`
+rewrites), so another SQLite version could write it differently, and a
+database HoploDex didn't write is out of scope (`docs/attack-surface.md`'s
+Threat model). Only then is `app_state` read, and only then is a copy's
+`integrity_check` run. The test hooks' build alone also passes
 `upgrade::testing::FILLER`, the plain table tests use to make a file bigger.
-The schema's text is therefore part of the data layout: a released step's SQL
+The set of objects is therefore part of the data layout: a released step's SQL
 never changes (`tests/released_migrations_test.rs`), nor does the runner's
-own `schema_migrations` table, and `tests/release_upgrade_test.rs`'s fixtures
-would catch a SQLite update that changed the text FTS5 writes for its own
-tables.
+own `schema_migrations` table.
 
 Each connection gets `db/cipher.rs`'s pinned `CIPHER_SETTINGS`, then foreign
 keys, `secure_delete` and `locking_mode = EXCLUSIVE`.

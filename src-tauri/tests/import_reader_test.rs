@@ -276,10 +276,6 @@ corpus_cases! {
     a_workbook_with_flipped_bits_in_its_parts => "bit-flipped-data",
     a_workbook_with_a_flipped_directory_signature => "bit-flipped-directory",
     an_archive_that_is_not_a_spreadsheet => "not-a-spreadsheet",
-    styles_that_calamine_would_copy_into_a_gibibyte => "styles-amplified",
-    the_same_styles_stored_with_a_backslash => "styles-amplified-backslash",
-    a_million_fonts_that_calamine_would_keep => "styles-fonts",
-    a_million_theme_colours_that_calamine_would_keep => "theme-colors",
     a_second_file_past_the_row_limit => "two-files-second-rows",
     two_files_past_the_cell_limit_together => "two-files-cells-together",
 }
@@ -343,9 +339,9 @@ fn a_workbook_behind_a_crafted_compound_file_header_reads() {
     }
 }
 
-/// What `styles_amplified` exceeds, Excel's 255 characters in a number
-/// format's code and a font's name and its 65,490 cell formats, still reads,
-/// within the helper's memory limit.
+/// A workbook at Excel's own style limits, 255 characters in a number
+/// format's code and a font's name and 65,490 cell formats, still reads
+/// within the import helper's memory limit.
 #[test]
 fn a_workbook_whose_styles_are_at_excels_limits_reads() {
     let _serial = serial();

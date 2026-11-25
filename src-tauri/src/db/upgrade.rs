@@ -195,8 +195,7 @@ const E2E_STEPS: &[(&str, &str)] =
     &[("9000_e2e_upgrade_check", "CREATE TABLE e2e_upgrade_check (id INTEGER PRIMARY KEY);")];
 
 /// The table that records the steps applied, created by the runner rather
-/// than a step. Its text is in every database's schema, which
-/// [`super::check_schema`] compares exactly: it never changes.
+/// than a step. Every database has it, so it never changes.
 pub(crate) const SCHEMA_MIGRATIONS: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (
             name TEXT PRIMARY KEY,
             applied_at TEXT NOT NULL
@@ -417,14 +416,11 @@ pub mod testing {
     /// build only.
     pub const FILLER: &str = "CREATE TABLE IF NOT EXISTS filler (content TEXT)";
 
-    /// Whether `object`, a schema row, is [`FILLER`]'s table, as SQLite
-    /// records it.
-    pub fn is_filler(object: &[Option<String>; 4]) -> bool {
+    /// Whether `object`, a schema row's type, name and table, is
+    /// [`FILLER`]'s table.
+    pub fn is_filler(object: &[Option<String>; 3]) -> bool {
         let filler = Some("filler".to_owned());
-        object[0].as_deref() == Some("table")
-            && object[1] == filler
-            && object[2] == filler
-            && object[3].as_deref() == Some("CREATE TABLE filler (content TEXT)")
+        object[0].as_deref() == Some("table") && object[1] == filler && object[2] == filler
     }
 
     /// The two test-only steps every test program shares (009 research.md §14),

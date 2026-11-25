@@ -242,6 +242,8 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 
   _Amended 2026-11-23 (code scanning alert database-files/cwe-770/src-tauri/src/commands/firearms.rs#ops.list_firearms): a database with a name in `firearm_types`, `action_types`, `registration_classes` or `accessory_kinds`, or a `generic_thumbnail_key` in `firearm_types` or `accessory_kinds`, longer than 200 characters or 800 bytes, which no HoploDex writes, is `DATABASE_DAMAGED`, before anything is written; so are a copy (restore, passphrase change) and a backup with one._
 
+  _Amended 2026-11-24: the lookup-length check is gone, and the schema is compared by each object's type, name and table, not its SQL text. Only a database HoploDex didn't write holds such a value, which [docs/attack-surface.md](../../../docs/attack-surface.md)'s threat model puts out of scope, so such a database now opens._
+
 ### `remove_recent_database`
 - **Input**: `{ path: string }` → **Output**: `{ removed: true }`
 - Also deletes the saved keyring passphrase for it (FR-018). Never touches the file.
