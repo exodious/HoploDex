@@ -1,10 +1,11 @@
-//! Regenerates `tests/fixtures/releases/0.1.0.hoplodex`, the database that
-//! release 0.1.0 made, which every later build must upgrade without losing a
+//! Writes `tests/fixtures/releases/<version>.hoplodex`, the database that
+//! this release (`Cargo.toml`'s version) makes, which every later build must upgrade without losing a
 //! value (009 FR-023, SC-004, research.md §12). It holds the human-testing
 //! seed's "Main collection" (every kind of record, link, setting and
 //! attachment, with small images and no `--extra` firearms), a policy draft
 //! kept as pending changes, a backup record and changes waiting for a backup,
-//! keyed with the pinned KDF and [`PASSPHRASE`].
+//! keyed with the pinned KDF and [`PASSPHRASE`]. Each release stores its own
+//! before its first tag (RELEASING.md, step 2).
 //!
 //! Until 0.1.0's records are merged, before its first release candidate, the
 //! layout still changes in place, and `tests/release_upgrade_test.rs` fails when the fixture's layout differs from
@@ -14,7 +15,7 @@
 //! cargo run --example release_fixture
 //! ```
 //!
-//! From then on it is never regenerated: its hash goes in
+//! Once a release's records are merged its file is never regenerated: its hash goes in
 //! `src/db/migrations/released.txt` (009 research.md §11).
 //!
 //! It writes that one file inside this checkout (or at the path it is given,
@@ -33,10 +34,11 @@ mod main_collection;
 use main_collection::{Images, must, seed};
 
 /// The fixture's passphrase (a fixture, not a secret).
-pub const PASSPHRASE: &str = "release fixture 0.1.0";
+pub const PASSPHRASE: &str = concat!("release fixture ", env!("CARGO_PKG_VERSION"));
 
 /// The fixture, relative to `src-tauri`.
-pub const FIXTURE: &str = "tests/fixtures/releases/0.1.0.hoplodex";
+pub const FIXTURE: &str =
+    concat!("tests/fixtures/releases/", env!("CARGO_PKG_VERSION"), ".hoplodex");
 
 fn main() {
     // A `test-kdf` build keys with a KDF no other build uses (db/cipher.rs).

@@ -60,6 +60,19 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.1" date="2026-11-25">
+      <description>
+        <p>Fixes and security hardening:</p>
+        <ul>
+          <li>About HoploDex shows the commit the build came from.</li>
+          <li>Files dragged from File Explorer on Windows are taken again.</li>
+          <li>A lock that comes while a database is opened, created or restored is honored.</li>
+          <li>What was saved stays visible when an import or its conflict resolution fails or stops.</li>
+          <li>The Linux package is now named hoplodex and replaces hoplo-dex, and declares everything it needs to run.</li>
+          <li>Stricter limits on photos, documents and imports, and less left on disk by the web view.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-11-19">
       <description>
         <p>

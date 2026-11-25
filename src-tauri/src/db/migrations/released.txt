@@ -4,3 +4,4 @@
 0002_fts5 dedbbdee66bdf0f78e9b4b207e428f3faab61df67b87efacc15186ed4e5765bf 0.1.0
 0003_seed_firearm_types ec4c5e9c646c48c4293871de618082cf9c6431571c0ec961a929eb30cb7be943 0.1.0
 tests/fixtures/releases/0.1.0.hoplodex ec6f34ad8824525fc70780ea5211efb47ac53d0b10d8066ded3b123ba8dd0b01 0.1.0
+tests/fixtures/releases/0.1.1.hoplodex 704de6bb622711c3ea865c13f5fc2ba28ba4681852a61af0deca7b83572e366e 0.1.1
