@@ -53,6 +53,8 @@ jobs:
   deploy:
     name: Publish to GitHub Pages
     needs: build
+    # A run by hand on another branch builds but never publishes.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Only this job can publish: the OIDC token deploy-pages exchanges, and
     # Pages write.
