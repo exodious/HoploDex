@@ -22,7 +22,7 @@
 #![allow(dead_code)]
 
 use std::fs::File;
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 
 use hoplodex_lib::services::import_reader::limits::{
@@ -601,6 +601,43 @@ pub fn cfb_difat_loop(dir: &Path) -> PathBuf {
     bytes.extend(valid_workbook_bytes(dir));
     let path = dir.join("cfb-difat-loop.xlsx");
     std::fs::write(&path, &bytes).unwrap();
+    path
+}
+
+/// The valid export workbook whose styles are at Excel's limits: a number
+/// format's code and a font's name of 255 characters, used by `formats` cell
+/// formats.
+pub fn styles_at_excels_limits(dir: &Path, formats: usize) -> PathBuf {
+    let text = "0".repeat(255);
+    let styles = format!(
+        "{XML_DECLARATION}<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\
+         <numFmts count=\"1\"><numFmt numFmtId=\"164\" formatCode=\"{text}\"/></numFmts>\
+         <fonts count=\"1\"><font><sz val=\"11\"/><name val=\"{text}\"/></font></fonts>\
+         <cellXfs count=\"{formats}\">{}</cellXfs></styleSheet>",
+        "<xf numFmtId=\"164\" fontId=\"0\"/>".repeat(formats)
+    );
+    workbook_with_part(dir, &format!("styles-{formats}.xlsx"), "xl/styles.xml", styles)
+}
+
+/// The valid export workbook with its part `replaced` holding `content`.
+fn workbook_with_part(dir: &Path, name: &str, replaced: &str, content: String) -> PathBuf {
+    let mut source = zip::ZipArchive::new(Cursor::new(valid_workbook_bytes(dir))).unwrap();
+    assert!(source.index_for_name(replaced).is_some(), "{replaced}");
+    let path = dir.join(name);
+    let mut zip = ZipWriter::new(BufWriter::new(File::create(&path).unwrap()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    for index in 0..source.len() {
+        let mut part = source.by_index(index).unwrap();
+        let part_name = part.name().unwrap().into_owned();
+        let mut bytes = Vec::new();
+        part.read_to_end(&mut bytes).unwrap();
+        if part_name == replaced {
+            bytes = content.clone().into_bytes();
+        }
+        zip.start_file(part_name, options).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.finish().unwrap().flush().unwrap();
     path
 }
 

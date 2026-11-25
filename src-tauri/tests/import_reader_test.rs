@@ -339,6 +339,22 @@ fn a_workbook_behind_a_crafted_compound_file_header_reads() {
     }
 }
 
+/// A workbook at Excel's own style limits, 255 characters in a number
+/// format's code and a font's name and 65,490 cell formats, still reads
+/// within the import helper's memory limit.
+#[test]
+fn a_workbook_whose_styles_are_at_excels_limits_reads() {
+    let _serial = serial();
+    let dir = TempDir::new().unwrap();
+    for formats in [10, 65_490] {
+        let path = hostile::styles_at_excels_limits(dir.path(), formats);
+        let tables =
+            read(&[import_file(&path)]).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+        assert_eq!(makes(&tables[0]), ["Springfield"; 3], "{}", path.display());
+        assert!(no_helper_runs(), "{}: the helper is still running", path.display());
+    }
+}
+
 #[test]
 fn progress_counts_the_bytes_of_the_files_up_to_their_total() {
     let _serial = serial();
