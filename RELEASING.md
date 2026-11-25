@@ -174,7 +174,7 @@ request like any other; then start again from the new commit.
      release ships and for its stored database (`<name or path> <sha256> <release>`,
      in `MIGRATIONS`' order). Lines are never edited afterwards;
    - store the release's database as `src-tauri/tests/fixtures/releases/<release>.hoplodex`
-     (`cargo run --example release_fixture` writes it). 0.1.0's is stored already;
+     (`cargo run --example release_fixture` writes the one for `Cargo.toml`'s version);
    - run `release_upgrade_test.rs` and `released_migrations_test.rs`.
 
    `release.mjs records 0.1.0-rc.1` writes the lines into the working tree, with
