@@ -71,7 +71,11 @@ export function commitOf({ git = realGit(REPO) } = {}) {
   try {
     const commit = String(git(["rev-parse", "HEAD"])).trim();
     if (!/^[0-9a-f]{40}$/.test(commit)) return { commit: null, commitModified: false };
-    return { commit, commitModified: String(git(["status", "--porcelain"])).trim() !== "" };
+    return {
+      commit,
+      commitModified:
+        String(git(["status", "--porcelain", "--untracked-files=normal"])).trim() !== "",
+    };
   } catch {
     return { commit: null, commitModified: false };
   }

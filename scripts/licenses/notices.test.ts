@@ -839,6 +839,8 @@ describe("#210 - the build's commit in the program block", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "hoplodex-untracked-"));
     try {
       execFileSync("git", ["init", "-q"], { cwd: root });
+      // a user's setting that hides untracked files mustn't hide them from the build
+      execFileSync("git", ["config", "status.showUntrackedFiles", "no"], { cwd: root });
       const git = (args: string[]): string =>
         args[0] === "rev-parse"
           ? `${SHA}\n`
