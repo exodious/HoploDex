@@ -834,8 +834,23 @@ describe("#210 - the build's commit in the program block", () => {
     expect(commitOf({ git: gitAt("") })).toEqual({ commit: SHA, commitModified: false });
   });
 
-  it("marks a tree with changes, untracked files included", () => {
-    expect(commitOf({ git: gitAt("?? new.txt\n") })).toEqual({ commit: SHA, commitModified: true });
+  it("marks a tree with changes, untracked files included, but not ignored ones", () => {
+    // Real git answers the status question, so the arguments commitOf passes are what's tested.
+    const root = mkdtempSync(path.join(os.tmpdir(), "hoplodex-untracked-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: root });
+      const git = (args: string[]): string =>
+        args[0] === "rev-parse"
+          ? `${SHA}\n`
+          : execFileSync("git", args, { cwd: root, encoding: "utf8" });
+      writeFileSync(path.join(root, ".gitignore"), ".gitignore\nignored.txt\n");
+      writeFileSync(path.join(root, "ignored.txt"), "");
+      expect(commitOf({ git })).toEqual({ commit: SHA, commitModified: false });
+      writeFileSync(path.join(root, "new.txt"), "");
+      expect(commitOf({ git })).toEqual({ commit: SHA, commitModified: true });
+    } finally {
+      rmSync(root, { recursive: true });
+    }
   });
 
   it("is null when there is no git", () => {
