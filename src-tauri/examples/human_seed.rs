@@ -67,7 +67,7 @@ use main_collection::*;
 pub const PASSPHRASE: &str = "human testing passphrase";
 
 /// The passphrase of the stored 0.1.0 database `--older` copies
-/// (`examples/release_fixture.rs`'s `PASSPHRASE`; a fixture, not a secret).
+/// (what `examples/release_fixture.rs` keyed it with at 0.1.0; a fixture, not a secret).
 pub const OLDER_PASSPHRASE: &str = "release fixture 0.1.0";
 /// The stored 0.1.0 database, relative to `src-tauri`.
 const OLDER_FIXTURE: &str = "tests/fixtures/releases/0.1.0.hoplodex";
