@@ -39,8 +39,10 @@ struct Release {
     passphrase: &'static str,
 }
 
-const RELEASES: &[Release] =
-    &[Release { version: "0.1.0", file: "0.1.0.hoplodex", passphrase: "release fixture 0.1.0" }];
+const RELEASES: &[Release] = &[
+    Release { version: "0.1.0", file: "0.1.0.hoplodex", passphrase: "release fixture 0.1.0" },
+    Release { version: "0.1.1", file: "0.1.1.hoplodex", passphrase: "release fixture 0.1.1" },
+];
 
 fn fixture_path(release: &Release) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/releases").join(release.file)
