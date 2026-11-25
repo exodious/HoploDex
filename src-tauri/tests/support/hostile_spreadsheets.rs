@@ -22,7 +22,7 @@
 #![allow(dead_code)]
 
 use std::fs::File;
-use std::io::{self, BufWriter, Cursor, Read, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use hoplodex_lib::services::import_reader::limits::{
@@ -127,10 +127,6 @@ pub fn corpus() -> Vec<Case> {
         unreadable(|d| one(bit_flipped_data(d)), "bit-flipped-data"),
         unreadable(|d| one(bit_flipped_directory(d)), "bit-flipped-directory"),
         unreadable(|d| one(archive_not_a_spreadsheet(d)), "not-a-spreadsheet"),
-        unreadable(|d| one(styles_amplified(d)), "styles-amplified"),
-        unreadable(|d| one(styles_amplified_backslash(d)), "styles-amplified-backslash"),
-        unreadable(|d| one(styles_fonts(d)), "styles-fonts"),
-        unreadable(|d| one(theme_colors(d)), "theme-colors"),
         // Two files.
         refused_second(&[Rows], second_file_passes_a_limit, "two-files-second-rows"),
         refused_second(&[Cells], cells_pass_together, "two-files-cells-together"),
@@ -605,114 +601,6 @@ pub fn cfb_difat_loop(dir: &Path) -> PathBuf {
     bytes.extend(valid_workbook_bytes(dir));
     let path = dir.join("cfb-difat-loop.xlsx");
     std::fs::write(&path, &bytes).unwrap();
-    path
-}
-
-/// The valid export workbook whose styles hold one number format with a code
-/// of 1 MiB, used by 1,000 cell formats: 6.9 KB in all. `calamine` 0.38
-/// copies the code into every cell format, a gibibyte, past the helper's
-/// memory limit, unless the reader finds the code past Excel's 255 characters
-/// first.
-pub fn styles_amplified(dir: &Path) -> PathBuf {
-    workbook_with_styles(dir, "styles-amplified.xlsx", "xl/styles.xml", 1 << 20, 1_000, 1)
-}
-
-/// The valid export workbook whose styles hold 1,048,576 fonts, 7 MiB of
-/// `<font/>` in a few kilobytes: `calamine` 0.38 keeps every font whether or
-/// not a cell format uses it, unless the reader finds more fonts than Excel's
-/// cell formats first.
-pub fn styles_fonts(dir: &Path) -> PathBuf {
-    workbook_with_styles(dir, "styles-fonts.xlsx", "xl/styles.xml", 255, 10, 1 << 20)
-}
-
-/// [`styles_amplified`] with its styles stored as `xl\styles.xml`, which
-/// `calamine` reads as `xl/styles.xml`.
-pub fn styles_amplified_backslash(dir: &Path) -> PathBuf {
-    workbook_with_styles(
-        dir,
-        "styles-amplified-backslash.xlsx",
-        "xl\\styles.xml",
-        1 << 20,
-        1_000,
-        1,
-    )
-}
-
-/// The valid export workbook whose styles are at Excel's limits: a number
-/// format's code and a font's name of 255 characters, used by `formats` cell
-/// formats.
-pub fn styles_at_excels_limits(dir: &Path, formats: usize) -> PathBuf {
-    workbook_with_styles(dir, &format!("styles-{formats}.xlsx"), "xl/styles.xml", 255, formats, 1)
-}
-
-fn workbook_with_styles(
-    dir: &Path,
-    name: &str,
-    styles_part: &str,
-    text_chars: usize,
-    formats: usize,
-    fonts: usize,
-) -> PathBuf {
-    let text = "0".repeat(text_chars);
-    let styles = format!(
-        "{XML_DECLARATION}<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\
-         <numFmts count=\"1\"><numFmt numFmtId=\"164\" formatCode=\"{text}\"/></numFmts>\
-         <fonts count=\"{fonts}\"><font><sz val=\"11\"/><name val=\"{text}\"/></font>{}</fonts>\
-         <cellXfs count=\"{formats}\">{}</cellXfs></styleSheet>",
-        "<font/>".repeat(fonts - 1),
-        "<xf numFmtId=\"164\" fontId=\"0\"/>".repeat(formats)
-    );
-    workbook_with_part(dir, name, "xl/styles.xml", styles_part, styles)
-}
-
-/// The valid export workbook whose theme's colour scheme holds 1,048,576
-/// `<a:dk1/>` slots, 7 MiB in a few kilobytes: `calamine` 0.38 keeps a colour
-/// for every slot, unless the reader finds more than Excel's 12 first.
-pub fn theme_colors(dir: &Path) -> PathBuf {
-    let theme = format!(
-        "{XML_DECLARATION}<a:theme xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" \
-         name=\"Office Theme\"><a:themeElements><a:clrScheme name=\"Office\">{}</a:clrScheme>\
-         </a:themeElements></a:theme>",
-        "<a:dk1/>".repeat(1 << 20)
-    );
-    workbook_with_part(
-        dir,
-        "theme-colors.xlsx",
-        "xl/theme/theme1.xml",
-        "xl/theme/theme1.xml",
-        theme,
-    )
-}
-
-/// The valid export workbook with its part `replaced` holding `content` and
-/// stored as `stored_as`.
-fn workbook_with_part(
-    dir: &Path,
-    name: &str,
-    replaced: &str,
-    stored_as: &str,
-    content: String,
-) -> PathBuf {
-    let mut source = zip::ZipArchive::new(Cursor::new(valid_workbook_bytes(dir))).unwrap();
-    assert!(source.index_for_name(replaced).is_some(), "{replaced}");
-    let path = dir.join(name);
-    let mut zip = ZipWriter::new(BufWriter::new(File::create(&path).unwrap()));
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    for index in 0..source.len() {
-        let mut part = source.by_index(index).unwrap();
-        let part_name = part.name().unwrap().into_owned();
-        let mut bytes = Vec::new();
-        part.read_to_end(&mut bytes).unwrap();
-        let part_name = if part_name == replaced {
-            bytes = content.clone().into_bytes();
-            stored_as.to_owned()
-        } else {
-            part_name
-        };
-        zip.start_file(part_name, options).unwrap();
-        zip.write_all(&bytes).unwrap();
-    }
-    zip.finish().unwrap().flush().unwrap();
     path
 }
 

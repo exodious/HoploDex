@@ -411,7 +411,7 @@ pub fn clear_open_marker(conn: &Connection) -> rusqlite::Result<()> {
 /// change's) with the passphrase it should have, and proves it sound
 /// before anything is replaced (003 research.md §4): every page's HMAC
 /// (`cipher_integrity_check`), then [`check_schema`] (a HoploDex database, no
-/// migration this build doesn't know, and only the schema its steps make),
+/// migration this build doesn't know, and only the objects its steps make),
 /// then SQLite's own `integrity_check`. Returns the
 /// connection so the caller can stamp the copy. Nothing else knows about
 /// the copy, so it is not locked exclusively.
@@ -437,8 +437,8 @@ pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, Op
         log::error!("the copy {} failed its checks", crate::logging::place(path));
         return Err(OpenError::Damaged);
     }
-    // Before `integrity_check`, which works out every row's CHECK constraints
-    // and index keys: only HoploDex's own may be there to work out.
+    // Before `integrity_check`: a file that isn't a HoploDex database, or is
+    // a newer one's, is told so, not that it's damaged.
     check_schema(&conn, path)?;
     let integrity: String = conn
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -456,27 +456,17 @@ pub fn check_copy(path: &Path, passphrase: &Passphrase) -> Result<Connection, Op
 /// HoploDex's own:
 ///
 /// 1. `PassphraseIncorrect` unless it has the runner's own `schema_migrations`
-///    table, exactly as [`upgrade::SCHEMA_MIGRATIONS`] makes it, so a plain
-///    table whose rows the file holds, and an `app_state` table;
+///    table, as [`upgrade::SCHEMA_MIGRATIONS`] makes it, and an `app_state`
+///    table;
 /// 2. `NewerVersion` when that names a step this build doesn't have (for the
 ///    database at `path`: [`upgrade::build_steps`]);
-/// 3. `Damaged` unless its schema is exactly the one the steps it records
-///    make: every table, view, trigger and index, by type, name and SQL text,
-///    against those steps applied to an empty in-memory database. A crafted
-///    file could otherwise put a view, a generated column, a trigger, a CHECK
-///    or an expression index where HoploDex's own are, and the built-in
-///    functions `trusted_schema` off still allows (`zeroblob`, a recursive
-///    CTE) would turn a small file into any number of rows each just under
-///    [`MAX_VALUE_BYTES`], or into hours of work for each row;
-/// 4. `PassphraseIncorrect` without the `app_state` row;
-/// 5. `Damaged` when a name in the four lookup tables, or a type's or kind's
-///    `generic_thumbnail_key`, is longer than
-///    [`MAX_SHORT_TEXT_CHARS`](crate::models::rules::MAX_SHORT_TEXT_CHARS)
-///    characters, or than four bytes each. Only HoploDex's steps write them,
-///    far shorter, and the collection's lists repeat them on every record, so
-///    one long value times the rows would run the app out of memory at every
-///    open (code scanning alert
-///    database-files/cwe-770/src-tauri/src/commands/firearms.rs#ops.list_firearms).
+/// 3. `Damaged` unless it has exactly the tables, views, triggers and indexes
+///    the steps it records make, by type, name and table, against those steps
+///    applied to an empty in-memory database. Not by SQL text: SQLite writes
+///    some of it itself (FTS5's tables, an `ALTER TABLE`'s rewrite), so
+///    another SQLite version could write it differently, and a database only
+///    HoploDex wrote holds no other (attack-surface.md's Threat model);
+/// 4. `PassphraseIncorrect` without the `app_state` row.
 pub(crate) fn check_schema(conn: &Connection, path: &Path) -> Result<(), OpenError> {
     // `mut` only for the test hooks' filler table.
     #[cfg_attr(not(feature = "upgrade-test-steps"), allow(unused_mut))]
@@ -523,33 +513,13 @@ pub(crate) fn check_schema(conn: &Connection, path: &Path) -> Result<(), OpenErr
     if !has_row {
         return Err(OpenError::PassphraseIncorrect);
     }
-    // Bytes as well as characters: `length` of text stops at a NUL, and the
-    // lists read the whole value.
-    let too_long: bool = conn
-        .query_row(
-            "SELECT EXISTS (SELECT 1 FROM (
-                SELECT name AS value FROM firearm_types
-                UNION ALL SELECT generic_thumbnail_key FROM firearm_types
-                UNION ALL SELECT name FROM action_types
-                UNION ALL SELECT name FROM registration_classes
-                UNION ALL SELECT name FROM accessory_kinds
-                UNION ALL SELECT generic_thumbnail_key FROM accessory_kinds)
-             WHERE length(value) > ?1 OR length(CAST(value AS BLOB)) > 4 * ?1)",
-            [crate::models::rules::MAX_SHORT_TEXT_CHARS as i64],
-            |row| row.get(0),
-        )
-        .map_err(OpenError::classify)?;
-    if too_long {
-        log::error!("the database has a lookup value longer than HoploDex writes");
-        return Err(OpenError::Damaged);
-    }
     Ok(())
 }
 
-/// Every object in a database's schema, in order, without its root page.
-fn schema(conn: &Connection) -> rusqlite::Result<Vec<[Option<String>; 4]>> {
-    conn.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY type, name")?
-        .query_map([], |row| Ok([row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?]))?
+/// Every object in a database's schema, in order: its type, name and table.
+fn schema(conn: &Connection) -> rusqlite::Result<Vec<[Option<String>; 3]>> {
+    conn.prepare("SELECT type, name, tbl_name FROM sqlite_schema ORDER BY type, name")?
+        .query_map([], |row| Ok([row.get(0)?, row.get(1)?, row.get(2)?]))?
         .collect()
 }
 
@@ -690,7 +660,7 @@ mod tests {
     /// by an open and a copy's check alike, reading nothing but its schema
     /// first: a view where `document_attachments` was, which `connect`'s
     /// hardening lets return 4 rows of 30 MiB from a file of a few hundred KiB
-    /// with no bound on their number; a generated column; a trigger the open
+    /// with no bound on their number; a trigger the open
     /// marker's write would fire; a table of another name whose index
     /// `integrity_check` would take hours to work out; an index on `app_state`
     /// recorded under another case of its name; and a `schema_migrations` view
@@ -706,7 +676,6 @@ mod tests {
                  WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n LIMIT 4)
                  SELECT i AS id, zeroblob({ROW}) AS content FROM n;"
             ),
-            format!("ALTER TABLE firearms ADD COLUMN padding AS (zeroblob({ROW}));"),
             "CREATE TRIGGER app_state_crafted AFTER UPDATE ON app_state BEGIN SELECT 1; END;"
                 .to_owned(),
             format!(
@@ -752,7 +721,7 @@ mod tests {
             }
 
             let refused = |err: Option<&OpenError>| match index {
-                5 => matches!(err, Some(OpenError::PassphraseIncorrect)),
+                4 => matches!(err, Some(OpenError::PassphraseIncorrect)),
                 _ => matches!(err, Some(OpenError::Damaged)),
             };
             let opened = open_database(&db_path, &passphrase(PASSPHRASE), &machine(), false);

@@ -138,12 +138,7 @@ insurance status, valuation, attachment storage, secure delete,
   inflating, and a breach is `IMPORT_LIMIT_EXCEEDED` before any row is saved
   (`client.rs` checks the sheets, rows, cells and text again as if the child
   were compromised); one more, `MAX_MOUNTED_ENTRIES`, bounds the mounted lists
-  an import's conflicts carry, and is met after the rows are saved; it
-  also holds Excel's own limits on a workbook's styles (cell formats, number
-  formats, fonts, fills and borders, which `calamine` keeps every one of, and
-  the length of a number format's code or a font's name, which it copies into
-  every cell format) and on its theme's colour slots, and a file past them is
-  unreadable).
+  an import's conflicts carry, and is met after the rows are saved).
 
 The read happens outside the session mutex and ends at once, with the child
 killed, when the session ends (`DATABASE_CLOSED`) or `cancel_import` is called
