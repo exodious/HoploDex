@@ -84,6 +84,12 @@ itself:
   candidate, with its own review (`--after`) and its own testing.
 - **The final release carries the release candidate's metainfo `<release>`
   date** (step 1), since its commit is the same.
+- **A candidate's Flatpak is installed from a graphical installer on a fresh
+  account.** On a Linux account with no Flatpak runtimes of its own, open the
+  `.flatpak` in a software center and install it for the current user only,
+  then try the release notes' `flatpak install --user` route there: the notes
+  must say what a first-time user meets (#264). CI's `--fresh-install` check
+  covers only the command line.
 - **Testers replace an earlier candidate by reinstalling it.** Every candidate
   of a version carries the same version, so a package manager won't install
   one over another; each candidate's notes say how
@@ -362,10 +368,11 @@ draft.
    - **macOS:** it isn't notarized, so the first open needs **Open Anyway** in
      System Settings › Privacy & Security.
    - **The Flatpak:** `flatpak install --user HoploDex-<version>-x86_64.flatpak`,
-     or the software center. That adds Flathub if it isn't set up and fetches the
-     GNOME runtime; a newer version installs the same way, over the old one,
-     keeping everything; `flatpak update` updates the runtime but not a HoploDex
-     installed from a file.
+     which adds Flathub if it isn't set up and fetches the GNOME runtime. A
+     software center's per-user install can report a missing runtime for a
+     user with no runtimes yet; then run the command. A newer version installs
+     the same way, over the old one, keeping everything; `flatpak update`
+     updates the runtime but not a HoploDex installed from a file.
 3. Publish the draft once you approve it. Nothing else publishes it. A
    release candidate's pre-release is published only when it is accepted
    ([Release candidates](#release-candidates)); a rejected one stays a draft.
