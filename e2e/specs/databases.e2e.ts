@@ -925,12 +925,12 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
       SOURCE_URL,
       `${SOURCE_URL}/releases/latest`,
     ]);
-    const opened = logLines("HOPLODEX_E2E_OPENED_LOG").length;
+    const handedOn = logLines("HOPLODEX_E2E_OPENED_LOG").length;
     for (const link of links) await link.click();
-    await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length >= opened + 2, {
+    await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length >= handedOn + 2, {
       timeoutMsg: "the project pages were not handed to the opener",
     });
-    expect(logLines("HOPLODEX_E2E_OPENED_LOG").slice(opened)).toEqual([
+    expect(logLines("HOPLODEX_E2E_OPENED_LOG").slice(handedOn)).toEqual([
       SOURCE_URL,
       `${SOURCE_URL}/releases/latest`,
     ]);
