@@ -7,8 +7,7 @@ file is the author's guide; the reasons are in 009 research.md §7, §11 and §1
 (`specs/009-upgrade-readiness/research.md`), and the workflow around it (testing
 a step, the stored release databases) is in `docs/development/data-layout.md`.
 
-Until 0.1.0's records are merged, before its first release candidate, these
-files are edited in place. **From then on, a released step never changes** (`released.txt` holds its hash and
+**A released step never changes** (`released.txt` holds its hash and
 `tests/released_migrations_test.rs` fails when the bytes differ): a change to the
 layout is a new step.
 

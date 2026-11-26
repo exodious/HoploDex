@@ -7,10 +7,6 @@
 //! keyed with the pinned KDF and [`PASSPHRASE`]. Each release stores its own
 //! before its first tag (RELEASING.md, step 2).
 //!
-//! Until 0.1.0's records are merged, before its first release candidate, the
-//! layout still changes in place, and `tests/release_upgrade_test.rs` fails when the fixture's layout differs from
-//! a new database's. Regenerate it then, and commit the result:
-//!
 //! ```sh
 //! cargo run --example release_fixture
 //! ```
