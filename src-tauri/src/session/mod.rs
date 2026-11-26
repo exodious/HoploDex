@@ -14,6 +14,7 @@ pub mod pending;
 pub mod scoped;
 pub mod upgrade;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -332,9 +333,9 @@ pub struct SessionInner {
     /// used, each bound to the session it arrived in ([`grants`]).
     grants: Mutex<grants::Grants>,
     /// A restore's one-time notes that a lock closed the database before they
-    /// were dismissed, with the database's id: put back at its next open in
+    /// were dismissed, by the database's id: put back at its next open in
     /// this run (#240). Only memory, and never a passphrase.
-    kept_restore_notes: Mutex<Option<(String, DatabaseNotes)>>,
+    kept_restore_notes: Mutex<HashMap<String, DatabaseNotes>>,
 }
 
 /// A checked backup and its passphrase, waiting for the restore's
@@ -453,7 +454,7 @@ impl Session {
             backup_check_drops: AtomicU64::new(0),
             open_elsewhere: Mutex::new(None),
             grants: Mutex::default(),
-            kept_restore_notes: Mutex::new(None),
+            kept_restore_notes: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -933,8 +934,8 @@ impl SessionInner {
             .kept_restore_notes
             .lock()
             .expect("session mutex poisoned")
-            .take_if(|(id, _)| *id == open.database_id);
-        if let Some((_, kept)) = kept
+            .remove(&open.database_id);
+        if let Some(kept) = kept
             && open.notes.restored_with_passphrase_of.is_none()
             && open.notes.damaged_file_kept_at.is_none()
         {
@@ -976,8 +977,10 @@ impl SessionInner {
                 damaged_file_kept_at: notes.damaged_file_kept_at.clone(),
                 ..DatabaseNotes::default()
             };
-            *self.kept_restore_notes.lock().expect("session mutex poisoned") =
-                Some((open.database_id.clone(), kept));
+            self.kept_restore_notes
+                .lock()
+                .expect("session mutex poisoned")
+                .insert(open.database_id.clone(), kept);
         }
     }
 

@@ -401,9 +401,26 @@ fn issue_240_kept_notes_wait_for_their_own_database_through_another_ones_open() 
     lifecycle::open(&world.session, &world.machine, &other, &passphrase(), false).unwrap();
     let status = databases::database_status(&world.session, &world.machine).unwrap();
     assert_eq!(status.notes.restored_with_passphrase_of, None, "not shown on another database");
+
+    // The other database is restored and locked straight away too.
+    let other_backup = backup_with_an_older_passphrase(&world);
+    world.restore(&other_backup.to_string_lossy(), OLD_PASSPHRASE).unwrap();
+    lifecycle::lock(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::LockedByUser,
+        None,
+    )
+    .unwrap();
+
+    let old_passphrase = Passphrase::from_input(OLD_PASSPHRASE.to_owned());
+    world.open_with(&old_passphrase).unwrap();
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.notes.restored_with_passphrase_of.as_deref(), Some("2026-09-20T07:00:00Z"));
     world.close();
 
-    world.open_with(&Passphrase::from_input(OLD_PASSPHRASE.to_owned())).unwrap();
+    lifecycle::open(&world.session, &world.machine, &other, &old_passphrase, false).unwrap();
     let status = databases::database_status(&world.session, &world.machine).unwrap();
     assert_eq!(status.notes.restored_with_passphrase_of.as_deref(), Some("2026-09-20T07:00:00Z"));
 }
