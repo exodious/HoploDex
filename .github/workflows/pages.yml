@@ -1,0 +1,83 @@
+# Publishes the showcase site (site/, docs/development/screenshots.md "The
+# showcase") to GitHub Pages: the page, its styles and fonts, the showcase
+# shots from docs/showcase/ under showcase/, and the app's icon. It runs when
+# a push to main changes any of them, or by hand.
+#
+# The site is published only when the repository's Pages setting deploys from
+# GitHub Actions (Settings > Pages > Source), which the owner turns on once.
+# Until then the deploy job leaves a notice and publishes nothing, so a push
+# to main still passes.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/showcase/**"
+      - "src-tauri/icons/128x128@2x.png"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# One deployment at a time, and a newer one waits rather than cancelling one
+# that is publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Assemble the site
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/showcase
+          cp -R site/. _site/
+          cp docs/showcase/*.png _site/showcase/
+          cp src-tauri/icons/128x128@2x.png _site/icon.png
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    # A run by hand on another branch builds but never publishes.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Only this job can publish: the OIDC token deploy-pages exchanges, and
+    # Pages write.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check that Pages deploys from GitHub Actions
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if build=$(gh api "repos/$REPO/pages" --jq .build_type 2>/dev/null) && [ "$build" = workflow ]; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "on=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages isn't set to deploy from GitHub Actions (Settings > Pages > Source), so the site wasn't published."
+          fi
+
+      - id: deployment
+        if: steps.pages.outputs.on == 'true'
+        uses: actions/deploy-pages@v5

@@ -33,9 +33,10 @@
 #                        at /mnt/hoplodex-check (outside it, a location the
 #                        check shows refused). Opt-in: no other run loses
 #                        /proc's masking.
-#   --store-shots        for `npm run screenshots:store` (011 FR-017): mounts a tmpfs at
-#                        /home/alex/Documents, the folder the store shots' seed is made in,
-#                        so the chooser's shot shows a realistic path. This command only.
+#   --store-shots        for `npm run screenshots:store` (011 FR-017) and
+#                        `npm run screenshots:showcase`: mounts a tmpfs at
+#                        /home/alex/Documents, the folder their seed is made in,
+#                        so the chooser's shot shows a realistic path. These commands only.
 #   --git-config[=FILE]  mount your git config read-only (default ~/.gitconfig,
 #                        else ~/.config/git/config)
 #   --ssh-agent          forward your SSH agent socket ($SSH_AUTH_SOCK)
@@ -200,9 +201,10 @@ if [[ $flatpak -eq 1 ]]; then
   )
 fi
 
-# The Flatpak store shots, only with --store-shots (011 FR-017): the chooser's shot
-# shows the folder the seed is in, so a tmpfs stands in for a user's Documents folder
-# for this one command. It is never the /home/dev volume and never the host's.
+# The Flatpak store shots and the showcase's, only with --store-shots (011 FR-017):
+# the chooser's shot shows the folder the seed is in, so a tmpfs stands in for a
+# user's Documents folder for these commands. It is never the /home/dev volume and
+# never the host's.
 if [[ $store_shots -eq 1 ]]; then
   args+=(--tmpfs /home/alex/Documents:rw,mode=1777)
 fi

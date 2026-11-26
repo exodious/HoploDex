@@ -167,9 +167,12 @@ export const config: WebdriverIO.Config = {
   },
 
   beforeSession: async (config, _capabilities, specs, cid) => {
-    // The store shots (`npm run screenshots:store`, 011 FR-017) run in a
-    // sandbox at the same path every time, which the chooser's shot shows.
-    const storeShots = specs.some((spec) => spec.endsWith("/e2e/screenshots/store.e2e.ts"));
+    // The store shots (`npm run screenshots:store`, 011 FR-017) and the
+    // showcase's (`npm run screenshots:showcase`) run in a sandbox at the same
+    // path every time, which the chooser's shot shows.
+    const showcaseShots = specs.some((spec) => spec.endsWith("/e2e/screenshots/showcase.e2e.ts"));
+    const storeShots =
+      showcaseShots || specs.some((spec) => spec.endsWith("/e2e/screenshots/store.e2e.ts"));
     const sandbox = isolateAppData(storeShots ? { fixedDir: STORE_SHOTS_SANDBOX } : {});
     // The Flatpak check's home, buses and stand-in services; the app is started
     // by support/app.ts's default launcher, which is the Flatpak's under
@@ -204,6 +207,7 @@ export const config: WebdriverIO.Config = {
       seedCollection({
         fixedTimes: storeShots,
         seedDir: storeShots ? readStoreShots().seedDir : undefined,
+        showcase: showcaseShots,
       });
     }
     await startDisplay();

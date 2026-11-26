@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HoploDex: a private inventory of your firearm collection</title>
+    <meta
+      name="description"
+      content="Record every firearm and accessory with its photos, papers and value, and see what your insurance covers. Encrypted, on your computer. Free for Linux, macOS and Windows."
+    />
+    <link rel="icon" href="icon.png" />
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body>
+    <!-- The GitHub Pages site (docs/development/screenshots.md, "The showcase").
+         .github/workflows/pages.yml publishes this folder with the showcase
+         shots from docs/showcase/ under showcase/, and the app's icon. -->
+    <header class="site-head">
+      <div class="wrap">
+        <a class="brand" href="#top"><img src="icon.png" alt="" /><span>HoploDex</span></a>
+        <nav aria-label="Site">
+          <a href="#features">Features</a>
+          <a href="https://github.com/exodious/HoploDex">Source code</a>
+          <a class="btn btn--primary btn--small" href="#download">Download</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="wrap">
+          <div class="hero__text">
+            <p class="eyebrow">Free and open source · Linux, macOS, Windows</p>
+            <h1>A private inventory of your firearm collection</h1>
+            <p class="hero__lede">
+              Record every firearm and accessory with its photos, papers and value, and see what
+              your insurance covers. It all stays on your computer, encrypted with your passphrase.
+            </p>
+            <div class="hero__actions">
+              <a class="btn btn--primary" href="#download">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16" />
+                </svg>
+                Download HoploDex
+              </a>
+              <a class="btn" href="#features">See what it does</a>
+            </div>
+          </div>
+          <div class="hero__shot window">
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="showcase/tiles-dark.png" />
+              <img
+                src="showcase/tiles-light.png"
+                width="1200"
+                height="800"
+                alt="The collection as photo tiles: handguns, rifles and a shotgun, each with its value and insurance coverage."
+              />
+            </picture>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" aria-label="Privacy">
+        <div class="wrap band__grid">
+          <div>
+            <h2>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="4" y="11" width="16" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg
+              >Encrypted
+            </h2>
+            <p>One file, AES-256 encrypted, that only your passphrase opens.</p>
+          </div>
+          <div>
+            <h2>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 3l18 18M8.5 8.5A6 6 0 0 0 6 13M12 5a10 10 0 0 1 9 5.5M3 10.5A10 10 0 0 1 6.5 7M12 20h.01M9 16.5a4 4 0 0 1 4.5-1"
+                /></svg
+              >Offline
+            </h2>
+            <p>No account, no cloud, no network connection.</p>
+          </div>
+          <div>
+            <h2>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 7h18v13H3zM3 7l2-4h14l2 4M9 12h6" /></svg
+              >Backed up
+            </h2>
+            <p>Backed up for you, and locked when you step away.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="tour" id="features">
+        <div class="wrap">
+          <h2 class="section-title">What it does</h2>
+
+          <article class="feature">
+            <div class="feature__text">
+              <h3>Every detail, on one page</h3>
+              <p>Serial number, cartridge, value, where it came from, and photos.</p>
+            </div>
+            <figure>
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="showcase/record-dark.png" />
+                <img
+                  src="showcase/record-light.png"
+                  width="1200"
+                  height="800"
+                  loading="lazy"
+                  alt="A Glock 19 Gen5's record: its photo, serial number, cartridge, caliber, action, value and coverage."
+                />
+              </picture>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature__text">
+              <h3>Know what your insurance covers</h3>
+              <p>
+                Add your policies. HoploDex flags anything uninsured, under-insured or about to
+                lapse.
+              </p>
+            </div>
+            <figure>
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="showcase/insurance-dark.png" />
+                <img
+                  src="showcase/insurance-light.png"
+                  width="1200"
+                  height="800"
+                  loading="lazy"
+                  alt="The insurance page: the collection's value split into covered, under-insured and uninsured, above the policies and what each covers."
+                />
+              </picture>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature__text">
+              <h3>The paperwork goes with it</h3>
+              <p>
+                Store photos (JPEG, PNG) and documents (PDF, TIFF, Word, Excel, OpenDocument, RTF,
+                CSV, text) with each record: bills of sale, receipts, manuals and appraisals.
+              </p>
+            </div>
+            <figure>
+              <picture>
+                <source
+                  media="(prefers-color-scheme: dark)"
+                  srcset="showcase/document-preview-dark.png"
+                />
+                <img
+                  src="showcase/document-preview-light.png"
+                  width="1200"
+                  height="800"
+                  loading="lazy"
+                  alt="A scanned bill of sale, page 1 of 3, open in HoploDex's document viewer."
+                />
+              </picture>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature__text">
+              <h3>Accessories, and what they're on</h3>
+              <p>Optics, lights, suppressors, etc. Each shows its value and the firearm it's on.</p>
+            </div>
+            <figure>
+              <picture>
+                <source
+                  media="(prefers-color-scheme: dark)"
+                  srcset="showcase/accessories-dark.png"
+                />
+                <img
+                  src="showcase/accessories-light.png"
+                  width="1200"
+                  height="800"
+                  loading="lazy"
+                  alt="The accessories list grouped by kind: two optics, a laser and magazines, each with the firearm it's mounted on, its value and coverage."
+                />
+              </picture>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature__text">
+              <h3>Cartridges built in</h3>
+              <p>
+                Pick from over 200 built-in cartridges and the caliber fills itself in. Custom
+                cartridges and calibers work too.
+              </p>
+            </div>
+            <figure>
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="showcase/cartridge-dark.png" />
+                <img
+                  src="showcase/cartridge-light.png"
+                  width="1200"
+                  height="800"
+                  loading="lazy"
+                  alt="Adding a firearm: typing 9mm in Cartridge lists the built-in cartridges it matches, each with its caliber."
+                />
+              </picture>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature__text">
+              <h3>Fills in from your collection</h3>
+              <p>Make, model, caliber, etc. are suggested from what you've already recorded.</p>
+            </div>
+            <figure>
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="showcase/make-dark.png" />
+                <img
+                  src="showcase/make-light.png"
+                  width="1200"
+                  height="800"
+                  loading="lazy"
+                  alt="Adding a firearm: typing S in Make lists the makes already recorded, on firearms and accessories, with how many of each."
+                />
+              </picture>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature__text">
+              <h3>Private, and only yours</h3>
+              <p>
+                Your collection opens only with your passphrase. No account, no cloud, no network
+                connection.
+              </p>
+            </div>
+            <figure>
+              <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="showcase/chooser-dark.png" />
+                <img
+                  src="showcase/chooser-light.png"
+                  width="1200"
+                  height="800"
+                  loading="lazy"
+                  alt="Opening a database: when it was last opened here and when it was last backed up."
+                />
+              </picture>
+            </figure>
+          </article>
+        </div>
+      </section>
+
+      <section class="also" aria-labelledby="also-title">
+        <div class="wrap">
+          <h2 class="section-title" id="also-title">Also included</h2>
+          <ul class="also__grid">
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" /></svg
+              >Search and group
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <ellipse cx="12" cy="5" rx="8" ry="3" />
+                <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></svg
+              >Multiple databases
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 4h16v16H4zM4 10h16M10 4v16" /></svg
+              >Import and export CSV and Excel
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
+                <path d="M14 3v5h5" />
+                <path d="M8 15.5s1.5-2.5 4-2.5 4 2.5 4 2.5-1.5 2.5-4 2.5-4-2.5-4-2.5z" /></svg
+              >In-app document preview
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M14 4h6v6M20 4l-9 9" />
+                <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg
+              >Open documents in another app
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 3h3a1.5 1.5 0 0 0 3 0a1.5 1.5 0 0 0 3 0a1.5 1.5 0 0 0 3 0a1.5 1.5 0 0 0 3 0h3v3a1.5 1.5 0 0 0 0 3a1.5 1.5 0 0 0 0 3a1.5 1.5 0 0 0 0 3a1.5 1.5 0 0 0 0 3v3h-3a1.5 1.5 0 0 0 -3 0a1.5 1.5 0 0 0 -3 0a1.5 1.5 0 0 0 -3 0a1.5 1.5 0 0 0 -3 0h-3v-3a1.5 1.5 0 0 0 0 -3a1.5 1.5 0 0 0 0 -3a1.5 1.5 0 0 0 0 -3a1.5 1.5 0 0 0 0 -3z"
+                />
+                <rect x="7.5" y="7.5" width="9" height="9" rx="0.5" /></svg
+              >Suppressors and other NFA items
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg
+              >Origin, importer, and maker's marks
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" /></svg
+              >Sold items keep their history
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" /></svg
+              >Restore from any backup
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 16.5v-9M8 11.5l4-4 4 4" /></svg
+              >One-click database upgrades
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="4" y="11" width="16" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg
+              >Automatic locking
+            </li>
+            <li>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg
+              >Light and dark themes
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="download" id="download">
+        <div class="wrap download__panel">
+          <div class="download__get">
+            <h2 class="section-title">Download</h2>
+            <a class="btn btn--primary" href="https://github.com/exodious/HoploDex/releases/latest">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16" />
+              </svg>
+              Get the latest version
+            </a>
+            <p class="download__note">
+              Every system's file is on the release page, with install steps.
+            </p>
+          </div>
+          <div class="download__runs">
+            <p class="download__label">Runs on</p>
+            <dl class="platforms">
+              <div>
+                <dt>Linux</dt>
+                <dd>
+                  Flatpak, <code>.deb</code> (Ubuntu 24.04+) or <code>.rpm</code> (Fedora 44+).
+                </dd>
+              </div>
+              <div>
+                <dt>macOS</dt>
+                <dd>macOS 26+, on Apple silicon.</dd>
+              </div>
+              <div>
+                <dt>Windows</dt>
+                <dd>Windows 11 or Server 2025.</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-foot">
+      <div class="wrap">
+        <p>
+          Free software under the GNU GPL v3, with no warranty.
+          <a href="https://github.com/exodious/HoploDex">Source code</a> ·
+          <a href="https://github.com/exodious/HoploDex/issues">Report a problem</a>
+        </p>
+        <p>
+          Screenshots show made-up sample data. Photos: public domain and CC0, from Wikimedia
+          Commons.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

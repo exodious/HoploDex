@@ -84,7 +84,7 @@ which older specs and commits still cite.
 | Change the PDF surface, the window's browser controls, file drops or WebKit's sandbox | [surface-checks.md](docs/development/surface-checks.md) | "PDF surface check", "Window controls check", "WebKit's sandbox on a Linux host" |
 | Cite a spec, or update the attack surface list | [citations-and-attack-surface.md](docs/development/citations-and-attack-surface.md) | "Spec citations", "Attack surface list" |
 | Change the schema | [data-layout.md](docs/development/data-layout.md) | "Changing the data layout", "Writing a step", "Testing a step", "`released.txt`", "The stored release databases" |
-| Take screenshots, put them in a pull request, retake the store shots | [screenshots.md](docs/development/screenshots.md) | "Screenshots", "Screenshots in a pull request", "The Flatpak's store shots" |
+| Take screenshots, put them in a pull request, retake the store shots or the showcase's | [screenshots.md](docs/development/screenshots.md) | "Screenshots", "Screenshots in a pull request", "The Flatpak's store shots", "The showcase" |
 | Try the app by hand on seeded data, or keep the seed in step | [human-testing.md](docs/development/human-testing.md) | "Human testing" |
 | Tune the chooser's drawing, regenerate the program icon | [plate-and-icon.md](docs/development/plate-and-icon.md) | "Tuning the chooser's drawing", "Program icon" |
 | Lint and format | [lint.md](docs/development/lint.md) | "Linting & formatting" |

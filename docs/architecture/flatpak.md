@@ -9,7 +9,7 @@ _Part of the [architecture docs](../architecture.md)._
 `linter-exceptions.json`, the desktop entry, the metainfo and its screenshots
 (the five store shots in `flatpak/screenshots/` are retaken only on purpose, by
 `npm run screenshots:store` in the dev container started with `--store-shots` (a
-tmpfs at `/home/alex/Documents` for the one command, so the chooser's path reads
+tmpfs at `/home/alex/Documents` for it and the showcase shots, so the chooser's path reads
 like a user's), never by a build: `e2e/screenshots/store.e2e.ts` takes them from
 the seed with `--fixed-times` so no text in view depends on the day,
 `store-shots.json` records what each shows and

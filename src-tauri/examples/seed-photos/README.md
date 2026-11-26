@@ -1,10 +1,16 @@
 # Seed photos
 
-Real firearm photos for the human-testing seed (`../human_seed.rs`), so the
-collection looks and feels like a real one. Each firearm that gets photos
-takes them from here with `include_bytes!`. Most seeded firearms get no photos
-at all, the way many people's collections look. Synthetic gradient images
-are still used for size and count testing.
+Real firearm and accessory photos for the human-testing seed
+(`../human_seed.rs`), so the collection looks and feels like a real one. Each
+record that gets photos takes them from here with `include_bytes!`. Most
+seeded firearms get no photos at all, the way many people's collections look.
+Synthetic gradient images are still used for size and count testing.
+
+The showcase collection (`../support/showcase_collection.rs`, `human_seed
+--showcase`), which the GitHub Pages site and the README show, gives every
+record a photo, and uses only the public domain and CC0 ones
+(`../../tests/human_seed_coverage_test.rs` checks), so its page needs no
+credit line.
 
 Every photo is public domain, CC0, CC BY or the UK Open Government Licence
 v3.0. None are ShareAlike, NonCommercial or NoDerivatives, so they can also
@@ -14,8 +20,9 @@ should carry the credit lines in [Credits for a web page](#credits-for-a-web-pag
 
 ## How they were prepared
 
-- All were found on and downloaded from Wikimedia Commons on 2026-09-27
-  (UTC). The time of each download is in the per-file record below.
+- All were found on and downloaded from Wikimedia Commons, on 2026-09-27
+  (UTC), and the showcase's eight on 2026-11-25. The time of each download
+  is in the per-file record below.
 - Each download's SHA-1 was checked against the SHA-1 Commons reports for
   that file version (below), so the record pins the exact image used.
 - **Changes made to every file:** scaled to fit within 1600 × 1600 pixels
@@ -23,7 +30,11 @@ should carry the credit lines in [Credits for a web page](#credits-for-a-web-pag
   comments) stripped, and re-encoded as a progressive JPEG at quality 82 with
   ImageMagick:
   `magick <original> -auto-orient -resize '1600x1600>' -strip -sampling-factor 4:2:0 -quality 82 -interlace JPEG <out>.jpg`.
-  Nothing was cropped, retouched or otherwise edited.
+  Nothing else was edited, except two of the showcase's, to keep a serial
+  number out: `silencerco-osprey-45.jpg` is cropped to the suppressor and the
+  front of the pistol's slide, and `trijicon-m150-rco.jpg` has the optic's
+  unique ID (its DataMatrix code and the line printed under it) blurred. Both
+  are public domain or CC0, so the edits need no permission.
 - Each was viewed at full size before use: no people, and no legible serial
   numbers. The "42045" on the M1 Garand's stock is the Smithsonian catalogue
   number (AF*42045), not a serial.
@@ -37,9 +48,9 @@ Commons file version's SHA-1 and timestamp and the description page's
 revision. Keep to public domain, CC0, CC BY or OGL, and keep a firearm's
 photos to at most five.
 
-## Which firearm uses which
+## Which record uses which
 
-| File | Seeded firearm | Licence |
+| File | Seeded record | License |
 | --- | --- | --- |
 | `glock-19-gen4-fde.jpg` | Glock 19 Gen5 (3 photos) | CC0 1.0 |
 | `glock-19-gen3.jpg` | Glock 19 Gen5 | Public domain (PD-self) |
@@ -58,12 +69,23 @@ photos to at most five.
 | `remington-new-model-army.jpg` | Pedersoli 1858 Remington Replica | Public domain (PD-user) |
 | `sig-p320-m18.jpg` | Sig Sauer P320 | CC BY 2.0 |
 | `winchester-model-70-featherweight.jpg` | Winchester Model 70 Featherweight | CC BY 4.0 |
+| `winchester-1873.jpg` | Winchester Model 1873 (the showcase's) | CC0 1.0 |
+| `m4-carbine-ras.jpg` | Colt LE6920 (the showcase's) | Public domain (US Army) |
+| `remington-870-mcs.jpg` | Remington 870 Tactical (the showcase's) | Public domain (US Air Force) |
+| `silencerco-osprey-45.jpg` | SilencerCo Osprey 45 (the showcase's) | CC0 1.0 |
+| `trijicon-m150-rco.jpg` | Trijicon ACOG TA31 (the showcase's accessory) | Public domain (US Army) |
+| `peq-15a.jpg` | Steiner DBAL-A2 (the showcase's accessory) | Public domain (US Army) |
+| `aimpoint-compm4.jpg` | Aimpoint CompM4 (the showcase's accessory) | Public domain (US Army) |
+| `epm-magazine.jpg` | Colt 30-round magazines (the showcase's accessory) | Public domain (US Army) |
 
 The photos show the model, not necessarily the exact variant seeded: the
 Glock photos are Gen3 and Gen4, the 1911s are a Springfield Mil-Spec 1911A1
 and a US-property Colt M1911, the P320 is the M18, the Benelli is the British
 Army's L128A1, and the "Pedersoli replica" is an original Remington New Model
-Army.
+Army. Of the showcase's, the Colt is the US Army's M4 carbine, the Remington
+the US Air Force's MCS 870, the ACOG the Army's M150 RCO (a TA31 model), the
+DBAL-A2 the Army's AN/PEQ-15A, and the magazine the Army's Enhanced
+Performance Magazine.
 
 ## Per-file record
 
@@ -252,6 +274,114 @@ History.
 - Retrieved: 2026-09-27T02:17:46Z
 - Changes: scaled to 1600 × 392, metadata stripped, re-encoded
 
+### The showcase's eight
+
+Found and downloaded on 2026-11-25; each description page read at
+2026-11-25T23:36Z, and each file retrieved at 2026-11-25T23:37Z. The six
+public domain ones are works of the US federal government, the US Army's
+PEO Soldier (Program Executive Office Soldier) and the US Air Force.
+
+### `winchester-1873.jpg`
+
+- Title: Winchester 1873 Rifle
+- Author: Hmaag (German Wikipedia user), own work
+- License: CC0 1.0 Universal Public Domain Dedication ({{self|cc-zero}}), https://creativecommons.org/publicdomain/zero/1.0/
+- Commons page: https://commons.wikimedia.org/wiki/File:Winchester_1873_Rifle.jpg
+- Original file: https://upload.wikimedia.org/wikipedia/commons/1/16/Winchester_1873_Rifle.jpg
+- Taken: 2017-12-06
+- Commons file version: 2017-12-06T09:22:27Z, 2365 × 622, SHA-1 `2243575dd0214d49d625b01bcf28597e8229ea74`
+- Description page: revision 1195107701 (2026-04-10T20:48:12Z)
+- Changes: scaled to 1600 × 421, metadata stripped, re-encoded
+
+### `m4-carbine-ras.jpg`
+
+- Title: PEO M4 Carbine RAS ("M4 carbine.")
+- Author: PEO Soldier, US Army
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- Commons page: https://commons.wikimedia.org/wiki/File:PEO_M4_Carbine_RAS.jpg
+- Original file: https://upload.wikimedia.org/wikipedia/commons/0/08/PEO_M4_Carbine_RAS.jpg
+- Upstream source: https://www.flickr.com/photos/peosoldier/4639654026/
+- Dated: 2008-01-15
+- Commons file version: 2010-08-27T18:45:21Z, 3942 × 1677, SHA-1 `4cacdc37afc4b625c9ad885877598c702c0dad69`
+- Description page: revision 1288084701 (2026-10-16T21:22:50Z)
+- Changes: scaled to 1600 × 681, metadata stripped, re-encoded
+
+### `remington-870-mcs.jpg`
+
+- Title: MCS 870 Modular Combat Shotgun
+- Author: US Air Force
+- License: public domain, a work of the US Air Force ({{PD-USGov-Military-Air Force}})
+- Commons page: https://commons.wikimedia.org/wiki/File:MCS_870_Modular_Combat_Shotgun_(7414624938).jpg
+- Original file: https://upload.wikimedia.org/wikipedia/commons/1/1c/MCS_870_Modular_Combat_Shotgun_%287414624938%29.jpg
+- Dated: 2012-02-03
+- Commons file version: 2017-02-17T15:37:52Z, 3000 × 834, SHA-1 `e50eb1cfe4a2948595662d0f2fd4b29a71008a0e`
+- Description page: revision 1132914797 (2025-12-17T21:12:11Z)
+- Changes: scaled to 1600 × 445, metadata stripped, re-encoded
+
+### `silencerco-osprey-45.jpg`
+
+- Title: SilencerCo Osprey .45 ("SilencerCo Osprey .45 suppressor on a Springfield pistol")
+- Author: DickClarkMises (English Wikipedia user), own work
+- License: CC0 1.0 Universal Public Domain Dedication ({{self|cc-zero}}), https://creativecommons.org/publicdomain/zero/1.0/
+- Commons page: https://commons.wikimedia.org/wiki/File:SilencerCo_Osprey_.45.JPG
+- Original file: https://upload.wikimedia.org/wikipedia/commons/a/a5/SilencerCo_Osprey_.45.JPG
+- Taken: 2013-10-13
+- Commons file version: 2021-06-05T20:03:03Z, 2398 × 1056, SHA-1 `c68a81107feb427d814f440a226fe0c696f4bb6f`
+- Description page: revision 1188079799 (2026-03-28T10:28:33Z)
+- Changes: cropped to x 700 to 2398 of the original (`-crop 1698x1056+700+0`, after `-auto-orient`), which leaves out the pistol's frame and the serial number on it; scaled to 1600 × 995, metadata stripped, re-encoded
+
+### `trijicon-m150-rco.jpg`
+
+- Title: PEO Trijicon M150 RCO ("The M150 Rifle Combat Optic (RCO) (TA31RCO-M150CP ACOG)")
+- Author: PEO Soldier, US Army
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- Commons page: https://commons.wikimedia.org/wiki/File:PEO_Trijicon_M150_RCO.jpg
+- Original file: https://upload.wikimedia.org/wikipedia/commons/0/08/PEO_Trijicon_M150_RCO.jpg
+- Upstream source: https://www.flickr.com/photos/peosoldier/3879855625/
+- Dated: 2009-09-01
+- Commons file version: 2019-01-06T15:19:58Z, 2507 × 1446, SHA-1 `6758e289d5fd0997ceb4c794d9baa5c2c9eea028`
+- Description page: revision 912846451 (2024-08-20T07:34:55Z)
+- Changes: scaled to 1600 × 923; the optic's unique ID, its DataMatrix code and the line printed under it, blurred (`-region 175x135+985+282 -blur 0x9 +region`, after the resize); metadata stripped, re-encoded
+
+### `peq-15a.jpg`
+
+- Title: PEO PEQ-15A oblique ("The AN/PEQ-15A Dual Beam Aiming Laser Advanced (DBAL-A2)")
+- Author: PEO Soldier, US Army
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- Commons page: https://commons.wikimedia.org/wiki/File:PEO_PEQ-15A_oblique.jpg
+- Original file: https://upload.wikimedia.org/wikipedia/commons/c/c7/PEO_PEQ-15A_oblique.jpg
+- Upstream source: https://www.flickr.com/photos/peosoldier/3759640932/
+- Dated: 2006-05-17
+- Commons file version: 2010-03-28T04:31:15Z, 1149 × 771, SHA-1 `5d0b5dfcc80ada4ff8e46587b6104478280715cb`
+- Description page: revision 1260622318 (2026-08-13T14:56:11Z)
+- Changes: not scaled; metadata stripped, re-encoded
+
+### `aimpoint-compm4.jpg`
+
+- Title: PEO Aimpoint CompM4 ("The M68 Close Combat Optic (CCO)")
+- Author: PEO Soldier, US Army
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- Commons page: https://commons.wikimedia.org/wiki/File:PEO_Aimpoint_CompM4.jpg
+- Original file: https://upload.wikimedia.org/wikipedia/commons/7/71/PEO_Aimpoint_CompM4.jpg
+- Upstream source: https://www.flickr.com/photos/peosoldier/3879851469/
+- Dated: 2008-07-18
+- Commons file version: 2010-08-28T15:40:16Z, 2219 × 2058, SHA-1 `29bc2dd25684eaba4ff45b653fa0eef66671668f`
+- Description page: revision 1266263159 (2026-08-23T18:35:15Z)
+- Changes: scaled to 1600 × 1484, metadata stripped, re-encoded
+
+### `epm-magazine.jpg`
+
+- Title: STANAG box magazine NSN 1005-01-630-9508 (the US Army's Enhanced Performance Magazine)
+- Author: US Army
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- Commons page: https://commons.wikimedia.org/wiki/File:STANAG_box_magazine_NSN_1005-01-630-9508.jpg
+- Original file: https://upload.wikimedia.org/wikipedia/commons/3/39/STANAG_box_magazine_NSN_1005-01-630-9508.jpg
+- Upstream source: https://www.army.mil/article/177640/army_fielding_new_magazine_optimized_for_m4m4a1_carbine_and_m855a1
+- Dated: 2016-11-01
+- Commons file version: 2020-11-14T23:23:41Z, 268 × 435, SHA-1 `a57de0c8dd9e56b870abdd1d7682a0102af37852`
+- Description page: revision 1013905718 (2025-03-26T16:26:55Z)
+- Changes: not scaled; metadata stripped, re-encoded
+
 ## Credits for a web page
 
 Ready to paste under screenshots that show these photos. The CC BY and OGL
@@ -268,3 +398,7 @@ licences ask for changes to be noted, so those lines say "resized".
 - Remington New Model Army photo by Hmaag, public domain, via Wikimedia Commons.
 - "SIG Sauer P320 M18 Handgun Tan" by Tony Webster, CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/), via Wikimedia Commons; resized.
 - Winchester Model 70 Classic Featherweight photo by Efeesh, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/), via Wikimedia Commons; resized.
+- Winchester 1873 photo by Hmaag, CC0, via Wikimedia Commons.
+- SilencerCo Osprey photo by DickClarkMises, CC0, via Wikimedia Commons; cropped.
+- M4 carbine, M150 RCO, AN/PEQ-15A, Aimpoint CompM4 and Enhanced Performance Magazine photos by the US Army (PEO Soldier), public domain, via Wikimedia Commons.
+- MCS 870 shotgun photo by the US Air Force, public domain, via Wikimedia Commons.

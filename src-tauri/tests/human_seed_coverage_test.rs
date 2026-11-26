@@ -559,3 +559,114 @@ fn fixed_times_stamp_the_backups_the_last_open_and_the_documents() {
         conn.query_row("SELECT last_backup_at FROM app_state", [], |row| row.get(0)).unwrap();
     assert_eq!(last_backup, machine_json["recentDatabases"][0]["lastOpenedAt"].as_str().unwrap());
 }
+
+/// The showcase collection (`human_seed --showcase`, docs/development/
+/// screenshots.md "The showcase"): a photo on every firearm and accessory,
+/// handguns, rifles, a shotgun and a suppressor, and policies whose status
+/// is the same on every day until December 2028, so the shots never show a
+/// day-dependent "Expires in" (checked on fixed days, not today).
+#[test]
+fn the_showcase_collection_has_photos_variety_and_steady_policies() {
+    use chrono::NaiveDate;
+    use hoplodex_lib::services::insurance_status::load_context_as_of;
+
+    let dir = TempDir::new().unwrap();
+    let paths = human_seed::seed_sandbox_with(
+        dir.path(),
+        None,
+        true,
+        human_seed::showcase_collection::seed_showcase,
+    );
+    let machine = MachineIdentity { id: "1".repeat(32), display_name: "Test machine".into() };
+    let conn = db::open_database(
+        &paths.main,
+        &Passphrase::from_input(human_seed::PASSPHRASE.into()),
+        &machine,
+        true,
+    )
+    .unwrap()
+    .expect_ready();
+
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |row| row.get(0)).unwrap() };
+    assert_eq!(
+        count(
+            "SELECT COUNT(*) FROM firearms f WHERE f.status = 'active'
+             AND NOT EXISTS (SELECT 1 FROM photos p WHERE p.firearm_id = f.id)"
+        ),
+        0,
+        "an active firearm without a photo"
+    );
+    assert_eq!(
+        count(
+            "SELECT COUNT(*) FROM accessories a WHERE a.status = 'active'
+             AND NOT EXISTS (SELECT 1 FROM photos p WHERE p.accessory_id = a.id)"
+        ),
+        0,
+        "an active accessory without a photo"
+    );
+    assert!(count("SELECT COUNT(*) FROM accessories") > 0);
+    let types: BTreeSet<String> = conn
+        .prepare("SELECT DISTINCT t.name FROM firearms f JOIN firearm_types t ON t.id = f.firearm_type_id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    for wanted in ["Handgun", "Rifle", "Shotgun", "Suppressor"] {
+        assert!(types.contains(wanted), "no {wanted} in {types:?}");
+    }
+
+    // The site's footer says its photos are public domain and CC0: every stored
+    // photo is a file in seed-photos/ that its README's table licenses so.
+    let photos_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/seed-photos");
+    let readme = std::fs::read_to_string(photos_dir.join("README.md")).unwrap();
+    let license = |file: &str| {
+        readme.lines().find_map(|line| {
+            let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+            (cells.len() == 5 && cells[1] == format!("`{file}`")).then(|| cells[3].to_string())
+        })
+    };
+    let files: Vec<(String, Vec<u8>)> = std::fs::read_dir(&photos_dir)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                std::fs::read(&path).unwrap(),
+            )
+        })
+        .collect();
+    let stored: Vec<Vec<u8>> = conn
+        .prepare("SELECT original_bytes FROM photos")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(!stored.is_empty());
+    for bytes in &stored {
+        let (file, _) = files
+            .iter()
+            .find(|(_, file_bytes)| file_bytes == bytes)
+            .expect("a photo that is no file in seed-photos/");
+        let license =
+            license(file).unwrap_or_else(|| panic!("{file} is not in the seed photos' README"));
+        assert!(
+            license.starts_with("Public domain") || license.starts_with("CC0"),
+            "{file} is {license}"
+        );
+    }
+
+    let first = NaiveDate::from_ymd_opt(2026, 11, 25).unwrap();
+    let last = NaiveDate::from_ymd_opt(2028, 11, 30).unwrap();
+    for day in first.iter_days().take_while(|day| *day <= last) {
+        let context = load_context_as_of(&conn, day).unwrap();
+        for status in context.policies.values() {
+            assert!(
+                status.is_expired || (status.is_in_force && !status.is_expiring_soon),
+                "{} on {day}: {status:?}",
+                status.name
+            );
+        }
+    }
+}

@@ -181,12 +181,15 @@ def make_tiffs():
             out("one-page.tif", f.read())
 
 
-def make_scan_tiff():
+def make_scan_tiff(name="bill-of-sale-scan.tif", make="Dead Air", model="Sandman-K",
+                   serial="SMK-51207", bore=".30 caliber", price="$1,100.00", number="25-0912-031"):
     """`bill-of-sale-scan.tif`: three US Letter pages (1700 x 2200 px at
-    200 DPI) of a typed bill of sale, as a scanner's fax-style output: 1-bit,
-    CCITT Group 4, a little skew and softness before the threshold. The
-    human-testing seed attaches it, so the viewer has a TIFF that looks like
-    a real scan, not a thumbnail zoomed to fit."""
+    200 DPI) of a typed bill of sale for a suppressor, as a scanner's fax-style
+    output: 1-bit, CCITT Group 4, a little skew and softness before the
+    threshold. The human-testing seed attaches it, so the viewer has a TIFF
+    that looks like a real scan, not a thumbnail zoomed to fit; the showcase
+    collection attaches `showcase-bill-of-sale-scan.tif`, the same sale of its
+    own suppressor."""
     width, height = 1700, 2200
     serif, bold, mono = "DejaVu-Serif", "DejaVu-Serif-Bold", "DejaVu-Sans-Mono"
     oblique = "DejaVu-Serif-Italic"
@@ -224,8 +227,8 @@ def make_scan_tiff():
             magick(*args)
 
         rows = [
-            ("Make", "Dead Air"), ("Model", "Sandman-K"), ("Type", "Suppressor"),
-            ("Serial number", "SMK-51207"), ("Bore", ".30 caliber"), ("Price", "$1,100.00"),
+            ("Make", make), ("Model", model), ("Type", "Suppressor"),
+            ("Serial number", serial), ("Bore", bore), ("Price", price),
         ]
         p1 = [
             ("text", 120, 230, "RIDGELINE ARMS", 26, bold),
@@ -233,7 +236,7 @@ def make_scan_tiff():
             ("text", 120, 325, "1200 Example Street, Springfield, ST 00000   (555) 010-0142", 11, serif),
             ("rule", 120, 360, 1580, 360, 4),
             ("text", 120, 480, "BILL OF SALE", 30, bold),
-            ("text", 1150, 480, "No. 25-0912-031", 13, mono),
+            ("text", 1150, 480, f"No. {number}", 13, mono),
             ("text", 120, 570, "Date of sale: September 12, 2025", 13, serif),
             ("text", 120, 640, "The seller named below sells, and the buyer named below buys, the", 13, serif),
             ("text", 120, 690, "following item, on the terms printed on the next page.", 13, serif),
@@ -276,7 +279,7 @@ def make_scan_tiff():
         p2 = [
             ("text", 120, 230, "TERMS OF SALE", 26, bold),
             ("rule", 120, 275, 1580, 275, 4),
-            ("text", 120, 360, "Bill of sale no. 25-0912-031 (Dead Air Sandman-K, SMK-51207)", 11, mono),
+            ("text", 120, 360, f"Bill of sale no. {number} ({make} {model}, {serial})", 11, mono),
         ]
         for i, line in enumerate(terms):
             p2.append(("text", 120 if line[0] != " " else 180, 480 + 55 * i, line.strip(), 13, serif))
@@ -297,7 +300,7 @@ def make_scan_tiff():
             ("text", 120, 230, "RECEIPT OF TRANSFER", 26, bold),
             ("rule", 120, 275, 1580, 275, 4),
             ("text", 120, 380, "Smith Family Trust acknowledges receipt of the item below.", 13, serif),
-            ("text", 120, 470, "Dead Air Sandman-K suppressor, serial SMK-51207", 13, mono),
+            ("text", 120, 470, f"{make} {model} suppressor, serial {serial}", 13, mono),
             ("text", 120, 570, "Approved on ATF Form 4:", 13, serif),
             ("text", 820, 570, "February 10, 2026", 13, mono),
             ("text", 120, 650, "Date received:", 13, serif),
@@ -324,7 +327,7 @@ def make_scan_tiff():
         subprocess.run(["tiffcp", os.path.join(tmp, "p1.tif"), os.path.join(tmp, "p2.tif"),
                         os.path.join(tmp, "p3.tif"), os.path.join(tmp, "all.tif")], check=True)
         with open(os.path.join(tmp, "all.tif"), "rb") as f:
-            out("bill-of-sale-scan.tif", f.read())
+            out(name, f.read())
 
 
 # ----------------------------------------------------- ZIP-based formats
@@ -626,6 +629,8 @@ if __name__ == "__main__":
     make_pdfs()
     make_tiffs()
     make_scan_tiff()
+    make_scan_tiff("showcase-bill-of-sale-scan.tif", "SilencerCo", "Osprey 45", "OSP-45-20817",
+                   ".45 caliber", "$650.00", "25-0912-044")
     make_ooxml_odf()
     make_ole()
     sys.exit(0)

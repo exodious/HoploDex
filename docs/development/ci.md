@@ -2,13 +2,15 @@
 
 _Part of the [development docs](../../DEVELOPMENT.md)._
 
-Five workflows run on GitHub: the [CI workflow](#the-ci-workflow)
+Six workflows run on GitHub: the [CI workflow](#the-ci-workflow)
 (`.github/workflows/ci.yml`) and CodeQL (`.github/workflows/codeql.yml`) on
 every pull request to `main` and on pushes to it (CodeQL weekly too), the
 [dependency audit](dependency-audit.md) (`.github/workflows/audit.yml`), the
 check of a pull request description's required sections
-(`.github/workflows/pr-body.yml`), and the [release workflow](#the-release-workflow)
-(`.github/workflows/release.yml`) on a `v*` tag. In all of them, third-party actions are
+(`.github/workflows/pr-body.yml`), the [release workflow](#the-release-workflow)
+(`.github/workflows/release.yml`) on a `v*` tag, and the showcase site's
+publishing (`.github/workflows/pages.yml`, [screenshots.md](screenshots.md#the-showcase))
+on a push to `main` that changes it. In all of them, third-party actions are
 pinned to a commit (#72) and GitHub's own to a release tag. They, the
 [vcpkg pin](dependency-audit.md#the-pinned-openssl) and the exact npm every job
 installs (the `Dockerfile`'s `NPM_VERSION`, in `.github/actions/setup`) are moved by hand:

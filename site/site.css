@@ -1,0 +1,405 @@
+/* The showcase site's styles. The palette and fonts are the app's own
+   (src/styles/tokens.css), so the page reads as the same product; the fonts
+   are the app's, with their licenses beside them in fonts/. */
+@font-face {
+  font-family: "Big Shoulders Display";
+  src: url(fonts/big-shoulders-display.woff2) format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  src: url(fonts/atkinson-hyperlegible-next.woff2) format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible Mono";
+  src: url(fonts/atkinson-hyperlegible-mono.woff2) format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  --vellum: #edefea;
+  --sheet: #f9faf7;
+  --ink: #161c24;
+  --ink-2: #4f5965;
+  --ink-3: #646d78;
+  --rule: #d3d7d0;
+  --rule-strong: #858c86;
+  --niter: #2344be;
+  --on-ink: #f9faf7;
+  --bronze: #9a6a2c;
+  --grid-minor: rgb(35 68 190 / 0.045);
+  --grid-major: rgb(35 68 190 / 0.085);
+  --shadow-float: 0 2px 6px rgb(16 22 30 / 0.08), 0 24px 64px -16px rgb(16 22 30 / 0.35);
+  --band: var(--ink);
+  --on-band: var(--on-ink);
+  --display: "Big Shoulders Display", "Arial Narrow", sans-serif;
+  --body: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --vellum: #0f1419;
+    --sheet: #161d25;
+    --ink: #e6e9ec;
+    --ink-2: #a8b1bb;
+    --ink-3: #8f99a5;
+    --rule: #28313b;
+    --rule-strong: #67727d;
+    --niter: #93a8ff;
+    --on-ink: #0f1419;
+    --bronze: #d3a45f;
+    --grid-minor: rgb(147 168 255 / 0.035);
+    --grid-major: rgb(147 168 255 / 0.07);
+    --shadow-float: 0 2px 6px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.7);
+    --band: var(--sheet);
+    --on-band: var(--ink);
+  }
+  .band {
+    border-block: 1px solid var(--rule);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--vellum);
+  color: var(--ink);
+  font: 17px/1.55 var(--body);
+}
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+a {
+  color: var(--niter);
+}
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Header */
+.site-head {
+  border-bottom: 1px solid var(--rule);
+  background: var(--vellum);
+}
+.site-head .wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--ink);
+}
+.brand img {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+.brand span {
+  font: 700 26px/1 var(--display);
+  letter-spacing: 0.01em;
+}
+.site-head nav {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  font-size: 15px;
+}
+.site-head nav a {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.site-head nav a:hover {
+  color: var(--ink);
+}
+.site-head nav a.btn--primary {
+  color: var(--on-ink);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 20px;
+  border-radius: 6px;
+  font: 600 16px/1 var(--body);
+  text-decoration: none;
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  background: var(--sheet);
+}
+.btn--primary {
+  background: var(--ink);
+  color: var(--on-ink);
+  border-color: var(--ink);
+}
+.btn--small {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+.btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Hero, on the chooser's blueprint grid */
+.hero {
+  padding: 64px 0 0;
+  background:
+    linear-gradient(var(--grid-major) 1px, transparent 1px) 0 0 / 120px 120px,
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px) 0 0 / 120px 120px,
+    linear-gradient(var(--grid-minor) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px) 0 0 / 24px 24px;
+}
+.hero__text {
+  max-width: 760px;
+  margin: 0 auto;
+  text-align: center;
+}
+.eyebrow {
+  font: 600 13px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 18px;
+}
+.hero h1 {
+  font: 700 clamp(44px, 6.4vw, 72px) / 0.98 var(--display);
+  margin: 0 0 18px;
+  letter-spacing: 0.005em;
+}
+.hero__lede {
+  font-size: 20px;
+  color: var(--ink-2);
+  margin: 0 auto 28px;
+  max-width: 620px;
+}
+.hero__actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.hero__shot {
+  margin: 48px auto 0;
+  max-width: 1000px;
+}
+.window {
+  border-radius: 10px 10px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--rule-strong);
+  border-bottom: 0;
+  box-shadow: var(--shadow-float);
+  background: var(--sheet);
+}
+
+/* Privacy band */
+.band {
+  background: var(--band);
+  color: var(--on-band);
+  padding: 40px 0;
+}
+.band__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+}
+.band h2 {
+  font: 700 15px/1.2 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0 0 6px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.band h2 svg {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: var(--bronze);
+}
+.band p {
+  margin: 0;
+  opacity: 0.82;
+  font-size: 16px;
+}
+
+/* Feature tour */
+.tour {
+  padding: 80px 0 24px;
+}
+.section-title {
+  font: 700 40px/1 var(--display);
+  margin: 0 0 8px;
+}
+.feature {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 48px;
+  align-items: center;
+  padding: 36px 0;
+  border-top: 1px solid var(--rule);
+}
+.feature:nth-of-type(even) {
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+}
+.feature:nth-of-type(even) .feature__text {
+  order: 2;
+}
+.feature h3 {
+  font: 700 34px/1.02 var(--display);
+  margin: 0 0 12px;
+}
+.feature p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 18px;
+}
+.feature figure {
+  margin: 0;
+}
+.feature img {
+  border-radius: 8px;
+  border: 1px solid var(--rule-strong);
+  box-shadow: var(--shadow-float);
+}
+
+/* Also included */
+.also {
+  padding: 48px 0 72px;
+}
+.also .section-title {
+  margin-bottom: 24px;
+}
+.also__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.also__grid li {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 15px;
+  line-height: 1.35;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.also__grid svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--niter);
+  margin-top: 1px;
+}
+
+/* Download */
+.download {
+  padding: 64px 0;
+  border-top: 1px solid var(--rule);
+  background: var(--sheet);
+}
+.download__panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 56px;
+  align-items: start;
+}
+.download__get .section-title {
+  margin-bottom: 24px;
+}
+.download__label {
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 10px 0 12px;
+}
+.platforms {
+  margin: 0;
+  border-top: 1px solid var(--rule);
+}
+.platforms > div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 16px;
+  align-items: baseline;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.platforms dt {
+  font: 700 24px/1 var(--display);
+}
+.platforms dd {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-2);
+  min-width: 0;
+}
+.platforms code {
+  font: 500 14px var(--mono);
+}
+.download__note {
+  font-size: 14px;
+  color: var(--ink-3);
+  margin: 14px 0 0;
+}
+
+.site-foot {
+  padding: 28px 0 48px;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+.site-foot p {
+  margin: 0 0 6px;
+}
+
+@media (max-width: 820px) {
+  .feature,
+  .feature:nth-of-type(even) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .feature:nth-of-type(even) .feature__text {
+    order: 0;
+  }
+  .band__grid,
+  .download__panel {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .also__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .site-head nav a:not(.btn) {
+    display: none;
+  }
+}
