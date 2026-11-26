@@ -621,8 +621,11 @@ impl MachineSettings {
         self.lock().troubleshooting_log
     }
 
+    /// Writes `machine.json` only when the choice changes (#232).
     pub fn set_troubleshooting_log(&self, choice: LogChoice) {
-        self.update(|file| file.troubleshooting_log = Some(choice));
+        if self.troubleshooting_log() != Some(choice) {
+            self.update(|file| file.troubleshooting_log = Some(choice));
+        }
     }
 
     /// Queues the notice about the log on its first call on this computer
@@ -873,6 +876,26 @@ mod tests {
         let chosen = Appearance { theme: Theme::Dark, browse_view: BrowseView::Tile };
         settings.set_appearance(chosen);
         assert_eq!(MachineSettings::load(config.path()).unwrap().appearance(), chosen);
+    }
+
+    /// Setting the troubleshooting log to the choice already saved leaves
+    /// `machine.json` unwritten; a new choice still writes it (#232).
+    #[test]
+    fn an_unchanged_troubleshooting_log_choice_writes_nothing() {
+        let config = tempfile::TempDir::new().unwrap();
+        let settings = MachineSettings::load(config.path()).unwrap();
+        let file = config.path().join(FILE_NAME);
+        settings.set_troubleshooting_log(LogChoice::On);
+        fs::remove_file(&file).unwrap();
+
+        settings.set_troubleshooting_log(LogChoice::On);
+        assert!(!file.exists(), "an unchanged choice wrote machine.json");
+
+        settings.set_troubleshooting_log(LogChoice::Off);
+        assert_eq!(
+            MachineSettings::load(config.path()).unwrap().troubleshooting_log(),
+            Some(LogChoice::Off)
+        );
     }
 
     /// A record written before `beforeUpgrade` existed reads as an ordinary
