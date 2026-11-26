@@ -12,7 +12,7 @@
 //
 // It also checks that each entry's id is unique and that it has a **Code**
 // line. It can't see new surface inside a file an entry already claims; the
-// per-PR review and peer review catch that.
+// per-PR review and the maintainer's review catch that.
 //
 // `node scripts/attack-surface.mjs` lists what's wrong;
 // `scripts/attack-surface.test.ts` runs it in Vitest.

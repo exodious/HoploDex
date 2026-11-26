@@ -36,7 +36,7 @@ scripts/dev-container.sh npm run bundle:linux      # build the Linux bundles
      ```
 
    - **macOS:** `xcode-select --install`
-   - **Windows** (10 or 11 Pro, Enterprise or Education, or Server 2025): skip
+   - **Windows** (11 Pro, Enterprise or Education, or Server 2025): skip
      steps 1 and 2. These two scripts install everything, including Git, Rust,
      Node and the OpenSSL the build needs. The first also turns on Remote
      Desktop and SSH for that user, so read [Windows](docs/development/windows.md)
