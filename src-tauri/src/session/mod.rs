@@ -929,9 +929,12 @@ impl SessionInner {
     /// Makes `open` the session's database, and starts the idle clock on
     /// its lock settings.
     pub fn install(&self, mut open: OpenDatabase) {
-        let kept = self.kept_restore_notes.lock().expect("session mutex poisoned").take();
-        if let Some((id, kept)) = kept
-            && id == open.database_id
+        let kept = self
+            .kept_restore_notes
+            .lock()
+            .expect("session mutex poisoned")
+            .take_if(|(id, _)| *id == open.database_id);
+        if let Some((_, kept)) = kept
             && open.notes.restored_with_passphrase_of.is_none()
             && open.notes.damaged_file_kept_at.is_none()
         {

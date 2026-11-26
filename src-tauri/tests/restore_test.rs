@@ -381,6 +381,34 @@ fn issue_240_a_lock_straight_after_a_restore_keeps_its_notes_for_the_next_unlock
 }
 
 #[test]
+fn issue_240_kept_notes_wait_for_their_own_database_through_another_ones_open() {
+    let world = World::new();
+    world.with_two_backups();
+    let old = backup_with_an_older_passphrase(&world);
+    world.restore(&old.to_string_lossy(), OLD_PASSPHRASE).unwrap();
+    lifecycle::lock(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::LockedByUser,
+        None,
+    )
+    .unwrap();
+
+    let other = world.dir.path().join("Other.hoplodex");
+    lifecycle::create(&world.session, &world.machine, &other, &passphrase()).unwrap();
+    world.close();
+    lifecycle::open(&world.session, &world.machine, &other, &passphrase(), false).unwrap();
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.notes.restored_with_passphrase_of, None, "not shown on another database");
+    world.close();
+
+    world.open_with(&Passphrase::from_input(OLD_PASSPHRASE.to_owned())).unwrap();
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.notes.restored_with_passphrase_of.as_deref(), Some("2026-09-20T07:00:00Z"));
+}
+
+#[test]
 fn issue_240_a_closed_restore_does_not_bring_its_notes_back() {
     let world = World::new();
     world.with_two_backups();
