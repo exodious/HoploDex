@@ -10,8 +10,10 @@ _Part of the [architecture docs](../architecture.md)._
 A shipped build allows one running instance (#231): `tauri-plugin-single-instance`
 is the first plugin registered, so a second start finds the first in the
 plugin's setup and exits there, before `setup()` wipes the web views' data
-folders, and the running instance brings its main window to the front
-(`show_main_window`). On Linux it is the session bus name
+folders, and the running instance asks for its main window to come to the
+front (`show_main_window`); a Wayland compositor that blocks focus stealing
+may show a notice instead, since the plugin doesn't pass on the launcher's
+activation token. On Linux it is the session bus name
 `io.github.exodious.HoploDex.SingleInstance`, which the Flatpak may own as its
 app id's own; on Windows a named mutex. macOS builds leave the plugin out and
 have no single-instance channel: macOS reuses the running app when it is
