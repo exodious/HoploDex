@@ -100,6 +100,7 @@ export function AppShell() {
   const scrollMemory = useRef<Partial<Record<Route["page"], number>>>({});
   // Set when going back, to restore the scroll position of the page returned to.
   const restore = useRef<{ route: Route; scrollY: number } | null>(null);
+  const app = useRef<HTMLDivElement>(null);
 
   const navigate = useCallback(
     (next: Route) => {
@@ -188,8 +189,26 @@ export function AppShell() {
 
   useLayoutEffect(() => {
     if (restore.current?.route === route) {
-      window.scrollTo(0, restore.current.scrollY);
-      return;
+      const target = restore.current.scrollY;
+      const reached = () => window.scrollY >= target - 1;
+      window.scrollTo(0, target);
+      const element = app.current;
+      if (reached() || !element) return;
+      // A record returned to is still loading, so the page is too short to
+      // reach the position yet: scroll again as it grows, until it does or the
+      // user takes over (#270).
+      const observer = new ResizeObserver(() => {
+        window.scrollTo(0, target);
+        if (reached()) stop();
+      });
+      const takeOver = ["wheel", "keydown", "pointerdown", "touchstart"] as const;
+      const stop = () => {
+        observer.disconnect();
+        for (const type of takeOver) window.removeEventListener(type, stop);
+      };
+      observer.observe(element);
+      for (const type of takeOver) window.addEventListener(type, stop);
+      return stop;
     }
     // Records always open at the top; list pages return to where they were.
     const isRecord =
@@ -278,7 +297,7 @@ export function AppShell() {
 
   return (
     <NavigationContext.Provider value={navigation}>
-      <div className="hd-app">
+      <div className="hd-app" ref={app}>
         <header className="hd-topbar">
           <div className="hd-topbar__inner">
             <button

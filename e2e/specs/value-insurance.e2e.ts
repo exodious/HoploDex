@@ -296,6 +296,71 @@ describe("Issue #116 - Dialogs that load their content open at the size they kee
   });
 });
 
+describe("Issue #270 - Going back to a record page returns to where it was scrolled", () => {
+  before(async () => {
+    // The journeys above leave their database open when the whole file runs.
+    if (await $("button=Create a new database…").isExisting()) await createDatabase();
+  });
+
+  /** Clicks the link button named `name` on the page. */
+  async function followLink(name: string) {
+    await browser.waitUntil(
+      () =>
+        browser.execute((wanted: string) => {
+          const link = [...document.querySelectorAll<HTMLElement>("button.hd-link")].find((b) =>
+            b.textContent?.includes(wanted),
+          );
+          link?.click();
+          return Boolean(link);
+        }, name),
+      { timeout: 5000, timeoutMsg: `no link "${name}" on the page` },
+    );
+    await settle();
+  }
+
+  const scrollY = () => browser.execute(() => Math.round(window.scrollY));
+
+  it("restores the firearm's scroll position after its record loads, by Escape and by a link back to it (#270)", async () => {
+    await goTo("Collection");
+    await addFirearmWithValue({
+      make: "InsE2EScroll",
+      model: "270",
+      serial: "INS-S-1",
+      valueDollars: "500",
+    });
+    await back();
+    await addPolicy({
+      name: "InsE2E Scroll Rider",
+      policyNumber: "S-1",
+      startDate: "2020-01-01",
+      endDate: isoDaysFromNow(365),
+    });
+    await openCoverage("InsE2EScroll 270");
+    await assignCoverage({ policyName: "InsE2E Scroll Rider", amountDollars: "500" });
+
+    await browser.execute(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await settle();
+    const saved = await scrollY();
+    expect(saved).toBeGreaterThan(100);
+
+    // Escape goes back from the policy to the firearm, scrolled as it was left.
+    await followLink("InsE2E Scroll Rider");
+    await $("article.hd-policy*=InsE2E Scroll Rider").waitForExist();
+    await browser.keys(["Escape"]);
+    await $("#record-name*=InsE2EScroll").waitForExist();
+    await settle();
+    expect(await scrollY()).toBe(saved);
+
+    // So does the policy's link to the firearm, already on the back trail (#120).
+    await followLink("InsE2E Scroll Rider");
+    await $("article.hd-policy*=InsE2E Scroll Rider").waitForExist();
+    await followLink("InsE2EScroll 270");
+    await $("#record-name*=InsE2EScroll").waitForExist();
+    await settle();
+    expect(await scrollY()).toBe(saved);
+  });
+});
+
 describe("009 US2 - A Policy Name Means One Policy", () => {
   before(async () => {
     // The journeys above leave their database open when the whole file runs.
