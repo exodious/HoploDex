@@ -139,7 +139,7 @@ scanning finding.
   - Can `confirmedWarnings` skip a check that protects data? (`LOCATION_OUT_OF_REACH` must never be overridable.)
   - Do errors forward only `CommandError` codes and never a raw database error (`CommandError::from_db`)?
   - Regression: #64 (import conflicts bound to the database that made them).
-- **Since:** 001; ACL manifest 007; scoping 008; three unscoped commands 009; choosers 2026-11-19; database and upgrade choosers 2026-11-21; Tauri's permissions narrowed 2026-11-21; `set_appearance` 2026-11-23.
+- **Since:** 001; ACL manifest 007; scoping 008; three unscoped commands 009; choosers 2026-11-19; database and upgrade choosers 2026-11-21; Tauri's permissions narrowed 2026-11-21; `set_appearance` 2026-11-23; `open_project_page` #256.
 
 ## webview-config: CSP, navigation and browser controls
 
@@ -329,10 +329,11 @@ scanning finding.
 
 ## flatpak: the Flatpak sandbox and its portals
 
-- **Code:** `flatpak/io.github.exodious.HoploDex.yml`; `scripts/flatpak/manifest.test.ts`; `scripts/flatpak/contents.mjs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/chooser.rs` (`SandboxChooser`, `uses_the_portal`); `src-tauri/src/main.rs` (`native_chooser`); `src-tauri/src/services/keyring/portal.rs`; `src-tauri/src/platform/linux.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/commands/error.rs`; `src-tauri/src/commands/documents.rs` (`portal_open_directory`)
+- **Code:** `flatpak/io.github.exodious.HoploDex.yml`; `scripts/flatpak/manifest.test.ts`; `scripts/flatpak/contents.mjs`; `src-tauri/src/services/sandbox.rs`; `src-tauri/src/services/chooser.rs` (`SandboxChooser`, `uses_the_portal`); `src-tauri/src/main.rs` (`native_chooser`); `src-tauri/src/services/keyring/portal.rs`; `src-tauri/src/platform/linux.rs`; `src-tauri/src/services/preview/sandbox_probe.rs`; `src-tauri/src/commands/error.rs`; `src-tauri/src/commands/documents.rs` (`portal_open_directory`, `portal_open_uri`)
 - **Ask:**
   - Does the manifest grant no permission beyond 011 research.md §4's table, as `manifest.test.ts` enforces?
   - Does Show log file reach only `OpenURI.OpenDirectory`, with a read-only descriptor of the log file (`commands/documents.rs`, `portal_open_directory`)?
+  - Is `OpenURI.OpenURI` (`portal_open_uri`, through `Opener::open_url`) reached only by `open_project_page`, with only `ProjectPage`'s fixed addresses and no options, and does it need no permission beyond 011 research.md §4's table (#256)?
   - Is every write location checked against `Reach` first? Can `HostPaths`' mapping of a Documents-portal path be steered outside the grants?
   - Does every chooser Rust opens but the import's files and the export's folder open GTK's own (`SandboxChooser`), which sees only the sandbox and makes no Documents-portal grant, so no grant is made where `Reach` can only refuse the path, leaving the portal to those two and the web view's file input for an attached photo or document?
   - Is the Secret portal used, and never the Secret Service?
@@ -346,7 +347,7 @@ scanning finding.
   - The runtime ends with GNOME 51 (#129).
   - The `.flatpak` file is unsigned (#19).
 - **Rerun:** the Flatpak check (`docs/development/flatpak.md`, "The Flatpak check").
-- **Since:** 011.
+- **Since:** 011; OpenURI for About's project pages #256.
 
 ## logging: what the log carries
 
