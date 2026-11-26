@@ -368,9 +368,10 @@ draft.
    - **macOS:** it isn't notarized, so the first open needs **Open Anyway** in
      System Settings › Privacy & Security.
    - **The Flatpak:** `flatpak install --user HoploDex-<version>-x86_64.flatpak`,
-     or the software center. That adds Flathub if it isn't set up and fetches the
-     GNOME runtime; a newer version installs the same way, over the old one,
-     keeping everything; `flatpak update` updates the runtime but not a HoploDex
+     which adds Flathub if it isn't set up and fetches the GNOME runtime. A
+     software center's per-user install can report a missing runtime for a
+     user with no runtimes yet; then run the command. A newer version installs
+     the same way, over the old one, keeping everything; `flatpak update` updates the runtime but not a HoploDex
      installed from a file.
 3. Publish the draft once you approve it. Nothing else publishes it. A
    release candidate's pre-release is published only when it is accepted
