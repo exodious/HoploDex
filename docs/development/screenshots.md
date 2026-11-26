@@ -114,8 +114,8 @@ byte-identical files. To make that so:
 
 - The seed is made in `/home/alex/Documents`, so the chooser shows
   `/home/alex/Documents/HoploDex`, a path that reads like a user's own. That
-  folder is a tmpfs `scripts/dev-container.sh --store-shots` mounts for that one
-  command (never the `/home/dev` volume, never the host), emptied when the run
+  folder is a tmpfs `scripts/dev-container.sh --store-shots` mounts for that
+  command and [the showcase's](#the-showcase) (never the `/home/dev` volume, never the host), emptied when the run
   ends; the command refuses to run without it. The rest of the sandbox is at
   `/tmp/hoplodex-store-shots`, the same path every time, and the seed is run
   with `--fixed-times`: the backups, the
