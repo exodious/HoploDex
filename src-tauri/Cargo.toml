@@ -88,10 +88,6 @@ upgrade-test-steps = []
 tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
-# One running instance, and the running window to the front on a second
-# start (#231): a D-Bus name on Linux, a named mutex on Windows, a socket in
-# /tmp on macOS. Shipped builds only (main.rs).
-tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.43", features = ["bundled-sqlcipher", "chrono", "limits"] }
@@ -232,6 +228,12 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
 # `proxy_url` on macOS (007 research.md §6); macOS 14 and later, and the minimum
 # is 26.
 tauri = { version = "2", features = ["unstable", "macos-proxy"] }
+
+# One running instance, and the running window to the front on a second
+# start (#231): a D-Bus name on Linux, a named mutex on Windows. Shipped
+# builds only (main.rs). macOS reuses the running app itself.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(windows)'.dependencies]
 # File identity for the take-over check (003 research.md §6). Unix uses `stat`

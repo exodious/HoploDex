@@ -157,7 +157,7 @@ fn end_web_processes(app: &AppHandle) {
 
 /// Brings the main window to the front when HoploDex is started again
 /// (#231). The second instance's arguments are ignored.
-#[cfg(not(any(feature = "e2e", debug_assertions)))]
+#[cfg(not(any(feature = "e2e", debug_assertions, target_os = "macos")))]
 fn show_main_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
@@ -344,7 +344,8 @@ fn main() {
     // data folders, and brings the running window to the front instead. Only
     // in a shipped build: E2E workers, `tauri dev` and human testing each run
     // in a sandbox of their own, beside each other or the user's own HoploDex.
-    #[cfg(not(any(feature = "e2e", debug_assertions)))]
+    // Not on macOS, which reuses the running app when it is opened again.
+    #[cfg(not(any(feature = "e2e", debug_assertions, target_os = "macos")))]
     let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)));
     // Inside the Flatpak, the web process the portal starts doesn't inherit

@@ -355,8 +355,8 @@ scanning finding.
 - **Ask:**
   - Does a second start exit in the plugin's setup, before anything at start-up touches a web view's data folder (the main web view folder's `secure_delete_dir`, `surface::clear_data_directory`, macOS's earlier WebKit folders) or the opened documents' cache (#231)?
   - Does the running instance ignore what a second start sends (its arguments and working folder), and only bring the main window to the front?
-  - Who can reach each OS's channel, and what can they do through it beyond bringing the window forward or keeping a second HoploDex from starting? On Linux, the session bus name `io.github.exodious.HoploDex.SingleInstance` (a process of the user's session; inside the Flatpak the app owns it under its own app id, with no permission beyond 011 research.md §4's table). On Windows, the session's named mutex and a hidden window found by its class and title, sent `WM_COPYDATA`. On macOS, the socket `/tmp/io_github_exodious_HoploDex_si.sock`, in a folder every local user shares.
-  - Is the plugin in every shipped build, the Flatpak's included, and left out only of E2E and debug builds (`tauri dev`, human testing)?
+  - Who can reach each OS's channel, and what can they do through it beyond bringing the window forward or keeping a second HoploDex from starting? On Linux, the session bus name `io.github.exodious.HoploDex.SingleInstance` (a process of the user's session; inside the Flatpak the app owns it under its own app id, with no permission beyond 011 research.md §4's table). On Windows, the session's named mutex and a hidden window found by its class and title, sent `WM_COPYDATA`.
+  - Is the plugin in every shipped Linux and Windows build, the Flatpak's included, and left out only of E2E and debug builds (`tauri dev`, human testing)? macOS builds leave it out and have no single-instance channel: macOS reuses the running app when it is opened again, and a second copy started with `open -n` or by running the binary inside the `.app` is the user's own doing.
 - **Since:** #231.
 
 ## logging: what the log carries

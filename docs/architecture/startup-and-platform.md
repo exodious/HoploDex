@@ -13,7 +13,10 @@ plugin's setup and exits there, before `setup()` wipes the web views' data
 folders, and the running instance brings its main window to the front
 (`show_main_window`). On Linux it is the session bus name
 `io.github.exodious.HoploDex.SingleInstance`, which the Flatpak may own as its
-app id's own; on Windows a named mutex; on macOS a socket in `/tmp`. E2E and
+app id's own; on Windows a named mutex. macOS builds leave the plugin out and
+have no single-instance channel: macOS reuses the running app when it is
+opened again, and a second copy started with `open -n` or by running the
+binary inside the `.app` is the user's own doing. E2E and
 debug builds (`tauri dev`, human testing) leave it out, since each runs in a
 sandbox of its own, beside the others or the user's own HoploDex.
 
