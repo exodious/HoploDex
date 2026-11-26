@@ -84,6 +84,12 @@ itself:
   candidate, with its own review (`--after`) and its own testing.
 - **The final release carries the release candidate's metainfo `<release>`
   date** (step 1), since its commit is the same.
+- **A candidate's Flatpak is installed from a graphical installer on a fresh
+  account.** On a Linux account with no Flatpak runtimes of its own, open the
+  `.flatpak` in a software center and install it for the current user only,
+  then try the release notes' `flatpak install --user` route there: the notes
+  must say what a first-time user meets (#264). CI's `--fresh-install` check
+  covers only the command line.
 - **Testers replace an earlier candidate by reinstalling it.** Every candidate
   of a version carries the same version, so a package manager won't install
   one over another; each candidate's notes say how

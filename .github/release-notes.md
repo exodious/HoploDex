@@ -20,10 +20,13 @@ you open it macOS says it can't check it: choose **Done**, then in **System
 Settings › Privacy & Security** find the message about HoploDex and choose
 **Open Anyway**.
 
-**Linux, the Flatpak:** `flatpak install --user HoploDex-{{app_version}}-x86_64.flatpak`,
-or open the file with your software center. This adds Flathub if it isn't set
-up and fetches the GNOME runtime. A newer version installs the same way, over
-the old one, keeping everything. `flatpak update` updates the runtime but not
+**Linux, the Flatpak:** `flatpak install --user HoploDex-{{app_version}}-x86_64.flatpak`.
+This adds Flathub for your user if it isn't set up and fetches the GNOME
+runtime, so it works on a computer that has never had a Flatpak. A software
+center can open the file too, but installing it for just your user can fail
+there with a missing runtime if your user has no Flatpak runtimes yet: run the
+command above instead. A newer version installs the same way, over the old
+one, keeping everything. `flatpak update` updates the runtime but not
 a HoploDex installed from a file.
 Each spreadsheet you import, photo or document you attach, or folder you export
 to through the Flatpak's file chooser stays open to HoploDex after it quits,

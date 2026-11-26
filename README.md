@@ -45,6 +45,9 @@ Older Linux systems, Ubuntu 22.04 among them, can use the Flatpak. A Windows
 computer in S mode runs only apps from the Microsoft Store, which HoploDex
 isn't in: it has to leave S mode first. Each release's notes say how to
 install it, and how to open a build that isn't signed by a paid certificate.
+For the Flatpak that is `flatpak install --user` with the file, which also
+fetches the runtime: a software center installing it for just your user can
+report a missing runtime when your user has no Flatpak runtimes yet.
 
 ## The troubleshooting log
 
