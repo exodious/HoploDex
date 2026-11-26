@@ -91,6 +91,8 @@ newer version is installed the same way, over the old one, keeping
 everything (FR-024). `flatpak update` updates the runtime but not HoploDex.
 #19 publishes this text with the releases.
 
+_Amended 2026-11-26: a software centre's per-user install can fail with a missing runtime for a user with no Flatpak runtimes yet, so the release notes now recommend the command and say to run it then (#264, [`.github/release-notes.md`](../../../.github/release-notes.md))._
+
 ## Project commands
 
 All three run in the dev container with `--flatpak`
