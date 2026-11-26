@@ -11,6 +11,7 @@ pub mod insurance;
 pub mod mounts;
 pub mod photos;
 pub mod preview;
+pub mod project_pages;
 pub mod troubleshooting_log;
 
 pub use error::CommandError;

@@ -662,6 +662,7 @@ fn main() {
             hoplodex_lib::commands::troubleshooting_log::get_troubleshooting_log,
             hoplodex_lib::commands::troubleshooting_log::set_troubleshooting_log,
             hoplodex_lib::commands::troubleshooting_log::show_troubleshooting_log,
+            hoplodex_lib::commands::project_pages::open_project_page,
             hoplodex_lib::commands::appearance::set_appearance,
             hoplodex_lib::commands::databases::stage_pending_changes,
             hoplodex_lib::commands::databases::resolve_pending_changes,

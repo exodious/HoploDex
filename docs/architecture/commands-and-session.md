@@ -24,6 +24,10 @@ paths as the app.
 its file: no database and no argument the web view can point elsewhere, since the
 file is `logging.rs`'s.
 
+`commands/project_pages.rs` (#256) opens About's two links in the default
+browser, through `Opener::open_url`: the web view names a page, never an
+address, and each page is a fixed address built in.
+
 `commands/databases.rs` (chooser, create, open, close, lock, settings, saved
 passphrase) and `commands/backups.rs` (list, restore, passphrase change) are
 feature 003's.
@@ -110,7 +114,7 @@ from an ended session can't touch the next.
 Only `UNSCOPED_COMMANDS` (`commands_list.rs`: the chooser's, `upgrade_database`,
 `cancel_upgrade`, `get_database_status`, `quit_application`,
 `quit_listener_ready`, `note_activity`, `set_idle_paused`, `skip_backup`,
-`cancel_import`, the document-opening setting, the troubleshooting log's three,
+`cancel_import`, the document-opening setting, the troubleshooting log's three, `open_project_page`,
 `drop_backup_check`) may take `State<Session>`; a new command is scoped unless listed there, and
 `tests/session_scope_test.rs` fails when a command's argument and the list
 disagree.

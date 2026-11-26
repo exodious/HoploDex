@@ -6,8 +6,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 import { AboutDialog } from "./AboutDialog";
 
-// 010 SC-005, amended by 013 FR-003: About calls no command but the troubleshooting
-// log's. Every `invoke` goes through this mock.
+// 010 SC-005, amended by 013 FR-003 and #256: About calls no command but the
+// troubleshooting log's, and a project page's when its link is clicked. Every `invoke` goes through this mock.
 vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
   invoke: vi.fn(),
@@ -258,30 +258,49 @@ describe("010 US1 - AboutDialog's program block (010 US1-1, 010 FR-002, 010 FR-0
     ).toBeTruthy();
   });
 
-  it("gives the source address as selectable text in a monospace span, not a link (010 US1-6, 010 FR-006)", async () => {
-    const open = vi.spyOn(window, "open").mockReturnValue(null);
+  it("links the source and the latest release, each opened by Rust by name, never by the window (#256)", async () => {
     const user = renderAbout();
     await ready();
 
-    expect(screen.getByText(hasText("Source code:"))).toBeInTheDocument();
-    const address = screen.getByText("https://github.com/exodious/HoploDex");
-    expect(address.tagName).toBe("SPAN");
-    expect(address.closest("a")).toBeNull();
-    expect(within(dialog()).queryByRole("link")).not.toBeInTheDocument();
-    expect(dialog().querySelector("a")).toBeNull();
+    const links = within(dialog()).getAllByRole("link");
+    expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["https://github.com/exodious/HoploDex", "https://github.com/exodious/HoploDex"],
+      [
+        "https://github.com/exodious/HoploDex/releases/latest",
+        "https://github.com/exodious/HoploDex/releases/latest",
+      ],
+    ]);
+    expect(screen.getByText(hasText("Source code:"))).toContainElement(links[0]);
+    expect(screen.getByText(hasText("Latest release:"))).toContainElement(links[1]);
 
-    // jsdom applies no style sheet, so the rule is read from the file: the
-    // class on the span is the one that selects all and sets monospace.
-    const css = readFileSync("src/features/app/about.css", "utf8");
-    const rule = [...css.matchAll(/\.([\w-]+)\s*\{([^}]*)\}/g)].find(
-      ([, name, body]) => address.classList.contains(name) && /user-select:\s*all/.test(body),
+    // The click names the page and is the window's no more: jsdom would
+    // otherwise record the navigation as not implemented.
+    const clicks: boolean[] = [];
+    const record = (event: Event) => clicks.push(event.defaultPrevented);
+    document.addEventListener("click", record);
+    await user.click(links[0]);
+    await user.click(links[1]);
+    document.removeEventListener("click", record);
+    expect(clicks).toEqual([true, true]);
+    expect(otherCommands()).toEqual([
+      ["open_project_page", { page: "source" }],
+      ["open_project_page", { page: "latestRelease" }],
+    ]);
+  });
+
+  it("says so when the page couldn't be opened (#256)", async () => {
+    const user = renderAbout();
+    await ready();
+    vi.mocked(invoke).mockImplementation(async (name: string) => {
+      if (name === "open_project_page") throw new Error("no browser");
+      return undefined;
+    });
+
+    await user.click(within(dialog()).getAllByRole("link")[0]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The page couldn't be opened in your web browser.",
     );
-    expect(rule, "a rule on the span's class with user-select: all").toBeDefined();
-    expect(rule?.[2]).toMatch(/font-family:\s*var\(--font-mono\)/);
-
-    await user.click(address);
-    expect(open).not.toHaveBeenCalled();
-    open.mockRestore();
   });
 });
 

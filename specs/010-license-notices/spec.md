@@ -101,6 +101,7 @@ The audit that found HoploDex's dependencies compatible with GPL-3.0 (#20) is wr
 - **FR-004**: About HoploDex MUST list every third-party component the running build ships (FR-008), ordered by name, each with its version, the license HoploDex uses it under, and the full copyright and license text that license requires, including any NOTICE file or attribution the license asks to keep. Components that share a license text MAY share its display, provided each component's copyright lines are kept.
 - **FR-005**: The list MUST let the user narrow it by typing part of a component's name, and MUST say when nothing matches.
 - **FR-006**: The source address MUST be selectable and copyable. About HoploDex MUST NOT open a browser or any other program, and MUST make no network request (constitution V).
+  _Amended 2026-11-26: the source address and the latest release are links that open in the default browser, each a fixed address with nothing added; the app still makes no network request itself ([#256](https://github.com/exodious/HoploDex/issues/256))._
 - **FR-007**: About HoploDex MUST follow the shared design system and dialog patterns (constitution III), be fully usable by keyboard, meet WCAG 2.1 AA, and keep the window's layout at narrow widths, with long texts scrolling inside the screen. It is a new screen, so it joins the screenshot walk.
 
 **Notices that match the build (#18)**

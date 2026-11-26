@@ -917,32 +917,24 @@ describe("010 US1 - Anyone Running HoploDex Can See Its License and What It Is B
     );
     expect(text).toContain("Additional permission under GNU GPL version 3 section 7");
 
-    // The source address is one selection (`user-select: all`), and it is the
-    // address, as text, not a link. Only a real pointer press makes the
-    // selection, which WebDriver's click doesn't on WebKitGTK, macOS WebKit
-    // or WebView2; so Linux clicks with the X server's pointer, and the other
-    // OSes (no real-input helper there) check the style that does it and
-    // that the one text node selects whole.
-    expect(await $(".hd-about__source").getText()).toBe(SOURCE_URL);
-    if (HAS_REAL_INPUT) {
-      await realClick(".hd-about__source");
-      expect(await browser.execute(() => window.getSelection()?.toString().trim())).toBe(
-        SOURCE_URL,
-      );
-    } else {
-      const { style, selected } = await browser.execute(() => {
-        const el = document.querySelector(".hd-about__source")!;
-        const css = getComputedStyle(el);
-        window.getSelection()?.selectAllChildren(el);
-        return {
-          style: css.userSelect || css.getPropertyValue("-webkit-user-select"),
-          selected: window.getSelection()?.toString().trim(),
-        };
-      });
-      expect(style).toBe("all");
-      expect(selected).toBe(SOURCE_URL);
-    }
-    expect(await $('[role="dialog"] a[href]').isExisting()).toBe(false);
+    // The source and the latest release are links (#256). A click hands the
+    // fixed address to the OS's handler (here the E2E opener's log), and the
+    // window stays on About.
+    const links = await $$('[role="dialog"] a.hd-about__link');
+    expect(await links.map((link) => link.getAttribute("href"))).toEqual([
+      SOURCE_URL,
+      `${SOURCE_URL}/releases/latest`,
+    ]);
+    const handedOn = logLines("HOPLODEX_E2E_OPENED_LOG").length;
+    for (const link of links) await link.click();
+    await browser.waitUntil(() => logLines("HOPLODEX_E2E_OPENED_LOG").length >= handedOn + 2, {
+      timeoutMsg: "the project pages were not handed to the opener",
+    });
+    expect(logLines("HOPLODEX_E2E_OPENED_LOG").slice(handedOn)).toEqual([
+      SOURCE_URL,
+      `${SOURCE_URL}/releases/latest`,
+    ]);
+    await expect($('[role="dialog"] .hd-dialog__title')).toHaveText("About HoploDex");
 
     // Every component of the build's notices, and no more (010 SC-001).
     expect(await $(".hd-about__count").getText()).toBe(`${total} components`);

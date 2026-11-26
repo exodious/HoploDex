@@ -47,6 +47,8 @@ From top to bottom:
    - "Source code:", then `https://github.com/exodious/HoploDex` in a
      monospace span with `user-select: all`, as export's paths are shown
      (`.hd-paths dd`). Not a link, and nothing opens it (FR-006).
+     _Amended 2026-11-26: a link, and a second one, "Latest release:", to
+     `…/releases/latest`; Rust opens each in the default browser ([#256](https://github.com/exodious/HoploDex/issues/256))._
    - When the notices document has `development: true` (the development
      server's, never a release or E2E build's), a muted line in the smaller
      text style: "Development build: these notices aren't checked." It comes

@@ -54,14 +54,21 @@
   font-weight: 650;
 }
 
-/* The source address and the commit: selectable at a click, as export's
-   paths are (.hd-paths dd). Not a link (010 FR-006). */
-.hd-about__commit,
-.hd-about__source {
+/* The commit: selectable at a click, as export's paths are (.hd-paths dd). */
+.hd-about__commit {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
   user-select: all;
+}
+
+/* The project's pages, opened in the default browser (#256). */
+.hd-about__link {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  color: var(--niter);
+  text-decoration: underline;
 }
 
 .hd-about__status,

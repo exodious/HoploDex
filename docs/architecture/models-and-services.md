@@ -103,7 +103,8 @@ insurance status, valuation, attachment storage, secure delete,
 - `AppOpener` (007) takes an `OpenerRoute`, `XdgOpen` or, inside a Flatpak,
   `Portal { timeout }`, which asks the OpenURI portal and treats no answer
   within the timeout as opened; its `reveal` shows the troubleshooting log's file
-  (013 research.md §10);
+  (013 research.md §10), and its `open_url` hands About's fixed project
+  addresses to the default browser (`OpenURI.OpenURI` inside a Flatpak; #256);
 - and for 004 `entry_text` (the entry key and 004 FR-015 rules), `cartridges`
   (the embedded catalog and caliber derivation) and `suggestions` (ranking,
   snapping, the import sheet pass);
