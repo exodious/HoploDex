@@ -52,13 +52,30 @@ fn record_from_pair(firearm: Option<i64>, accessory: Option<i64>) -> Option<Reco
     }
 }
 
+/// A host's items in order, with a hole where one was taken off, so taking
+/// one off doesn't shift the rest (#233). Holes are swept out once they are
+/// half the list, which keeps that constant time on average.
+#[derive(Debug, Default, Clone)]
+struct Items {
+    slots: Vec<Option<RecordRef>>,
+    holes: usize,
+}
+
+impl Items {
+    fn iter(&self) -> std::iter::Flatten<std::slice::Iter<'_, Option<RecordRef>>> {
+        self.slots.iter().flatten()
+    }
+}
+
 /// The mounts of a database: item to host, and host to items.
 #[derive(Debug, Default, Clone)]
 pub struct MountGraph {
     host_of: HashMap<RecordRef, RecordRef>,
     /// Each host's items in the order their rows were recorded (a move
     /// updates the row, so the item keeps its place).
-    items_of: HashMap<RecordRef, Vec<RecordRef>>,
+    items_of: HashMap<RecordRef, Items>,
+    /// Each mounted item's slot in its host's [`Items`].
+    slot_of: HashMap<RecordRef, usize>,
     /// How many of each host's items have each height, up to
     /// [`HEIGHT_CAP`]. A record's height is one more than its tallest
     /// item's, so a mount changes a few counts up the host's chain and never
@@ -88,7 +105,7 @@ impl MountGraph {
             // The table's CHECKs make every row a full pair.
             if let (Some(item), Some(host)) = row.map_err(CommandError::from_db)? {
                 graph.host_of.insert(item, host);
-                graph.items_of.entry(host).or_default().push(item);
+                graph.attach(item, host);
             }
         }
         graph.count_heights();
@@ -107,9 +124,9 @@ impl MountGraph {
                 if heights.contains_key(&at) {
                     continue;
                 }
-                let items = self.items_of.get(&at).map(Vec::as_slice).unwrap_or_default();
+                let items = self.items_of.get(&at).map(Items::iter).unwrap_or_default();
                 if expanded {
-                    let tallest = items.iter().map(|i| heights.get(i).map_or(HEIGHT_CAP, |h| *h));
+                    let tallest = items.map(|i| heights.get(i).map_or(HEIGHT_CAP, |h| *h));
                     heights.insert(at, tallest.max().map_or(0, |h| (h + 1).min(HEIGHT_CAP)));
                     continue;
                 }
@@ -118,10 +135,7 @@ impl MountGraph {
                 }
                 stack.push((at, true));
                 stack.extend(
-                    items
-                        .iter()
-                        .filter(|item| !visiting.contains(*item))
-                        .map(|item| (*item, false)),
+                    items.filter(|item| !visiting.contains(*item)).map(|item| (*item, false)),
                 );
             }
         }
@@ -169,15 +183,41 @@ impl MountGraph {
     pub fn place(&mut self, item: RecordRef, host: Option<RecordRef>) {
         let height = self.height(item);
         if let Some(old) = self.host_of.remove(&item) {
-            if let Some(items) = self.items_of.get_mut(&old) {
-                items.retain(|i| *i != item);
-            }
+            self.detach(item, old);
             self.recount(old, Some(height), None);
         }
         if let Some(host) = host {
             self.host_of.insert(item, host);
-            self.items_of.entry(host).or_default().push(item);
+            self.attach(item, host);
             self.recount(host, None, Some(height));
+        }
+    }
+
+    /// Adds `item` at the end of `host`'s items.
+    fn attach(&mut self, item: RecordRef, host: RecordRef) {
+        let items = self.items_of.entry(host).or_default();
+        self.slot_of.insert(item, items.slots.len());
+        items.slots.push(Some(item));
+    }
+
+    /// Takes `item` out of `host`'s items, keeping the others' order.
+    fn detach(&mut self, item: RecordRef, host: RecordRef) {
+        let (Some(slot), Some(items)) = (self.slot_of.remove(&item), self.items_of.get_mut(&host))
+        else {
+            return;
+        };
+        // A damaged file with two rows for one item can't point it elsewhere.
+        let Some(at) = items.slots.get_mut(slot).filter(|at| **at == Some(item)) else {
+            return;
+        };
+        *at = None;
+        items.holes += 1;
+        if items.holes * 2 > items.slots.len() {
+            items.slots.retain(Option::is_some);
+            items.holes = 0;
+            for (slot, item) in items.iter().enumerate() {
+                self.slot_of.insert(*item, slot);
+            }
         }
     }
 
@@ -219,7 +259,7 @@ impl MountGraph {
             .items_of
             .get(&host)
             .into_iter()
-            .flatten()
+            .flat_map(Items::iter)
             .rev()
             .map(|item| (*item, host, 1))
             .collect();
@@ -232,7 +272,7 @@ impl MountGraph {
                 self.items_of
                     .get(&record)
                     .into_iter()
-                    .flatten()
+                    .flat_map(Items::iter)
                     .rev()
                     .map(|item| (*item, record, depth + 1)),
             );
@@ -257,9 +297,9 @@ impl MountGraph {
             if memo.contains_key(&record) {
                 continue;
             }
-            let items = self.items_of.get(&record).map(Vec::as_slice).unwrap_or_default();
+            let items = self.items_of.get(&record).map(Items::iter).unwrap_or_default();
             if expanded {
-                let mut counts = RecordCounts::of(items.iter().copied());
+                let mut counts = RecordCounts::of(items.clone().copied());
                 for item in items {
                     counts += memo.get(item).copied().unwrap_or_default();
                 }
@@ -270,9 +310,7 @@ impl MountGraph {
                 continue;
             }
             stack.push((record, true));
-            stack.extend(
-                items.iter().filter(|item| !visiting.contains(*item)).map(|item| (*item, false)),
-            );
+            stack.extend(items.filter(|item| !visiting.contains(*item)).map(|item| (*item, false)));
         }
         memo.get(&host).copied().unwrap_or_default()
     }
@@ -646,6 +684,69 @@ mod tests {
         }
         assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
         assert_eq!(graph.height(wide), 2);
+    }
+
+    /// `host`'s items in order.
+    fn items(graph: &MountGraph, host: RecordRef) -> Vec<RecordRef> {
+        graph.items_of.get(&host).map(|items| items.iter().copied().collect()).unwrap_or_default()
+    }
+
+    #[test]
+    fn moves_keep_every_hosts_items_in_order() {
+        // #233: checked against plain lists, the way a move was made before,
+        // across moves back, moves between hosts and moves off.
+        let hosts = [RecordRef::Firearm(1), RecordRef::Firearm(2), RecordRef::Accessory(1)];
+        let mut graph = MountGraph::default();
+        let mut expected: HashMap<RecordRef, Vec<RecordRef>> = HashMap::new();
+        let mut seed = 7_u64;
+        for step in 0..20_000 {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            let item = RecordRef::Accessory(100 + (seed >> 33) as i64 % 60);
+            let host = match (seed >> 20) % 4 {
+                3 => None,
+                n => Some(hosts[n as usize]),
+            };
+            for items in expected.values_mut() {
+                items.retain(|i| *i != item);
+            }
+            if let Some(host) = host {
+                expected.entry(host).or_default().push(item);
+            }
+            graph.place(item, host);
+            for host in hosts {
+                let want = expected.get(&host).cloned().unwrap_or_default();
+                assert_eq!(items(&graph, host), want, "step {step}");
+                for (slot, item) in want.iter().enumerate() {
+                    let slots = &graph.items_of[&host].slots;
+                    assert_eq!(slots[graph.slot_of[item]], Some(*item), "step {step}, {slot}");
+                }
+            }
+        }
+        // And a move back to the same host goes to the end.
+        let (a, b) = (RecordRef::Accessory(1000), RecordRef::Accessory(1001));
+        graph.place(a, Some(hosts[0]));
+        graph.place(b, Some(hosts[0]));
+        graph.place(a, Some(hosts[1]));
+        graph.place(a, Some(hosts[0]));
+        assert!(items(&graph, hosts[0]).ends_with(&[b, a]));
+    }
+
+    #[test]
+    fn moving_items_off_a_wide_host_is_constant_time() {
+        // #233: 50,000 items moved off a host carrying 50,000, each move
+        // shifted the rest of the list (1.25 × 10^9 steps).
+        let (wide, other) = (RecordRef::Firearm(1), RecordRef::Firearm(2));
+        let mut graph = MountGraph::default();
+        for id in 0..50_000 {
+            graph.place(RecordRef::Accessory(id), Some(wide));
+        }
+        let started = Instant::now();
+        for id in 0..50_000 {
+            graph.place(RecordRef::Accessory(id), Some(other));
+        }
+        assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
+        assert!(items(&graph, wide).is_empty());
+        assert_eq!(items(&graph, other), (0..50_000).map(RecordRef::Accessory).collect::<Vec<_>>());
     }
 
     #[test]
