@@ -620,7 +620,7 @@ fn the_showcase_collection_has_photos_variety_and_steady_policies() {
     // photo is a file in seed-photos/ that its README's table licenses so.
     let photos_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/seed-photos");
     let readme = std::fs::read_to_string(photos_dir.join("README.md")).unwrap();
-    let licence = |file: &str| {
+    let license = |file: &str| {
         readme.lines().find_map(|line| {
             let cells: Vec<&str> = line.split('|').map(str::trim).collect();
             (cells.len() == 5 && cells[1] == format!("`{file}`")).then(|| cells[3].to_string())
@@ -649,11 +649,11 @@ fn the_showcase_collection_has_photos_variety_and_steady_policies() {
             .iter()
             .find(|(_, file_bytes)| file_bytes == bytes)
             .expect("a photo that is no file in seed-photos/");
-        let licence =
-            licence(file).unwrap_or_else(|| panic!("{file} is not in the seed photos' README"));
+        let license =
+            license(file).unwrap_or_else(|| panic!("{file} is not in the seed photos' README"));
         assert!(
-            licence.starts_with("Public domain") || licence.starts_with("CC0"),
-            "{file} is {licence}"
+            license.starts_with("Public domain") || license.starts_with("CC0"),
+            "{file} is {license}"
         );
     }
 

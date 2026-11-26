@@ -1,6 +1,6 @@
 /* The showcase site's styles. The palette and fonts are the app's own
    (src/styles/tokens.css), so the page reads as the same product; the fonts
-   are the app's, with their licences beside them in fonts/. */
+   are the app's, with their licenses beside them in fonts/. */
 @font-face {
   font-family: "Big Shoulders Display";
   src: url(fonts/big-shoulders-display.woff2) format("woff2");

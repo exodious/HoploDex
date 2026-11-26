@@ -50,7 +50,7 @@ photos to at most five.
 
 ## Which record uses which
 
-| File | Seeded record | Licence |
+| File | Seeded record | License |
 | --- | --- | --- |
 | `glock-19-gen4-fde.jpg` | Glock 19 Gen5 (3 photos) | CC0 1.0 |
 | `glock-19-gen3.jpg` | Glock 19 Gen5 | Public domain (PD-self) |
@@ -285,7 +285,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 
 - Title: Winchester 1873 Rifle
 - Author: Hmaag (German Wikipedia user), own work
-- Licence: CC0 1.0 Universal Public Domain Dedication ({{self|cc-zero}}), https://creativecommons.org/publicdomain/zero/1.0/
+- License: CC0 1.0 Universal Public Domain Dedication ({{self|cc-zero}}), https://creativecommons.org/publicdomain/zero/1.0/
 - Commons page: https://commons.wikimedia.org/wiki/File:Winchester_1873_Rifle.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/1/16/Winchester_1873_Rifle.jpg
 - Taken: 2017-12-06
@@ -297,7 +297,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 
 - Title: PEO M4 Carbine RAS ("M4 carbine.")
 - Author: PEO Soldier, US Army
-- Licence: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
 - Commons page: https://commons.wikimedia.org/wiki/File:PEO_M4_Carbine_RAS.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/0/08/PEO_M4_Carbine_RAS.jpg
 - Upstream source: https://www.flickr.com/photos/peosoldier/4639654026/
@@ -310,7 +310,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 
 - Title: MCS 870 Modular Combat Shotgun
 - Author: US Air Force
-- Licence: public domain, a work of the US Air Force ({{PD-USGov-Military-Air Force}})
+- License: public domain, a work of the US Air Force ({{PD-USGov-Military-Air Force}})
 - Commons page: https://commons.wikimedia.org/wiki/File:MCS_870_Modular_Combat_Shotgun_(7414624938).jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/1/1c/MCS_870_Modular_Combat_Shotgun_%287414624938%29.jpg
 - Dated: 2012-02-03
@@ -322,7 +322,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 
 - Title: SilencerCo Osprey .45 ("SilencerCo Osprey .45 suppressor on a Springfield pistol")
 - Author: DickClarkMises (English Wikipedia user), own work
-- Licence: CC0 1.0 Universal Public Domain Dedication ({{self|cc-zero}}), https://creativecommons.org/publicdomain/zero/1.0/
+- License: CC0 1.0 Universal Public Domain Dedication ({{self|cc-zero}}), https://creativecommons.org/publicdomain/zero/1.0/
 - Commons page: https://commons.wikimedia.org/wiki/File:SilencerCo_Osprey_.45.JPG
 - Original file: https://upload.wikimedia.org/wikipedia/commons/a/a5/SilencerCo_Osprey_.45.JPG
 - Taken: 2013-10-13
@@ -334,7 +334,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 
 - Title: PEO Trijicon M150 RCO ("The M150 Rifle Combat Optic (RCO) (TA31RCO-M150CP ACOG)")
 - Author: PEO Soldier, US Army
-- Licence: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
 - Commons page: https://commons.wikimedia.org/wiki/File:PEO_Trijicon_M150_RCO.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/0/08/PEO_Trijicon_M150_RCO.jpg
 - Upstream source: https://www.flickr.com/photos/peosoldier/3879855625/
@@ -347,7 +347,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 
 - Title: PEO PEQ-15A oblique ("The AN/PEQ-15A Dual Beam Aiming Laser Advanced (DBAL-A2)")
 - Author: PEO Soldier, US Army
-- Licence: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
 - Commons page: https://commons.wikimedia.org/wiki/File:PEO_PEQ-15A_oblique.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/c/c7/PEO_PEQ-15A_oblique.jpg
 - Upstream source: https://www.flickr.com/photos/peosoldier/3759640932/
@@ -360,7 +360,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 
 - Title: PEO Aimpoint CompM4 ("The M68 Close Combat Optic (CCO)")
 - Author: PEO Soldier, US Army
-- Licence: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
 - Commons page: https://commons.wikimedia.org/wiki/File:PEO_Aimpoint_CompM4.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/7/71/PEO_Aimpoint_CompM4.jpg
 - Upstream source: https://www.flickr.com/photos/peosoldier/3879851469/
@@ -373,7 +373,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 
 - Title: STANAG box magazine NSN 1005-01-630-9508 (the US Army's Enhanced Performance Magazine)
 - Author: US Army
-- Licence: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
+- License: public domain, a work of the US Army ({{PD-USGov-Military-Army}})
 - Commons page: https://commons.wikimedia.org/wiki/File:STANAG_box_magazine_NSN_1005-01-630-9508.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/3/39/STANAG_box_magazine_NSN_1005-01-630-9508.jpg
 - Upstream source: https://www.army.mil/article/177640/army_fielding_new_magazine_optimized_for_m4m4a1_carbine_and_m855a1
