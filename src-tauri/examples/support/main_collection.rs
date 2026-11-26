@@ -99,7 +99,7 @@ impl Images {
 }
 
 /// A real photo from `seed-photos/`, whose README records where each came
-/// from and its licence, as the `(name, bytes)` that `photos` takes.
+/// from and its license, as the `(name, bytes)` that `photos` takes.
 macro_rules! seed_photo {
     ($name:literal) => {
         (

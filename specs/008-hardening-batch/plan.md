@@ -104,6 +104,8 @@ other schema change; the field maximums are validation, not `CHECK`s.
 **Target Platform**: Desktop: Windows 10+, macOS 26+, Linux (WebKitGTK 2.40+),
 unchanged.
 
+_Amended 2026-11-26: Windows 10 is not supported; the README's [Supported platforms](../../README.md#supported-platforms) list is the one that says which systems are (#259)._
+
 **Project Type**: Desktop application (Tauri: React frontend + Rust backend in
 one repo)
 

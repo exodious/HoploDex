@@ -107,6 +107,8 @@ unchanged. The upgrade is SQL and file I/O, so it is the same on each OS. The
 Rust suite and the E2E journey run on all three (constitution II; CLAUDE.md:
 a failure seen on one OS is verified there).
 
+_Amended 2026-11-26: Windows 10 is not supported; the README's [Supported platforms](../../README.md#supported-platforms) list is the one that says which systems are (#259)._
+
 **Project Type**: desktop application (Tauri: React frontend + Rust backend in
 `src-tauri/`).
 

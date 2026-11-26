@@ -214,5 +214,3 @@ When every implementable task is done:
 - Test-writing agents make reasonable but wrong assumptions (wrong ARIA role, reading
   `textContent` of inputs, tokens that never appear). Implementers may fix the test, but
   must say so.
-- A pre-existing fixture (a portability database, a seed) may need regenerating when the
-  schema is edited in place. Check how earlier features did it before accepting.

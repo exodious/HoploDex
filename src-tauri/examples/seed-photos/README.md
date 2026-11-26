@@ -91,13 +91,13 @@ Performance Magazine.
 
 "Commons file version" is the upload time and SHA-1 of the version of the
 file that was downloaded. "Description page" is the revision of the Commons
-page (licence and author) as read when checked, 2026-09-27T02:21:04Z.
+page (license and author) as read when checked, 2026-09-27T02:21:04Z.
 
 ### `glock-19-gen4-fde.jpg`
 
 - Title: Glock 19 Generation 4 9mm Pistol
 - Author: Arielnyc2006 (own work)
-- Licence: CC0 1.0 Universal Public Domain Dedication, https://creativecommons.org/publicdomain/zero/1.0/
+- License: CC0 1.0 Universal Public Domain Dedication, https://creativecommons.org/publicdomain/zero/1.0/
 - Commons page: https://commons.wikimedia.org/wiki/File:Glock_19_Generation_4_9mm_Pistol.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/6/6d/Glock_19_Generation_4_9mm_Pistol.jpg
 - Taken: 2014-03-11
@@ -110,7 +110,7 @@ page (licence and author) as read when checked, 2026-09-27T02:21:04Z.
 
 - Title: Glock 19 (9mm), Generation 3
 - Author: Agazoo (English Wikipedia user; source "personal collection")
-- Licence: public domain, released by the author ({{PD-self}})
+- License: public domain, released by the author ({{PD-self}})
 - Commons page: https://commons.wikimedia.org/wiki/File:Glock_19_(9mm),_Generation_3.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/0/09/Glock_19_%289mm%29%2C_Generation_3.jpg
 - Taken: 2012-03-21
@@ -123,7 +123,7 @@ page (licence and author) as read when checked, 2026-09-27T02:21:04Z.
 
 - Title: Glock 19 (transparent background)
 - Author: U.S. Bureau of Alcohol, Tobacco, Firearms and Explosives
-- Licence: public domain, a work of the US federal government ({{PD-USGov-DOJ}})
+- License: public domain, a work of the US federal government ({{PD-USGov-DOJ}})
 - Commons page: https://commons.wikimedia.org/wiki/File:Glock_19_(transparent_background).jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/d/d0/Glock_19_%28transparent_background%29.jpg
 - Upstream source: https://www.atf.gov/n/n/n/sites/default/files/glock.jpg
@@ -140,7 +140,7 @@ History.
 
 - Title: Springfield Armory M1 Garand Rifle
 - Author: The Smithsonian Institution, National Museum of American History
-- Licence: public domain ({{PD-USGov-SI}} on Commons)
+- License: public domain ({{PD-USGov-SI}} on Commons)
 - Upstream source: https://americanhistory.si.edu/collections/search/object/nmah_414892
 - Changes: `-left`, `-right`, `-stock` and `-receiver` scaled to 1600 px wide; `-sling` scaled to 1600 × 937; all metadata stripped, re-encoded
 
@@ -156,7 +156,7 @@ History.
 
 - Title: 1911A1-JH02 ("Springfield 1911-A1 (Mil Spec) caliber 45 ACP, stripped")
 - Author: Jan Hrdonka (English Wikipedia user Hrd10), own work
-- Licence: public domain, released by the author ({{PD-self}})
+- License: public domain, released by the author ({{PD-self}})
 - Commons page: https://commons.wikimedia.org/wiki/File:1911A1-JH02.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/2/2f/1911A1-JH02.jpg
 - Taken: 2007-08-20
@@ -169,7 +169,7 @@ History.
 
 - Title: Colt M1911 detalj
 - Author: Askild Antonsen (Flickr user handvapensamlingen, "Pistols used in Norway")
-- Licence: CC BY 2.0, https://creativecommons.org/licenses/by/2.0/
+- License: CC BY 2.0, https://creativecommons.org/licenses/by/2.0/
 - Commons page: https://commons.wikimedia.org/wiki/File:Colt_M1911_detalj_(6971799585).jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/3/39/Colt_M1911_detalj_%286971799585%29.jpg
 - Upstream source: https://www.flickr.com/photos/handvapensamlingen/6971799585/
@@ -183,7 +183,7 @@ History.
 
 - Title: SW 686 cylinder close-up ("Smith & Wesson 686 6" .357 Magnum, close-up of cylinder")
 - Author: Spencer Dutch, own work
-- Licence: CC BY 3.0, https://creativecommons.org/licenses/by/3.0/
+- License: CC BY 3.0, https://creativecommons.org/licenses/by/3.0/
 - Commons page: https://commons.wikimedia.org/wiki/File:SW_686_cylinder_close-up.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/f/fd/SW_686_cylinder_close-up.jpg
 - Taken: 2009-10-04
@@ -196,7 +196,7 @@ History.
 
 - Title: SW 686 side front view ("Smith & Wesson 686 6" .357 Magnum")
 - Author: Spencer Dutch, own work
-- Licence: CC BY 3.0, https://creativecommons.org/licenses/by/3.0/
+- License: CC BY 3.0, https://creativecommons.org/licenses/by/3.0/
 - Commons page: https://commons.wikimedia.org/wiki/File:SW_686_side_front_view.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/5/52/SW_686_side_front_view.jpg
 - Taken: 2009-10-04
@@ -209,7 +209,7 @@ History.
 
 - Title: L128A1 Combat Shotgun (Benelli M4) R004D172
 - Author: Steve Dock, UK Ministry of Defence (Defence Imagery)
-- Licence: Open Government Licence v3.0, https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/
+- License: Open Government Licence v3.0, https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/
 - Credit line given on Commons: "Photo: Steve Dock/UK Ministry of Defence 2025"
 - Commons page: https://commons.wikimedia.org/wiki/File:L128A1_Combat_Shotgun_(Benelli_M4)_R004D172.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/1/16/L128A1_Combat_Shotgun_%28Benelli_M4%29_R004D172.jpg
@@ -224,7 +224,7 @@ History.
 
 - Title: Beretta 92FS hand gun
 - Author: U.S. Bureau of Alcohol, Tobacco, Firearms and Explosives
-- Licence: public domain, a work of the US federal government ({{PD-USGov-DOJ}})
+- License: public domain, a work of the US federal government ({{PD-USGov-DOJ}})
 - Commons page: https://commons.wikimedia.org/wiki/File:Beretta_92FS_hand_gun.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/2/26/Beretta_92FS_hand_gun.jpg
 - Upstream source: https://www.atf.gov/n/n/n/sites/default/files/barrett_hand_gun_2.jpg
@@ -238,7 +238,7 @@ History.
 
 - Title: Remington New Model Army Revolver
 - Author: Hmaag (German Wikipedia user), self-photographed
-- Licence: public domain, released by the author ({{PD-user-de|Hmaag}})
+- License: public domain, released by the author ({{PD-user-de|Hmaag}})
 - Commons page: https://commons.wikimedia.org/wiki/File:Remington_New_Model_Army_Revolver.JPG
 - Original file: https://upload.wikimedia.org/wikipedia/commons/e/ea/Remington_New_Model_Army_Revolver.JPG
 - First uploaded: 2009-01-06 (German Wikipedia)
@@ -251,7 +251,7 @@ History.
 
 - Title: SIG Sauer P320 M18 Handgun Tan
 - Author: Tony Webster (Flickr user diversey)
-- Licence: CC BY 2.0, https://creativecommons.org/licenses/by/2.0/ (Commons' FlickreviewR bot confirmed the Flickr licence on 2025-02-27)
+- License: CC BY 2.0, https://creativecommons.org/licenses/by/2.0/ (Commons' FlickreviewR bot confirmed the Flickr license on 2025-02-27)
 - Commons page: https://commons.wikimedia.org/wiki/File:SIG_Sauer_P320_M18_Handgun_Tan_(53745479381).jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/b/be/SIG_Sauer_P320_M18_Handgun_Tan_%2853745479381%29.jpg
 - Upstream source: https://www.flickr.com/photos/diversey/53745479381/
@@ -265,7 +265,7 @@ History.
 
 - Title: Winchester Model 70 Classic Featherweight .300 WSM
 - Author: Efeesh, own work
-- Licence: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/
+- License: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/
 - Commons page: https://commons.wikimedia.org/wiki/File:Winchester_Model_70_Classic_Featherweight_.300_WSM.jpg
 - Original file: https://upload.wikimedia.org/wikipedia/commons/3/3f/Winchester_Model_70_Classic_Featherweight_.300_WSM.jpg
 - Taken: 2026-04-05
@@ -385,7 +385,7 @@ PEO Soldier (Program Executive Office Soldier) and the US Air Force.
 ## Credits for a web page
 
 Ready to paste under screenshots that show these photos. The CC BY and OGL
-licences ask for changes to be noted, so those lines say "resized".
+licenses ask for changes to be noted, so those lines say "resized".
 
 - Glock 19 Gen4 photo by Arielnyc2006, CC0, via Wikimedia Commons.
 - Glock 19 Gen3 photo by Agazoo, public domain, via Wikimedia Commons.

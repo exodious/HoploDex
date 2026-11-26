@@ -36,7 +36,7 @@ It installs, skipping whatever is already there:
     of the app's animations fail.
   - With -GitHubCli, the GitHub CLI.
 
-It can be run again: it adds only what's missing. For x64 Windows 10 or 11
+It can be run again: it adds only what's missing. For x64 Windows 11
 Pro, Enterprise or Education, or Windows Server 2025 with Desktop
 Experience. Not Home, which has no Remote Desktop host.
 

@@ -128,10 +128,10 @@ byte-identical files. To make that so:
   reads $51,300, and the collection is grouped by Type so no photo that needs a
   credit line is in view.
 - `e2e/screenshots/store-shots.json` records what each shot shows, by record and
-  photo with its licence, and the text the page must carry. The spec checks the
+  photo with its license, and the text the page must carry. The spec checks the
   app's view against it before every shot and fails rather than take one that
   differs; `scripts/flatpak/storeShots.test.ts` (in `npm test`) checks the file
-  against `011 research.md` §13's list, the seed-photos README's licences and
+  against `011 research.md` §13's list, the seed-photos README's licenses and
   the metainfo. A retake that shows another record or photo changes that file,
   and the research note, on purpose.
 

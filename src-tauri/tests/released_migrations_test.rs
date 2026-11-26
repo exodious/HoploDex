@@ -6,8 +6,7 @@
 //! it stored under `tests/fixtures/releases/`: `<name or fixture path> <sha256
 //! of its bytes> <release>`, `#` starting a comment. [`problems`] is the check, taking the
 //! manifest's text, the build's steps and a reader for fixtures, so a test can
-//! hand it doctored inputs and see each one fail. The real manifest is empty
-//! until 0.1.0's records are merged, and passes.
+//! hand it doctored inputs and see each one fail.
 
 use std::path::Path;
 
@@ -125,8 +124,7 @@ fn read_real_fixture(path: &str) -> Option<Vec<u8>> {
 }
 
 /// 009 US4-2, 009 FR-021, 009 SC-006: the real manifest holds against this
-/// build (today it lists nothing; from 0.1.0's records it lists the steps and
-/// the stored database).
+/// build.
 #[test]
 fn the_real_manifest_holds_against_this_build() {
     let found = problems(&real_manifest(), db::MIGRATIONS, &read_real_fixture);

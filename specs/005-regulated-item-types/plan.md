@@ -81,6 +81,8 @@ and spreadsheet column
 
 **Target Platform**: Desktop: Windows 10+, macOS 12+, Linux, unchanged
 
+_Amended 2026-11-26: Windows 10 and macOS before 26 are not supported; the README's [Supported platforms](../../README.md#supported-platforms) list is the one that says which systems are (#259)._
+
 **Project Type**: Desktop application (Tauri: React frontend + Rust backend in
 one repo)
 

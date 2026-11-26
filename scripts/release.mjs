@@ -109,7 +109,7 @@ const SCREENSHOT =
 /**
  * Each metainfo screenshot address is at a commit (011 research.md §13) in the
  * released commit's history, so GitHub keeps serving it, and the file there must
- * be the working tree's, or a software centre shows an old image. `merged(sha)`
+ * be the working tree's, or a software center shows an old image. `merged(sha)`
  * says whether that commit is in the history, and `show(rev)` is `git show <rev>`'s
  * bytes, or null when it has none. CI's shallow checkout can't see that commit, so
  * this runs here and not in metainfo.test.ts.

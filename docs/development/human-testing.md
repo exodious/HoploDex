@@ -41,7 +41,7 @@ insurance state: healthy, under-insured, uninsured (expired policy), and a
 policy expiring soon. Policy dates are relative to the day it is seeded.
 Some firearms carry real photos from `src-tauri/examples/seed-photos/`, all
 public domain or freely licensed, whose `README.md` records each one's
-source, licence and the credit line to use if they appear on a web page; one
+source, license and the credit line to use if they appear on a web page; one
 record carries ten generated images for size and count testing. The
 data lives in `.human-testing/` (git-ignored): two databases in `HoploDex/`,
 "Main collection" (the full collection) and "Shared collection" (left open

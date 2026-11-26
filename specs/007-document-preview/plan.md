@@ -121,6 +121,8 @@ WebKitGTK 2.40+ (the AppImage bundles 2.54) and a WebView2 runtime that
 has the interfaces in research.md §7; where either is missing, PDFs open
 in another app and TIFF and text still preview.
 
+_Amended 2026-11-26: Windows 10 is not supported; the README's [Supported platforms](../../README.md#supported-platforms) list is the one that says which systems are (#259)._
+
 **Project Type**: Desktop application (Tauri: React frontend + Rust backend in
 one repo)
 

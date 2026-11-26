@@ -21,7 +21,7 @@ Settings › Privacy & Security** find the message about HoploDex and choose
 **Open Anyway**.
 
 **Linux, the Flatpak:** `flatpak install --user HoploDex-{{app_version}}-x86_64.flatpak`,
-or open the file with your software centre. This adds Flathub if it isn't set
+or open the file with your software center. This adds Flathub if it isn't set
 up and fetches the GNOME runtime. A newer version installs the same way, over
 the old one, keeping everything. `flatpak update` updates the runtime but not
 a HoploDex installed from a file.
