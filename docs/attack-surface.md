@@ -351,12 +351,12 @@ scanning finding.
 
 ## single-instance: one running instance
 
-- **Code:** `src-tauri/src/main.rs` (the `tauri_plugin_single_instance` plugin and `show_main_window`); `src-tauri/Cargo.toml` (`tauri-plugin-single-instance`)
+- **Code:** `src-tauri/src/main.rs` (the `tauri_plugin_single_instance` plugin, `show_main_window` and the `RunEvent::Reopen` arm); `src-tauri/Cargo.toml` (`tauri-plugin-single-instance`)
 - **Ask:**
   - Does a second start exit in the plugin's setup, before anything at start-up touches a web view's data folder (the main web view folder's `secure_delete_dir`, `surface::clear_data_directory`, macOS's earlier WebKit folders) or the opened documents' cache (#231)?
   - Does the running instance ignore what a second start sends (its arguments and working folder), and only bring the main window to the front?
   - Who can reach each OS's channel, and what can they do through it beyond bringing the window forward or keeping a second HoploDex from starting? On Linux, the session bus name `io.github.exodious.HoploDex.SingleInstance` (a process of the user's session; inside the Flatpak the app owns it under its own app id, with no permission beyond 011 research.md §4's table). On Windows, the session's named mutex and a hidden window found by its class and title, sent `WM_COPYDATA`.
-  - Is the plugin in every shipped Linux and Windows build, the Flatpak's included, and left out only of E2E and debug builds (`tauri dev`, human testing)? macOS builds leave it out and have no single-instance channel: macOS reuses the running app when it is opened again, and a second copy started with `open -n` or by running the binary inside the `.app` is the user's own doing.
+  - Is the plugin in every shipped Linux and Windows build, the Flatpak's included, and left out only of E2E and debug builds (`tauri dev`, human testing)? macOS builds leave it out and have no single-instance channel: macOS reuses the running app when it is opened again, and `RunEvent::Reopen` calls `show_main_window` to restore a minimized window. A second copy started with `open -n` or by running the binary inside the `.app` is not guarded: it runs `setup()` and wipes the running copy's web view data folders.
 - **Since:** #231.
 
 ## logging: what the log carries

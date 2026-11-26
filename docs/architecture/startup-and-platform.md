@@ -15,8 +15,10 @@ folders, and the running instance brings its main window to the front
 `io.github.exodious.HoploDex.SingleInstance`, which the Flatpak may own as its
 app id's own; on Windows a named mutex. macOS builds leave the plugin out and
 have no single-instance channel: macOS reuses the running app when it is
-opened again, and a second copy started with `open -n` or by running the
-binary inside the `.app` is the user's own doing. E2E and
+opened again, and the app's `RunEvent::Reopen` calls `show_main_window`, which
+restores the window if it was minimized. A second copy started with `open -n`
+or by running the binary inside the `.app` is not guarded: it runs `setup()`
+and wipes the running copy's web view data folders. E2E and
 debug builds (`tauri dev`, human testing) leave it out, since each runs in a
 sandbox of its own, beside the others or the user's own HoploDex.
 
