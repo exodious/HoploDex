@@ -26,7 +26,8 @@ export interface Navigation {
   route: Route;
   /** Jumps to a top-level page (the tabs, the brand): forgets any back trail. */
   navigate: (route: Route) => void;
-  /** Follows a link: the page being left stays reachable through `back`. */
+  /** Follows a link: the page being left stays reachable through `back`, unless
+   * the link leads to a page already on the trail, which counts as going back to it. */
   open: (route: Route) => void;
   /** Null when there is nothing to go back to. */
   back: BackTarget | null;

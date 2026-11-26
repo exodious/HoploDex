@@ -52,7 +52,8 @@ interface Visit {
  * from anywhere (add firearm, import, export). Browse state lives here so
  * a search, grouping, or scroll position survives opening a record and
  * coming back. Following a link (a policy from a firearm, a firearm from a
- * policy) pushes onto a trail, so "back" retraces the path taken. */
+ * policy) pushes onto a trail, so "back" retraces the path taken; a link to
+ * a page already on the trail returns to it instead (#120). */
 /** Where the form of resumed pending changes is: the firearm's or
  * accessory's record, or the policy's page, whose own dialogs then open with
  * them. A new accessory's form opens over the Accessories page. */
@@ -111,10 +112,23 @@ export function AppShell() {
 
   const open = useCallback(
     (next: Route) => {
-      setTrail((visits) => [...visits, { route, scrollY: window.scrollY }]);
+      // A link to a page already on the trail goes back to it rather than adding a step (#120).
+      const index = trail.findIndex(
+        (visit) =>
+          visit.route.page === next.page &&
+          ("id" in visit.route ? visit.route.id : null) === ("id" in next ? next.id : null),
+      );
+      if (index >= 0) {
+        const visit = trail[index];
+        restore.current = { route: visit.route, scrollY: visit.scrollY };
+        setTrail(trail.slice(0, index));
+        setRoute(visit.route);
+        return;
+      }
+      setTrail([...trail, { route, scrollY: window.scrollY }]);
       setRoute(next);
     },
-    [route],
+    [route, trail],
   );
 
   const back = useMemo<BackTarget | null>(() => {
