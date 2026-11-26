@@ -331,6 +331,10 @@ pub struct SessionInner {
     /// The files dropped onto the main window and the chooser answers not yet
     /// used, each bound to the session it arrived in ([`grants`]).
     grants: Mutex<grants::Grants>,
+    /// A restore's one-time notes that a lock closed the database before they
+    /// were dismissed, with the database's id: put back at its next open in
+    /// this run (#240). Only memory, and never a passphrase.
+    kept_restore_notes: Mutex<Option<(String, DatabaseNotes)>>,
 }
 
 /// A checked backup and its passphrase, waiting for the restore's
@@ -449,6 +453,7 @@ impl Session {
             backup_check_drops: AtomicU64::new(0),
             open_elsewhere: Mutex::new(None),
             grants: Mutex::default(),
+            kept_restore_notes: Mutex::new(None),
         }))
     }
 
@@ -923,7 +928,16 @@ impl SessionInner {
 
     /// Makes `open` the session's database, and starts the idle clock on
     /// its lock settings.
-    pub fn install(&self, open: OpenDatabase) {
+    pub fn install(&self, mut open: OpenDatabase) {
+        let kept = self.kept_restore_notes.lock().expect("session mutex poisoned").take();
+        if let Some((id, kept)) = kept
+            && id == open.database_id
+            && open.notes.restored_with_passphrase_of.is_none()
+            && open.notes.damaged_file_kept_at.is_none()
+        {
+            open.notes.restored_with_passphrase_of = kept.restored_with_passphrase_of;
+            open.notes.damaged_file_kept_at = kept.damaged_file_kept_at;
+        }
         self.idle.start(open.lock_settings.clone(), self.clock.now());
         *self.open_path.lock().expect("session mutex poisoned") = Some(open.path.clone());
         let mut slot = self.lock();
@@ -947,6 +961,21 @@ impl SessionInner {
         };
         self.forget_open();
         taken
+    }
+
+    /// A lock is closing `open`: its restore notes not yet dismissed are kept
+    /// for its next open (#240).
+    pub(crate) fn keep_restore_notes(&self, open: &OpenDatabase) {
+        let notes = &open.notes;
+        if notes.restored_with_passphrase_of.is_some() || notes.damaged_file_kept_at.is_some() {
+            let kept = DatabaseNotes {
+                restored_with_passphrase_of: notes.restored_with_passphrase_of.clone(),
+                damaged_file_kept_at: notes.damaged_file_kept_at.clone(),
+                ..DatabaseNotes::default()
+            };
+            *self.kept_restore_notes.lock().expect("session mutex poisoned") =
+                Some((open.database_id.clone(), kept));
+        }
     }
 
     /// Ends the open database's preview, if one is open, before anything else
