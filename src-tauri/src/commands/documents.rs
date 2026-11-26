@@ -55,6 +55,12 @@ pub trait Opener: Send + Sync {
     fn reveal(&self, _path: &Path) -> Result<(), OpenFailure> {
         Err(OpenFailure::Other("this opener can't show a file".into()))
     }
+
+    /// Hands a web address to the OS's handler for it, the default browser
+    /// (#256). Only `project_pages`' fixed addresses come here.
+    fn open_url(&self, _url: &str) -> Result<(), OpenFailure> {
+        Err(OpenFailure::Other("this opener can't open an address".into()))
+    }
 }
 
 /// What `open_document` answers: `opened` is false when the user cancelled
@@ -575,6 +581,35 @@ pub fn portal_open(
     }
 }
 
+/// The OpenURI portal's `OpenURI` for a web address (#256): the portal hands
+/// it to the host's default browser. A refusal is reported by the error's name.
+#[cfg(target_os = "linux")]
+pub fn portal_open_uri(connection: &zbus::Connection, url: &str) -> Result<(), OpenFailure> {
+    use std::collections::HashMap;
+
+    use zbus::blocking::{Connection as Blocking, Proxy};
+    use zbus::zvariant::Value;
+
+    let bus = Blocking::from(connection.clone());
+    let portal = Proxy::new(
+        &bus,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.OpenURI",
+    )
+    .map_err(|err| {
+        log::debug!("portal: no OpenURI portal: {}", crate::logging::portal_error(&err));
+        OpenFailure::NoApp
+    })?;
+    let options: HashMap<&str, Value<'_>> = HashMap::new();
+    portal.call_method("OpenURI", &("", url, options)).map_err(|err| {
+        log::debug!("portal: OpenURI refused: {}", crate::logging::portal_error(&err));
+        OpenFailure::NoApp
+    })?;
+    log::debug!("portal: OpenURI accepted");
+    Ok(())
+}
+
 /// The OpenURI portal's `OpenDirectory` with a read-only descriptor for `file`,
 /// which shows the folder it is in (013 research.md §10): the opener plugin's
 /// own route for this can't reach the portal from inside a Flatpak. A refusal
@@ -647,6 +682,17 @@ impl<R: tauri::Runtime> Opener for AppOpener<R> {
             return Ok(());
         }
         self.open(path.parent().unwrap_or(path))
+    }
+
+    /// Inside a Flatpak the portal's `OpenURI`; elsewhere the launcher, which
+    /// takes an address as it takes a file.
+    fn open_url(&self, url: &str) -> Result<(), OpenFailure> {
+        #[cfg(target_os = "linux")]
+        if let OpenerRoute::Portal { .. } = self.route {
+            let Some(connection) = self.portal() else { return Err(OpenFailure::NoApp) };
+            return portal_open_uri(&connection, url);
+        }
+        self.open(Path::new(url))
     }
 
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
@@ -747,6 +793,12 @@ impl<R: tauri::Runtime> Opener for AppOpener<R> {
         tauri_plugin_opener::reveal_item_in_dir(path).map_err(|e| OpenFailure::Other(e.to_string()))
     }
 
+    fn open_url(&self, url: &str) -> Result<(), OpenFailure> {
+        use tauri_plugin_opener::OpenerExt;
+
+        self.app.opener().open_url(url, None::<&str>).map_err(|e| OpenFailure::Other(e.to_string()))
+    }
+
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {
         use tauri_plugin_opener::OpenerExt;
 
@@ -772,6 +824,11 @@ impl Opener for E2eOpener {
     /// Recorded like an opened copy: nothing to start on the test machine.
     fn reveal(&self, path: &Path) -> Result<(), OpenFailure> {
         self.open(path)
+    }
+
+    /// Recorded like an opened copy: no browser starts on the test machine.
+    fn open_url(&self, url: &str) -> Result<(), OpenFailure> {
+        self.open(Path::new(url))
     }
 
     fn open(&self, path: &Path) -> Result<(), OpenFailure> {

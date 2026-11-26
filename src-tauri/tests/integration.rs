@@ -80,6 +80,7 @@ mod policy_deletion_test;
 mod portal_keyring_test;
 mod portal_opener_test;
 mod preview_text_test;
+mod project_pages_test;
 mod query_plan_test;
 mod record_identifier_test;
 mod registration_test;

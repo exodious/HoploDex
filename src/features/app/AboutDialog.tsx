@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Dialog, Disclosure, placeFocus, TextField } from "../../components";
+import { CommandFailure, invoke } from "../../services/tauriClient";
 import { filterComponents, loadNotices } from "./aboutNotices";
 import { TroubleshootingLogSection } from "./TroubleshootingLogSection";
 import type { ComponentNotice, NoticesDocument } from "./aboutNotices";
@@ -10,6 +11,8 @@ import "./about.css";
  * so the usual load, in milliseconds, doesn't flash it: the closing screen's
  * rule (003 SC-005; `ClosingScreen`'s `SHOW_AFTER_MS`). */
 const SHOW_AFTER_MS = 1000;
+
+const OPEN_FAILED = "The page couldn't be opened in your web browser.";
 
 const LOAD_FAILED =
   "The license notices couldn't be loaded. They are also in the NOTICES.txt file that came with HoploDex.";
@@ -45,6 +48,7 @@ function ProgramBlock({
   development: boolean;
 }) {
   const program = __HOPLODEX_PROGRAM__;
+  const [problem, setProblem] = useState<string | null>(null);
   return (
     <div className="hd-about__program">
       <div className="hd-about__name">
@@ -67,12 +71,54 @@ function ProgramBlock({
       <p>It comes with no warranty, to the extent permitted by law. See the license for details.</p>
       {permission !== null && <AdditionalPermission text={permission} />}
       <p>
-        Source code: <span className="hd-about__source">{program.sourceUrl}</span>
+        Source code:{" "}
+        <ProjectLink page="source" address={program.sourceUrl} onProblem={setProblem} />
       </p>
+      <p>
+        Latest release:{" "}
+        <ProjectLink
+          page="latestRelease"
+          address={`${program.sourceUrl}/releases/latest`}
+          onProblem={setProblem}
+        />
+      </p>
+      {problem && (
+        <p className="hd-banner hd-banner--error" role="alert">
+          {problem}
+        </p>
+      )}
       {development && (
         <p className="hd-about__development">Development build: these notices aren't checked.</p>
       )}
     </div>
+  );
+}
+
+/** A project page, opened by Rust in the default browser (#256): the click
+ * names the page, never the address, and the window itself never follows it. */
+function ProjectLink({
+  page,
+  address,
+  onProblem,
+}: {
+  page: "source" | "latestRelease";
+  address: string;
+  onProblem: (problem: string | null) => void;
+}) {
+  return (
+    <a
+      className="hd-about__link"
+      href={address}
+      onClick={(event) => {
+        event.preventDefault();
+        onProblem(null);
+        invoke<void>("open_project_page", { page }).catch((e: unknown) =>
+          onProblem(e instanceof CommandFailure ? e.message : OPEN_FAILED),
+        );
+      }}
+    >
+      {address}
+    </a>
   );
 }
 
