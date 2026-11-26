@@ -304,6 +304,9 @@ pub fn close_normal(
         return Err(CommandError::database_closed());
     };
     let session_id = open.session_id;
+    if matches!(reason, CloseReason::LockedByUser | CloseReason::Idle | CloseReason::ScreenLocked) {
+        session.keep_restore_notes(&open);
+    }
     // Unsaved input was kept by a lock, or dealt with by the user.
     open.staged_draft = None;
     // The preview is off the screen and out of memory before the close is
@@ -560,6 +563,8 @@ fn complete_immediate(session: &Session, machine: &MachineSettings) {
     let open = session.hold_for_close().take();
     session.forget_open();
     if let Some(open) = open {
+        // A sleep or shutdown: a lock, as far as the restore's notes go (#240).
+        session.keep_restore_notes(&open);
         finish_immediately(session, machine, open);
     }
     report_stopped(session);

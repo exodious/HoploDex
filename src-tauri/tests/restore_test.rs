@@ -20,7 +20,7 @@ use hoplodex_lib::db::cipher;
 use hoplodex_lib::db::upgrade::testing::{self, Point};
 use hoplodex_lib::models::database::{
     BackupInfo, BackupLocationInput, BackupSettingsInput, CloseReason, DatabaseStatus,
-    ExistingBackupsChoice,
+    ExistingBackupsChoice, NoteKind,
 };
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups;
@@ -340,6 +340,106 @@ fn the_restored_database_opens_with_the_passphrase_of_the_backup() {
 }
 
 #[test]
+fn issue_240_a_lock_straight_after_a_restore_keeps_its_notes_for_the_next_unlock() {
+    let world = World::new();
+    world.with_two_backups();
+    let old = backup_with_an_older_passphrase(&world);
+    let old_passphrase = Passphrase::from_input(OLD_PASSPHRASE.to_owned());
+    world.restore(&old.to_string_lossy(), OLD_PASSPHRASE).unwrap();
+    let restored = Some("2026-09-20T07:00:00Z");
+    let notes =
+        |world: &World| databases::database_status(&world.session, &world.machine).unwrap().notes;
+
+    lifecycle::lock(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::LockedByUser,
+        None,
+    )
+    .unwrap();
+    world.open_with(&old_passphrase).unwrap();
+    assert_eq!(notes(&world).restored_with_passphrase_of.as_deref(), restored, "after Lock now");
+
+    lifecycle::close_immediate(&world.session, &world.machine, CloseReason::Sleep);
+    world.open_with(&old_passphrase).unwrap();
+    assert_eq!(notes(&world).restored_with_passphrase_of.as_deref(), restored, "after a sleep");
+
+    // Once dismissed, they are gone, as they are after a plain close.
+    databases::dismiss_note(&world.session, world.session.current_id(), NoteKind::Restored)
+        .unwrap();
+    lifecycle::lock(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::LockedByUser,
+        None,
+    )
+    .unwrap();
+    world.open_with(&old_passphrase).unwrap();
+    assert_eq!(notes(&world).restored_with_passphrase_of, None);
+}
+
+#[test]
+fn issue_240_kept_notes_wait_for_their_own_database_through_another_ones_open() {
+    let world = World::new();
+    world.with_two_backups();
+    let old = backup_with_an_older_passphrase(&world);
+    world.restore(&old.to_string_lossy(), OLD_PASSPHRASE).unwrap();
+    lifecycle::lock(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::LockedByUser,
+        None,
+    )
+    .unwrap();
+
+    let other = world.dir.path().join("Other.hoplodex");
+    lifecycle::create(&world.session, &world.machine, &other, &passphrase()).unwrap();
+    world.close();
+    lifecycle::open(&world.session, &world.machine, &other, &passphrase(), false).unwrap();
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.notes.restored_with_passphrase_of, None, "not shown on another database");
+
+    // The other database is restored and locked straight away too.
+    let other_backup = backup_with_an_older_passphrase(&world);
+    world.restore(&other_backup.to_string_lossy(), OLD_PASSPHRASE).unwrap();
+    lifecycle::lock(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::LockedByUser,
+        None,
+    )
+    .unwrap();
+
+    let old_passphrase = Passphrase::from_input(OLD_PASSPHRASE.to_owned());
+    world.open_with(&old_passphrase).unwrap();
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.notes.restored_with_passphrase_of.as_deref(), Some("2026-09-20T07:00:00Z"));
+    world.close();
+
+    lifecycle::open(&world.session, &world.machine, &other, &old_passphrase, false).unwrap();
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.notes.restored_with_passphrase_of.as_deref(), Some("2026-09-20T07:00:00Z"));
+}
+
+#[test]
+fn issue_240_a_closed_restore_does_not_bring_its_notes_back() {
+    let world = World::new();
+    world.with_two_backups();
+    let old = backup_with_an_older_passphrase(&world);
+    world.restore(&old.to_string_lossy(), OLD_PASSPHRASE).unwrap();
+
+    world.close();
+    world.open_with(&Passphrase::from_input(OLD_PASSPHRASE.to_owned())).unwrap();
+
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.notes.restored_with_passphrase_of, None);
+}
+
+#[test]
 fn a_wrong_backup_passphrase_changes_nothing() {
     let world = World::new();
     let listed = world.with_two_backups();
@@ -561,6 +661,18 @@ fn a_damaged_database_is_restored_and_kept_aside() {
     assert_eq!(fs::read(&kept).unwrap(), damaged_bytes, "the damaged file is kept as it was");
     assert_eq!(open_collection(&world), expected);
     assert_eq!(world.listed().len(), 2, "no before-restoring backup of a file that won't open");
+
+    // A screen lock straight away keeps the note for the next unlock (#240).
+    lifecycle::close_normal(
+        &world.session,
+        world.session.current_id(),
+        &world.machine,
+        CloseReason::ScreenLocked,
+    )
+    .unwrap();
+    world.open();
+    let status = databases::database_status(&world.session, &world.machine).unwrap();
+    assert_eq!(status.notes.damaged_file_kept_at.as_deref(), Some(kept.to_str().unwrap()));
 }
 
 // --- Who and what a damaged restore may replace (issue #62) ------------------
