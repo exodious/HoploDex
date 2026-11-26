@@ -88,6 +88,10 @@ upgrade-test-steps = []
 tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# One running instance, and the running window to the front on a second
+# start (#231): a D-Bus name on Linux, a named mutex on Windows, a socket in
+# /tmp on macOS. Shipped builds only (main.rs).
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.43", features = ["bundled-sqlcipher", "chrono", "limits"] }

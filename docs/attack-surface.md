@@ -349,6 +349,16 @@ scanning finding.
 - **Rerun:** the Flatpak check (`docs/development/flatpak.md`, "The Flatpak check").
 - **Since:** 011; OpenURI for About's project pages #256.
 
+## single-instance: one running instance
+
+- **Code:** `src-tauri/src/main.rs` (the `tauri_plugin_single_instance` plugin and `show_main_window`); `src-tauri/Cargo.toml` (`tauri-plugin-single-instance`)
+- **Ask:**
+  - Does a second start exit in the plugin's setup, before anything at start-up touches a web view's data folder (the main web view folder's `secure_delete_dir`, `surface::clear_data_directory`, macOS's earlier WebKit folders) or the opened documents' cache (#231)?
+  - Does the running instance ignore what a second start sends (its arguments and working folder), and only bring the main window to the front?
+  - Who can reach each OS's channel, and what can they do through it beyond bringing the window forward or keeping a second HoploDex from starting? On Linux, the session bus name `io.github.exodious.HoploDex.SingleInstance` (a process of the user's session; inside the Flatpak the app owns it under its own app id, with no permission beyond 011 research.md §4's table). On Windows, the session's named mutex and a hidden window found by its class and title, sent `WM_COPYDATA`. On macOS, the socket `/tmp/io_github_exodious_HoploDex_si.sock`, in a folder every local user shares.
+  - Is the plugin in every shipped build, the Flatpak's included, and left out only of E2E and debug builds (`tauri dev`, human testing)?
+- **Since:** #231.
+
 ## logging: what the log carries
 
 - **Code:** `src-tauri/src/logging.rs` (and every `log::` call in the backend); `src-tauri/src/logging/**`; `src-tauri/src/commands/troubleshooting_log.rs`; `src-tauri/src/models/troubleshooting_log.rs`; `src-tauri/tests/log_contents_test.rs`; `src-tauri/tests/log_lines_test.rs`; `src-tauri/src/commands/documents.rs` (`Opener::reveal`); `README.md` (what it says about the log); `flatpak/io.github.exodious.HoploDex.metainfo.xml` (what it says about the log); `src/features/app/TroubleshootingLogSection.tsx`; `src/features/databases/DatabaseChooser.tsx` (the log's notice)
@@ -440,4 +450,4 @@ Until 1.5.0 the constitution listed seven areas inline. Each is an entry here:
 
 Since 2026-11-23 an imported spreadsheet is the user's own (Threat model): `import-export` reviews import for integrity and export against a compromised web view.
 
-The other nine entries are what the seven missed: `document-preview`, `helpers`, `untrusted-images`, `database-files`, `flatpak`, `logging`, `shipped-build`, `unsafe-ffi` and `build-ci`.
+The other ten entries are what the seven missed: `document-preview`, `helpers`, `untrusted-images`, `database-files`, `flatpak`, `single-instance`, `logging`, `shipped-build`, `unsafe-ffi` and `build-ci`.

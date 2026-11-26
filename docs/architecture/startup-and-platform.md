@@ -7,6 +7,16 @@ _Part of the [architecture docs](../architecture.md)._
 `main.rs` registers plugins and state, and lists every command in
 `generate_handler!`.
 
+A shipped build allows one running instance (#231): `tauri-plugin-single-instance`
+is the first plugin registered, so a second start finds the first in the
+plugin's setup and exits there, before `setup()` wipes the web views' data
+folders, and the running instance brings its main window to the front
+(`show_main_window`). On Linux it is the session bus name
+`io.github.exodious.HoploDex.SingleInstance`, which the Flatpak may own as its
+app id's own; on Windows a named mutex; on macOS a socket in `/tmp`. E2E and
+debug builds (`tauri dev`, human testing) leave it out, since each runs in a
+sandbox of its own, beside the others or the user's own HoploDex.
+
 A new command must also go in `commands_list.rs`'s `COMMANDS` (which `build.rs`
 turns into the app's ACL manifest) and `capabilities/default.json` as
 `allow-<command>`, for the main web view only; `tests/acl_manifest_test.rs`
