@@ -52,7 +52,8 @@ interface Visit {
  * from anywhere (add firearm, import, export). Browse state lives here so
  * a search, grouping, or scroll position survives opening a record and
  * coming back. Following a link (a policy from a firearm, a firearm from a
- * policy) pushes onto a trail, so "back" retraces the path taken. */
+ * policy) pushes onto a trail, so "back" retraces the path taken; a link to
+ * a page already on the trail returns to it instead (#120). */
 /** Where the form of resumed pending changes is: the firearm's or
  * accessory's record, or the policy's page, whose own dialogs then open with
  * them. A new accessory's form opens over the Accessories page. */
