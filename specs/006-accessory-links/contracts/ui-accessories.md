@@ -32,6 +32,7 @@ Requirement IDs refer to [spec.md](../spec.md), and commands to
   `navigation.open`, so **Back** returns to the page it came from (001
   FR-040). That covers links from a Mounted section, a "Mounted on" chain,
   a collection tile, a group heading or a dialog.
+  _Amended 2026-11-26: a link to a record already on the back trail returns to it, as Back would, rather than adding a step ([001 FR-040](../../001-firearms-inventory/spec.md), #120)._
 
 ## 2. The Accessories page (US1, US4, FR-016 to FR-018)
 

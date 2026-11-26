@@ -1030,11 +1030,10 @@ describe("Following a link to a policy or a firearm, and Back", () => {
   it("goes policy → firearm → Back to that policy's own page", async () => {
     const user = userEvent.setup();
     renderShell();
-    await openColt(user);
-    await user.click(screen.getByRole("button", { name: policy.name }));
+    await user.click(insuranceTab());
+    await user.click(document.querySelector<HTMLElement>("button.hd-policy__open")!);
     await screen.findByRole("heading", { name: policy.name });
     onePolicyPage();
-    expect(backLink()).toHaveTextContent("Colt Python");
 
     const card = document.querySelector<HTMLElement>(".hd-policy")!;
     await user.click(within(card).getByRole("button", { name: "Colt Python" }));
@@ -1044,6 +1043,24 @@ describe("Following a link to a policy or a firearm, and Back", () => {
     await user.click(backLink() as HTMLElement);
     await screen.findByRole("heading", { name: policy.name });
     onePolicyPage();
+  });
+
+  // #120: a link back to a page already on the trail returns to it.
+  it("goes firearm → policy → that firearm as a return, not a new step", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await openColt(user);
+    await user.click(screen.getByRole("button", { name: policy.name }));
+    await screen.findByRole("heading", { name: policy.name });
+    expect(backLink()).toHaveTextContent("Colt Python");
+
+    const card = document.querySelector<HTMLElement>(".hd-policy")!;
+    await user.click(within(card).getByRole("button", { name: "Colt Python" }));
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(backLink()).toHaveTextContent("Collection");
+
+    await user.keyboard("{Escape}");
+    onCollection();
   });
 
   it("opens a policy's own page from the Insurance list, and Back returns to the list", async () => {
@@ -1061,6 +1078,110 @@ describe("Following a link to a policy or a firearm, and Back", () => {
 
     await user.click(backLink() as HTMLElement);
     expect(await screen.findByRole("heading", { level: 1, name: "Insurance" })).toBeInTheDocument();
+  });
+});
+
+// #120: following "Mounted on" or a Mounted entry to a record already on the
+// back trail counts as going back to it (001 FR-040, as amended).
+describe("A link to a record already on the back trail returns to it (#120)", () => {
+  const COLT = "Colt Python · Handgun";
+  const coltLabel = {
+    record: { kind: "firearm" as const, id: 1 },
+    make: "Colt",
+    model: "Python",
+    nickname: null,
+    typeName: "Handgun",
+    serialNumber: null,
+    status: "active" as const,
+  };
+  const opticLabel = {
+    ...coltLabel,
+    record: { kind: "accessory" as const, id: 3 },
+    make: "Leupold",
+    model: "VX-5HD 3-15x44",
+    typeName: "Optic",
+  };
+  const mountLabel = {
+    ...opticLabel,
+    record: { kind: "accessory" as const, id: 4 },
+    make: "Warne",
+    model: "RAMP",
+    typeName: "Mount",
+  };
+  const MOUNT = "Warne RAMP · Mount";
+
+  beforeEach(() => {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+    listFirearms.mockReset().mockResolvedValue({ groups: [{ key: "", firearms: [summary] }] });
+    getFirearm.mockReset().mockResolvedValue({
+      ...detail,
+      mount: { chain: [], mounted: [{ label: opticLabel, host: coltLabel.record, depth: 1 }] },
+    });
+    getAccessory.mockReset().mockImplementation(async (id: number) =>
+      id === 3
+        ? {
+            ...opticDetail,
+            mount: {
+              chain: [coltLabel],
+              mounted: [{ label: mountLabel, host: opticLabel.record, depth: 1 }],
+            },
+          }
+        : {
+            ...opticDetail,
+            id: 4,
+            make: "Warne",
+            model: "RAMP",
+            mount: { chain: [opticLabel, coltLabel], mounted: [] },
+          },
+    );
+  });
+
+  it("goes firearm → accessory → Mounted on → back to the collection in one step", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await openColt(user);
+    await user.click(await screen.findByRole("button", { name: OPTIC }));
+    await screen.findByRole("heading", { level: 1, name: OPTIC });
+    expect(backLink()).toHaveTextContent("Colt Python");
+
+    await user.click(screen.getByRole("button", { name: COLT }));
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(backLink()).toHaveTextContent("Collection");
+
+    await user.keyboard("{Escape}");
+    onCollection();
+  });
+
+  it("goes A → B → C → A straight back to A, with A's own back target", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await openColt(user);
+    await user.click(await screen.findByRole("button", { name: OPTIC }));
+    await screen.findByRole("heading", { level: 1, name: OPTIC });
+    await user.click(await screen.findByRole("button", { name: MOUNT }));
+    await screen.findByRole("heading", { level: 1, name: /^Warne RAMP/ });
+    expect(backLink()).toHaveTextContent(OPTIC);
+
+    await user.click(screen.getByRole("button", { name: COLT }));
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(backLink()).toHaveTextContent("Collection");
+
+    await user.keyboard("{Escape}");
+    onCollection();
+  });
+
+  it("restores the scroll position saved for the page returned to", async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await openColt(user);
+    window.scrollY = 640;
+    await user.click(await screen.findByRole("button", { name: OPTIC }));
+    await screen.findByRole("heading", { level: 1, name: OPTIC });
+    window.scrollY = 0;
+
+    await user.click(screen.getByRole("button", { name: COLT }));
+    await screen.findByRole("heading", { level: 1, name: "Colt Python" });
+    expect(window.scrollTo).toHaveBeenLastCalledWith(0, 640);
   });
 });
 
