@@ -16,8 +16,8 @@ export interface StorePhoto {
   record: string;
   /** The file in `src-tauri/examples/seed-photos/`. */
   file: string;
-  /** The licence, worded as that folder's README words it. */
-  licence: string;
+  /** The license, worded as that folder's README words it. */
+  license: string;
 }
 
 export interface StoreShot {
@@ -28,7 +28,7 @@ export interface StoreShot {
   /** The listed records that show their type's drawing, not a photo. */
   drawings: string[];
   /** The listed records whose picture is a generated gradient, not a seed
-   * photo (no licence to keep to). */
+   * photo (no license to keep to). */
   generated: string[];
   /** Text the page must show when the shot is taken. */
   shows: string[];

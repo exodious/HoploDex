@@ -101,6 +101,8 @@ unchanged
 2.40+), unchanged. Each OS's build gets its own notices. The menu change is
 macOS only.
 
+_Amended 2026-11-26: Windows 10 is not supported; the README's [Supported platforms](../../README.md#supported-platforms) list is the one that says which systems are (#259)._
+
 **Project Type**: desktop application (Tauri: React frontend + Rust backend in
 `src-tauri/`), plus build tooling in `scripts/`.
 

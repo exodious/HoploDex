@@ -66,6 +66,8 @@ WebKitGTK) — single codebase, no server component, fully offline-capable.
 
 _Amended by [spec 007](../007-document-preview/plan.md): macOS 26+ only, on Apple silicon (the bundle sets `minimumSystemVersion` to 26.0); Windows is x64, with WebView2._
 
+_Amended 2026-11-26: Windows 10 and macOS before 26 are not supported; the README's [Supported platforms](../../README.md#supported-platforms) list is the one that says which systems are (#259)._
+
 **Project Type**: Desktop application (Tauri: React frontend + Rust
 backend in one repo, not a client/server web app).
 

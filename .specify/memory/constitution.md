@@ -1,36 +1,25 @@
 <!--
 Sync Impact Report
-Version change: 1.6.0 → 1.7.0
-Bump rationale: MINOR. Materially changed guidance in Development Workflow &
-Quality Gates: the private security advisory route now applies to supported
-versions, not to every released one. No principle is removed or redefined.
-Modified principles: none
+Version change: 1.7.0 → 1.8.0
+Bump rationale: MINOR. Materially changed guidance on review: the rule now
+states the practice the repository's rules enforce. No principle is removed.
+Modified principles:
+  - I. Code Quality: "Every change MUST go through peer review — self-merges
+    are not permitted" becomes: every change is reviewed by the maintainer,
+    who merges each pull request, and no change reaches the main branch
+    without passing the required checks. The main branch's ruleset requires
+    no approving review, and the maintainer merges pull requests written with
+    AI assistance after the required checks and the per-PR AI security review.
 Modified sections:
-  - Development Workflow & Quality Gates: the private advisory route (and the
-    bar on describing a vulnerability in a public issue or pull request
-    first) applies only to a version SECURITY.md's "Supported versions"
-    section lists as supported. Until a version is listed there, findings MAY
-    be tracked as ordinary issues and fixed through ordinary public pull
-    requests. Listing one is the maintainer's decision that HoploDex has
-    users, and switches the advisory route on. SECURITY.md still directs
-    reporters to private vulnerability reporting. The PR-review sentence that
-    routed a finding in released code to a private advisory now names a
-    supported version instead.
+  - Development Workflow & Quality Gates: "at least one peer review" becomes
+    the maintainer's review, and the Markdown-only exemption keeps that review.
+  - Governance: an amendment needs the maintainer's review before merge.
 Added sections: none
 Removed sections: none
 Templates requiring updates:
-  - .specify/templates/*: ✅ no change (none names security advisories)
-  - SECURITY.md: ✅ "Supported versions" lists none yet and no longer says
-    there has been no release (0.1.0 was released 2026-11-21); "What happens
-    next" says which reports become advisories
-  - CLAUDE.md, RELEASING.md ("After a release"), docs/attack-surface.md (list
-    rule 1), .claude/skills/ai-security-review/SKILL.md: ✅ the advisory
-    route names a supported version
-Follow-up TODOs:
-  - scripts/ai-security-review.mjs's release gate still fails on any draft
-    or triage advisory; whether that changes is a separate decision
-    (resolved: the gate now exempts a draft advisory patched in exactly the
-    version being released; RELEASING.md, step 7)
+  - .specify/templates/*: ✅ no change (none names peer review)
+  - docs/attack-surface.md: ✅ "peer review" becomes the maintainer's review
+Follow-up TODOs: none
 -->
 
 # HoploDex Constitution
@@ -42,8 +31,9 @@ Follow-up TODOs:
 
 All code MUST pass automated linting and static analysis before merge; no quality
 gate MAY be bypassed without documented justification recorded in the pull
-request. Every change MUST go through peer review — self-merges are not
-permitted. Functions and modules MUST be kept small and single-purpose;
+request. Every change MUST be reviewed by the maintainer, who merges each pull
+request, and no change MAY reach the main branch without passing the required
+checks. Functions and modules MUST be kept small and single-purpose;
 duplication MUST be factored out only when a real third occurrence appears, not
 speculatively. Complexity (new abstractions, dependencies, or architectural
 layers) MUST be justified by a concrete, current requirement — YAGNI applies by
@@ -184,7 +174,7 @@ dependencies' licenses require.
 
 Every pull request MUST pass automated linting, the full test suite, the
 dependency audit (vulnerabilities, unmaintained and yanked crates, deprecated
-packages, and licenses), and at least one peer review
+packages, and licenses), and the maintainer's review
 before merge. Pull requests that touch UI MUST include before/after evidence
 (screenshot or recording) demonstrating adherence to the shared design system.
 Pull requests that touch data-handling or persistence code MUST call out, in
@@ -197,7 +187,7 @@ Pull requests opened by Dependabot or other automation are held to the same
 gates. A pull request that changes only Markdown documentation (`*.md` files
 that neither the application nor its build includes) is exempt from the
 automated gates (linting, the test suite, the dependency audit, and CodeQL)
-and from the evidence and notes above, but not from peer review.
+and from the evidence and notes above, but not from the maintainer's review.
 
 Security findings are recorded in the repository's GitHub security features
 (code scanning, Dependabot and secret scanning alerts, and repository security
@@ -257,7 +247,7 @@ constitution itself is amended.
 
 Amendments are proposed via pull request against this file, must include a
 completed Sync Impact Report (as an HTML comment at the top of the file), and
-require review approval before merge — the same bar as any other code change.
+require the maintainer's review before merge — the same bar as any other change.
 Versioning follows semantic versioning: MAJOR for backward-incompatible
 principle removals or redefinitions, MINOR for new principles or materially
 expanded guidance, PATCH for clarifications and wording fixes. Every pull
@@ -265,4 +255,4 @@ request MUST be checked against this constitution during review; unjustified
 complexity or violations MUST be resolved or explicitly documented before
 merge.
 
-**Version**: 1.7.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-21
+**Version**: 1.8.0 | **Ratified**: 2026-07-20 | **Last Amended**: 2026-11-26

@@ -2,7 +2,7 @@
 
 _Part of the [development docs](../../DEVELOPMENT.md)._
 
-x64 Windows 10 or 11 (Pro, Enterprise or Education), or Windows Server
+x64 Windows 11 (Pro, Enterprise or Education), or Windows Server
 2025 with Desktop Experience. Two scripts install everything in this
 section, skipping what's already there, so they can be run again:
 
@@ -49,7 +49,7 @@ What they install, to set it up by hand instead:
   `winget install --id Python.Python.3.13 -e --scope machine --override "/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1 InstallLauncherAllUsers=1 Include_test=0"`.
   On Windows it's `python` or `py -3.13`; `python3` is the Microsoft Store's
   alias.
-- **WebView2**, the engine the app's window uses. Windows 10 and 11 include
+- **WebView2**, the engine the app's window uses. Windows 11 includes
   it; otherwise get it from the
   [WebView2 runtime page](https://developer.microsoft.com/microsoft-edge/webview2/)
   or `winget install --id Microsoft.EdgeWebView2Runtime -e`.

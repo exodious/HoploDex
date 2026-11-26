@@ -39,7 +39,7 @@ configuration, the workflows, the Flatpak and the build scripts) is claimed by
 no entry, `not-surface` included, or when a command in `UNSCOPED_COMMANDS` or
 a Cargo feature is named nowhere here. It can't see new surface inside a file
 an entry already claims, such as a new argument or parser: the per-PR review
-and peer review catch that.
+and the maintainer's review catch that.
 
 ## Threat model
 

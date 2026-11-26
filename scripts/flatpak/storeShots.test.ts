@@ -2,7 +2,7 @@
 // The Flatpak's store shots (011 FR-017; 011 research.md §13): the script's
 // record of what each shows (e2e/screenshots/store-shots.json, which
 // store.e2e.ts checks the app's view against as it takes them) agrees with
-// 011 research.md's recorded list, with the photos' licences as the seed-photos
+// 011 research.md's recorded list, with the photos' licenses as the seed-photos
 // README records them, and with the files the metainfo points at. The shots
 // are retaken only on purpose, by `npm run screenshots:store`.
 import fs from "node:fs";
@@ -38,12 +38,12 @@ function researchBullets(): Map<string, string> {
 }
 
 /** The seed-photos README's "Which record uses which" table: file to
- * { firearm, licence }. */
-function readmeTable(): Map<string, { firearm: string; licence: string }> {
+ * { firearm, license }. */
+function readmeTable(): Map<string, { firearm: string; license: string }> {
   const readme = fs.readFileSync(path.join(SEED_PHOTOS, "README.md"), "utf8");
-  const rows = new Map<string, { firearm: string; licence: string }>();
+  const rows = new Map<string, { firearm: string; license: string }>();
   for (const match of readme.matchAll(/^\| `([^`]+\.jpg)` \| ([^|]+) \| ([^|]+) \|$/gm)) {
-    rows.set(match[1], { firearm: match[2].trim(), licence: match[3].trim() });
+    rows.set(match[1], { firearm: match[2].trim(), license: match[3].trim() });
   }
   return rows;
 }
@@ -70,7 +70,7 @@ describe("011 FR-017 - the store shots' recorded list", () => {
     }
   });
 
-  it("011 research.md §13 lists the same photos for each shot, and the same kind of licence", () => {
+  it("011 research.md §13 lists the same photos for each shot, and the same kind of license", () => {
     const bullets = researchBullets();
     expect([...bullets.keys()]).toEqual(shots.map((s) => s.name));
     for (const shot of shots) {
@@ -78,18 +78,18 @@ describe("011 FR-017 - the store shots' recorded list", () => {
       const files = [...text.matchAll(/`([a-z0-9-]+\.jpg)`/g)].map((m) => m[1]).sort();
       expect(files, `${shot.name}'s photos`).toEqual(photoFiles(shot));
       for (const photo of shot.photos) {
-        // The licence the text gives the file: what follows its name, up to
+        // The license the text gives the file: what follows its name, up to
         // the next photo's.
         const from = text.indexOf(`\`${photo.file}\``) + photo.file.length + 2;
         const next = text.slice(from).search(/`[a-z0-9-]+\.jpg`/);
         const given = next < 0 ? text.slice(from) : text.slice(from, from + next);
-        const kind = photo.licence.startsWith("CC0") ? /CC0/ : /public domain/i;
-        expect(given, `${photo.file}'s licence in 011 research.md §13`).toMatch(kind);
+        const kind = photo.license.startsWith("CC0") ? /CC0/ : /public domain/i;
+        expect(given, `${photo.file}'s license in 011 research.md §13`).toMatch(kind);
       }
     }
   });
 
-  it("every photo is the seed's, on the record the list says, under the licence its README records, and needs no credit line", () => {
+  it("every photo is the seed's, on the record the list says, under the license its README records, and needs no credit line", () => {
     const table = readmeTable();
     const seed = fs.readFileSync(SEED_SOURCE, "utf8");
     for (const shot of shots) {
@@ -103,10 +103,10 @@ describe("011 FR-017 - the store shots' recorded list", () => {
         const row = table.get(photo.file);
         expect(row, `${photo.file} is in the README's table`).toBeDefined();
         expect(row!.firearm.startsWith(photo.record), `${photo.file}'s record`).toBe(true);
-        expect(row!.licence, `${photo.file}'s licence`).toBe(photo.licence);
+        expect(row!.license, `${photo.file}'s license`).toBe(photo.license);
         // Public domain and CC0 ask for no credit line; CC BY and the OGL do,
         // and the constitution's licensing rule keeps them out of a shot.
-        expect(photo.licence, `${photo.file} needs a credit line`).toMatch(/^(Public domain|CC0)/);
+        expect(photo.license, `${photo.file} needs a credit line`).toMatch(/^(Public domain|CC0)/);
       }
     }
   });

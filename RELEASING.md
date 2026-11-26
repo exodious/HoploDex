@@ -362,7 +362,7 @@ draft.
    - **macOS:** it isn't notarized, so the first open needs **Open Anyway** in
      System Settings › Privacy & Security.
    - **The Flatpak:** `flatpak install --user HoploDex-<version>-x86_64.flatpak`,
-     or the software centre. That adds Flathub if it isn't set up and fetches the
+     or the software center. That adds Flathub if it isn't set up and fetches the
      GNOME runtime; a newer version installs the same way, over the old one,
      keeping everything; `flatpak update` updates the runtime but not a HoploDex
      installed from a file.
