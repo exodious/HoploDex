@@ -66,6 +66,8 @@ export type ChooserNotice =
       deletedCount?: number;
       /** For an import's conflicts: the matching rows left undecided (issue #249). */
       undecidedCount?: number;
+      /** And the saved rows whose "Mounted on" cell couldn't be applied (issue #249). */
+      unmountedCount?: number;
       /** For `moveBackups`: how many are still in `folder`. */
       leftBehindCount?: number;
       folder?: string;

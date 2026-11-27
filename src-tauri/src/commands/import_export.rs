@@ -2340,6 +2340,9 @@ pub mod ops {
                 if let Some(n) = e.details.as_ref().and_then(|d| d["undecidedCount"].as_u64()) {
                     operation.record_undecided(n);
                 }
+                if let Some(n) = e.details.as_ref().and_then(|d| d["unmountedCount"].as_u64()) {
+                    operation.record_unmounted(n);
+                }
             })
     }
 
@@ -2530,7 +2533,8 @@ pub mod ops {
     /// its own, so a stop keeps every one saved before it, makes their
     /// mounts, and fails with `OPERATION_STOPPED`, their number in
     /// `importedCount` and the number of matching rows left undecided in
-    /// `undecidedCount` (issue #249); any other
+    /// `undecidedCount`, and the number of saved rows whose "Mounted on"
+    /// cell couldn't be applied in `unmountedCount` (issue #249); any other
     /// error after one is saved carries their number too. The import is
     /// closed either way: its files are imported again to decide the rest.
     pub fn resolve_import_conflicts_stoppable(
@@ -2661,6 +2665,7 @@ pub mod ops {
 
         // Never stopped: a record saved without its row's mount would keep the
         // one it had before (issue #249).
+        let before_mounts = warnings.len();
         resolve_mounts(conn, &mount_requests, &outcomes, &mut warnings, &|| Ok(()))
             .map_err(|e| e.with_imported_count(saved_count))?;
         if let Some(unreached) = unreached {
@@ -2668,6 +2673,7 @@ pub mod ops {
             let mut err = stopped(saved_count);
             if let Some(details) = err.details.as_mut() {
                 details["undecidedCount"] = (unreached + unresolved.len()).into();
+                details["unmountedCount"] = (warnings.len() - before_mounts).into();
             }
             return Err(err);
         }

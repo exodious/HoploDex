@@ -1565,6 +1565,60 @@ fn a_stop_while_conflicts_are_resolved_still_makes_the_saved_rows_mounts() {
 }
 
 #[test]
+fn a_stop_while_conflicts_are_resolved_counts_the_saved_rows_mounts_that_cannot_be_made() {
+    // Issue #249: the stop's error points at a saved row imported unmounted,
+    // since the warning that would name it is never shown.
+    let db = TestDb::new();
+    let first = new_accessory(&db, &accessory_with(OPTIC, json!({})));
+    let second = new_accessory(&db, &accessory_with(OPTIC, json!({})));
+    let dir = TempDir::new().unwrap();
+    let path = sheets::csv_in(
+        dir.path(),
+        "accessories.csv",
+        &accessory_table(&[
+            accessory_cells(
+                "Optic",
+                &[
+                    ("record_id", &uid_of(&db.conn, first)),
+                    ("mounted_on", &fresh_uid()),
+                    ("notes", "From the sheet"),
+                ],
+            ),
+            accessory_cells(
+                "Optic",
+                &[("record_id", &uid_of(&db.conn, second)), ("notes", "From the sheet")],
+            ),
+        ]),
+    );
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&path]);
+    assert_eq!(result.conflicts.len(), 2, "{:?}", result.row_errors);
+
+    // The first is saved; the second is stopped.
+    let asked = std::cell::Cell::new(0);
+    let err = import_export_ops::resolve_import_conflicts_stoppable(
+        &db.conn,
+        &store,
+        &result.session_id,
+        &[],
+        Some("overwrite"),
+        &|| {
+            asked.set(asked.get() + 1);
+            asked.get() > 1
+        },
+        &|_| {},
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
+    let details = err.details.as_ref().unwrap();
+    assert_eq!(details["importedCount"], 1);
+    assert_eq!(details["undecidedCount"], 1);
+    assert_eq!(details["unmountedCount"], 1, "its Mounted on names no record");
+    assert_eq!(mount_of(&db.conn, first), None);
+}
+
+#[test]
 fn a_stop_while_the_mounts_are_made_or_the_conflicts_listed_keeps_the_rows() {
     // `is_cancelled` answers yes from its `n`th question on: one is asked
     // before each row, so the next is the first mount's or conflict's.

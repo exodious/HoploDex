@@ -142,11 +142,16 @@ function stoppedText(notice: Extract<ChooserNotice, { kind: "operationStopped" }
   if (notice.operation === "import") {
     const count = notice.importedCount ?? 0;
     const undecided = notice.undecidedCount ?? 0;
+    const unmounted = notice.unmountedCount ?? 0;
     const imported = `${count} ${count === 1 ? "row was" : "rows were"} imported before it stopped`;
+    const mounts =
+      unmounted > 0
+        ? ` ${unmounted} mounted-on ${unmounted === 1 ? "cell couldn't be applied, so that row was" : "cells couldn't be applied, so those rows were"} imported unmounted; import the file again to see why.`
+        : "";
     // Issue #249: a stopped resolution's undecided rows are decided by importing again.
     return undecided > 0
-      ? `${stopped} ${imported}, and ${undecided} matching ${undecided === 1 ? "row wasn't" : "rows weren't"} decided. Import the file again to decide them; rows already imported will be found as matches.`
-      : `${stopped} ${imported}. You can import the file again; rows already imported will be found as matches.`;
+      ? `${stopped} ${imported}, and ${undecided} matching ${undecided === 1 ? "row wasn't" : "rows weren't"} decided. Import the file again to decide them; rows already imported will be found as matches.${mounts}`
+      : `${stopped} ${imported}. You can import the file again; rows already imported will be found as matches.${mounts}`;
   }
   return `${stopped} ${name} is as it was before it started.`;
 }

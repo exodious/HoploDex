@@ -122,6 +122,7 @@ fn notices_are_returned_once() {
         imported_count: Some(12),
         deleted_count: None,
         undecided_count: Some(3),
+        unmounted_count: Some(1),
         left_behind_count: None,
         folder: None,
     };
@@ -145,6 +146,7 @@ fn the_file_uses_the_documented_shape() {
         imported_count: None,
         deleted_count: None,
         undecided_count: None,
+        unmounted_count: None,
         left_behind_count: None,
         folder: None,
     });
@@ -636,6 +638,37 @@ fn the_next_write_drops_the_unknown_notice_and_keeps_the_known_ones() {
         serde_json::from_slice(&fs::read(config.path().join("machine.json")).unwrap()).unwrap();
     assert_eq!(json["notices"], serde_json::json!([known]));
     assert_eq!(MachineSettings::load(config.path()).unwrap().take_notices(), vec![known]);
+}
+
+/// Issue #249: a stop notice an older HoploDex wrote, before
+/// `unmountedCount`, still loads.
+#[test]
+fn an_older_stop_notice_without_an_unmounted_count_still_loads() {
+    let config = TempDir::new().unwrap();
+    let file = serde_json::json!({
+        "version": 1,
+        "machineId": "0123456789abcdef0123456789abcdef",
+        "recentDatabases": [],
+        "notices": [{
+            "kind": "operationStopped", "databasePath": "/x.hoplodex", "operation": "import",
+            "importedCount": 2, "undecidedCount": 1,
+        }],
+    });
+    fs::write(config.path().join("machine.json"), file.to_string()).unwrap();
+
+    assert_eq!(
+        MachineSettings::load(config.path()).unwrap().take_notices(),
+        vec![ChooserNotice::OperationStopped {
+            database_path: "/x.hoplodex".into(),
+            operation: OperationKind::Import,
+            imported_count: Some(2),
+            deleted_count: None,
+            undecided_count: Some(1),
+            unmounted_count: None,
+            left_behind_count: None,
+            folder: None,
+        }]
+    );
 }
 
 /// 009 research.md §15: a file with `notices` of the wrong shape altogether is
