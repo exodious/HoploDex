@@ -405,14 +405,21 @@ describe("003 US5 - Optionally Let This Computer Remember My Passphrase (was us7
     await expect($("fieldset*=This computer")).toHaveText(
       expect.stringContaining("The passphrase is remembered on this computer"),
     );
-    // Nothing differs yet, so there is nothing to save.
-    await expect($('[role="dialog"] button[type="submit"]')).toBeDisabled();
+    // Nothing differs yet, so there is nothing to save (014 FR-016: it says
+    // so, and stays focusable).
+    await expect($('[role="dialog"] button[type="submit"]')).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     await toggle("Remember the passphrase on this computer");
     await expect($("fieldset*=This computer")).toHaveText(
       expect.stringContaining("The saved passphrase will be forgotten when you click Save."),
     );
-    await expect($('[role="dialog"] button[type="submit"]')).toBeEnabled();
+    await expect($('[role="dialog"] button[type="submit"]')).not.toHaveAttribute("aria-disabled");
+    // The staged choice is unsaved, so Cancel asks first (014 FR-021a).
     await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
+    await clickButton("Discard");
     await $('[role="dialog"]').waitForExist({ reverse: true });
 
     await relaunch();

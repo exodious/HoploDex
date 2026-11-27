@@ -181,7 +181,11 @@ describe("001 US1 - Record a Firearm (was us1-record-firearm)", () => {
     // The backend's refusal lands on the Nickname field, not just the dialog.
     expect(await waitForFieldError("Nickname")).toContain("already used by E2ENick Twin");
     await expect($("#record-name")).not.toExist();
+    // The add form holds input, so Cancel asks first (014 FR-021a).
     await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
+    await clickButton("Discard");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 
   it("blocks a reversal while its nickname is taken, on the New nickname field, until it is renamed (001 US1-12)", async () => {
@@ -325,7 +329,7 @@ describe("001 US1 - Record a Firearm (was us1-record-firearm)", () => {
 });
 
 // 014 US1, US2: the database of the story above, whose last record is open.
-describe("014 US1 - See Which Fields I Have Changed; 014 US2 - Put One Field Back to Its Saved Value", () => {
+describe("014 US1 - See Which Fields I Have Changed", () => {
   /** The labels of the open form's changed fields. */
   const changedLabels = () =>
     browser.execute(() =>

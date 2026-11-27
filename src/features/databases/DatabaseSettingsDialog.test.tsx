@@ -606,6 +606,22 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md �
     passphraseSaved: saved,
   });
 
+  it("marks a staged Remember, and its revert drops the choice and asks nothing (014 FR-001, Edge Cases)", async () => {
+    const user = userEvent.setup();
+    renderSettings(withKeyring(false));
+
+    await user.click(remember());
+    expect(within(thisComputer()).getByText("Changed")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Revert Remember the passphrase on this computer to “Not checked”",
+      }),
+    );
+    expect(remember()).not.toBeChecked();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(databasesService.savePassphrase).not.toHaveBeenCalled();
+  });
+
   /** Ticks Remember, clicks Save and answers the passphrase prompt that follows. */
   /** Ticks Remember and saves: the native dialog (the mocked command) says
    * what it gives away and asks for the passphrase (amended 2026-11-04). */
@@ -1451,5 +1467,20 @@ describe("DatabaseSettingsDialog: Documents (007 contracts/ui-document-preview.m
     // Nothing was undone: the setting is the store's, not the form's.
     expect(mediaService.setDocumentOpening).toHaveBeenCalledTimes(1);
     expect(external()).toBeChecked();
+  });
+});
+
+describe("014 US1 - See Which Fields I Have Changed (Database settings)", () => {
+  it("compares Keep the latest as the number it saves (014 FR-002)", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const keep = screen.getByLabelText("Keep the latest");
+    const saved = (keep as HTMLInputElement).value;
+    await user.clear(keep);
+    await user.type(keep, `0${saved}`);
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    await user.clear(keep);
+    await user.type(keep, String(Number(saved) + 1));
+    expect(screen.getByText("Changed")).toBeInTheDocument();
   });
 });

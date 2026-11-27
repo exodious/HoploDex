@@ -879,3 +879,24 @@ describe("AccessoryForm Mounted on (006 US2)", () => {
     expect(mountedOnField()).toHaveAccessibleDescription(expect.stringContaining(message));
   });
 });
+
+describe("014 US1 - See Which Fields I Have Changed (the accessory form)", () => {
+  it("marks a changed field, reverts it, and Save follows (014 FR-001, US2-1, US3-3)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<AccessoryForm initialValues={saved} onSubmit={onSubmit} />);
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toHaveAttribute("aria-disabled", "true");
+
+    const notes = screen.getByLabelText(/^Notes/);
+    await user.type(notes, " Again.");
+    expect(screen.getByText("Changed")).toBeInTheDocument();
+    expect(save).not.toHaveAttribute("aria-disabled");
+    await user.click(
+      screen.getByRole("button", { name: "Revert Notes to “Zeroed at 100 yards.”" }),
+    );
+    expect(notes).toHaveValue("Zeroed at 100 yards.");
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});

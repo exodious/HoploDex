@@ -89,7 +89,7 @@ describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", ()
     // Leave the form so the next test finds the collection. It holds unsaved
     // input, so Cancel asks first (014 FR-021a).
     await clickButton("Cancel");
-    await dialogTitled("Discard changes?");
+    await $('[role="alertdialog"]*=Discard changes?').waitForExist({ timeout: 5000 });
     await clickButton("Discard");
     await browser.waitUntil(async () => !(await $('[role="dialog"]').isExisting()), {
       timeout: 5000,
@@ -119,7 +119,7 @@ describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", ()
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
       ),
     );
-    await dialogTitled("Discard changes?");
+    await $('[role="alertdialog"]*=Discard changes?').waitForExist({ timeout: 5000 });
     await clickButton("Keep editing");
     expect(await fieldValue("Notes")).toBe("marked across a lock");
 

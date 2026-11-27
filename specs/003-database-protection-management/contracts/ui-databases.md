@@ -317,6 +317,8 @@ _Amended 2026-10-15 (#44): focus starts on **Save changes**, so Enter saves; Esc
 
 ## 7. Database settings (FR-024, FR-026, FR-029, FR-034, FR-036, FR-038, FR-017)
 
+_Amended by [spec 014](../../014-unsaved-field-changes/spec.md): each setting Save applies, Remember included, shows a "Changed" marker and revert while it differs from what is saved; Save stays focusable with "No changes to save", and Cancel with a change asks "Discard changes?" (014 FR-001, FR-016, FR-021a)._
+
 A standard `Dialog` titled "Database settings", its description giving the
 database file's full path ("The database file is <path>"), with three
 sections in this order, each a titled fieldset. Settings apply with **Save** in the

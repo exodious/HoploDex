@@ -240,3 +240,31 @@ describe("CoverageDialog for an accessory (006 FR-009)", () => {
     });
   });
 });
+
+describe("014 US3 - Save Only When There Is Something to Save (the coverage dialog)", () => {
+  it("enables Save while the amount differs, marks it, and is disabled again once typed back (014 US3-7)", async () => {
+    const user = userEvent.setup();
+    const scheduled = {
+      ...firearm,
+      insurancePolicyId: 7,
+      scheduledCoverageAmount: 2000,
+    } as Firearm;
+    const onSave = renderDialog(undefined, blanket, scheduled);
+    const save = screen.getByRole("button", { name: "Save coverage" });
+    expect(save).toHaveAttribute("aria-disabled", "true");
+
+    const amount = screen.getByLabelText(/^Scheduled amount/);
+    await user.clear(amount);
+    await user.type(amount, "2500");
+    expect(save).not.toHaveAttribute("aria-disabled");
+    expect(
+      screen.getByRole("button", { name: /^Revert Scheduled amount to “\$2,000/ }),
+    ).toBeInTheDocument();
+
+    await user.clear(amount);
+    await user.type(amount, "2000");
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    await user.click(save);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});

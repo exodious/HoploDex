@@ -278,3 +278,57 @@ describe("InsurancePolicyForm (001 FR-027, FR-036)", () => {
     );
   });
 });
+
+describe("014 US1 - See Which Fields I Have Changed (the policy form)", () => {
+  const saved = {
+    id: 1,
+    name: "Rider",
+    policyNumber: "R-1",
+    insuranceCompany: "Acme",
+    companyContact: null,
+    agentName: null,
+    agentContact: null,
+    notes: null,
+    blanketCoverageLimit: 1250,
+    effectiveStartDate: "2026-01-01",
+    effectiveEndDate: "2026-12-31",
+    createdAt: "",
+    updatedAt: "",
+    isInForce: true,
+    isExpired: false,
+    isExpiringSoon: false,
+    expiringWarning: false,
+    expiredWarning: false,
+  };
+
+  it("marks a changed end date, compares a date typed differently as the same, and reverts it (014 US1-9, Edge Cases)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<InsurancePolicyForm initialValues={saved} onSubmit={onSubmit} />);
+    const save = screen.getByRole("button", { name: "Save changes" });
+    expect(save).toHaveAttribute("aria-disabled", "true");
+
+    const end = screen.getByLabelText(/^Coverage ends/);
+    await user.clear(end);
+    await user.type(end, "12/31/2026");
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+
+    await user.clear(end);
+    await user.type(end, "2027-06-30");
+    expect(screen.getByText("Changed")).toBeInTheDocument();
+    expect(save).not.toHaveAttribute("aria-disabled");
+    await user.click(screen.getByRole("button", { name: "Revert Coverage ends to “2026-12-31”" }));
+    expect(end).toHaveValue("2026-12-31");
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("compares the blanket limit in whole dollars (014 FR-002)", async () => {
+    const user = userEvent.setup();
+    render(<InsurancePolicyForm initialValues={saved} onSubmit={vi.fn()} />);
+    const limit = screen.getByLabelText(/^Blanket coverage limit/);
+    await user.clear(limit);
+    await user.type(limit, "01250");
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+  });
+});
