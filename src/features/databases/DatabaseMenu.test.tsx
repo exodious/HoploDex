@@ -25,6 +25,7 @@ const status = {
   passphraseSaved: false,
   keyringAvailable: false,
   screenLockSupported: false,
+  flatpak: false,
   settings: {
     backups: {
       enabled: true,
@@ -62,6 +63,7 @@ const chooser: ChooserState = {
   selectedPath: PATH,
   keyringAvailable: false,
   screenLockSupported: false,
+  flatpak: false,
   suggested: { folder: "/home/sam/Documents/HoploDex", name: "My collection" },
   notices: [],
 };

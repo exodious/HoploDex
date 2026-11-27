@@ -636,3 +636,11 @@
 .hd-fault__text p:last-child {
   margin-bottom: 0;
 }
+
+/* The Flatpak's override command: selectable at a click, as export's paths are (.hd-paths dd). */
+.hd-flatpak-reach__command {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  user-select: all;
+}

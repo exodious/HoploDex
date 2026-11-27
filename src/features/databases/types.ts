@@ -153,6 +153,8 @@ export interface DatabaseStatus {
   keyringAvailable: boolean;
   /** This desktop reports a screen lock (003 FR-038). */
   screenLockSupported: boolean;
+  /** This copy runs as a Flatpak, so its choosers reach only its grants (#260). */
+  flatpak: boolean;
   settings: CollectionSettings;
   pendingChanges: PendingSummary | null;
   notes: {
@@ -227,6 +229,8 @@ export interface ChooserState {
   keyringAvailable: boolean;
   /** 003 FR-038. */
   screenLockSupported: boolean;
+  /** This copy runs as a Flatpak, so its choosers reach only its grants (#260). */
+  flatpak: boolean;
   suggested: SuggestedLocation;
   /** Shown once, then gone. */
   notices: ChooserNotice[];

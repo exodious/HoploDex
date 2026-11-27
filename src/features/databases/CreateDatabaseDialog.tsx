@@ -10,6 +10,7 @@ import { joinPath } from "./paths";
 import { DEFAULT_SETTINGS } from "./settings";
 import type { ChosenPath } from "../import-export/types";
 import type { CreateDatabaseInput, SuggestedLocation } from "./types";
+import { FlatpakReachNote } from "./FlatpakReachNote";
 import "../firearms/forms.css";
 import "./databases.css";
 
@@ -17,6 +18,8 @@ export interface CreateDatabaseDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   suggested: SuggestedLocation;
+  /** This copy is a Flatpak, so the folder field says what it reaches (#260). */
+  flatpak?: boolean;
   /** Creates and opens the database once its passphrase is chosen in the
    * native dialog; rejects with the command's failure. */
   onCreate: (input: CreateDatabaseInput) => Promise<void>;
@@ -31,6 +34,7 @@ export function CreateDatabaseDialog({
   open,
   onOpenChange,
   suggested,
+  flatpak = false,
   onCreate,
 }: CreateDatabaseDialogProps) {
   return (
@@ -38,6 +42,7 @@ export function CreateDatabaseDialog({
       {/* Mounted only while open, so every opening starts from the suggestion. */}
       <CreateDatabaseForm
         suggested={suggested}
+        flatpak={flatpak}
         onCreate={onCreate}
         onCancel={() => onOpenChange(false)}
       />
@@ -52,10 +57,12 @@ const FIELD_ORDER = ["name", "folder"] as const satisfies readonly (keyof Errors
 
 function CreateDatabaseForm({
   suggested,
+  flatpak,
   onCreate,
   onCancel,
 }: {
   suggested: SuggestedLocation;
+  flatpak: boolean;
   onCreate: (input: CreateDatabaseInput) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -172,6 +179,7 @@ function CreateDatabaseForm({
             error={errors.folder}
             disabled={submitting}
           />
+          <FlatpakReachNote flatpak={flatpak} />
         </div>
         <section className="hd-privacy-note" role="note" aria-labelledby="create-db-backups">
           <Icon name="archive" size={16} />

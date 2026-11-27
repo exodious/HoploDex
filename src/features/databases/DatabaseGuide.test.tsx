@@ -158,6 +158,7 @@ describe("DatabaseGuide with a database open", () => {
   const status = {
     name: "Main collection",
     screenLockSupported: true,
+    flatpak: false,
     settings: {
       backups: {
         enabled: true,

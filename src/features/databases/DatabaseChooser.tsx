@@ -25,6 +25,7 @@ import type {
 } from "./types";
 import { UpgradeFolderDialog, UpgradeProgressDialog, UpgradeQuestion } from "./UpgradeDialogs";
 import { BACKUP_OUT_OF_REACH_REASON } from "./outOfReach";
+import { FlatpakReachNote } from "./FlatpakReachNote";
 import { setTroubleshootingLog } from "../app/troubleshootingLog";
 import "../app/AppShell.css";
 import "./databases.css";
@@ -706,10 +707,12 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                     Open another database file…
                   </Button>
                 </div>
+                <FlatpakReachNote flatpak={state.flatpak} />
                 <CreateDatabaseDialog
                   open={creating}
                   onOpenChange={setCreating}
                   suggested={state.suggested}
+                  flatpak={state.flatpak}
                   onCreate={session.createDatabase}
                 />
                 {restoring && (

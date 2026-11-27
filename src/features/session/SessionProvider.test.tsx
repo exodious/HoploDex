@@ -65,6 +65,7 @@ const chooser: ChooserState = {
   selectedPath: PATH,
   keyringAvailable: false,
   screenLockSupported: false,
+  flatpak: false,
   suggested: { folder: "/home/sam/Documents/HoploDex", name: "My collection" },
   notices: [],
 };
@@ -77,6 +78,7 @@ function status(diskEncryption: boolean): DatabaseStatus {
     passphraseSaved: false,
     keyringAvailable: false,
     screenLockSupported: false,
+    flatpak: false,
     settings: {
       backups: {
         enabled: true,

@@ -50,6 +50,7 @@ function chooserState(overrides: Partial<ChooserState> = {}): ChooserState {
     selectedPath: main.path,
     keyringAvailable: false,
     screenLockSupported: false,
+    flatpak: false,
     suggested: { folder: "/home/sam/Documents/HoploDex", name: "My collection" },
     notices: [],
     ...overrides,

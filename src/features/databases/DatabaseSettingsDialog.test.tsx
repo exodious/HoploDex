@@ -61,6 +61,7 @@ function status(
     passphraseSaved: false,
     keyringAvailable: false,
     screenLockSupported: false,
+    flatpak: false,
     settings: settings(location),
     pendingChanges: null,
     notes: {

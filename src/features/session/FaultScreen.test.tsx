@@ -21,6 +21,7 @@ const status: DatabaseStatus = {
   passphraseSaved: false,
   keyringAvailable: true,
   screenLockSupported: true,
+  flatpak: false,
   settings: {
     backups: {
       enabled: true,
@@ -66,6 +67,7 @@ describe("A screen that fails to render", () => {
         selectedPath: null,
         keyringAvailable: true,
         screenLockSupported: true,
+        flatpak: false,
         suggested: { folder: "/tmp", name: "Mine" },
         notices: [],
       });

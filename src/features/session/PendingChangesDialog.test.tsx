@@ -85,6 +85,7 @@ function status(pendingChanges: PendingSummary | null): DatabaseStatus {
     passphraseSaved: false,
     keyringAvailable: false,
     screenLockSupported: false,
+    flatpak: false,
     settings: {
       backups: {
         enabled: true,
@@ -322,6 +323,7 @@ describe("PendingChangesDialog (003 FR-039, contracts/ui-databases.md §13)", ()
         selectedPath: status(null).path,
         keyringAvailable: false,
         screenLockSupported: false,
+        flatpak: false,
         suggested: { folder: "/home/sam/Documents/HoploDex", name: "My collection" },
         notices: [],
       });

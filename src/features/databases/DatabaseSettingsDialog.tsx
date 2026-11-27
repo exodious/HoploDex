@@ -33,6 +33,7 @@ import type {
   ExistingBackupsOutcome,
   OldLocationBackups,
 } from "./types";
+import { FlatpakReachNote } from "./FlatpakReachNote";
 import "../firearms/forms.css";
 import "./databases.css";
 
@@ -443,6 +444,7 @@ function SettingsForm({
                   Backups go to the default folder until you choose it again.
                 </p>
               )}
+              <FlatpakReachNote flatpak={status.flatpak} />
               <div className="hd-settings-location__actions">
                 <Button
                   size="sm"

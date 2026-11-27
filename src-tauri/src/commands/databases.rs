@@ -167,6 +167,7 @@ pub mod ops {
             recent,
             keyring_available: machine.keyring().is_available(),
             screen_lock_supported: crate::platform::screen_lock_supported(),
+            flatpak: reach.is_flatpak(),
             suggested: SuggestedLocation {
                 folder: suggested_folder(documents, home).to_string_lossy().into_owned(),
                 name: SUGGESTED_NAME.to_owned(),
@@ -920,6 +921,7 @@ pub mod ops {
             passphrase_saved,
             keyring_available: machine.keyring().is_available(),
             screen_lock_supported: crate::platform::screen_lock_supported(),
+            flatpak: reach.is_flatpak(),
             settings: collection_settings(machine, open, reach)?,
             pending_changes: pending::summary(&open.conn)?,
             notes: DatabaseNotes { disk_encryption: !note_dismissed, ..open.notes.clone() },

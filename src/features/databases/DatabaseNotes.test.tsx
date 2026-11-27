@@ -18,6 +18,7 @@ function renderNotes(notes: Partial<DatabaseStatus["notes"]>) {
     passphraseSaved: false,
     keyringAvailable: false,
     screenLockSupported: false,
+    flatpak: false,
     settings: {
       backups: {
         enabled: true,
