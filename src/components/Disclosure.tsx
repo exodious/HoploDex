@@ -12,6 +12,9 @@ export interface DisclosureProps {
   onOpenChange: (open: boolean) => void;
   /** Heading level of the title, to sit correctly under its section. */
   headingLevel?: 3 | 4;
+  /** A field inside differs from what is saved: the closed summary says so
+   * (014 FR-007). */
+  changed?: boolean;
   children: ReactNode;
 }
 
@@ -26,8 +29,10 @@ export function Disclosure({
   open,
   onOpenChange,
   headingLevel = 4,
+  changed = false,
   children,
 }: DisclosureProps) {
+  const folded = changed && !open;
   const id = useId();
   const panelId = `${id}-panel`;
   const titleId = `${id}-title`;
@@ -50,8 +55,13 @@ export function Disclosure({
             {/* Keeps a space between title and summary in the button's
                 accessible name without relying on the column layout; the
                 flex container drops it visually. */}
-            {summary && " "}
-            {summary && <span className="hd-disclosure__summary">{summary}</span>}
+            {(summary || folded) && " "}
+            {(summary || folded) && (
+              <span className="hd-disclosure__summary">
+                {summary}
+                {folded && (summary ? " · Changed" : "Changed")}
+              </span>
+            )}
           </span>
         </button>
       </Heading>

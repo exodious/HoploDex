@@ -1,6 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
+import { CloseGuardContext } from "./closeGuard";
+import type { CloseGuardContextValue } from "./closeGuard";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./Icon";
 import { LOCK_SHORTCUT, useLock } from "./lock";
 import { currentOpener, placeFocus } from "./placeFocus";
@@ -58,10 +61,35 @@ export function Dialog({
   useEffect(() => {
     if (open) previouslyFocused.current = currentOpener();
   }, [open]);
+  // A form inside with unsaved changes asks before Escape, the close button
+  // or its Cancel closes it (014 FR-021a, research.md §4).
+  const isDirty = useRef<(() => boolean) | null>(null);
+  const [asking, setAsking] = useState<(() => void) | null>(null);
+  const guard = useMemo<CloseGuardContextValue>(
+    () => ({
+      register: (dirty) => {
+        isDirty.current = dirty;
+        return () => {
+          if (isDirty.current === dirty) isDirty.current = null;
+        };
+      },
+      request: (close) => {
+        if (isDirty.current?.()) setAsking(() => close);
+        else close();
+      },
+    }),
+    [],
+  );
+  useEffect(() => {
+    if (!open) setAsking(null);
+  }, [open]);
   return (
     <RadixDialog.Root
       open={open}
-      onOpenChange={(next) => (dismissible || next) && onOpenChange(next)}
+      onOpenChange={(next) => {
+        if (next) onOpenChange(next);
+        else if (dismissible) guard.request(() => onOpenChange(false));
+      }}
     >
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="hd-dialog__overlay" />
@@ -124,8 +152,23 @@ export function Dialog({
               </div>
             )}
           </header>
-          {bare ? children : <div className="hd-dialog__body">{children}</div>}
+          <CloseGuardContext.Provider value={guard}>
+            {bare ? children : <div className="hd-dialog__body">{children}</div>}
+          </CloseGuardContext.Provider>
           {footer && <footer className="hd-dialog__footer">{footer}</footer>}
+          <ConfirmDialog
+            open={asking != null}
+            onOpenChange={(next) => !next && setAsking(null)}
+            title="Discard changes?"
+            description="Your unsaved changes will be lost."
+            confirmLabel="Discard"
+            cancelLabel="Keep editing"
+            onConfirm={() => {
+              const close = asking;
+              setAsking(null);
+              close?.();
+            }}
+          />
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

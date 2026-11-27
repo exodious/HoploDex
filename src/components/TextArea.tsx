@@ -3,6 +3,7 @@ import type { ChangeEvent } from "react";
 import type { ReactNode, TextareaHTMLAttributes } from "react";
 import { FieldFrame } from "./Field";
 import { useFieldIds } from "./fieldIds";
+import type { FieldChange } from "./fieldChanges";
 import { countCharacters } from "../lib/textLimits";
 import "./components.css";
 import "./TextArea.css";
@@ -17,6 +18,8 @@ export interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
    * counter takes the error style. The text is never cut off: the form shows
    * the field's error and refuses to submit. */
   limit?: number;
+  /** Set while it differs from what is saved: the marker and revert (014 FR-006). */
+  change?: FieldChange;
 }
 
 /** The counter shows from this share of the limit. */
@@ -25,15 +28,28 @@ const COUNTER_FROM = 0.9;
 /** Labeled multi-line text input, for free-form fields like notes. */
 export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
   (
-    { label, error, hint, id, className, rows = 3, fieldClassName, limit, onChange, ...props },
+    {
+      label,
+      error,
+      hint,
+      id,
+      className,
+      rows = 3,
+      fieldClassName,
+      limit,
+      onChange,
+      change,
+      ...props
+    },
     ref,
   ) => {
     const {
       inputId,
       hintId,
       errorId,
+      changedId,
       describedBy: fieldDescribedBy,
-    } = useFieldIds(id, hint, error);
+    } = useFieldIds(id, hint, error, change != null);
     // An uncontrolled field is counted from what it holds as it changes.
     const [typed, setTyped] = useState(() => String(props.defaultValue ?? ""));
     const text = props.value !== undefined ? String(props.value) : typed;
@@ -57,6 +73,8 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
         errorId={errorId}
         className={fieldClassName}
         disabled={props.disabled}
+        change={change}
+        changedId={changedId}
       >
         <textarea
           ref={ref}

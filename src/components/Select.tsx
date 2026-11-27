@@ -3,6 +3,7 @@ import { useRef } from "react";
 import type { ReactNode } from "react";
 import { FieldFrame } from "./Field";
 import { useFieldIds } from "./fieldIds";
+import type { FieldChange } from "./fieldChanges";
 import { Icon } from "./Icon";
 import { placeFocus } from "./placeFocus";
 import "./components.css";
@@ -27,6 +28,8 @@ export interface SelectProps {
   disabled?: boolean;
   /** Classes on the field's wrapper, such as a width. */
   fieldClassName?: string;
+  /** Set while it differs from what is saved: the marker and revert (014 FR-006). */
+  change?: FieldChange;
 }
 
 /** Labeled, keyboard-navigable select — the dropdown pattern for option
@@ -43,8 +46,14 @@ export function Select({
   id,
   disabled,
   fieldClassName,
+  change,
 }: SelectProps) {
-  const { inputId, hintId, errorId, describedBy } = useFieldIds(id, hint, error);
+  const { inputId, hintId, errorId, changedId, describedBy } = useFieldIds(
+    id,
+    hint,
+    error,
+    change != null,
+  );
   const labelId = `${inputId}-label`;
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -58,6 +67,8 @@ export function Select({
       hintId={hintId}
       error={error}
       errorId={errorId}
+      change={change}
+      changedId={changedId}
       className={fieldClassName}
       disabled={disabled}
     >

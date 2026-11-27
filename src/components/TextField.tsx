@@ -2,6 +2,7 @@ import { forwardRef } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 import { FieldFrame } from "./Field";
 import { useFieldIds } from "./fieldIds";
+import type { FieldChange } from "./fieldChanges";
 import "./components.css";
 
 export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "prefix"> {
@@ -13,15 +14,22 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
   /** A control rendered inside the end of the input, e.g. a picker button. */
   trailing?: ReactNode;
   fieldClassName?: string;
+  /** Set while it differs from what is saved: the marker and revert (014 FR-006). */
+  change?: FieldChange;
 }
 
 /** Labeled text input with consistent error/hint rendering (WCAG 2.1 AA: label always associated via htmlFor/aria-describedby). */
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
   (
-    { label, error, hint, id, className, prefix, trailing, fieldClassName, required, ...props },
+    { label, error, hint, id, className, prefix, trailing, fieldClassName, required, change, ...props },
     ref,
   ) => {
-    const { inputId, hintId, errorId, describedBy } = useFieldIds(id, hint, error);
+    const { inputId, hintId, errorId, changedId, describedBy } = useFieldIds(
+      id,
+      hint,
+      error,
+      change != null,
+    );
 
     return (
       <FieldFrame
@@ -34,6 +42,8 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
         errorId={errorId}
         className={fieldClassName}
         disabled={props.disabled}
+        change={change}
+        changedId={changedId}
       >
         <div
           className={[

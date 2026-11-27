@@ -1334,3 +1334,49 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Changed marker (014 contracts/ui.md §1) ─────────────────────────── */
+
+.hd-field__label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.hd-changed {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.hd-changed__tag {
+  height: 20px;
+  padding: 0 6px;
+}
+
+.hd-changed__revert.hd-button--sm.hd-button--icon-only {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+}
+
+/* Unavailable but focusable, so its reason can be reached (014 FR-016). */
+.hd-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hd-button[aria-disabled="true"]:active {
+  transform: none;
+}
+
+.hd-button--primary[aria-disabled="true"]:hover {
+  background: var(--ink);
+}
+
+.hd-button--secondary[aria-disabled="true"]:hover {
+  background: var(--sheet);
+  border-color: var(--rule-strong);
+}

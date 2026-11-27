@@ -1,5 +1,7 @@
 import { useId } from "react";
 import type { ReactNode } from "react";
+import { ChangedMark } from "./ChangedMark";
+import type { FieldChange } from "./fieldChanges";
 import { keepEnterOut } from "./radioKeys";
 import "./components.css";
 
@@ -21,6 +23,8 @@ export interface ChoiceCardsProps<T extends string> {
   required?: boolean;
   /** Minimum card width; cards wrap onto more rows below it. */
   minCardWidth?: number;
+  /** Set while it differs from what is saved: the marker and revert (014 FR-009). */
+  change?: FieldChange;
 }
 
 /** A radio group of larger cards, for choices that benefit from a picture
@@ -34,11 +38,13 @@ export function ChoiceCards<T extends string>({
   hint,
   required,
   minCardWidth = 150,
+  change,
 }: ChoiceCardsProps<T>) {
   const name = useId();
   const labelId = `${name}-label`;
   const errorId = `${name}-error`;
   const hintId = `${name}-hint`;
+  const changedId = `${name}-changed`;
   // A labelled radiogroup rather than a <fieldset>: WebKitGTK counts a
   // fieldset's legend twice when a dialog first sizes itself, leaving the
   // dialog too tall until something else changes its layout.
@@ -47,12 +53,28 @@ export function ChoiceCards<T extends string>({
       role="radiogroup"
       className="hd-choices"
       aria-labelledby={labelId}
-      aria-describedby={[error && errorId, hint && hintId].filter(Boolean).join(" ") || undefined}
+      aria-describedby={
+        [change && changedId, error && errorId, hint && hintId].filter(Boolean).join(" ") ||
+        undefined
+      }
       aria-invalid={error ? true : undefined}
       aria-required={required || undefined}
     >
-      <span id={labelId} className="hd-field__label" data-required={required || undefined}>
-        {label}
+      <span className="hd-field__label-row">
+        <span id={labelId} className="hd-field__label" data-required={required || undefined}>
+          {label}
+        </span>
+        {change && (
+          <ChangedMark
+            label={label}
+            change={change}
+            id={changedId}
+            focusTarget={() => {
+              const radios = Array.from(document.getElementsByName(name)) as HTMLInputElement[];
+              return radios.find((radio) => radio.checked) ?? radios[0] ?? null;
+            }}
+          />
+        )}
       </span>
       <div
         className={["hd-choices__grid", error && "hd-choices__grid--error"]
