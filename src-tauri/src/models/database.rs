@@ -250,7 +250,8 @@ pub enum ChooserNotice {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         deleted_count: Option<u64>,
         /// A resolution of an import's conflicts: the matching rows it didn't
-        /// reach, decided by importing the file again (issue #249).
+        /// reach or couldn't apply a decision to, decided by importing the
+        /// file again (issue #249).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         undecided_count: Option<u64>,
         /// And the saved rows whose "Mounted on" cell couldn't be applied, so
