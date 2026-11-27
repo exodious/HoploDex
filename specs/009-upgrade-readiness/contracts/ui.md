@@ -74,6 +74,10 @@ backup somewhere else?" shows:
     with `insufficientSpace` the parenthesis is left out; `INSUFFICIENT_SPACE`
     has them._
   - `UPGRADE_BACKUP_FAILED`: "saving it failed part way".
+  _Amended 2026-11-26: in a Flatpak, unless the reason is `outOfReach` (whose
+  text already gives the command), the dialog also says which folders HoploDex
+  reaches, with an "Allow another folder…" link to the `flatpak override`
+  command (`FlatpakReachNote`, #260)._
 - **Buttons**: **Choose a folder…** (primary, focused) and **Cancel**.
 - **Choose a folder…** opens the OS folder picker. Choosing one sends
   `upgrade_database { awaitingId, backupFolder }`, and §2's progress follows.

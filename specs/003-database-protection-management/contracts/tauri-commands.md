@@ -179,6 +179,8 @@ type DatabaseStatus = {
   };
 };
 
+_Amended 2026-11-26: also carries `flatpak: boolean` (see `get_chooser_state`, #260)._
+
 type CloseOutcome = {
   backup: "made" | "notDue" | "alreadyToday" | "off" | "skipped" | "failed" | "notAttempted";
   failureReason?: "locationUnavailable" | "insufficientSpace" | "io" | "databaseUnreachable"; // databaseUnreachable: research §6
@@ -205,6 +207,7 @@ _Amended by [spec 008](../../008-hardening-batch/contracts/tauri-commands.md): `
 ### `get_chooser_state`
 - **Input**: none
 - **Output**: `{ recent: RecentDatabase[]; selectedPath: string | null; keyringAvailable: boolean; screenLockSupported: boolean; suggested: { folder: string; name: string }; notices: ChooserNotice[] }`
+- _Amended 2026-11-26: this output and `DatabaseStatus` also carry `flatpak: boolean`, so the screens that choose a database or backup location say what a Flatpak reaches and how to grant another folder (#260)._
 - Notices are returned once and then removed from `machine.json`. `selectedPath` is the most recent entry at startup (FR-021), or the database just locked or closed (FR-033).
 - For each available entry, `backups` lists the backup folder cached in `machine.json` by file name, and `changedSinceLeftAt` compares the file's modification time with `leftModifiedAt` (data-model.md "Machine-local"). Nothing is decrypted, and an unavailable entry has neither (FR-040).
 

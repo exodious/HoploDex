@@ -246,6 +246,7 @@ const session = {
     name: "Main collection",
     notes: { diskEncryption: false },
     screenLockSupported: true,
+    flatpak: false,
     settings: {
       backups: {
         enabled: true,

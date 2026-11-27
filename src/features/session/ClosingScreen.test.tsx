@@ -20,6 +20,7 @@ const status: DatabaseStatus = {
   passphraseSaved: false,
   keyringAvailable: false,
   screenLockSupported: false,
+  flatpak: false,
   settings: {
     backups: {
       enabled: true,

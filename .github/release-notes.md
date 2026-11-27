@@ -28,6 +28,10 @@ there with a missing runtime if your user has no Flatpak runtimes yet: run the
 command above instead. A newer version installs the same way, over the old
 one, keeping everything. `flatpak update` updates the runtime but not
 a HoploDex installed from a file.
+By default the Flatpak can reach only the `HoploDex` folder in your Documents
+folder and removable drives, so its choosers show only those. To give it another
+folder, run this with that folder in place of `<folder>`, then restart HoploDex:
+`flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex`.
 Each spreadsheet you import, photo or document you attach, or folder you export
 to through the Flatpak's file chooser stays open to HoploDex after it quits,
 until you take that back:

@@ -48,6 +48,10 @@ install it, and how to open a build that isn't signed by a paid certificate.
 For the Flatpak that is `flatpak install --user` with the file, which also
 fetches the runtime: a software center installing it for just your user can
 report a missing runtime when your user has no Flatpak runtimes yet.
+By default the Flatpak can reach only the `HoploDex` folder in your Documents
+folder and removable drives, so its choosers show only those. To give it another
+folder, run this with that folder in place of `<folder>`, then restart HoploDex:
+`flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex`.
 
 ## The troubleshooting log
 

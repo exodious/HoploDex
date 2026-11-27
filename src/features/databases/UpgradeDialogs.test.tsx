@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import * as databasesService from "./databasesService";
-import { UpgradeProgressDialog } from "./UpgradeDialogs";
+import { UpgradeFolderDialog, UpgradeProgressDialog } from "./UpgradeDialogs";
 import type { UpgradeProgress } from "./types";
 
 vi.mock("./databasesService");
@@ -185,5 +185,45 @@ describe("UpgradeProgressDialog (009 contracts/ui.md §2, FR-016)", () => {
     expect(region).toHaveTextContent(
       "Upgrading “Main collection”. This can't be stopped once it has started.",
     );
+  });
+});
+
+describe("UpgradeFolderDialog's reach note (#260)", () => {
+  const OVERRIDE = "flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex";
+
+  function renderFolder(reason: "insufficientSpace" | "outOfReach", flatpak: boolean) {
+    render(
+      <UpgradeFolderDialog
+        problem={{ folder: "/media/usb/HoploDex backups", reason }}
+        name="Main collection"
+        awaitingId={1}
+        flatpak={flatpak}
+        onChoose={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    return screen.getByRole("dialog", { name: "Save the backup somewhere else?" });
+  }
+
+  it("in a Flatpak, says what its chooser reaches, with a link to allow another folder", () => {
+    const dialog = renderFolder("insufficientSpace", true);
+    expect(within(dialog).getByText(/HoploDex can reach Documents\/HoploDex/)).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Allow another folder…" })).toBeVisible();
+  });
+
+  it("outside a Flatpak, says nothing about reach", () => {
+    const dialog = renderFolder("insufficientSpace", false);
+    expect(within(dialog).queryByText(/can reach only/)).toBeNull();
+    expect(within(dialog).queryByText(/HoploDex can reach Documents/)).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Allow another folder…" })).toBeNull();
+    expect(within(dialog).queryByText(OVERRIDE)).toBeNull();
+    expect(dialog.querySelector(".hd-dialog__body")).toBeNull();
+  });
+
+  it("for a folder out of reach, leaves it to the refusal, which names the folder", () => {
+    const dialog = renderFolder("outOfReach", true);
+    expect(within(dialog).getByText(/--filesystem='\/media\/usb\/HoploDex backups'/)).toBeVisible();
+    expect(within(dialog).queryByText(/HoploDex can reach Documents\/HoploDex/)).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Allow another folder…" })).toBeNull();
   });
 });

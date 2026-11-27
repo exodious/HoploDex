@@ -61,6 +61,7 @@ function status(
     passphraseSaved: false,
     keyringAvailable: false,
     screenLockSupported: false,
+    flatpak: false,
     settings: settings(location),
     pendingChanges: null,
     notes: {
@@ -157,6 +158,36 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     );
     expect(backups).not.toHaveTextContent("Not available on this computer");
     expect(screen.getByRole("button", { name: "Use the default" })).toBeEnabled();
+  });
+
+  it("in a Flatpak, says what it reaches and how to grant another folder (#260)", () => {
+    renderSettings({ ...status(), flatpak: true });
+
+    const backups = screen.getByRole("group", { name: "Backups" });
+    expect(within(backups).getByText(/HoploDex can reach Documents\/HoploDex/)).toBeVisible();
+    expect(within(backups).getByRole("button", { name: "Allow another folder…" })).toBeVisible();
+  });
+
+  it("in a Flatpak, says what it reaches once for a location out of reach (#260)", () => {
+    renderSettings({
+      ...status({
+        kind: "custom",
+        path: "/srv/hoplodex-backups",
+        available: false,
+        unavailableReason: "outOfReach",
+      }),
+      flatpak: true,
+    });
+
+    const backups = screen.getByRole("group", { name: "Backups" });
+    expect(within(backups).getByText(/--filesystem=\/srv\/hoplodex-backups/)).toBeVisible();
+    expect(within(backups).queryByText(/HoploDex can reach Documents\/HoploDex/)).toBeNull();
+    expect(within(backups).queryByRole("button", { name: "Allow another folder…" })).toBeNull();
+    expect(
+      within(backups).queryByText(
+        "flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex",
+      ),
+    ).toBeNull();
   });
 
   // 011 US1-8, contracts/tauri-commands.md "Commands that check reach": update_backup_settings

@@ -8,6 +8,7 @@ import type { BackupProblem } from "./backupProblem";
 import type { ChosenPath } from "../import-export/types";
 import type { UpgradeProgress } from "./types";
 import { outOfReachText } from "./outOfReach";
+import { FlatpakReachNote } from "./FlatpakReachNote";
 
 // The upgrade question, its progress and the choice of another folder for
 // its backup: the dialogs of 009 contracts/ui.md §1-§3.
@@ -171,6 +172,8 @@ export interface UpgradeFolderDialogProps {
   name: string;
   /** The waiting database the folder is for. */
   awaitingId: number;
+  /** Whether this is the Flatpak, whose chooser shows only what it reaches (#260). */
+  flatpak: boolean;
   /** A folder was chosen for this one backup, in the chooser the backend
    * opens and keeps the answer of. */
   onChoose: (folder: ChosenPath) => void;
@@ -185,6 +188,7 @@ export function UpgradeFolderDialog({
   problem,
   name,
   awaitingId,
+  flatpak,
   onChoose,
   onCancel,
 }: UpgradeFolderDialogProps) {
@@ -217,6 +221,11 @@ export function UpgradeFolderDialog({
       bare
     >
       <form className="hd-dialog__form" onSubmit={(event) => void choose(event)} noValidate>
+        {flatpak && problem.reason !== "outOfReach" && (
+          <div className="hd-dialog__body">
+            <FlatpakReachNote flatpak />
+          </div>
+        )}
         <footer className="hd-dialog__footer">
           <Button variant="secondary" onClick={onCancel}>
             Cancel

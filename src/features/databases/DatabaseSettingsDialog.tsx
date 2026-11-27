@@ -33,6 +33,7 @@ import type {
   ExistingBackupsOutcome,
   OldLocationBackups,
 } from "./types";
+import { FlatpakReachNote } from "./FlatpakReachNote";
 import "../firearms/forms.css";
 import "./databases.css";
 
@@ -442,6 +443,9 @@ function SettingsForm({
                   The backup folder saved with this database isn&apos;t set up on this computer yet.
                   Backups go to the default folder until you choose it again.
                 </p>
+              )}
+              {location.unavailableReason !== "outOfReach" && (
+                <FlatpakReachNote flatpak={status.flatpak} />
               )}
               <div className="hd-settings-location__actions">
                 <Button

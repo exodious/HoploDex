@@ -463,6 +463,8 @@ pub struct DatabaseStatus {
     /// This desktop reports a screen lock (003 FR-038), for the settings'
     /// "Locking" section.
     pub screen_lock_supported: bool,
+    /// This copy runs as a Flatpak, so its choosers reach only its grants (#260).
+    pub flatpak: bool,
     pub settings: CollectionSettings,
     pub pending_changes: Option<PendingSummary>,
     pub notes: DatabaseNotes,
@@ -644,6 +646,8 @@ pub struct ChooserState {
     pub keyring_available: bool,
     /// 003 FR-038: whether this desktop reports a screen lock.
     pub screen_lock_supported: bool,
+    /// This copy runs as a Flatpak, so its choosers reach only its grants (#260).
+    pub flatpak: bool,
     pub suggested: SuggestedLocation,
     /// Shown once, then gone.
     pub notices: Vec<ChooserNotice>,
