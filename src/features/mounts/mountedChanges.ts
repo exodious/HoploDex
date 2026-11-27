@@ -26,14 +26,28 @@ export function readMountedChanges(value: unknown): MountedChanges {
     ref !== null &&
     ((ref as RecordRef).kind === "firearm" || (ref as RecordRef).kind === "accessory") &&
     Number.isInteger((ref as RecordRef).id);
+  // Every field the list renders, so a malformed label can't break the form.
+  const isLabel = (label: unknown) => {
+    if (typeof label !== "object" || label === null) return false;
+    const { record, make, model, nickname, typeName, serialNumber } = label as RecordLabel;
+    const textOrNull = (text: unknown) => text === null || typeof text === "string";
+    return (
+      isRef(record) &&
+      typeof make === "string" &&
+      typeof model === "string" &&
+      typeof typeName === "string" &&
+      textOrNull(nickname) &&
+      textOrNull(serialNumber)
+    );
+  };
   const okAdds =
     Array.isArray(adds) &&
     adds.every(
       (add: unknown) =>
         typeof add === "object" &&
         add !== null &&
-        isRef((add as MountAdd).label?.record) &&
-        ((add as MountAdd).from === null || isRef((add as MountAdd).from?.record)),
+        isLabel((add as MountAdd).label) &&
+        ((add as MountAdd).from === null || isLabel((add as MountAdd).from)),
     );
   const okRemoves =
     Array.isArray(removes) && removes.every((key: unknown) => typeof key === "string");

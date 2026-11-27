@@ -114,6 +114,12 @@ describe("014 US5 - Change What Is Mounted, and Save It with the Record (the for
       readMountedChanges({ adds: [{ label: redDot, from: null }], removes: ["accessory:11"] }),
     ).toEqual({ adds: [{ label: redDot, from: null }], removes: ["accessory:11"] });
     expect(readMountedChanges({ adds: "nope", removes: [] })).toEqual(NO_MOUNTED_CHANGES);
+    expect(
+      readMountedChanges({
+        adds: [{ label: { record: redDot.record, make: 7 }, from: null }],
+        removes: [],
+      }),
+    ).toEqual(NO_MOUNTED_CHANGES);
     expect(readMountedChanges(undefined)).toEqual(NO_MOUNTED_CHANGES);
   });
 });
