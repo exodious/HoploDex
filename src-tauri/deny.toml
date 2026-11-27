@@ -78,22 +78,25 @@ ignore = [
     # notices, no known vulnerability.
     #
     # No fix to take yet: zbus 6.0.0 exists, but the tree's zbus 5.18 is also
-    # required by secret-service 5.1 (through keyring's Linux store) and
-    # tauri-plugin-opener 2.5, which a bump of HoploDex's own `zbus`
+    # required by secret-service 5.1 (through keyring's Linux store),
+    # tauri-plugin-opener 2.5 and tauri-plugin-single-instance 2.4, which a
+    # bump of HoploDex's own `zbus`
     # dependency would not remove, so the three crates stay in the lock file.
     #
-    # Linux only (HoploDex's `platform/linux.rs`, the keyring's Secret Service
-    # and the opener plugin's D-Bus calls); macOS and Windows builds don't
+    # Linux only (HoploDex's `platform/linux.rs`, the keyring's Secret Service,
+    # the opener plugin's D-Bus calls and the single-instance plugin's bus
+    # name); macOS and Windows builds don't
     # link them. The advisory is about maintenance, not about code
     # HoploDex reaches in a harmful way. Indirect, via zbus 5, which
-    # secret-service and tauri-plugin-opener require. Checked 2026-10-17 at
+    # secret-service, tauri-plugin-opener and tauri-plugin-single-instance
+    # require. Checked 2026-10-17 at
     # zbus 5.18.0.
     #
-    # Review by 2027-01-31, or as soon as secret-service and
-    # tauri-plugin-opener accept zbus 6.
-    { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
-    { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
-    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained, merged into zbus 6; secret-service and tauri-plugin-opener still use zbus 5" },
+    # Review by 2027-01-31, or as soon as secret-service, tauri-plugin-opener
+    # and tauri-plugin-single-instance accept zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained, merged into zbus 6; secret-service, tauri-plugin-opener and tauri-plugin-single-instance still use zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained, merged into zbus 6; secret-service, tauri-plugin-opener and tauri-plugin-single-instance still use zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained, merged into zbus 6; secret-service, tauri-plugin-opener and tauri-plugin-single-instance still use zbus 5" },
     # chrono is unmaintained (RUSTSEC-2026-0543); all versions are affected
     # and there is no release to move to. An unmaintained notice: no known
     # vulnerability.

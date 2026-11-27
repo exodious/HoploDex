@@ -155,6 +155,21 @@ fn end_web_processes(app: &AppHandle) {
     }
 }
 
+/// Brings the main window to the front when HoploDex is started again
+/// (#231), restoring it if it was minimized. A second instance's arguments
+/// are ignored.
+#[cfg(not(any(feature = "e2e", debug_assertions)))]
+fn show_main_window(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    for result in [window.unminimize(), window.show(), window.set_focus()] {
+        if let Err(err) = result {
+            log::warn!("could not bring the window to the front: {err}");
+        }
+    }
+}
+
 /// Hands the OS's notices to the session (003 research.md §14).
 fn handle_system_events(app: AppHandle, events: mpsc::Receiver<SystemEvent>) {
     let spawned = thread::Builder::new().name("system-events".into()).spawn(move || {
@@ -325,6 +340,18 @@ fn main() {
     #[cfg(target_os = "linux")]
     let webkit_sandbox = sandbox_probe::decide_and_apply();
     let builder = tauri::Builder::default();
+    // One running instance (#231): a second start exits in this plugin's
+    // setup, which runs before the app's `setup` below wipes the web views'
+    // data folders, and brings the running window to the front instead. Only
+    // in a shipped build: E2E workers, `tauri dev` and human testing each run
+    // in a sandbox of their own, beside each other or the user's own HoploDex.
+    // Not on macOS, which reuses the running app when it is opened again
+    // (`RunEvent::Reopen` below). Checked by hand: a live two-copy start of a
+    // Linux release build, where the second copy exits and the first window
+    // comes forward; an automated test is tracked in exodious/HoploDex#274.
+    #[cfg(not(any(feature = "e2e", debug_assertions, target_os = "macos")))]
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)));
     // Inside the Flatpak, the web process the portal starts doesn't inherit
     // the app's core limit; each page load of either web view lowers it
     // (#166).
@@ -793,6 +820,10 @@ fn main() {
                 machine.sweep_hold_leftovers();
             }
         }
+        // Opening the running app again doesn't restore a minimized
+        // window on its own (#231).
+        #[cfg(all(target_os = "macos", not(any(feature = "e2e", debug_assertions))))]
+        RunEvent::Reopen { .. } => show_main_window(app),
         _ => {}
     });
 }

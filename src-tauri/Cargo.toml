@@ -229,6 +229,12 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
 # is 26.
 tauri = { version = "2", features = ["unstable", "macos-proxy"] }
 
+# One running instance, and the running window to the front on a second
+# start (#231): a D-Bus name on Linux, a named mutex on Windows. Shipped
+# builds only (main.rs). macOS reuses the running app itself.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 [target.'cfg(windows)'.dependencies]
 # File identity for the take-over check (003 research.md §6). Unix uses `stat`
 # directly: opening a handle there would drop SQLite's locks when closed.
