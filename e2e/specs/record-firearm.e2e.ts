@@ -6,6 +6,7 @@ import {
   clickButton,
   choose,
   expect,
+  fieldValue,
   fill,
   openMenu,
   settle,
@@ -320,6 +321,59 @@ describe("001 US1 - Record a Firearm (was us1-record-firearm)", () => {
     });
     await $(".hd-runhead").waitForExist({ reverse: true });
     await expect($("#record-name")).toBeFocused();
+  });
+});
+
+// 014 US1, US2: the database of the story above, whose last record is open.
+describe("014 US1 - See Which Fields I Have Changed; 014 US2 - Put One Field Back to Its Saved Value", () => {
+  /** The labels of the open form's changed fields. */
+  const changedLabels = () =>
+    browser.execute(() =>
+      [...document.querySelectorAll('[role="dialog"] .hd-changed')].map(
+        (mark) =>
+          mark.parentElement?.querySelector(".hd-field__label, .hd-checkbox__label")?.textContent ??
+          "",
+      ),
+    );
+
+  it("marks only the edited field, unmarks it typed back, and reverts it into focus (014 US1-1 to US1-3, US2-1 to US2-3)", async () => {
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    expect(await changedLabels()).toEqual([]);
+
+    const nickname = await fieldValue("Nickname");
+    await fill("Nickname", "Marked");
+    await browser.waitUntil(async () => (await changedLabels()).join() === "Nickname", {
+      timeoutMsg: "Nickname was never marked as the only change",
+    });
+    await fill("Nickname", nickname);
+    await browser.waitUntil(async () => (await changedLabels()).length === 0, {
+      timeoutMsg: "Nickname stayed marked when typed back",
+    });
+
+    await fill("Nickname", "Marked");
+    await browser.execute(() =>
+      document
+        .querySelector<HTMLElement>('[role="dialog"] [aria-label^="Revert Nickname to"]')
+        ?.click(),
+    );
+    await browser.waitUntil(async () => (await fieldValue("Nickname")) === nickname, {
+      timeoutMsg: "the revert never put the saved nickname back",
+    });
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            (document.activeElement as HTMLInputElement | null)?.labels?.[0]?.textContent ===
+            "Nickname",
+        ),
+      { timeoutMsg: "focus never went to the reverted field" },
+    );
+    expect(await changedLabels()).toEqual([]);
+
+    // Nothing unsaved now: Cancel closes at once (014 US4-9).
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 });
 

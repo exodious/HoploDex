@@ -86,12 +86,58 @@ describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", ()
     await dialogTitled(`Edit ${firearm.make} ${firearm.model}`);
     expect(await fieldValue("Notes")).toBe("typed before the lock");
 
-    // Leave the form so the next test finds the collection.
+    // Leave the form so the next test finds the collection. It holds unsaved
+    // input, so Cancel asks first (014 FR-021a).
     await clickButton("Cancel");
+    await dialogTitled("Discard changes?");
+    await clickButton("Discard");
     await browser.waitUntil(async () => !(await $('[role="dialog"]').isExisting()), {
       timeout: 5000,
       timeoutMsg: "the edit form never closed",
     });
+  });
+
+  it("014 US4: resumes with the same fields marked, and keeps nothing once they are reverted (014 US4-2 to US4-4, US4-8)", async () => {
+    // The database and firearm of the journey above.
+    await openFirearm(`${firearm.make} ${firearm.model}`);
+    await editNotes("marked across a lock");
+    await pressLockShortcut();
+    await waitForChooser();
+    await submitPassphrase(E2E_PASSPHRASE);
+    await pendingQuestion();
+    await clickButton("Resume editing");
+    const form = await dialogTitled(`Edit ${firearm.make} ${firearm.model}`);
+
+    // Notes, and only Notes, differs from what is saved; Save is available.
+    expect(form.match(/Changed/g)).toHaveLength(1);
+    const save = await $('[role="dialog"] button[type="submit"]');
+    expect(await save.getAttribute("aria-disabled")).toBeNull();
+
+    // Escape asks before dropping the change; Keep editing keeps it.
+    await browser.execute(() =>
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    await dialogTitled("Discard changes?");
+    await clickButton("Keep editing");
+    expect(await fieldValue("Notes")).toBe("marked across a lock");
+
+    // Reverting the last change leaves nothing unsaved: Save says so, and the
+    // next lock keeps nothing, so the next open goes straight to the collection.
+    await browser.execute(() =>
+      document.querySelector<HTMLElement>('[aria-label^="Revert Notes to"]')?.click(),
+    );
+    await browser.waitUntil(async () => (await save.getAttribute("aria-disabled")) === "true", {
+      timeout: 5000,
+      timeoutMsg: "Save never said there was nothing to save",
+    });
+    await browser.execute(() => window.dispatchEvent(new Event("blur")));
+    await pressLockShortcut();
+    await waitForChooser();
+    await submitPassphrase(E2E_PASSPHRASE);
+    await $('nav[aria-label="Sections"]').waitForExist({ timeout: 10000 });
+    expect(await $('[role="dialog"]').isExisting()).toBe(false);
   });
 
   it("locks after the idle duration set in its settings", async () => {

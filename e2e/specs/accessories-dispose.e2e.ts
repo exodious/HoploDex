@@ -8,8 +8,8 @@ import {
   mountedSectionShows,
   mountedSectionText,
   openFirearmByKeys,
-  openMountMenu,
-  searchMountDialog,
+  openMountedList,
+  saveForm,
   seedMountedRecords,
   tabTo,
   tabToControl,
@@ -74,9 +74,10 @@ describe("006 US3 - Dispose and Delete With Items Mounted (was us12-accessories-
     // it too, so that the AR (with the Suppressor on it) can be kept.
     await backToCollectionByKeys();
     await openFirearmByKeys("LaRue PredatAR");
-    await openMountMenu(1);
-    await searchMountDialog("ddm");
+    await openMountedList();
+    await typeReal("ddm");
     await chooseSuggestion("Daniel Defense DDM4");
+    await saveForm();
     await mountedSectionShows("Daniel Defense DDM4");
     await mountedSectionShows("SilencerCo Omega 300");
     expect(await mountedSectionText()).toContain("Nikon P3 · Optic");

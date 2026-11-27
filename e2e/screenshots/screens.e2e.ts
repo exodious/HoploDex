@@ -156,13 +156,7 @@ async function emitFromBackend(event: string, payload: unknown) {
  * be cancelable like a real key press: the dialog cancels it, which stops the
  * record page's own Escape handler from also going back to the list. */
 async function closeDialog() {
-  await browser.execute(() =>
-    document.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
-    ),
-  );
-  await $('[role="dialog"]').waitForExist({ reverse: true });
-  await settle();
+  await discardForm();
 }
 
 // --- 007's document viewer ----------------------------------------------------
@@ -312,7 +306,9 @@ async function discardForm() {
     ),
   );
   await settle();
-  if (await $('[role="alertdialog"]').isExisting()) await clickButton("Discard changes");
+  // 014 FR-021a's question, or 003's save / discard / cancel.
+  if (await $('[role="alertdialog"]').isExisting())
+    await clickButton((await $("button=Discard").isExisting()) ? "Discard" : "Discard changes");
   await $('[role="dialog"]').waitForExist({ reverse: true });
   await settle();
 }
@@ -345,35 +341,7 @@ async function setGroup(title: string, open: boolean) {
 
 /** Opens a record's Mount menu and leaves it open. */
 async function openMountMenu() {
-  await openMenu(".hd-mounted-section .hd-panel__head button");
-  await settle();
-}
-
-/** Chooses the open menu's item whose text is `label`. */
-async function chooseOpenMenuItem(label: string) {
-  await browser.waitUntil(
-    () =>
-      browser.execute((wanted: string) => {
-        const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-          (m) => (m.textContent ?? "").trim() === wanted,
-        );
-        item?.click();
-        return Boolean(item);
-      }, label),
-    { timeout: 5000, timeoutMsg: `no menu item "${label}"` },
-  );
-  await settle();
-}
-
-/** Opens the "Mount on {name}" dialog from the record page's Mounted section,
- * and searches it for `text`. */
-async function searchMountDialog(text: string) {
-  await openMountMenu();
-  await chooseOpenMenuItem("Existing accessory or firearm…");
-  await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
-  await settle();
-  await typeInto('[role="dialog"] [role="combobox"]', text);
-  await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
+  await openMenu('.hd-mounted-section .hd-panel__head button[aria-haspopup="menu"]');
   await settle();
 }
 
@@ -457,6 +425,10 @@ for (const theme of ["Light", "Dark"] as const) {
 
       await openDialog("Edit");
       await shot(`05-edit-firearm-${suffix}`, { fullPage: true });
+      // 014 US1: a changed field's marker and revert, and Save enabled.
+      await fill("Nickname", "Range gun");
+      await settle();
+      await shot(`05b-edit-firearm-changed-${suffix}`);
       await closeDialog();
 
       await openDialog((await $("button=Change").isExisting()) ? "Change" : "Assign");
@@ -719,20 +691,9 @@ for (const theme of ["Light", "Dark"] as const) {
       );
       await shot(`54-firearm-mounted-section-${suffix}`);
 
-      // The unmount question, for the upper that carries a scope and a light.
-      await browser.execute(() => {
-        document
-          .querySelector<HTMLElement>('.hd-mounted-section button[aria-label^="Unmount BCM"]')
-          ?.click();
-      });
-      await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
-      await shot(`66-unmount-confirmation-${suffix}`);
-      await clickButton("Cancel");
-      await $('[role="alertdialog"]').waitForExist({ reverse: true });
       await back();
 
-      // A rifle with its Mount menu open, and the existing-record dialog
-      // listing a record that is mounted elsewhere, then the move question.
+      // A rifle with its Mount menu open (New accessory… only, 014 FR-028).
       await openRecord("Ruger Hawkeye Hunter");
       await browser.execute(() =>
         document.querySelector(".hd-mounted-section")?.scrollIntoView({ block: "center" }),
@@ -742,19 +703,35 @@ for (const theme of ["Light", "Dark"] as const) {
       await pressEscapeKey();
       await $('[role="menu"]').waitForExist({ reverse: true });
 
-      await searchMountDialog("holo");
-      await shot(`56-mount-existing-dialog-${suffix}`);
+      // 014 US5: the edit form's Mounted list, with a removal held until
+      // Save, then a record mounted elsewhere added, moving from there.
+      await clickButton("Change what's mounted…");
+      await $('[role="dialog"]').waitForExist({ timeout: 5000 });
+      await settle();
+      await clickButton("Remove");
+      await typeInto('[role="dialog"] [data-field="mounted"] [role="combobox"]', "holo");
+      await $('[role="listbox"]').waitForExist({ timeout: 5000 });
+      await settle();
+      await shot(`56-mounted-list-search-${suffix}`);
       await browser.execute(() => {
         [...document.querySelectorAll<HTMLElement>('[role="option"]')]
           .find((o) => (o.textContent ?? "").includes("Holosun"))
           ?.click();
       });
+      await settle();
+      await centerField("mounted");
+      await shot(`66-mounted-list-changes-${suffix}`);
+
+      // 014 FR-021a: Escape with changes asks before discarding them.
+      await browser.execute(() =>
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        ),
+      );
       await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
-      await shot(`57-move-confirmation-${suffix}`);
-      await clickButton("Cancel");
-      await $('[role="alertdialog"]').waitForExist({ reverse: true });
-      // Cancel in the "Mount on" dialog (Escape would close its open list first).
-      await clickButton("Cancel");
+      await settle();
+      await shot(`57-discard-changes-question-${suffix}`);
+      await clickButton("Discard");
       await $('[role="dialog"]').waitForExist({ reverse: true });
       await settle();
 
