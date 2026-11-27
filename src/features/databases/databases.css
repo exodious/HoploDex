@@ -637,10 +637,19 @@
   margin-bottom: 0;
 }
 
-/* The Flatpak's override command: selectable at a click, as export's paths are (.hd-paths dd). */
+/* The Flatpak's override command (#260): on one line, selectable at a click, beside its Copy button. */
+.hd-flatpak-reach__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .hd-flatpak-reach__command {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  overflow-wrap: anywhere;
   user-select: all;
 }

@@ -164,11 +164,8 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     renderSettings({ ...status(), flatpak: true });
 
     const backups = screen.getByRole("group", { name: "Backups" });
-    expect(
-      within(backups).getByText(
-        "flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex",
-      ),
-    ).toBeVisible();
+    expect(within(backups).getByText(/HoploDex can reach Documents\/HoploDex/)).toBeVisible();
+    expect(within(backups).getByRole("button", { name: "Allow another folder…" })).toBeVisible();
   });
 
   it("in a Flatpak, says what it reaches once for a location out of reach (#260)", () => {
@@ -184,6 +181,7 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
 
     const backups = screen.getByRole("group", { name: "Backups" });
     expect(backups.textContent?.split("by default it can reach only").length).toBe(2);
+    expect(within(backups).queryByRole("button", { name: "Allow another folder…" })).toBeNull();
     expect(
       within(backups).queryByText(
         "flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex",

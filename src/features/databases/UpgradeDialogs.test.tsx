@@ -205,17 +205,17 @@ describe("UpgradeFolderDialog's reach note (#260)", () => {
     return screen.getByRole("dialog", { name: "Save the backup somewhere else?" });
   }
 
-  it("in a Flatpak, says what its chooser reaches and gives the override command", () => {
+  it("in a Flatpak, says what its chooser reaches, with a link to allow another folder", () => {
     const dialog = renderFolder("insufficientSpace", true);
-    expect(
-      within(dialog).getByText(/by default it can reach only the HoploDex folder/),
-    ).toBeVisible();
-    expect(within(dialog).getByText(OVERRIDE)).toBeVisible();
+    expect(within(dialog).getByText(/HoploDex can reach Documents\/HoploDex/)).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Allow another folder…" })).toBeVisible();
   });
 
   it("outside a Flatpak, says nothing about reach", () => {
     const dialog = renderFolder("insufficientSpace", false);
     expect(within(dialog).queryByText(/can reach only/)).toBeNull();
+    expect(within(dialog).queryByText(/HoploDex can reach Documents/)).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Allow another folder…" })).toBeNull();
     expect(within(dialog).queryByText(OVERRIDE)).toBeNull();
     expect(dialog.querySelector(".hd-dialog__body")).toBeNull();
   });
