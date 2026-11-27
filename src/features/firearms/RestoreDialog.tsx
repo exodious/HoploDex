@@ -141,9 +141,10 @@ function RestoreDialogBody({
   // Closing or quitting asks about unsaved input first (specs/003 FR-010),
   // and a lock keeps it (003 FR-039).
   const values: RestoreValues = { history, renaming, nickname };
+  const isDirty = history !== "" || (renaming && nickname !== (subject.nickname ?? ""));
   useDirtyForm({
     label: `${subject.name} (restore)`,
-    isDirty: history !== "" || (renaming && nickname !== (subject.nickname ?? "")),
+    isDirty,
     draft: { ...target, values },
     submit: async () => {
       if (!history) return false;
@@ -167,6 +168,7 @@ function RestoreDialogBody({
       destructive={false}
       confirmDisabled={!history}
       onConfirm={confirm}
+      unsavedChanges={isDirty}
     >
       <div className="hd-form-section">
         {otherError && (

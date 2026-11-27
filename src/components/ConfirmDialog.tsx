@@ -34,6 +34,10 @@ export interface ConfirmDialogProps {
    * (specs/003 contracts/ui-databases.md §6). Handled like `onConfirm`. */
   alternativeLabel?: string;
   onAlternative?: () => void | Promise<unknown>;
+  /** For a question that takes input kept as unsaved changes (Restore): while
+   * `true`, Cancel, Escape and a click outside ask "Discard changes?" first, as
+   * a `Dialog` holding a form does (014 FR-021a). */
+  unsavedChanges?: boolean;
   children?: ReactNode;
 }
 
@@ -70,9 +74,11 @@ export function ConfirmDialog({
   onConfirm,
   alternativeLabel,
   onAlternative,
+  unsavedChanges,
   children,
 }: ConfirmDialogProps) {
   const [pending, setPending] = useState<"confirm" | "alternative" | null>(null);
+  const [discarding, setDiscarding] = useState(false);
   // No screen wires its opening button up as a Radix `Trigger`, so Radix's
   // own focus-restore never fires; this captures and restores it here.
   const previouslyFocused = useRef<HTMLElement | null>(null);
@@ -113,7 +119,15 @@ export function ConfirmDialog({
   }
 
   return (
-    <RadixDialog.Root open={open} onOpenChange={(next) => pending === null && onOpenChange(next)}>
+    <RadixDialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (pending !== null) return;
+        // Cancel, Escape or a click outside with input in it asks first (014 FR-021a).
+        if (!next && unsavedChanges) setDiscarding(true);
+        else onOpenChange(next);
+      }}
+    >
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="hd-dialog__overlay" />
         <RadixDialog.Content
@@ -191,6 +205,17 @@ export function ConfirmDialog({
               </Button>
             </footer>
           </form>
+          {unsavedChanges !== undefined && (
+            <ConfirmDialog
+              open={discarding}
+              onOpenChange={setDiscarding}
+              title="Discard changes?"
+              description="Your unsaved changes will be lost."
+              confirmLabel="Discard"
+              cancelLabel="Keep editing"
+              onConfirm={() => onOpenChange(false)}
+            />
+          )}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>
