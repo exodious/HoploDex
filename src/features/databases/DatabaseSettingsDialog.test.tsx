@@ -180,7 +180,8 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     });
 
     const backups = screen.getByRole("group", { name: "Backups" });
-    expect(backups.textContent?.split("by default it can reach only").length).toBe(2);
+    expect(within(backups).getByText(/--filesystem=\/srv\/hoplodex-backups/)).toBeVisible();
+    expect(within(backups).queryByText(/HoploDex can reach Documents\/HoploDex/)).toBeNull();
     expect(within(backups).queryByRole("button", { name: "Allow another folder…" })).toBeNull();
     expect(
       within(backups).queryByText(

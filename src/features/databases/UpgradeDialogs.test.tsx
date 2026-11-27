@@ -222,8 +222,8 @@ describe("UpgradeFolderDialog's reach note (#260)", () => {
 
   it("for a folder out of reach, leaves it to the refusal, which names the folder", () => {
     const dialog = renderFolder("outOfReach", true);
-    expect(within(dialog).getAllByText(/by default it can reach only/)).toHaveLength(1);
     expect(within(dialog).getByText(/--filesystem='\/media\/usb\/HoploDex backups'/)).toBeVisible();
-    expect(within(dialog).queryByText(OVERRIDE)).toBeNull();
+    expect(within(dialog).queryByText(/HoploDex can reach Documents\/HoploDex/)).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Allow another folder…" })).toBeNull();
   });
 });
