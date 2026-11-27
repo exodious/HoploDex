@@ -722,6 +722,7 @@ const FIELD_ORDER: Field[] = [
  * one, on pounds (014 FR-008). */
 const MARKED_FIELDS: readonly Field[] = [
   ...FIELD_ORDER.filter((field) => field !== "weightOunces"),
+  "origin",
   "noSerialAttested",
   "condition",
 ];
@@ -1609,6 +1610,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   hint="Only if this firearm is mounted on another firearm or an accessory, such as a suppressor on a rifle."
                   error={errorFor("mountedOn")}
                   change={changeFor("mountedOn")}
+                  exclude={new Set(form.mounted.adds.map((add) => recordKey(add.label.record)))}
                 />
               </div>
             )}

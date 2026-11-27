@@ -789,6 +789,24 @@ describe("AccessoryForm Mounted on (006 US2)", () => {
     );
   });
 
+  it("doesn't offer as its host a record the Mounted list will mount on it (014 FR-026, Edge Cases)", async () => {
+    const user = userEvent.setup();
+    listMountCandidates.mockResolvedValue({
+      candidates: [
+        { label: rifle, mountedOn: null },
+        { label: upper, mountedOn: null },
+      ],
+    });
+    render(<AccessoryForm initialValues={saved} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("combobox", { name: /^Add to Mounted/ }));
+    await user.click(await screen.findByRole("option", { name: /LaRue PredatAR/ }));
+    await user.click(mountedOnField());
+
+    expect(await screen.findByRole("option", { name: /BCM upper/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /LaRue PredatAR/ })).not.toBeInTheDocument();
+  });
+
   it("sends the chosen host's RecordRef as mountedOn on save", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);

@@ -4,9 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
-import { resetServiceMocks } from "./firearmFormTestSupport";
+import {
+  listMountCandidates,
+  originGroupButton,
+  resetServiceMocks,
+} from "./firearmFormTestSupport";
 import { FirearmForm } from "./FirearmForm";
 import type { Firearm } from "./types";
+import type { RecordLabel } from "../mounts/types";
 import { getDirtyForm } from "../session/usePendingDraft";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
@@ -157,9 +162,76 @@ describe("014 US2 - Put One Field Back to Its Saved Value", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("marks and reverts an Origin that discarded nothing (014 FR-009, FR-011)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={glock} onSubmit={vi.fn()} />);
+    if (originGroupButton().getAttribute("aria-expanded") === "false") {
+      await user.click(originGroupButton());
+    }
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+    expect(changedTags()).toHaveLength(1);
+    expect(save()).not.toHaveAttribute("aria-disabled");
+    expect(getDirtyForm()).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Revert Origin to “Unspecified”" }));
+    expect(screen.getByRole("radio", { name: /^Unspecified/ })).toBeChecked();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("reverting Origin brings back the import details it discarded (014 US2-6)", async () => {
+    const user = userEvent.setup();
+    const imported = {
+      ...glock,
+      origin: "imported",
+      countryOfManufacture: "Austria",
+      importerName: "Glock Inc.",
+    } as Firearm;
+    render(<FirearmForm initialValues={imported} onSubmit={vi.fn()} />);
+    if (originGroupButton().getAttribute("aria-expanded") === "false") {
+      await user.click(originGroupButton());
+    }
+    await user.click(screen.getByRole("radio", { name: /^Domestic/ }));
+    await user.click(screen.getByRole("button", { name: "Discard and change" }));
+    expect(screen.queryByLabelText("Importer")).not.toBeInTheDocument();
+    expect(changedTags()).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Revert Origin to “Imported”" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^Imported/ })).toBeChecked();
+    expect(screen.getByLabelText("Country of manufacture")).toHaveValue("Austria");
+    expect(screen.getByLabelText("Importer")).toHaveValue("Glock Inc.");
+    expect(changedTags()).toHaveLength(0);
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("keeps a saved value the list no longer offers until another is picked (014 Edge Cases)", () => {
     render(<FirearmForm initialValues={{ ...rifle, actionTypeId: 13 }} onSubmit={vi.fn()} />);
     expect(changedTags()).toHaveLength(0);
+  });
+});
+
+describe("014 US5 - Change What Is Mounted, and Save It with the Record", () => {
+  it("doesn't offer as Mounted on a record the Mounted list will mount here (014 FR-026, Edge Cases)", async () => {
+    const user = userEvent.setup();
+    const optic = (id: number, make: string): RecordLabel => ({
+      record: { kind: "accessory", id },
+      make,
+      model: "X",
+      nickname: null,
+      typeName: "Optic",
+      serialNumber: null,
+      status: "active",
+    });
+    listMountCandidates.mockResolvedValue({
+      candidates: [
+        { label: optic(21, "Leupold"), mountedOn: null },
+        { label: optic(22, "Trijicon"), mountedOn: null },
+      ],
+    });
+    render(<FirearmForm initialValues={rifle} onSubmit={vi.fn()} />);
+    await user.click(screen.getByRole("combobox", { name: /^Add to Mounted/ }));
+    await user.click(await screen.findByRole("option", { name: /Leupold/ }));
+    await user.click(screen.getByRole("combobox", { name: /^Mounted on/ }));
+    expect(await screen.findByRole("option", { name: /Trijicon/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Leupold/ })).not.toBeInTheDocument();
   });
 });
 

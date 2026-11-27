@@ -733,6 +733,7 @@ export function AccessoryForm({
                 hint="The firearm or accessory it is on now, if any."
                 error={errorFor("mountedOn")}
                 change={changeFor("mountedOn")}
+                exclude={new Set(form.mounted.adds.map((add) => recordKey(add.label.record)))}
               />
             </div>
           )}
