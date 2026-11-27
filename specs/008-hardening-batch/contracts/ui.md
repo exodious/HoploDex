@@ -69,6 +69,8 @@ Discard is never the default.
 
 _Amended 2026-11-24 (PR 229's follow-ups, milestone 0.1.1): an import that fails or is stopped after saving records (`details.importedCount` above 0, [tauri-commands.md](tauri-commands.md)) never says "Nothing was imported.": a stop says "The import was stopped. <n> records were imported before it stopped.", and another error adds "<n> records were imported before it stopped." to its message. The collection is refreshed and the chosen files are cleared, since importing them again would add those rows twice. A resolution of matching rows stopped the same way adds "<n> matching rows were saved before it stopped." to its error notice and refreshes the collection._
 
+_Amended 2026-11-27 (issue #249): with `details.undecidedCount` above 0 it also adds "<n> matching rows weren't decided: import the file again to decide them.", and the chooser's sleep notice says "<n> rows were imported before it stopped, and <m> matching rows weren't decided. Import the file again to decide them; rows already imported will be found as matches." With `unmountedCount` above 0, both add "<n> mounted-on cells couldn't be applied, so those rows were imported unmounted; import the file again to see why."_
+
 ## 3. Free-text maximums in forms (research.md §10)
 
 Carried to every form with these fields (constitution III): FirearmForm,

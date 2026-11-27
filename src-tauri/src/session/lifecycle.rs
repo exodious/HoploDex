@@ -637,6 +637,8 @@ fn stopped_notice(path: &Path, stopped: &StoppedOperation) -> ChooserNotice {
         operation: kind,
         imported_count: (kind == OperationKind::Import).then(|| stopped.done()),
         deleted_count: (kind == OperationKind::DeleteBackups).then(|| stopped.done()),
+        undecided_count: Some(stopped.undecided()).filter(|n| *n > 0),
+        unmounted_count: Some(stopped.unmounted()).filter(|n| *n > 0),
         left_behind_count: (kind == OperationKind::MoveBackups).then(|| stopped.done()),
         folder: (kind == OperationKind::MoveBackups).then(|| stopped.folder()).flatten(),
     }

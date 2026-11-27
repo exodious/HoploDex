@@ -1450,6 +1450,14 @@ fn past_the_mounted_records_limit_a_workbook_names_its_file_and_sheet_apart_and_
 #[test]
 fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
     let db = TestDb::new();
+    let changed = firearm_ops::create_firearm(
+        &db.conn,
+        &support::firearm("Ruger", "Precision", "R0"),
+        false,
+        None,
+    )
+    .unwrap()
+    .id;
     new_firearm(&db, &support::firearm("Ruger", "Precision", "R1"));
     new_firearm(&db, &support::firearm("Ruger", "Precision", "R2"));
     let dir = TempDir::new().unwrap();
@@ -1457,15 +1465,18 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
         dir.path(),
         "firearms.csv",
         &firearm_table(&[
+            firearm_cells("Ruger", "Precision", "R0", &[("notes", "From the sheet")]),
             firearm_cells("Ruger", "Precision", "R1", &[("notes", "From the sheet")]),
             firearm_cells("Ruger", "Precision", "R2", &[("notes", "From the sheet")]),
         ]),
     );
     let store = ImportSessionStore::new();
     let result = import(&db, &store, &[&path]);
-    assert_eq!(result.conflicts.len(), 2, "{:?}", result.row_errors);
+    assert_eq!(result.conflicts.len(), 3, "{:?}", result.row_errors);
+    // R0's record changes after the file is read, so its decision can't be applied.
+    firearm_ops::delete_firearm(&db.conn, changed, true).unwrap();
 
-    // Asked before each conflict: the second is stopped.
+    // Asked before each conflict: the third is stopped.
     let asked = std::cell::Cell::new(0);
     let saved = std::cell::Cell::new(0);
     let err = import_export_ops::resolve_import_conflicts_stoppable(
@@ -1476,7 +1487,7 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
         Some("overwrite"),
         &|| {
             asked.set(asked.get() + 1);
-            asked.get() > 1
+            asked.get() > 2
         },
         &|n| saved.set(n),
     )
@@ -1485,6 +1496,7 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
     assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
     assert_eq!(err.details.as_ref().unwrap()["operation"], "import");
     assert_eq!(err.details.as_ref().unwrap()["importedCount"], 1);
+    assert_eq!(err.details.as_ref().unwrap()["undecidedCount"], 2, "R0 and R2, issue #249");
     assert_eq!(saved.get(), 1);
     let notes: Vec<Option<String>> = db
         .conn
@@ -1504,6 +1516,106 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
         Some("overwrite"),
     );
     assert_eq!(again.unwrap_err().code, "NOT_FOUND");
+}
+
+#[test]
+fn a_stop_while_conflicts_are_resolved_still_makes_the_saved_rows_mounts() {
+    // Issue #249: a record overwritten before the stop takes its row's mount,
+    // not the one it had before.
+    let db = TestDb::new();
+    let rifle = new_firearm(
+        &db,
+        &FirearmInput { firearm_type_id: RIFLE, ..support::firearm("Ruger", "Precision", "R1") },
+    );
+    let optic =
+        new_accessory(&db, &mounted(accessory_with(OPTIC, json!({ "make": "Leupold" })), rifle));
+    new_accessory(&db, &accessory_with(LIGHT_OR_LASER, json!({ "make": "SureFire" })));
+    let rifle_uid = uid_of(&db.conn, rifle);
+    let dest = TempDir::new().unwrap();
+    let (first, second) = export_all(&db, dest.path(), "stopped", SpreadsheetFormat::Csv);
+    mount_ops::mount_record(
+        &db.conn,
+        &serde_json::from_value(json!({ "item": optic, "host": null })).unwrap(),
+    )
+    .unwrap();
+
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&first, second.as_deref().unwrap()]);
+    assert_eq!(result.conflicts.len(), 3, "{:?}", result.row_errors);
+    // The Rifle and the Optic are saved; the Light is stopped.
+    let asked = std::cell::Cell::new(0);
+    let err = import_export_ops::resolve_import_conflicts_stoppable(
+        &db.conn,
+        &store,
+        &result.session_id,
+        &[],
+        Some("overwrite"),
+        &|| {
+            asked.set(asked.get() + 1);
+            asked.get() > 2
+        },
+        &|_| {},
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
+    assert_eq!(err.details.as_ref().unwrap()["importedCount"], 2);
+    assert_eq!(err.details.as_ref().unwrap()["undecidedCount"], 1, "the Light");
+    assert_eq!(mount_of(&db.conn, optic), Some(rifle_uid), "the saved row's mount is made");
+}
+
+#[test]
+fn a_stop_while_conflicts_are_resolved_counts_the_saved_rows_mounts_that_cannot_be_made() {
+    // Issue #249: the stop's error points at a saved row imported unmounted,
+    // since the warning that would name it is never shown.
+    let db = TestDb::new();
+    let first = new_accessory(&db, &accessory_with(OPTIC, json!({})));
+    let second = new_accessory(&db, &accessory_with(OPTIC, json!({})));
+    let dir = TempDir::new().unwrap();
+    let path = sheets::csv_in(
+        dir.path(),
+        "accessories.csv",
+        &accessory_table(&[
+            accessory_cells(
+                "Optic",
+                &[
+                    ("record_id", &uid_of(&db.conn, first)),
+                    ("mounted_on", &fresh_uid()),
+                    ("notes", "From the sheet"),
+                ],
+            ),
+            accessory_cells(
+                "Optic",
+                &[("record_id", &uid_of(&db.conn, second)), ("notes", "From the sheet")],
+            ),
+        ]),
+    );
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&path]);
+    assert_eq!(result.conflicts.len(), 2, "{:?}", result.row_errors);
+
+    // The first is saved; the second is stopped.
+    let asked = std::cell::Cell::new(0);
+    let err = import_export_ops::resolve_import_conflicts_stoppable(
+        &db.conn,
+        &store,
+        &result.session_id,
+        &[],
+        Some("overwrite"),
+        &|| {
+            asked.set(asked.get() + 1);
+            asked.get() > 1
+        },
+        &|_| {},
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
+    let details = err.details.as_ref().unwrap();
+    assert_eq!(details["importedCount"], 1);
+    assert_eq!(details["undecidedCount"], 1);
+    assert_eq!(details["unmountedCount"], 1, "its Mounted on names no record");
+    assert_eq!(mount_of(&db.conn, first), None);
 }
 
 #[test]

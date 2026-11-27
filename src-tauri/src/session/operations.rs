@@ -27,6 +27,11 @@ struct Running {
     /// How far it got: rows imported, backups deleted; for a move of
     /// backups, how many are not yet moved.
     done: AtomicU64,
+    /// A resolution of an import's conflicts: how many it left undecided
+    /// (issue #249).
+    undecided: AtomicU64,
+    /// And how many saved rows' "Mounted on" cells it couldn't apply.
+    unmounted: AtomicU64,
     /// The folder a move of backups is moving them from.
     folder: Mutex<Option<String>>,
 }
@@ -52,6 +57,16 @@ impl StoppedOperation {
     /// What it recorded with [`OperationGuard::record_done`].
     pub fn done(&self) -> u64 {
         self.0.done.load(Ordering::SeqCst)
+    }
+
+    /// What it recorded with [`OperationGuard::record_undecided`].
+    pub fn undecided(&self) -> u64 {
+        self.0.undecided.load(Ordering::SeqCst)
+    }
+
+    /// What it recorded with [`OperationGuard::record_unmounted`].
+    pub fn unmounted(&self) -> u64 {
+        self.0.unmounted.load(Ordering::SeqCst)
     }
 
     /// What it recorded with [`OperationGuard::record_folder`].
@@ -109,6 +124,18 @@ impl OperationGuard<'_> {
         self.running.done.store(done, Ordering::SeqCst);
     }
 
+    /// Records how many matching rows a stopped resolution left undecided,
+    /// for the notice when a sleep stops it (issue #249).
+    pub fn record_undecided(&self, undecided: u64) {
+        self.running.undecided.store(undecided, Ordering::SeqCst);
+    }
+
+    /// Records how many saved rows' "Mounted on" cells a stopped resolution
+    /// couldn't apply, for the notice when a sleep stops it (issue #249).
+    pub fn record_unmounted(&self, unmounted: u64) {
+        self.running.unmounted.store(unmounted, Ordering::SeqCst);
+    }
+
     /// Records the folder a move of backups is moving them from, for the
     /// notice when a sleep stops it.
     pub fn record_folder(&self, folder: &std::path::Path) {
@@ -151,6 +178,8 @@ impl Operations {
             user_stop: AtomicBool::new(false),
             interrupt,
             done: AtomicU64::new(0),
+            undecided: AtomicU64::new(0),
+            unmounted: AtomicU64::new(0),
             folder: Mutex::new(None),
         });
         *running = Some(Arc::clone(&registered));

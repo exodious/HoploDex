@@ -335,10 +335,21 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
       const saved = savedBefore(e);
       const message =
         e instanceof CommandFailure ? e.message : "The matching rows couldn't be resolved.";
+      const left = e instanceof CommandFailure ? e.details?.undecidedCount : undefined;
+      const unmounted = e instanceof CommandFailure ? e.details?.unmountedCount : undefined;
+      // Issue #249: the import is closed, so its files are imported again for the rest.
+      const undecided =
+        typeof left === "number" && left > 0
+          ? ` ${count(left, "matching row wasn't", "matching rows weren't")} decided: import the file again to decide ${left === 1 ? "it" : "them"}.`
+          : "";
+      const mounts =
+        typeof unmounted === "number" && unmounted > 0
+          ? ` ${count(unmounted, "mounted-on cell couldn't be applied, so that row was", "mounted-on cells couldn't be applied, so those rows were")} imported unmounted; import the file again to see why.`
+          : "";
       notify(
         saved > 0
-          ? `${message} ${count(saved, "matching row was", "matching rows were")} saved before it stopped.`
-          : message,
+          ? `${message} ${count(saved, "matching row was", "matching rows were")} saved before it stopped.${undecided}${mounts}`
+          : `${message}${undecided}${mounts}`,
         "error",
       );
       if (saved > 0) await refresh();

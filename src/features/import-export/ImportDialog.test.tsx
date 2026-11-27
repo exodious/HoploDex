@@ -234,7 +234,7 @@ describe("ImportDialog: a resolution stopped part way (PR 229's follow-ups)", ()
         new CommandFailure({
           code: "OPERATION_STOPPED",
           message: "The operation was stopped before it finished.",
-          details: { operation: "import", importedCount: 1 },
+          details: { operation: "import", importedCount: 1, undecidedCount: 2, unmountedCount: 1 },
         }),
       );
     render(
@@ -254,7 +254,7 @@ describe("ImportDialog: a resolution stopped part way (PR 229's follow-ups)", ()
 
     await waitFor(() =>
       expect(notify).toHaveBeenCalledWith(
-        "The operation was stopped before it finished. 1 matching row was saved before it stopped.",
+        "The operation was stopped before it finished. 1 matching row was saved before it stopped. 2 matching rows weren't decided: import the file again to decide them. 1 mounted-on cell couldn't be applied, so that row was imported unmounted; import the file again to see why.",
         "error",
       ),
     );

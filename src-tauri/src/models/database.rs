@@ -249,6 +249,15 @@ pub enum ChooserNotice {
         imported_count: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         deleted_count: Option<u64>,
+        /// A resolution of an import's conflicts: the matching rows it didn't
+        /// reach or couldn't apply a decision to, decided by importing the
+        /// file again (issue #249).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        undecided_count: Option<u64>,
+        /// And the saved rows whose "Mounted on" cell couldn't be applied, so
+        /// were imported unmounted (issue #249).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        unmounted_count: Option<u64>,
         /// A move of backups (003 FR-026): how many are still in `folder`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         left_behind_count: Option<u64>,
