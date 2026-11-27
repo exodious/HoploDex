@@ -33,7 +33,7 @@ export { LOCK_SHORTCUT, LockContext, useLock } from "./lock";
 export { useShownOnceLoaded } from "./useShownOnceLoaded";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { ChangedMark } from "./ChangedMark";
-export { UNREADABLE, changedFields, savedText } from "./fieldChanges";
+export { UNREADABLE, changedFields, formChanges, savedText } from "./fieldChanges";
 export type { FieldChange } from "./fieldChanges";
 export { useCloseGuard } from "./closeGuard";
 export type { ConfirmDialogProps } from "./ConfirmDialog";

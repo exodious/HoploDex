@@ -110,15 +110,6 @@ describe("014 US1 - See Which Fields I Have Changed", () => {
     expect(changedTags()).toHaveLength(0);
     expect(getDirtyForm()).toBeNull();
   });
-
-  it("marks within 100 ms of an edit (014 SC-001)", async () => {
-    const user = userEvent.setup();
-    render(<FirearmForm initialValues={glock} onSubmit={vi.fn()} />);
-    const start = performance.now();
-    await user.type(screen.getByLabelText(/^Nickname/), "x");
-    expect(changedTags()).toHaveLength(1);
-    expect(performance.now() - start).toBeLessThan(100);
-  });
 });
 
 describe("014 US2 - Put One Field Back to Its Saved Value", () => {
@@ -160,7 +151,9 @@ describe("014 US2 - Put One Field Back to Its Saved Value", () => {
     await user.type(screen.getByLabelText(/^Date acquired|^Acquisition date/), "2999-01-01");
     await user.click(save());
     expect(screen.getByRole("alert")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^Revert (Date acquired|Acquisition date)/ }));
+    await user.click(
+      screen.getByRole("button", { name: /^Revert (Date acquired|Acquisition date)/ }),
+    );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 

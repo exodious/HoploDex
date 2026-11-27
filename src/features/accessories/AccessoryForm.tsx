@@ -1,7 +1,17 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { flushSync } from "react-dom";
-import { Button, DateField, MoneyField, Select, TextArea, TextField } from "../../components";
+import {
+  Button,
+  DateField,
+  formChanges,
+  MoneyField,
+  Select,
+  TextArea,
+  TextField,
+  UNREADABLE,
+  useCloseGuard,
+} from "../../components";
 import { futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { dollarsToInput, parseDollars } from "../../lib/money";
@@ -16,7 +26,8 @@ import { settleEntry } from "../firearms/firearmsService";
 import type { DerivedCaliber } from "../firearms/types";
 import "../firearms/forms.css";
 import { MountChooser } from "../mounts/MountChooser";
-import { accessoryNameText } from "../mounts/recordNames";
+import { recordKey } from "../mounts/recordKey";
+import { accessoryNameText, recordNameText } from "../mounts/recordNames";
 import type { MountDetail, RecordLabel } from "../mounts/types";
 import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
@@ -194,6 +205,25 @@ const FIELD_ORDER: Field[] = [
   "acquisitionPrice",
   "notes",
 ];
+
+/** What a save stores for `field` (014 FR-002, FR-003, FR-005). */
+function storedValue(field: Field, form: FormState, disposed: boolean): string {
+  switch (field) {
+    case "mountedOn":
+      return disposed || !form.mountedOn ? "" : recordKey(form.mountedOn.record);
+    case "estimatedValue":
+    case "acquisitionPrice": {
+      const parsed = parseDollars(form[field]);
+      return parsed.ok ? String(parsed.dollars ?? "") : UNREADABLE;
+    }
+    case "acquisitionDate": {
+      const parsed = parseDateInput(form.acquisitionDate);
+      return parsed.ok ? (parsed.iso ?? "") : UNREADABLE;
+    }
+    default:
+      return String(form[field] ?? "").trim();
+  }
+}
 
 function isEntryField(name: string | undefined): name is AccessoryEntryField {
   return name === "make" || name === "model" || name === "cartridge" || name === "caliber";
@@ -395,17 +425,58 @@ export function AccessoryForm({
   // Closing or quitting asks about unsaved input first (003 FR-010),
   // and a lock keeps it (003 FR-039), labelled with the accessory's name (006 FR-027).
   const ownKindName = kinds.kinds.find((kind) => kind.id === ownKindId)?.name ?? "Accessory";
+  // 014 FR-002, FR-019: one comparison for the markers, Save, the quit
+  // question and the pending changes kept at a lock.
+  const disposed = initialValues?.status === "disposed";
+  const { isDirty, changeFor } = formChanges({
+    saved: pristine,
+    current: form,
+    fields: FIELD_ORDER,
+    stored: (field, state) => storedValue(field, state, disposed),
+    editing: initialValues != null,
+    display: (field) => {
+      if (field === "accessoryKindId")
+        return kinds.kinds.find((kind) => String(kind.id) === pristine.accessoryKindId)?.name;
+      if (field === "mountedOn")
+        return pristine.mountedOn ? recordNameText(pristine.mountedOn) : "Not mounted";
+      return String(pristine[field] ?? "");
+    },
+    revert: (field) => {
+      setTouched((t) => ({ ...t, [field]: false }));
+      if (isEntryField(field)) {
+        lastSettled.current[field] = String(pristine[field]).trim();
+        setEntryNotes((notes) => ({ ...notes, [field]: undefined }));
+      }
+      if (field === "cartridge") derivedFrom.current = null;
+      setForm((prev) => ({
+        ...prev,
+        [field]: pristine[field],
+        ...(field === "caliber"
+          ? {
+              caliberMode: pristine.caliberMode,
+              caliberSource: pristine.caliberSource,
+            }
+          : {}),
+        ...(field === "cartridge" || field === "caliber"
+          ? { caliberSuggestion: "", caliberPrompt: "" }
+          : {}),
+      }));
+    },
+  });
+  const requestClose = useCloseGuard(isDirty, () => onCancel?.());
   useDirtyForm({
     label: initialValues
       ? `${accessoryNameText(initialValues.make, initialValues.model, ownKindName)} (edit)`
       : "New accessory",
-    isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
+    isDirty,
     submit: save,
     draft: { ...target, values: form },
   });
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // Nothing differs from what is saved: Save says so and does nothing (014 FR-016).
+    if (initialValues && !isDirty) return;
     void save();
   }
 
@@ -504,6 +575,7 @@ export function AccessoryForm({
               }}
               options={kindOptions}
               error={errorFor("accessoryKindId")}
+              change={changeFor("accessoryKindId")}
               hint={kindHint}
             />
           </div>
@@ -520,6 +592,7 @@ export function AccessoryForm({
                 onLeave={() => leaveEntry("make")}
                 note={entryNotes.make}
                 error={errorFor("make")}
+                change={changeFor("make")}
                 placeholder="e.g. Leupold"
               />
             </div>
@@ -535,6 +608,7 @@ export function AccessoryForm({
                 onLeave={() => leaveEntry("model")}
                 note={entryNotes.model}
                 error={errorFor("model")}
+                change={changeFor("model")}
                 placeholder="e.g. VX-5HD 3-15x44"
               />
             </div>
@@ -553,6 +627,7 @@ export function AccessoryForm({
                 onLeave={() => leaveEntry("cartridge")}
                 note={entryNotes.cartridge}
                 error={errorFor("cartridge")}
+                change={changeFor("cartridge")}
                 hint="Optional. The round it takes, e.g. 5.56x45mm NATO."
                 placeholder="e.g. 5.56x45mm NATO"
               />
@@ -568,6 +643,7 @@ export function AccessoryForm({
                 onLeave={() => leaveEntry("caliber")}
                 note={entryNotes.caliber}
                 error={errorFor("caliber")}
+                change={changeFor("caliber")}
                 hint={caliberHint(caliberState)}
                 placeholder="e.g. 5.56mm"
                 trailing={
@@ -605,6 +681,7 @@ export function AccessoryForm({
               onChange={(e) => update("serialNumber", e.target.value)}
               onBlur={touch("serialNumber")}
               error={errorFor("serialNumber")}
+              change={changeFor("serialNumber")}
               spellCheck={false}
             />
           </div>
@@ -618,6 +695,7 @@ export function AccessoryForm({
                 record={initialValues ? { kind: "accessory", id: initialValues.id } : null}
                 hint="The firearm or accessory it is on now, if any."
                 error={errorFor("mountedOn")}
+                change={changeFor("mountedOn")}
               />
             </div>
           )}
@@ -634,6 +712,7 @@ export function AccessoryForm({
               onValueChange={(text) => update("estimatedValue", text)}
               onBlur={touch("estimatedValue")}
               error={errorFor("estimatedValue")}
+              change={changeFor("estimatedValue")}
               fieldClassName="hd-field--quarter"
               hint={VALUE_HINT}
             />
@@ -651,6 +730,7 @@ export function AccessoryForm({
                 value={form.acquisitionSource}
                 onChange={(e) => update("acquisitionSource", e.target.value)}
                 error={errorFor("acquisitionSource")}
+                change={changeFor("acquisitionSource")}
                 placeholder="Seller, shop, or person"
               />
             </div>
@@ -662,6 +742,7 @@ export function AccessoryForm({
                 onValueChange={(text) => update("acquisitionDate", text)}
                 onBlur={touch("acquisitionDate")}
                 error={errorFor("acquisitionDate")}
+                change={changeFor("acquisitionDate")}
               />
             </div>
             <div data-field="acquisitionPrice">
@@ -671,6 +752,7 @@ export function AccessoryForm({
                 onValueChange={(text) => update("acquisitionPrice", text)}
                 onBlur={touch("acquisitionPrice")}
                 error={errorFor("acquisitionPrice")}
+                change={changeFor("acquisitionPrice")}
               />
             </div>
           </div>
@@ -686,6 +768,7 @@ export function AccessoryForm({
               value={form.notes}
               onChange={(e) => update("notes", e.target.value)}
               error={errorFor("notes")}
+              change={changeFor("notes")}
               limit={MAX_LONG_TEXT_CHARS}
               hint="Condition, markings, settings — anything worth recording. All of it is searchable."
               rows={4}
@@ -702,11 +785,16 @@ export function AccessoryForm({
           Required
         </p>
         {onCancel && (
-          <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+          <Button variant="secondary" onClick={requestClose} disabled={submitting}>
             Cancel
           </Button>
         )}
-        <Button type="submit" variant="primary" pending={submitting}>
+        <Button
+          type="submit"
+          variant="primary"
+          pending={submitting}
+          unavailable={initialValues && !isDirty ? "No changes to save" : undefined}
+        >
           Save
         </Button>
       </footer>

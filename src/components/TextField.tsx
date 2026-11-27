@@ -21,7 +21,19 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
 /** Labeled text input with consistent error/hint rendering (WCAG 2.1 AA: label always associated via htmlFor/aria-describedby). */
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
   (
-    { label, error, hint, id, className, prefix, trailing, fieldClassName, required, change, ...props },
+    {
+      label,
+      error,
+      hint,
+      id,
+      className,
+      prefix,
+      trailing,
+      fieldClassName,
+      required,
+      change,
+      ...props
+    },
     ref,
   ) => {
     const { inputId, hintId, errorId, changedId, describedBy } = useFieldIds(

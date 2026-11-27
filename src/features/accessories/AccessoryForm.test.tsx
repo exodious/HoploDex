@@ -810,6 +810,8 @@ describe("AccessoryForm Mounted on (006 US2)", () => {
     render(<AccessoryForm initialValues={mountedOptic} onSubmit={onSubmit} />);
 
     expect(mountedOnField()).toHaveDisplayValue(/BCM upper · Upper receiver/);
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "accessory", id: 11 });
@@ -869,6 +871,8 @@ describe("AccessoryForm Mounted on (006 US2)", () => {
     );
     render(<AccessoryForm initialValues={mountedOptic} onSubmit={onSubmit} />);
 
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(message)).toBeInTheDocument();

@@ -3,15 +3,20 @@ import type { FormEvent } from "react";
 import { withIdlePaused } from "../session/useIdleActivity";
 import {
   Button,
+  ChangedMark,
   Checkbox,
   ConfirmDialog,
   Dialog,
   NumberField,
   ProgressBar,
+  savedText,
   SegmentedControl,
   Select,
+  UNREADABLE,
+  useCloseGuard,
   useToast,
 } from "../../components";
+import type { FieldChange } from "../../components";
 import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { CommandFailure } from "../../services/tauriClient";
 import { useSessionScope } from "../session/sessionScope";
@@ -378,18 +383,49 @@ function SettingsForm({
   const isDefault = location.input.kind === "default" || !!location.chosenElsewhere;
   const savedInput = savedLocation().input;
   const savedLock = status.settings.lock;
-  // Whether anything differs from what is saved (#34): Save waits for it.
-  const settingsDirty =
-    enabled !== saved.enabled ||
-    keepCount.trim() !== String(saved.keepCount) ||
+  // Which settings differ from what is saved (#34; 014 FR-001, FR-002): Save
+  // waits for one, and each shows its marker and revert. The count is
+  // compared as the number it saves, so "05" is 5.
+  const keepTrimmed = keepCount.trim();
+  const changes = {
+    enabled: enabled !== saved.enabled,
+    keepCount:
+      (/^\d+$/.test(keepTrimmed) ? String(Number(keepTrimmed)) : UNREADABLE) !==
+      String(saved.keepCount),
     // A folder picked again where the saved one is changes nothing.
-    (location.input.kind !== savedInput.kind &&
-      !(savedInput.kind === "current" && location.path === saved.location.path)) ||
-    lock.idleEnabled !== savedLock.idleEnabled ||
-    lock.idleMinutes !== savedLock.idleMinutes ||
-    lock.onScreenLock !== savedLock.onScreenLock;
+    location:
+      location.input.kind !== savedInput.kind &&
+      !(savedInput.kind === "current" && location.path === saved.location.path),
+    idleEnabled: lock.idleEnabled !== savedLock.idleEnabled,
+    idleMinutes: lock.idleMinutes !== savedLock.idleMinutes,
+    onScreenLock: lock.onScreenLock !== savedLock.onScreenLock,
+  };
+  const settingsDirty = Object.values(changes).some(Boolean);
   const dirty = settingsDirty || passphraseChoice !== null;
   const backupsOff = !enabled;
+  const requestClose = useCloseGuard(dirty, onCancel);
+  const checked = (on: boolean) => (on ? "Checked" : "Not checked");
+  const changeFor = (
+    field: keyof typeof changes,
+    savedValue: string,
+    revert: () => void,
+  ): FieldChange | undefined =>
+    changes[field] ? { saved: savedText(savedValue), onRevert: revert } : undefined;
+  const lockChanges = {
+    idleEnabled: changeFor("idleEnabled", checked(savedLock.idleEnabled), () =>
+      setLock((current) => ({ ...current, idleEnabled: savedLock.idleEnabled })),
+    ),
+    idleMinutes: changeFor("idleMinutes", minutesLabel(savedLock.idleMinutes), () =>
+      setLock((current) => ({ ...current, idleMinutes: savedLock.idleMinutes })),
+    ),
+    onScreenLock: changeFor("onScreenLock", checked(savedLock.onScreenLock), () =>
+      setLock((current) => ({ ...current, onScreenLock: savedLock.onScreenLock })),
+    ),
+  };
+  const locationChange = changeFor("location", saved.location.path, () => {
+    setLocation(savedLocation());
+    setErrors((current) => ({ ...current, location: undefined }));
+  });
 
   return (
     <>
@@ -407,6 +443,7 @@ function SettingsForm({
               checked={enabled}
               disabled={saving}
               onCheckedChange={setEnabled}
+              change={changeFor("enabled", checked(saved.enabled), () => setEnabled(saved.enabled))}
               hint="When a changed database locks or HoploDex quits, at most once a day."
             />
             <div data-field="keepCount">
@@ -421,13 +458,31 @@ function SettingsForm({
                   setErrors((current) => ({ ...current, keepCount: undefined }));
                 }}
                 error={errors.keepCount}
+                change={changeFor("keepCount", String(saved.keepCount), () => {
+                  setKeepCount(String(saved.keepCount));
+                  setErrors((current) => ({ ...current, keepCount: undefined }));
+                })}
                 fieldClassName="hd-field--third"
                 suffix="backups"
               />
             </div>
             <div className="hd-field" data-field="location" data-disabled={backupsOff || undefined}>
-              <span className="hd-field__label" id="backup-location-label">
-                Location
+              <span className="hd-field__label-row">
+                <span className="hd-field__label" id="backup-location-label">
+                  Location
+                </span>
+                {locationChange && (
+                  <ChangedMark
+                    label="Location"
+                    change={locationChange}
+                    id="backup-location-changed"
+                    focusTarget={() =>
+                      formRef.current?.querySelector<HTMLElement>(
+                        '[data-field="location"] .hd-settings-location__actions button',
+                      ) ?? null
+                    }
+                  />
+                )}
               </span>
               <p className="hd-settings-location" aria-labelledby="backup-location-label">
                 <span className="hd-privacy-note__path">{location.path}</span>{" "}
@@ -482,7 +537,13 @@ function SettingsForm({
             </ul>
             <BackupActions name={status.name} disabled={saving} onRestore={onRestore} />
           </fieldset>
-          <LockingSection status={status} lock={lock} disabled={saving} onChange={setLock} />
+          <LockingSection
+            status={status}
+            lock={lock}
+            disabled={saving}
+            onChange={setLock}
+            changes={lockChanges}
+          />
           <DocumentsSection />
           <ThisComputer
             status={status}
@@ -503,10 +564,15 @@ function SettingsForm({
           )}
         </div>
         <footer className="hd-dialog__footer">
-          <Button variant="secondary" onClick={onCancel} disabled={saving}>
+          <Button variant="secondary" onClick={requestClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" pending={saving} disabled={!dirty}>
+          <Button
+            type="submit"
+            variant="primary"
+            pending={saving}
+            unavailable={dirty ? undefined : "No changes to save"}
+          >
             Save
           </Button>
         </footer>
@@ -596,11 +662,14 @@ function LockingSection({
   lock,
   disabled,
   onChange,
+  changes,
 }: {
   status: DatabaseStatus;
   lock: CollectionSettings["lock"];
   disabled: boolean;
   onChange: (lock: CollectionSettings["lock"]) => void;
+  /** Each setting's marker and revert while it differs from what is saved (014 FR-001). */
+  changes: Partial<Record<keyof CollectionSettings["lock"], FieldChange>>;
 }) {
   // A duration set some other way is still shown as it is.
   const offered = IDLE_MINUTES.includes(lock.idleMinutes)
@@ -614,6 +683,7 @@ function LockingSection({
         checked={lock.idleEnabled}
         disabled={disabled}
         onCheckedChange={(idleEnabled) => onChange({ ...lock, idleEnabled })}
+        change={changes.idleEnabled}
         hint="Also locks when the computer goes to sleep. Turning this off stops both."
       />
       <Select
@@ -621,6 +691,7 @@ function LockingSection({
         value={String(lock.idleMinutes)}
         disabled={disabled || !lock.idleEnabled}
         onValueChange={(value) => onChange({ ...lock, idleMinutes: Number(value) })}
+        change={changes.idleMinutes}
         options={offered.map((minutes) => ({
           value: String(minutes),
           label: minutesLabel(minutes),
@@ -632,6 +703,7 @@ function LockingSection({
         checked={status.screenLockSupported && lock.onScreenLock}
         disabled={disabled || !status.screenLockSupported}
         onCheckedChange={(onScreenLock) => onChange({ ...lock, onScreenLock })}
+        change={changes.onScreenLock}
         hint={
           status.screenLockSupported
             ? undefined
@@ -784,6 +856,15 @@ function ThisComputer({
           disabled={disabled}
           onCheckedChange={(next) =>
             onChoose(next === passphraseSaved ? null : next ? "remember" : "forget")
+          }
+          // Reverting drops the staged choice and asks for nothing (014 Edge Cases).
+          change={
+            choice
+              ? {
+                  saved: passphraseSaved ? "Checked" : "Not checked",
+                  onRevert: () => onChoose(null),
+                }
+              : undefined
           }
           hint={state}
         />

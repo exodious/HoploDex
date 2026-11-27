@@ -27,6 +27,18 @@ describe("changedFields (014 research.md §1)", () => {
     expect([...changedFields(saved, saved, ["a", "b"], stored)]).toEqual(["b"]);
   });
 
+  it("compares a form's fields in far less than 100 ms, whatever the collection holds (014 SC-001)", () => {
+    // The comparison reads only the form: about 40 fields, never the records.
+    const fields = Array.from({ length: 40 }, (_, i) => `f${i}`);
+    const saved = Object.fromEntries(fields.map((field) => [field, "value"]));
+    const current = { ...saved, f7: "other" };
+    const start = performance.now();
+    for (let i = 0; i < 100; i++) {
+      changedFields(saved, current, fields, (field, state) => state[field].trim());
+    }
+    expect((performance.now() - start) / 100).toBeLessThan(10);
+  });
+
   it("names an empty saved value and shortens a long one (014 FR-010)", () => {
     expect(savedText(null)).toBe("Not recorded");
     expect(savedText("  ")).toBe("Not recorded");
@@ -38,7 +50,9 @@ describe("the changed marker (014 FR-006, FR-010, FR-013)", () => {
   function Make({ saved = "Glock" }: { saved?: string }) {
     const [value, setValue] = useState(saved);
     const change: FieldChange | undefined =
-      value.trim() !== saved ? { saved: savedText(saved), onRevert: () => setValue(saved) } : undefined;
+      value.trim() !== saved
+        ? { saved: savedText(saved), onRevert: () => setValue(saved) }
+        : undefined;
     return (
       <TextField
         label="Make"
@@ -83,7 +97,12 @@ describe("the changed marker (014 FR-006, FR-010, FR-013)", () => {
     const onRevert = vi.fn();
     render(
       <>
-        <Checkbox label="Remember" checked onCheckedChange={() => {}} change={{ saved: "Off", onRevert }} />
+        <Checkbox
+          label="Remember"
+          checked
+          onCheckedChange={() => {}}
+          change={{ saved: "Off", onRevert }}
+        />
         <ChoiceCards
           label="Type"
           value="b"
@@ -133,11 +152,19 @@ describe("Save with nothing to save (014 FR-016)", () => {
 describe("Disclosure with a change inside (014 FR-007)", () => {
   it("says so in its folded summary only", () => {
     const { rerender } = render(
-      <Disclosure title="Physical details" summary="20 in" open={false} onOpenChange={() => {}} changed>
+      <Disclosure
+        title="Physical details"
+        summary="20 in"
+        open={false}
+        onOpenChange={() => {}}
+        changed
+      >
         <p>inside</p>
       </Disclosure>,
     );
-    expect(screen.getByRole("button", { name: /Physical details 20 in · Changed/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Physical details 20 in · Changed/ }),
+    ).toBeInTheDocument();
     rerender(
       <Disclosure title="Physical details" summary="20 in" open onOpenChange={() => {}} changed>
         <p>inside</p>
@@ -160,10 +187,13 @@ describe("closing a dialog with changes (014 FR-021a)", () => {
         title="Edit"
         bare
       >
-        <Form dirty={dirty} onCancel={() => {
-          setOpen(false);
-          onClosed();
-        }} />
+        <Form
+          dirty={dirty}
+          onCancel={() => {
+            setOpen(false);
+            onClosed();
+          }}
+        />
       </Dialog>
     );
   }
@@ -203,7 +233,9 @@ describe("closing a dialog with changes (014 FR-021a)", () => {
     const onClosed = vi.fn();
     render(<Host dirty onClosed={onClosed} />);
     await user.click(screen.getByRole("button", { name: "Close" }));
-    expect(await screen.findByRole("alertdialog", { name: "Discard changes?" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("alertdialog", { name: "Discard changes?" }),
+    ).toBeInTheDocument();
     expect(onClosed).not.toHaveBeenCalled();
   });
 

@@ -1158,7 +1158,9 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       case "origin":
         return savedText(ORIGIN_OPTIONS.find((option) => option.value === saved.origin)?.label);
       case "condition":
-        return savedText(CONDITION_OPTIONS.find((option) => option.value === saved.condition)?.label);
+        return savedText(
+          CONDITION_OPTIONS.find((option) => option.value === saved.condition)?.label,
+        );
       case "dispositionType":
         return savedText(
           DISPOSITION_TYPE_OPTIONS.find((option) => option.value === saved.dispositionType)?.label,

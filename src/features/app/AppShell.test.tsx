@@ -557,7 +557,7 @@ describe("Resumed pending changes open where their form is (003 FR-039)", () => 
     renderShell();
 
     const dialog = await screen.findByRole("dialog", { name: "Insurance coverage" });
-    expect(within(dialog).getByLabelText(/Scheduled amount/)).toHaveValue("2,000");
+    expect(within(dialog).getByLabelText(/^Scheduled amount/)).toHaveValue("2,000");
   });
 
   it("a policy edit reopens the policy's edit form with the changes", async () => {
@@ -780,7 +780,7 @@ describe("Resumed accessory pending changes open where their form is (006 FR-027
     renderShell();
 
     const dialog = await screen.findByRole("dialog", { name: "Insurance coverage" });
-    expect(within(dialog).getByLabelText(/Scheduled amount/)).toHaveValue("900");
+    expect(within(dialog).getByLabelText(/^Scheduled amount/)).toHaveValue("900");
     expect(dialog).toHaveTextContent(OPTIC);
   });
 });

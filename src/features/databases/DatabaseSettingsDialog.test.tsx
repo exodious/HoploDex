@@ -513,37 +513,37 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
   it("is disabled until a field differs from what is saved, and again when it is put back", async () => {
     const user = userEvent.setup();
     renderSettings();
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     const keep = screen.getByLabelText("Keep the latest");
     await user.clear(keep);
     await user.type(keep, "9");
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     await user.clear(keep);
     await user.type(keep, "5");
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     await user.click(screen.getByRole("combobox", { name: "After" }));
     await user.click(screen.getByRole("option", { name: "30 minutes" }));
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     await user.click(screen.getByRole("combobox", { name: "After" }));
     await user.click(screen.getByRole("option", { name: "10 minutes" }));
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
   it("notices a changed location", async () => {
     const user = userEvent.setup();
     renderSettings(status({ kind: "custom", path: "/media/usb/Backups", available: true }));
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     await user.click(screen.getByRole("button", { name: "Use the default" }));
 
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
   });
 
   it("does not submit with Enter while nothing differs", async () => {
@@ -565,6 +565,9 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
 
     await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    // 014 FR-021a: a setting differs, so Cancel asks first.
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
 
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
     expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
@@ -625,7 +628,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
   it("only stages Remember when it is ticked: no prompt, nothing saved, and Save becomes available", async () => {
     const user = userEvent.setup();
     renderSettings(withKeyring());
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     await user.click(remember());
 
@@ -637,7 +640,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     ).toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(databasesService.savePassphrase).not.toHaveBeenCalled();
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
   });
 
   it("asks for the passphrase in the native dialog only when Save is clicked, then closes", async () => {
@@ -694,7 +697,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
 
     await remembering(user);
 
-    await waitFor(() => expect(save()).toBeEnabled());
+    await waitFor(() => expect(save()).not.toHaveAttribute("aria-disabled"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
     expect(props.onOpenChange).not.toHaveBeenCalled();
@@ -741,7 +744,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     expect(props.onOpenChange).not.toHaveBeenCalled();
     // It is shown as it now is, and Save only has the settings left to save.
     expect(remember()).toBeChecked();
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
@@ -755,7 +758,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
       ),
     ).toBeInTheDocument();
     expect(remember()).toBeChecked();
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
     await user.click(remember());
 
     expect(remember()).not.toBeChecked();
@@ -765,7 +768,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
       ),
     ).toBeInTheDocument();
     expect(databasesService.forgetSavedPassphrase).not.toHaveBeenCalled();
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
   });
 
@@ -775,6 +778,8 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
 
     await user.click(remember());
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    // 014 FR-021a: the staged choice differs, so Cancel asks first.
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
 
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
     expect(databasesService.forgetSavedPassphrase).not.toHaveBeenCalled();
@@ -788,7 +793,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     await user.click(remember());
     await user.click(remember());
 
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
   it("forgets the saved passphrase on Save, and closes", async () => {
@@ -842,7 +847,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     expect(props.onOpenChange).not.toHaveBeenCalled();
     expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
     expect(remember()).not.toBeChecked();
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
   });
 
   // 003 US5-4
@@ -1258,7 +1263,7 @@ describe("DatabaseSettingsDialog: changing the location (003 contracts/ui-databa
     const backups = screen.getByRole("group", { name: "Backups" });
     expect(within(backups).getByText("(next to the database)")).toBeInTheDocument();
     expect(within(backups).getByRole("button", { name: "Use the default" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it.each([

@@ -35,3 +35,36 @@ export interface FieldChange {
   saved: string;
   onRevert: () => void;
 }
+
+/** {@link changedFields} with what a form renders from it: `isDirty`, and each
+ * field's marker and revert while it is changed. `editing` is false on an add
+ * form, which compares with how it opened but marks nothing (014 FR-015a,
+ * FR-019a). */
+export function formChanges<F extends string, S>({
+  saved,
+  current,
+  fields,
+  stored,
+  editing,
+  display,
+  revert,
+}: {
+  saved: S;
+  current: S;
+  fields: readonly F[];
+  stored: (field: F, state: S) => string;
+  editing: boolean;
+  /** The saved value as the revert names it, before {@link savedText}. */
+  display: (field: F) => string | null | undefined;
+  revert: (field: F) => void;
+}) {
+  const changed = changedFields(saved, current, fields, stored);
+  return {
+    changed,
+    isDirty: changed.size > 0,
+    changeFor: (field: F): FieldChange | undefined =>
+      editing && changed.has(field)
+        ? { saved: savedText(display(field)), onRevert: () => revert(field) }
+        : undefined,
+  };
+}
