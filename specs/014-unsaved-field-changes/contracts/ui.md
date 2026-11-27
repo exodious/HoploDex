@@ -44,6 +44,7 @@ Nothing changes until you save.
 - **Add to Mounted** is a search field under the list (the shared `MountChooser`, `role: "item"`), with `hostMountedOn` the form's Mounted on; it leaves out what the list already holds. Its hint: "Nothing changes until you save."
 - A saved row has **Remove**; a changed row's revert is named "Revert {name} to “Mounted here”" (a removal) or "to “Not mounted here”" (an addition), and focus then goes to the add field.
 - A removed row stays listed, its note saying "Will be unmounted."; it has no Remove, only revert.
+- The form's **Mounted on** chooser leaves out what the list adds. A record mounted below one of those additions is still offered; saving that choice is refused as a loop, with the error on `mounted` (FR-026, FR-027).
 - Nothing asks; Save stores all.
 
 Record page Mounted section: the list (links), **Change what's mounted…** (opens the edit form at its Mounted list, focus in Add to Mounted), and the Mount menu with only **New accessory…**. No Unmount, no "Move {name}?" or "Unmount {name}?" questions.
