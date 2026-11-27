@@ -837,6 +837,27 @@ pub mod ops {
         get_firearm(conn, id)
     }
 
+    /// [`update_firearm`] with the edit form's Mounted list (014 FR-027): the
+    /// record, its Mounted on and the list's changes are saved together or not
+    /// at all. A disposed record has no Mounted list, so its changes are
+    /// ignored (014 FR-024).
+    pub fn update_firearm_with_mounted(
+        conn: &Connection,
+        id: i64,
+        input: &FirearmInput,
+        confirmed_warnings: bool,
+        mount_changes: &[mounts::MountChange],
+    ) -> Result<Firearm, CommandError> {
+        if mount_changes.is_empty() || input.status != FirearmStatus::Active {
+            return update_firearm(conn, id, input, confirmed_warnings);
+        }
+        mounts::atomically(conn, || {
+            update_firearm(conn, id, input, confirmed_warnings)?;
+            mounts::save_mounted_changes(conn, RecordRef::Firearm(id), mount_changes)?;
+            get_firearm(conn, id)
+        })
+    }
+
     /// Disposes of the firearm, and of the listed records mounted below it,
     /// in one step (006 research.md §9): see `mounts::ops::dispose_with_mounted`.
     pub fn dispose_firearm(
@@ -1246,9 +1267,18 @@ pub async fn update_firearm(
     id: i64,
     input: FirearmInput,
     confirmed_warnings: Option<bool>,
+    mount_changes: Option<Vec<mounts::MountChange>>,
     session: ScopedSession,
 ) -> Result<Firearm, CommandError> {
-    session.write(|conn| ops::update_firearm(conn, id, &input, confirmed_warnings.unwrap_or(false)))
+    session.write(|conn| {
+        ops::update_firearm_with_mounted(
+            conn,
+            id,
+            &input,
+            confirmed_warnings.unwrap_or(false),
+            mount_changes.as_deref().unwrap_or_default(),
+        )
+    })
 }
 
 #[tauri::command]

@@ -65,6 +65,7 @@ mod log_lines_test;
 mod machine_settings_test;
 mod mount_lifecycle_test;
 mod mount_test;
+mod mounted_list_test;
 mod nickname_test;
 mod open_document_test;
 mod original_marks_warning_test;

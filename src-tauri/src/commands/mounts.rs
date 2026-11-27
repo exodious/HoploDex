@@ -58,6 +58,17 @@ pub struct ListMountCandidatesInput {
     pub query: String,
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Role `item` only: the host's Mounted on as the open edit form holds
+    /// it, so the host's chain is judged as the form would save it (014
+    /// FR-026). Absent: the saved one.
+    #[serde(default)]
+    pub host_mounted_on: Option<HostMountedOn>,
+}
+
+/// The host's Mounted on as a form holds it: `on: null` is not mounted.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct HostMountedOn {
+    pub on: Option<RecordRef>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -246,7 +257,14 @@ pub mod ops {
             (MountRole::Host, None) => {}
             (MountRole::Item, Some(host)) => {
                 excluded.push(host);
-                excluded.extend(graph.chain(host));
+                match input.host_mounted_on {
+                    // The form's own Mounted on, then that record's chain.
+                    Some(HostMountedOn { on }) => {
+                        excluded.extend(on);
+                        excluded.extend(on.into_iter().flat_map(|on| graph.chain(on)));
+                    }
+                    None => excluded.extend(graph.chain(host)),
+                }
                 excluded.extend(
                     graph
                         .below(host)
