@@ -34,6 +34,11 @@ export interface MountChooserProps {
   id?: string;
   /** Set while it differs from what is saved (014 FR-023). */
   change?: FieldChange;
+  /** Role "item": the host's Mounted on as its form holds it (014 FR-026). */
+  hostMountedOn?: { on: RecordRef | null };
+  /** Records not to offer, by `recordKey`: what a form's Mounted list
+   * already holds (014 FR-026). */
+  exclude?: ReadonlySet<string>;
 }
 
 const NOT_MOUNTED_KEY = "none";
@@ -62,6 +67,8 @@ export function MountChooser({
   error,
   change,
   id,
+  hostMountedOn,
+  exclude,
 }: MountChooserProps) {
   const scope = useSessionScope();
   // The text typed since the field was last settled; `null` shows `value`.
@@ -78,8 +85,14 @@ export function MountChooser({
   async function loadOptions(searched: string): Promise<ComboboxOption[]> {
     // The field showing the chosen name is not a search for it.
     const query = typedNow.current === null ? "" : searched.trim();
-    const { candidates: found } = await listMountCandidates(scope, { role, record, query });
-    const rows: ComboboxOption[] = found.map((entry: MountCandidate) => {
+    const { candidates: found } = await listMountCandidates(scope, {
+      role,
+      record,
+      query,
+      ...(hostMountedOn ? { hostMountedOn } : {}),
+    });
+    const offered = found.filter((entry) => !exclude?.has(candidateKey(entry.label)));
+    const rows: ComboboxOption[] = offered.map((entry: MountCandidate) => {
       const { label: candidate, mountedOn } = entry;
       const key = candidateKey(candidate);
       candidates.current.set(key, entry);

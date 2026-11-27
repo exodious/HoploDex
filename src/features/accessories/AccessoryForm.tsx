@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -26,6 +26,15 @@ import { settleEntry } from "../firearms/firearmsService";
 import type { DerivedCaliber } from "../firearms/types";
 import "../firearms/forms.css";
 import { MountChooser } from "../mounts/MountChooser";
+import { MountedEditor } from "../mounts/MountedEditor";
+import {
+  NO_MOUNTED_CHANGES,
+  mountChangesInput,
+  readMountedChanges,
+  storedMounted,
+} from "../mounts/mountedChanges";
+import type { MountedChanges } from "../mounts/mountedChanges";
+import type { MountChange } from "../mounts/mountsService";
 import { recordKey } from "../mounts/recordKey";
 import { accessoryNameText, recordNameText } from "../mounts/recordNames";
 import type { MountDetail, RecordLabel } from "../mounts/types";
@@ -46,13 +55,16 @@ export interface AccessoryFormProps {
    * (006 contracts/ui-accessories.md §5): Mounted on starts as this, and can be changed
    * or cleared. */
   presetMountedOn?: RecordLabel;
-  onSubmit: (input: AccessoryInput) => Promise<void>;
+  onSubmit: (input: AccessoryInput, mountChanges?: MountChange[]) => Promise<void>;
   onCancel?: () => void;
+  /** "mounted": opens at the Mounted list (014 FR-028). */
+  focusField?: "mounted";
 }
 
 /** The version of this form's kept drafts (specs/003 research.md §16). Raise
- * it when `FormState` changes shape, so older drafts are only discarded. */
-export const FORM_VERSION = 1;
+ * it when `FormState` changes shape, so older drafts are only discarded. 2: the
+ * Mounted list's changes (014 research.md §8). */
+export const FORM_VERSION = 2;
 
 /** 006 FR-002: shown under Kind. */
 const KIND_HINT = "A suppressor is recorded as a firearm.";
@@ -92,6 +104,8 @@ interface FormState {
   acquisitionSource: string;
   acquisitionDate: string;
   acquisitionPrice: string;
+  /** 014 FR-024: the Mounted list's changes, saved with the record. */
+  mounted: MountedChanges;
 }
 
 type Field = keyof FormState;
@@ -122,6 +136,7 @@ function toFormState(
     acquisitionSource: accessory?.acquisitionSource ?? "",
     acquisitionDate: accessory?.acquisitionDate ?? "",
     acquisitionPrice: dollarsToInput(accessory?.acquisitionPrice ?? null),
+    mounted: NO_MOUNTED_CHANGES,
   };
 }
 
@@ -199,6 +214,7 @@ const FIELD_ORDER: Field[] = [
   "caliber",
   "serialNumber",
   "mountedOn",
+  "mounted",
   "estimatedValue",
   "acquisitionSource",
   "acquisitionDate",
@@ -211,6 +227,8 @@ function storedValue(field: Field, form: FormState, disposed: boolean): string {
   switch (field) {
     case "mountedOn":
       return disposed || !form.mountedOn ? "" : recordKey(form.mountedOn.record);
+    case "mounted":
+      return disposed ? "" : storedMounted(form.mounted);
     case "estimatedValue":
     case "acquisitionPrice": {
       const parsed = parseDollars(form[field]);
@@ -238,6 +256,7 @@ export function AccessoryForm({
   presetMountedOn,
   onSubmit,
   onCancel,
+  focusField,
 }: AccessoryFormProps) {
   const scope = useSessionScope();
   const kinds = useAccessoryKinds();
@@ -248,9 +267,24 @@ export function AccessoryForm({
     targetId: initialValues?.id ?? null,
   };
   // Pending changes the user resumed start as unsaved input (specs/003 FR-039).
-  const [form, setForm] = useState<FormState>(() =>
-    resumedValues(scope, target, toFormState(initialValues, presetMountedOn)),
+  const [form, setForm] = useState<FormState>(() => {
+    const resumed = resumedValues(scope, target, toFormState(initialValues, presetMountedOn));
+    // A kept draft comes from the database: its list is read, never trusted.
+    return { ...resumed, mounted: readMountedChanges(resumed.mounted) };
+  });
+  // 014 FR-024: what is mounted directly on the record, as saved.
+  const [savedMounted] = useState(() =>
+    (initialValues?.mount?.mounted ?? [])
+      .filter((entry) => entry.depth <= 1)
+      .map((entry) => entry.label),
   );
+  useEffect(() => {
+    if (focusField !== "mounted") return;
+    // From the record page's "Change what's mounted…" (014 FR-028).
+    const field = document.getElementById("af-mounted-add");
+    field?.focus({ preventScroll: true });
+    field?.scrollIntoView?.({ block: "center" });
+  }, [focusField]);
   useResumedDraftTaken(target);
   const [pristine] = useState(() => toFormState(initialValues, presetMountedOn));
   // The latest form, for a settle response to check the field still holds
@@ -533,7 +567,10 @@ export function AccessoryForm({
     setSubmitting(true);
     setServerError(null);
     try {
-      await onSubmit(input);
+      await onSubmit(
+        input,
+        disposed ? [] : mountChangesInput(latestForm.current.mounted, savedMounted),
+      );
       return true;
     } catch (error) {
       if (error instanceof CommandFailure) {
@@ -698,6 +735,17 @@ export function AccessoryForm({
                 change={changeFor("mountedOn")}
               />
             </div>
+          )}
+          {initialValues && !disposed && (
+            <MountedEditor
+              record={{ kind: "accessory", id: initialValues.id }}
+              saved={savedMounted}
+              changes={form.mounted}
+              onChange={(mounted) => update("mounted", mounted)}
+              mountedOn={form.mountedOn}
+              addId="af-mounted-add"
+              error={errorFor("mounted")}
+            />
           )}
         </section>
 

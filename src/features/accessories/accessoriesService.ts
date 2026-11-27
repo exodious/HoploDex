@@ -2,6 +2,7 @@
 // "Accessories (new)"; the screens that use them are in 006 contracts/ui-accessories.md.
 
 import type { SessionScope } from "../session/sessionScope";
+import type { MountChange } from "../mounts/mountsService";
 import type { DisposeInput } from "../firearms/types";
 import type {
   Accessory,
@@ -25,8 +26,10 @@ export function updateAccessory(
   scope: SessionScope,
   id: number,
   input: AccessoryInput,
+  mountChanges: MountChange[] = [],
 ): Promise<Accessory> {
-  return scope.invoke<Accessory>("update_accessory", { id, input });
+  // The edit form's Mounted list, saved with the record (014 FR-027).
+  return scope.invoke<Accessory>("update_accessory", { id, input, mountChanges });
 }
 
 export function getAccessory(scope: SessionScope, id: number): Promise<AccessoryDetail> {

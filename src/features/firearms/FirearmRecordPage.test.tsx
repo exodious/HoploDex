@@ -808,7 +808,10 @@ describe("FirearmRecordPage mounts (006 US2)", () => {
 
     const section = await screen.findByRole("region", { name: "Mounted" });
     expect(within(section).getByRole("list")).toHaveTextContent("Leupold Mark 5HD · Optic");
-    expect(within(section).getByRole("button", { name: /^Unmount Leupold/ })).toBeInTheDocument();
+    // 014 FR-028: read-only; what is mounted changes in the edit form.
+    expect(
+      within(section).getByRole("button", { name: "Change what's mounted…" }),
+    ).toBeInTheDocument();
   });
 
   it("says 'Nothing mounted.' in the Mounted section when nothing is (006 US2-10)", async () => {

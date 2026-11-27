@@ -1,21 +1,15 @@
-import { useId, useState } from "react";
-import { Button, ConfirmDialog, Dialog, Icon, Menu, MenuItem, useToast } from "../../components";
-import { CommandFailure } from "../../services/tauriClient";
-import { useCollection } from "../app/collectionStore";
-import { useSessionScope } from "../session/sessionScope";
+import { useId } from "react";
+import { Button, Icon, Menu, MenuItem } from "../../components";
 import { MountedList } from "./MountedList";
-import { MountChooser } from "./MountChooser";
-import { mountRecord } from "./mountsService";
-import { recordKey } from "./recordKey";
-import { recordNameText } from "./recordNames";
 import type { MountedEntry, RecordLabel } from "./types";
 import "./mounts.css";
 
-// 006 contracts/ui-accessories.md §5 (006 FR-012, FR-013):
-// the Mounted section of an active record's page. The list (006 research.md §14),
-// the Mount menu, the "Mount on {name}" dialog, the move question and the
-// unmount question. The wording is "mount" and "Mounted", never "item" or
-// "host".
+// 006 contracts/ui-accessories.md §5 (006 FR-012, FR-013), as 014 FR-028
+// amends it: the Mounted section of an active record's page lists what is
+// mounted on it (006 research.md §14), read-only. What is mounted is changed
+// in the record's edit form, held until its Save (014 FR-024); the Mount menu
+// keeps only New accessory…, which creates a record. The wording is "mount"
+// and "Mounted", never "item" or "host".
 
 export interface MountedSectionProps {
   /** The record whose page this is. */
@@ -24,56 +18,12 @@ export interface MountedSectionProps {
   mounted: MountedEntry[];
   /** The page opens the accessory form with Mounted on preset to `record`. */
   onNewAccessory: () => void;
+  /** The page opens the record's edit form at its Mounted list. */
+  onChangeMounted: () => void;
 }
 
-function failureMessage(e: unknown, fallback: string): string {
-  if (e instanceof CommandFailure) return e.fieldErrors?.host ?? e.message;
-  return fallback;
-}
-
-export function MountedSection({ record, mounted, onNewAccessory }: MountedSectionProps) {
-  const scope = useSessionScope();
-  const { refresh } = useCollection();
-  const notify = useToast();
+export function MountedSection({ mounted, onNewAccessory, onChangeMounted }: MountedSectionProps) {
   const titleId = useId();
-  const [picking, setPicking] = useState(false);
-  // The record the user chose that is mounted elsewhere, and where.
-  const [moving, setMoving] = useState<{ item: RecordLabel; from: RecordLabel } | null>(null);
-  // The directly mounted record whose Unmount the user pressed, and whether
-  // anything is mounted on it in turn.
-  const [unmounting, setUnmounting] = useState<{ item: RecordLabel; carries: boolean } | null>(
-    null,
-  );
-  const [error, setError] = useState<string>();
-  const hostName = recordNameText(record);
-
-  /** Moves `item` onto this record, or off whatever it is on. */
-  async function place(item: RecordLabel, onto: boolean): Promise<boolean> {
-    const name = recordNameText(item);
-    try {
-      await mountRecord(scope, item.record, onto ? record.record : null);
-    } catch (e) {
-      const message = failureMessage(
-        e,
-        onto ? `${name} couldn't be mounted.` : `${name} couldn't be unmounted.`,
-      );
-      if (onto) setError(message);
-      else notify(message, "error");
-      return false;
-    }
-    await refresh();
-    notify(onto ? `${name} mounted on ${hostName}.` : `${name} unmounted.`);
-    return true;
-  }
-
-  async function choose(item: RecordLabel, mountedOn: RecordLabel | null = null) {
-    setError(undefined);
-    if (mountedOn) {
-      setMoving({ item, from: mountedOn });
-      return;
-    }
-    if (await place(item, true)) setPicking(false);
-  }
 
   return (
     <section className="hd-panel hd-mounted-section" aria-labelledby={titleId}>
@@ -81,114 +31,31 @@ export function MountedSection({ record, mounted, onNewAccessory }: MountedSecti
         <h2 className="hd-panel__title" id={titleId}>
           Mounted
         </h2>
-        <Menu
-          align="end"
-          trigger={
-            <Button size="sm">
-              Mount
-              <Icon name="chevronDown" size={16} />
-            </Button>
-          }
-        >
-          <MenuItem icon="plus" onSelect={onNewAccessory}>
-            New accessory…
-          </MenuItem>
-          <MenuItem
-            icon="search"
-            onSelect={() => {
-              setError(undefined);
-              setPicking(true);
-            }}
+        <div className="hd-panel__actions">
+          <Button size="sm" variant="ghost" icon="pencil" onClick={onChangeMounted}>
+            Change what&apos;s mounted…
+          </Button>
+          <Menu
+            align="end"
+            trigger={
+              <Button size="sm">
+                Mount
+                <Icon name="chevronDown" size={16} />
+              </Button>
+            }
           >
-            Existing accessory or firearm…
-          </MenuItem>
-        </Menu>
+            <MenuItem icon="plus" onSelect={onNewAccessory}>
+              New accessory…
+            </MenuItem>
+          </Menu>
+        </div>
       </header>
 
       {mounted.length === 0 ? (
         <p className="hd-panel__empty">Nothing mounted.</p>
       ) : (
-        <MountedList
-          entries={mounted}
-          actions={(entry) =>
-            entry.depth <= 1 ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={`Unmount ${recordNameText(entry.label)}`}
-                onClick={() =>
-                  setUnmounting({
-                    item: entry.label,
-                    carries: mounted.some(
-                      (other) => recordKey(other.host) === recordKey(entry.label.record),
-                    ),
-                  })
-                }
-              >
-                Unmount
-              </Button>
-            ) : null
-          }
-        />
+        <MountedList entries={mounted} />
       )}
-
-      <Dialog
-        open={picking}
-        onOpenChange={(open) => !open && setPicking(false)}
-        title={`Mount on ${hostName}`}
-        size="sm"
-        footer={
-          <Button variant="secondary" onClick={() => setPicking(false)}>
-            Cancel
-          </Button>
-        }
-      >
-        <div className="hd-mount-picker">
-          <MountChooser
-            role="item"
-            record={record.record}
-            value={null}
-            label="Accessory or firearm"
-            placeholder="Search by make, model, nickname or serial number"
-            error={error}
-            onChange={(item, mountedOn) => item && void choose(item, mountedOn)}
-          />
-        </div>
-      </Dialog>
-
-      <ConfirmDialog
-        open={moving !== null}
-        onOpenChange={(open) => !open && setMoving(null)}
-        title={moving ? `Move ${recordNameText(moving.item)}?` : "Move?"}
-        description={
-          moving
-            ? `It is mounted on ${recordNameText(moving.from)}. Moving it takes everything mounted on it along.`
-            : ""
-        }
-        confirmLabel="Move"
-        destructive={false}
-        onConfirm={async () => {
-          if (moving && (await place(moving.item, true))) setPicking(false);
-        }}
-      />
-
-      <ConfirmDialog
-        open={unmounting !== null}
-        onOpenChange={(open) => !open && setUnmounting(null)}
-        title={unmounting ? `Unmount ${recordNameText(unmounting.item)}?` : "Unmount?"}
-        description={
-          unmounting
-            ? `It will no longer be mounted on ${hostName}.${
-                unmounting.carries ? " Everything mounted on it stays mounted on it." : ""
-              }`
-            : ""
-        }
-        confirmLabel="Unmount"
-        destructive={false}
-        onConfirm={async () => {
-          if (unmounting) await place(unmounting.item, false);
-        }}
-      />
     </section>
   );
 }

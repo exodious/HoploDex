@@ -1,23 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "../../components";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { NavigationContext } from "../app/navigation";
 import type { Navigation } from "../app/navigation";
-import { CommandFailure } from "../../services/tauriClient";
 import { MountedSection } from "./MountedSection";
 import type { MountedEntry, RecordLabel, RecordRef } from "./types";
 import { render } from "../../test/sessionScope";
 
-// 006 contracts/ui-accessories.md §5 (006 FR-012, FR-013,
-// US2-3a, US2-10): the Mounted section. Its props, as these tests assume
-// them: `record: RecordLabel` (the record whose page it is on), `mounted:
-// MountedEntry[]` (`MountDetail.mounted`, depth-first) and `onNewAccessory()`
-// (the page opens the accessory form with Mounted on preset). It mounts and
-// unmounts (after asking) through `mountRecord` and refreshes the collection
-// afterwards.
+// 006 contracts/ui-accessories.md §5 (006 FR-012, FR-013, US2-10), as 014
+// FR-028 amends it: the Mounted section lists what is mounted, read-only.
+// Mounting and unmounting an existing record happen in the edit form's
+// Mounted list (MountedEditor.test.tsx); nothing here calls `mountRecord`.
 
 const mountRecord = vi.fn();
 const listMountCandidates = vi.fn();
@@ -93,7 +89,12 @@ function renderSection(mounted: MountedEntry[] = entries, record: RecordLabel = 
     <ToastProvider>
       <CollectionContext.Provider value={collection}>
         <NavigationContext.Provider value={navigation}>
-          <MountedSection record={record} mounted={mounted} onNewAccessory={onNewAccessory} />
+          <MountedSection
+            record={record}
+            mounted={mounted}
+            onNewAccessory={onNewAccessory}
+            onChangeMounted={onChangeMounted}
+          />
         </NavigationContext.Provider>
       </CollectionContext.Provider>
     </ToastProvider>,
@@ -109,18 +110,13 @@ function recordLink(name: string): HTMLElement {
 
 const mountMenu = () => screen.getByRole("button", { name: /^Mount/ });
 
-async function openExistingDialog(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(mountMenu());
-  await user.click(await screen.findByRole("menuitem", { name: "Existing accessory or firearm…" }));
-  return screen.findByRole("dialog", { name: /^Mount on / });
-}
+const onChangeMounted = vi.fn();
 
 beforeEach(() => {
-  mountRecord.mockReset().mockResolvedValue({ item: upper, host: rifle });
-  listMountCandidates.mockReset().mockResolvedValue({ candidates: [] });
   refresh.mockReset().mockResolvedValue(undefined);
   open.mockReset();
   onNewAccessory.mockReset();
+  onChangeMounted.mockReset();
 });
 
 describe("MountedSection list (006 contracts/ui-accessories.md §5)", () => {
@@ -141,24 +137,6 @@ describe("MountedSection list (006 contracts/ui-accessories.md §5)", () => {
     const items = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(items[4]).toHaveTextContent("Gemtech GM-45 “Quiet one” · Suppressor");
     expect(items[0]).toHaveTextContent("BCM upper · Upper receiver");
-  });
-
-  it("gives each direct entry an Unmount button named 'Unmount {name}'", () => {
-    renderSection();
-
-    expect(screen.getByRole("button", { name: `Unmount ${NAMES.upper}` })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^Unmount Gemtech GM-45 “Quiet one”/ }),
-    ).toBeInTheDocument();
-  });
-
-  it("gives deeper entries no Unmount button: only what is directly on this record can be unmounted here", () => {
-    renderSection();
-
-    expect(screen.getAllByRole("button", { name: /^Unmount/ })).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: /^Unmount Leupold/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Unmount Trijicon/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Unmount SureFire/ })).not.toBeInTheDocument();
   });
 
   it("says 'on {host}' under a deeper entry, and nothing under a direct one", () => {
@@ -210,281 +188,34 @@ describe("MountedSection list (006 contracts/ui-accessories.md §5)", () => {
   });
 });
 
-describe("MountedSection Mount menu (006 contracts/ui-accessories.md §5, FR-012)", () => {
-  it("offers New accessory… and Existing accessory or firearm…", async () => {
+describe("014 US5 - Change What Is Mounted, and Save It with the Record (the page)", () => {
+  it("lists what is mounted with no Unmount, and changes it in the edit form (014 US5-1, FR-028)", async () => {
     const user = userEvent.setup();
     renderSection();
 
-    await user.click(mountMenu());
-
-    const items = (await screen.findAllByRole("menuitem")).map((item) => item.textContent?.trim());
-    expect(items).toEqual(["New accessory…", "Existing accessory or firearm…"]);
+    expect(screen.queryByRole("button", { name: /^Unmount/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change what's mounted…" }));
+    expect(onChangeMounted).toHaveBeenCalledTimes(1);
+    expect(mountRecord).not.toHaveBeenCalled();
   });
 
-  it("leaves New accessory… to the page, which opens the form with Mounted on preset", async () => {
+  it("keeps only New accessory… in the Mount menu, left to the page (014 US5-10)", async () => {
     const user = userEvent.setup();
     renderSection();
 
     await user.click(mountMenu());
-    await user.click(await screen.findByRole("menuitem", { name: "New accessory…" }));
-
+    const items = (await screen.findAllByRole("menuitem")).map((item) => item.textContent?.trim());
+    expect(items).toEqual(["New accessory…"]);
+    await user.click(screen.getByRole("menuitem", { name: "New accessory…" }));
     expect(onNewAccessory).toHaveBeenCalledTimes(1);
   });
 
-  it("opens a dialog titled 'Mount on {name}' from Existing accessory or firearm…", async () => {
+  it("never says 'item' or 'host' (006 FR-012, constitution III)", async () => {
     const user = userEvent.setup();
-    renderSection();
-
-    const dialog = await openExistingDialog(user);
-
-    expect(dialog).toHaveAccessibleName(`Mount on ${NAMES.rifle}`);
-    expect(within(dialog).getByRole("combobox")).toBeInTheDocument();
-  });
-
-  it("searches the records that can be mounted here, with role item and this record", async () => {
-    const user = userEvent.setup();
-    renderSection();
-
-    const dialog = await openExistingDialog(user);
-    await user.click(within(dialog).getByRole("combobox"));
-    await user.type(within(dialog).getByRole("combobox"), "aim");
-
-    await waitFor(() =>
-      expect(listMountCandidates).toHaveBeenLastCalledWith(
-        expect.objectContaining({ role: "item", record: rifle.record, query: "aim" }),
-      ),
-    );
-  });
-});
-
-describe("MountedSection mounting an existing record (006 FR-012, US2-3a)", () => {
-  const aimpoint = label({ kind: "accessory", id: 30 }, "Aimpoint", "T-2", "Optic");
-  const belongsToAr = label({ kind: "accessory", id: 31 }, "Warne", "rail", "Mount or rail");
-  const AIMPOINT = "Aimpoint T-2 · Optic";
-
-  async function pick(user: ReturnType<typeof userEvent.setup>, text: RegExp) {
-    const dialog = await openExistingDialog(user);
-    await user.click(within(dialog).getByRole("combobox"));
-    await user.click(await screen.findByRole("option", { name: text }));
-  }
-
-  it("mounts an unmounted record at once, with the toast '{name} mounted on {this record}.'", async () => {
-    const user = userEvent.setup();
-    listMountCandidates.mockResolvedValue({
-      candidates: [{ label: aimpoint, mountedOn: null }],
-    });
-    mountRecord.mockResolvedValue({ item: aimpoint, host: rifle });
-    renderSection();
-
-    await pick(user, /Aimpoint/);
-
-    await waitFor(() => expect(mountRecord).toHaveBeenCalledTimes(1));
-    expect(mountRecord).toHaveBeenCalledWith(aimpoint.record, rifle.record);
-    // Nothing is asked first.
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(await screen.findByText(`${AIMPOINT} mounted on ${NAMES.rifle}.`)).toBeInTheDocument();
-    expect(refresh).toHaveBeenCalled();
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: /^Mount on / })).not.toBeInTheDocument(),
-    );
-  });
-
-  describe("a record already mounted elsewhere", () => {
-    beforeEach(() => {
-      listMountCandidates.mockResolvedValue({
-        candidates: [{ label: aimpoint, mountedOn: belongsToAr }],
-      });
-      mountRecord.mockResolvedValue({ item: aimpoint, host: rifle });
-    });
-
-    it("lists it with 'Mounted on {its host}'", async () => {
-      const user = userEvent.setup();
-      renderSection();
-
-      const dialog = await openExistingDialog(user);
-      await user.click(within(dialog).getByRole("combobox"));
-
-      expect(await screen.findByRole("option", { name: /Aimpoint/ })).toHaveTextContent(
-        "Mounted on Warne rail · Mount or rail",
-      );
-    });
-
-    it("first asks 'Move {name}?', naming where it is, and mounts nothing yet", async () => {
-      const user = userEvent.setup();
-      renderSection();
-
-      await pick(user, /Aimpoint/);
-
-      const ask = await screen.findByRole("alertdialog", { name: `Move ${AIMPOINT}?` });
-      expect(ask).toHaveAccessibleDescription(
-        "It is mounted on Warne rail · Mount or rail. Moving it takes everything mounted on it along.",
-      );
-      expect(within(ask).getByRole("button", { name: "Move" })).toBeInTheDocument();
-      expect(within(ask).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-      expect(mountRecord).not.toHaveBeenCalled();
-    });
-
-    it("moves it on Move, with the mounted toast", async () => {
-      const user = userEvent.setup();
-      renderSection();
-
-      await pick(user, /Aimpoint/);
-      const ask = await screen.findByRole("alertdialog", { name: `Move ${AIMPOINT}?` });
-      await user.click(within(ask).getByRole("button", { name: "Move" }));
-
-      await waitFor(() => expect(mountRecord).toHaveBeenCalledTimes(1));
-      expect(mountRecord).toHaveBeenCalledWith(aimpoint.record, rifle.record);
-      expect(await screen.findByText(`${AIMPOINT} mounted on ${NAMES.rifle}.`)).toBeInTheDocument();
-      expect(refresh).toHaveBeenCalled();
-    });
-
-    it("mounts nothing on Cancel, leaving it where it is (006 US2-3a)", async () => {
-      const user = userEvent.setup();
-      renderSection();
-
-      await pick(user, /Aimpoint/);
-      const ask = await screen.findByRole("alertdialog", { name: `Move ${AIMPOINT}?` });
-      await user.click(within(ask).getByRole("button", { name: "Cancel" }));
-
-      await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
-      expect(mountRecord).not.toHaveBeenCalled();
-      expect(refresh).not.toHaveBeenCalled();
-    });
-  });
-});
-
-describe("MountedSection Unmount (006 contracts/ui-accessories.md §5)", () => {
-  it("first asks 'Unmount {name}?', saying what stays mounted on it, and unmounts nothing yet", async () => {
-    const user = userEvent.setup();
-    renderSection();
-
-    await user.click(screen.getByRole("button", { name: `Unmount ${NAMES.upper}` }));
-
-    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.upper}?` });
-    expect(ask).toHaveAccessibleDescription(
-      `It will no longer be mounted on ${NAMES.rifle}. Everything mounted on it stays mounted on it.`,
-    );
-    expect(within(ask).getByRole("button", { name: "Unmount" })).toBeInTheDocument();
-    expect(within(ask).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-    expect(ask.textContent).not.toMatch(/\b(items?|hosts?)\b/i);
-    expect(mountRecord).not.toHaveBeenCalled();
-  });
-
-  it("says only where it is mounted when nothing is mounted on it", async () => {
-    const user = userEvent.setup();
-    renderSection();
-
-    await user.click(screen.getByRole("button", { name: /^Unmount Gemtech/ }));
-
-    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.suppressor}?` });
-    expect(ask).toHaveAccessibleDescription(`It will no longer be mounted on ${NAMES.rifle}.`);
-  });
-
-  it("unmounts on Unmount and toasts '{name} unmounted.'", async () => {
-    const user = userEvent.setup();
-    mountRecord.mockResolvedValue({ item: upper, host: null });
-    renderSection();
-
-    await user.click(screen.getByRole("button", { name: `Unmount ${NAMES.upper}` }));
-    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.upper}?` });
-    await user.click(within(ask).getByRole("button", { name: "Unmount" }));
-
-    await waitFor(() => expect(mountRecord).toHaveBeenCalledTimes(1));
-    expect(mountRecord).toHaveBeenCalledWith(upper.record, null);
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
-    expect(await screen.findByText(`${NAMES.upper} unmounted.`)).toBeInTheDocument();
-    expect(refresh).toHaveBeenCalled();
-  });
-
-  it("unmounts a firearm entry the same way", async () => {
-    const user = userEvent.setup();
-    mountRecord.mockResolvedValue({ item: suppressor, host: null });
-    renderSection();
-
-    await user.click(screen.getByRole("button", { name: /^Unmount Gemtech/ }));
-    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.suppressor}?` });
-    await user.click(within(ask).getByRole("button", { name: "Unmount" }));
-
-    await waitFor(() => expect(mountRecord).toHaveBeenCalledWith(suppressor.record, null));
-    expect(await screen.findByText("Gemtech GM-45 “Quiet one” unmounted.")).toBeInTheDocument();
-  });
-
-  it("unmounts nothing on Cancel, leaving it mounted", async () => {
-    const user = userEvent.setup();
-    renderSection();
-
-    await user.click(screen.getByRole("button", { name: `Unmount ${NAMES.upper}` }));
-    const ask = await screen.findByRole("alertdialog", { name: `Unmount ${NAMES.upper}?` });
-    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
-    expect(mountRecord).not.toHaveBeenCalled();
-    expect(refresh).not.toHaveBeenCalled();
-  });
-});
-
-describe("MountedSection wording (006 FR-012, constitution III)", () => {
-  it("never says 'item' or 'host', in the section, the menu or the dialog", async () => {
-    const user = userEvent.setup();
-    listMountCandidates.mockResolvedValue({
-      candidates: [
-        {
-          label: label({ kind: "accessory", id: 30 }, "Aimpoint", "T-2", "Optic"),
-          mountedOn: upper,
-        },
-      ],
-    });
     renderSection();
     expect(document.body.textContent).not.toMatch(/\b(items?|hosts?)\b/i);
-
     await user.click(mountMenu());
     await screen.findAllByRole("menuitem");
     expect(document.body.textContent).not.toMatch(/\b(items?|hosts?)\b/i);
-
-    await user.click(screen.getByRole("menuitem", { name: "Existing accessory or firearm…" }));
-    const dialog = await screen.findByRole("dialog", { name: /^Mount on / });
-    await user.click(within(dialog).getByRole("combobox"));
-    await screen.findByRole("option", { name: /Aimpoint/ });
-    expect(document.body.textContent).not.toMatch(/\b(items?|hosts?)\b/i);
-
-    await user.click(screen.getByRole("option", { name: /Aimpoint/ }));
-    await screen.findByRole("alertdialog", { name: /^Move / });
-    expect(document.body.textContent).not.toMatch(/\b(items?|hosts?)\b/i);
-  });
-});
-
-// 006 FR-012, FR-013, the refusals of `mount_record`
-// (mount_test.rs holds the rules): the dialog shows the backend's `host` message
-// and nothing changes.
-describe("MountedSection when the mount is refused (006 FR-012, FR-013)", () => {
-  const aimpoint = label({ kind: "accessory", id: 30 }, "Aimpoint", "T-2", "Optic");
-  const REFUSAL = "LaRue PredatAR is mounted on Aimpoint T-2, so it can't carry it.";
-
-  it("shows fieldErrors.host in the picker, keeps it open and leaves the list as it was", async () => {
-    const user = userEvent.setup();
-    listMountCandidates.mockResolvedValue({ candidates: [{ label: aimpoint, mountedOn: null }] });
-    mountRecord.mockRejectedValue(
-      new CommandFailure({
-        code: "VALIDATION_ERROR",
-        message: "The mount was refused.",
-        fieldErrors: { host: REFUSAL },
-      }),
-    );
-    renderSection();
-
-    const dialog = await openExistingDialog(user);
-    await user.click(within(dialog).getByRole("combobox"));
-    await user.click(await screen.findByRole("option", { name: /Aimpoint/ }));
-
-    expect(await within(dialog).findByText(REFUSAL)).toBeInTheDocument();
-    expect(screen.queryByText("The mount was refused.")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: /^Mount on / })).toBeInTheDocument();
-    expect(mountRecord).toHaveBeenCalledTimes(1);
-    expect(refresh).not.toHaveBeenCalled();
-    expect(screen.queryByText(/^Aimpoint T-2 · Optic mounted on /)).not.toBeInTheDocument();
-    const items = within(screen.getByRole("list", { hidden: true })).getAllByRole("listitem", {
-      hidden: true,
-    });
-    expect(items).toHaveLength(entries.length);
   });
 });

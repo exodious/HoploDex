@@ -34,7 +34,7 @@ describe("firearmsService IPC arguments", () => {
     expect(invoke).toHaveBeenNthCalledWith(
       2,
       "update_firearm",
-      { id: 3, input, confirmedWarnings: undefined },
+      { id: 3, input, confirmedWarnings: undefined, mountChanges: [] },
       SESSION,
     );
     expect(invoke).toHaveBeenNthCalledWith(3, "get_firearm", { id: 3 }, SESSION);

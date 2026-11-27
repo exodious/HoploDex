@@ -11,6 +11,7 @@ import type { SessionState } from "../session/sessionStore";
 import type { DatabaseStatus, Draft } from "../databases/types";
 import { FORM_VERSION as FIREARM_FORM_VERSION } from "../firearms/FirearmForm";
 import { FORM_VERSION as DISPOSE_FORM_VERSION } from "../firearms/DisposeDialog";
+import { FORM_VERSION as ACCESSORY_FORM_VERSION } from "../accessories/AccessoryForm";
 import { AppShell } from "./AppShell";
 import { saveAppearance } from "./appearance";
 import { CollectionContext } from "./collectionStore";
@@ -678,11 +679,16 @@ describe("Resumed accessory pending changes open where their form is (006 FR-027
   });
   afterEach(() => setResumedDraft(null));
 
-  /** Each accessory form and dialog keeps drafts of version 1, the dispose
-   * dialog's of its own. */
+  /** Each accessory form and dialog keeps drafts of version 1, the add and
+   * edit form (`ACCESSORY_FORM_VERSION`) and the dispose dialog of their own. */
   function resume(draft: Omit<Draft, "formVersion" | "label">, label = `${OPTIC} (edit)`) {
     setResumedDraft({
-      formVersion: draft.mode === "dispose" ? DISPOSE_FORM_VERSION : 1,
+      formVersion:
+        draft.mode === "dispose"
+          ? DISPOSE_FORM_VERSION
+          : draft.mode === "add" || draft.mode === "edit"
+            ? ACCESSORY_FORM_VERSION
+            : 1,
       label,
       ...draft,
     });

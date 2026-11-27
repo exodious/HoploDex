@@ -52,6 +52,15 @@ import type { GuidePart } from "./IdentificationGuide";
 import { caliberHint, caliberReducer } from "./caliberDerivation";
 import type { CaliberAction, CaliberMode, CaliberState } from "./caliberDerivation";
 import { MountChooser } from "../mounts/MountChooser";
+import { MountedEditor } from "../mounts/MountedEditor";
+import {
+  NO_MOUNTED_CHANGES,
+  mountChangesInput,
+  readMountedChanges,
+  storedMounted,
+} from "../mounts/mountedChanges";
+import type { MountedChanges } from "../mounts/mountedChanges";
+import type { MountChange } from "../mounts/mountsService";
 import { recordKey } from "../mounts/recordKey";
 import { recordNameText } from "../mounts/recordNames";
 import type { MountDetail, RecordLabel } from "../mounts/types";
@@ -384,7 +393,7 @@ function physicalGroupSummary(form: FormState, rules: FieldRules): string {
 }
 
 /** A field the form can open on, for the record page's "Add" links. */
-export type FocusField = "notes" | "accessories" | "registration";
+export type FocusField = "notes" | "accessories" | "registration" | "mounted";
 
 /** How long the section stays highlighted after the form opens on a field. */
 const HIGHLIGHT_MS = 1800;
@@ -398,7 +407,11 @@ export interface FirearmFormProps {
    * briefly highlighted (001 FR-038). */
   focusField?: FocusField;
   /** `confirmedWarnings` resends after an `ORIGINAL_MARKS_MATCH` (002 FR-009). */
-  onSubmit: (input: FirearmInput, confirmedWarnings?: boolean) => Promise<void>;
+  onSubmit: (
+    input: FirearmInput,
+    confirmedWarnings?: boolean,
+    mountChanges?: MountChange[],
+  ) => Promise<void>;
   onCancel?: () => void;
 }
 
@@ -406,8 +419,8 @@ export interface FirearmFormProps {
  * `FormState` changes shape, so older drafts are only discarded. 2: the
  * cartridge and the caliber's state (004 research.md §8). 3: the registration
  * classification and details (005). 4: the Mounted on choice (006 research.md
- * §19). */
-export const FORM_VERSION = 4;
+ * §19). 5: the Mounted list's changes (014 research.md §8). */
+export const FORM_VERSION = 5;
 
 interface FormState {
   make: string;
@@ -460,6 +473,8 @@ interface FormState {
   registrationForm: string;
   registrationApproved: string;
   registeredTo: string;
+  /** 014 FR-024: the Mounted list's changes, saved with the record. */
+  mounted: MountedChanges;
 }
 
 type Field = keyof FormState;
@@ -524,6 +539,7 @@ function toFormState(firearm?: FirearmFormProps["initialValues"]): FormState {
     registrationForm: firearm?.registrationForm ?? "",
     registrationApproved: firearm?.registrationApproved ?? "",
     registeredTo: firearm?.registeredTo ?? "",
+    mounted: NO_MOUNTED_CHANGES,
   };
 }
 
@@ -670,6 +686,7 @@ const FIELD_ORDER: Field[] = [
   "firearmTypeId",
   "actionTypeId",
   "mountedOn",
+  "mounted",
   "cartridge",
   "caliber",
   "serialNumber",
@@ -733,6 +750,8 @@ function storedValue(field: Field, form: FormState, rules: FieldRules, disposed:
       return rules.actionTypeApplies ? form.actionTypeId : "";
     case "mountedOn":
       return disposed || !form.mountedOn ? "" : recordKey(form.mountedOn.record);
+    case "mounted":
+      return disposed ? "" : storedMounted(form.mounted);
     case "serialNumber":
       return form.noSerialAttested ? "" : form.serialNumber.trim();
     case "noSerialAttested":
@@ -783,8 +802,16 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     targetId: initialValues?.id ?? null,
   };
   // Pending changes the user resumed start as unsaved input (003 FR-039).
-  const [form, setForm] = useState<FormState>(() =>
-    resumedValues(scope, target, toFormState(initialValues)),
+  const [form, setForm] = useState<FormState>(() => {
+    const resumed = resumedValues(scope, target, toFormState(initialValues));
+    // A kept draft comes from the database: its list is read, never trusted.
+    return { ...resumed, mounted: readMountedChanges(resumed.mounted) };
+  });
+  // 014 FR-024: what is mounted directly on the record, as saved.
+  const [savedMounted] = useState(() =>
+    (initialValues?.mount?.mounted ?? [])
+      .filter((entry) => entry.depth <= 1)
+      .map((entry) => entry.label),
   );
   useResumedDraftTaken(target);
   // What is saved, never the resumed draft: every marker and revert refers to it
@@ -863,6 +890,14 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
   } | null>(null);
 
   useEffect(() => {
+    if (focusField !== "mounted") return;
+    // From the record page's "Change what's mounted…" (014 FR-028).
+    const field = document.getElementById("ff-mounted-add");
+    field?.focus({ preventScroll: true });
+    field?.scrollIntoView?.({ block: "center" });
+  }, [focusField]);
+
+  useEffect(() => {
     if (focusField !== "registration") return;
     // From the record page's Registration panel: the section is open, and
     // Registered as is focused.
@@ -874,7 +909,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
 
   useEffect(() => {
     const field = focusField === "notes" ? notesRef.current : accessoriesRef.current;
-    if (!focusField || focusField === "registration" || !field) return;
+    if (!focusField || focusField === "registration" || focusField === "mounted" || !field) return;
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     field.focus({ preventScroll: true });
     field.scrollIntoView?.({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
@@ -1419,7 +1454,11 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     setSubmitting(true);
     setServerError(null);
     try {
-      await onSubmit(input, confirmedWarnings);
+      await onSubmit(
+        input,
+        confirmedWarnings,
+        disposed ? [] : mountChangesInput(latestForm.current.mounted, savedMounted),
+      );
       return true;
     } catch (error) {
       if (error instanceof CommandFailure) {
@@ -1572,6 +1611,17 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   change={changeFor("mountedOn")}
                 />
               </div>
+            )}
+            {initialValues && !disposed && (
+              <MountedEditor
+                record={{ kind: "firearm", id: initialValues.id }}
+                saved={savedMounted}
+                changes={form.mounted}
+                onChange={(mounted) => update("mounted", mounted)}
+                mountedOn={form.mountedOn}
+                addId="ff-mounted-add"
+                error={errorFor("mounted")}
+              />
             )}
 
             {/* 004 contracts/ui-entry.md §3: the

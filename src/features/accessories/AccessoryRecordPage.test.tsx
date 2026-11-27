@@ -595,12 +595,15 @@ describe("AccessoryRecordPage mounts (006 US2)", () => {
     expect(before(parts[1], parts[2])).toBe(true);
   });
 
-  it("lists what is mounted on the accessory, with Unmount on a direct entry", async () => {
+  it("lists what is mounted on the accessory, changed from its edit form (014 FR-028)", async () => {
     renderWithNavigation();
 
     const section = await screen.findByRole("region", { name: "Mounted" });
     expect(within(section).getByRole("list")).toHaveTextContent("SureFire M600 · Light or laser");
-    expect(within(section).getByRole("button", { name: /^Unmount SureFire/ })).toBeInTheDocument();
+    // 014 FR-028: read-only; what is mounted changes in the edit form.
+    expect(
+      within(section).getByRole("button", { name: "Change what's mounted…" }),
+    ).toBeInTheDocument();
   });
 
   it("says 'Nothing mounted.' when nothing is mounted on it (006 US2-10)", async () => {

@@ -45,7 +45,6 @@ describe("RestoreDialog (001 FR-033)", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-
   // 001 US1-12
   it("asks what to do with the disposition and never picks for the user", async () => {
     const user = userEvent.setup();

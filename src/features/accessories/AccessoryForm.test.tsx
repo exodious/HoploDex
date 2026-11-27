@@ -645,8 +645,8 @@ describe("AccessoryForm unsaved changes (006 FR-027)", () => {
     expect(screen.getByLabelText(/^Notes/)).toHaveValue("Zeroed at 100 yards.");
   });
 
-  it("is the first version of its drafts", () => {
-    expect(FORM_VERSION).toBe(1);
+  it("is version 2 of its drafts, with the Mounted list (014 research.md §8)", () => {
+    expect(FORM_VERSION).toBe(2);
   });
 });
 

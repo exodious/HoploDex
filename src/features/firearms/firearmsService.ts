@@ -1,4 +1,5 @@
 import type { SessionScope } from "../session/sessionScope";
+import type { MountChange } from "../mounts/mountsService";
 import type {
   ActionTypesOutput,
   DisposeInput,
@@ -27,8 +28,10 @@ export function updateFirearm(
   id: number,
   input: FirearmInput,
   confirmedWarnings?: boolean,
+  mountChanges: MountChange[] = [],
 ): Promise<Firearm> {
-  return scope.invoke<Firearm>("update_firearm", { id, input, confirmedWarnings });
+  // The edit form's Mounted list, saved with the record (014 FR-027).
+  return scope.invoke<Firearm>("update_firearm", { id, input, confirmedWarnings, mountChanges });
 }
 
 export function disposeFirearm(

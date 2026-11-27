@@ -229,8 +229,8 @@ describe("FirearmForm drafts of the caliber state (004 research.md §8)", () => 
 
   // 006 research.md §19: the Mounted on choice raised it
   // from 3 to 4.
-  it("is version 4", () => {
-    expect(FORM_VERSION).toBe(4);
+  it("is version 5, with the Mounted list (014 research.md §8)", () => {
+    expect(FORM_VERSION).toBe(5);
   });
 
   it("discards a version 3 draft", () => {
