@@ -5,7 +5,7 @@
 Run through the dev container (`DEVELOPMENT.md`):
 
 ```sh
-scripts/dev-container.sh bash -c 'npm run lint && npm test'
+scripts/dev-container.sh bash -c 'npm run lint && npm test && cargo nextest run --manifest-path src-tauri/Cargo.toml --features test-kdf'
 scripts/dev-container.sh bash -c 'npm run build && npm run test:e2e -- --spec e2e/specs/record-firearm.e2e.ts --spec e2e/specs/accessories-mounting.e2e.ts --spec e2e/specs/locking.e2e.ts --spec e2e/specs/value-insurance.e2e.ts'
 scripts/dev-container.sh bash -c 'npm run build && npm run screenshots'
 ```
