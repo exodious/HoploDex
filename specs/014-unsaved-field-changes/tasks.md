@@ -44,7 +44,7 @@ Bare IDs here mean this feature's. In code, cite them as `014 FR-001`, `014 US1-
 
 **Independent test**: spec US1's Independent Test.
 
-- [ ] T011 [P] [US1] Write failing Vitest tests in src/features/firearms/FirearmForm.changes.test.tsx for US1-1 to US1-8 (trailing space, "01250", 0 lb 40.5 oz, one weight marker, folded section, description).
+- [ ] T011 [P] [US1] Write failing Vitest tests in src/features/firearms/FirearmForm.changes.test.tsx for US1-1 to US1-8 (trailing space, "01250", 0 lb 40.5 oz, one weight marker, folded section, description), plus FR-022 (a photo or document added or removed on the record page marks nothing and keeps no draft) and SC-001 (a change on a form whose collection store holds 10,000 records marks within 100 ms).
 - [ ] T012 [US1] In src/features/firearms/FirearmForm.tsx, write `stored(field, state)` from the existing parsers (FR-002, FR-005: hidden fields judged by what a save stores, serial under "no serial number"), feed `useFieldChanges` with the saved state built from `initialValues` (never the resumed draft), pass `change` to every field (one for the weight pair), `changed` to the folded sections, and its `isDirty` to `useDirtyForm`; add forms use the opening state and show no markers.
 - [ ] T013 [P] [US1] Same in src/features/insurance/InsurancePolicyForm.tsx, with tests in InsurancePolicyForm.test.tsx (US1-9).
 - [ ] T014 [P] [US1] Same in src/features/accessories/AccessoryForm.tsx, with tests in AccessoryForm.test.tsx.
@@ -60,7 +60,7 @@ Bare IDs here mean this feature's. In code, cite them as `014 FR-001`, `014 US1-
 
 **Independent test**: spec US2's Independent Test.
 
-- [ ] T018 [P] [US2] Write failing Vitest tests in src/features/firearms/FirearmForm.changes.test.tsx for US2-1 to US2-9 (Type, Origin, Registered as, entry fields' re-spelling, errors cleared, focus).
+- [ ] T018 [P] [US2] Write failing Vitest tests in src/features/firearms/FirearmForm.changes.test.tsx for US2-1 to US2-9 (Type, Origin, Registered as, entry fields' re-spelling, errors cleared, focus), and a saved value no longer offered (unchanged until another is picked; revert brings it back).
 - [ ] T019 [US2] Implement `revert(field)` in FirearmForm.tsx (research.md §5: dependents restored when still as the change left them, no Origin or classification question again) and in src/features/firearms/EntryField.tsx (research.md §6: clear the note and suggestion, no re-spelling until the next edit); focus the field after a revert (FR-013).
 - [ ] T020 [P] [US2] Implement revert in InsurancePolicyForm.tsx, AccessoryForm.tsx, CoverageDialog.tsx and DatabaseSettingsDialog.tsx (Remember: drop the staged choice, ask nothing), with tests in each form's test file.
 - [ ] T021 [US2] E2E in e2e/specs/record-firearm.e2e.ts: `describe("014 US2 - Put One Field Back to Its Saved Value")`: revert by keyboard; focus lands in the field; value is the saved one.
