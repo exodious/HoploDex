@@ -744,6 +744,7 @@ export function DatabaseChooser({ selectPath = null }: DatabaseChooserProps) {
                         problem={upgrade.problem}
                         name={upgrade.row.name}
                         awaitingId={upgrade.awaitingId}
+                        flatpak={state.flatpak}
                         onChoose={(folder) => void startUpgrade(folder)}
                         onCancel={cancelUpgrade}
                       />
