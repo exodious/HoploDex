@@ -147,6 +147,8 @@ message as a row error.
 
 _Amended 2026-11-24 (PR 229's follow-ups, milestone 0.1.1): `resolve_import_conflicts` now registers the `Import` operation too (`OPERATION_IN_PROGRESS` while another runs), so a sleep, lock or quit stops it between conflicts and between mounts, as it stops an import's saving. Each overwrite or duplicate is saved on its own; a stop keeps the ones saved and fails with `OPERATION_STOPPED` `{ operation: "import", importedCount }`, their number, and any other error after one is saved carries `importedCount` too. The import is closed either way. `cancel_import` doesn't stop it._
 
+_Amended 2026-11-27 (issue #249): a stop no longer stops the mounts. It ends the conflicts there, makes the mounts of every row saved before it, and then fails with `OPERATION_STOPPED` `{ operation: "import", importedCount, undecidedCount }`, where `undecidedCount` counts the matching rows not decided: those it didn't reach and any whose decision couldn't be applied. The import is still closed, so the files are imported again to decide those rows; a sleep's chooser notice carries `undecidedCount` too (003 [tauri-commands.md](../../003-database-protection-management/contracts/tauri-commands.md))._
+
 Registered in `generate_handler!`, `COMMANDS` and
 `capabilities/default.json` (`allow-cancel_import`, main web view only), so
 `acl_manifest_test.rs` holds.

@@ -2324,17 +2324,23 @@ pub mod ops {
         apply_to_remaining: Option<&str>,
     ) -> Result<ResolveResult, CommandError> {
         let operation = session.operations().begin(OperationKind::Import, None)?;
-        session.write_open(id, |open| {
-            resolve_import_conflicts_stoppable(
-                &open.conn,
-                &open.imports,
-                session_id,
-                resolutions,
-                apply_to_remaining,
-                &|| operation.is_cancelled(),
-                &|saved| operation.record_done(saved),
-            )
-        })
+        session
+            .write_open(id, |open| {
+                resolve_import_conflicts_stoppable(
+                    &open.conn,
+                    &open.imports,
+                    session_id,
+                    resolutions,
+                    apply_to_remaining,
+                    &|| operation.is_cancelled(),
+                    &|saved| operation.record_done(saved),
+                )
+            })
+            .inspect_err(|e| {
+                if let Some(n) = e.details.as_ref().and_then(|d| d["undecidedCount"].as_u64()) {
+                    operation.record_undecided(n);
+                }
+            })
     }
 
     /// Each row is validated independently; a failing row is reported in
@@ -2522,8 +2528,9 @@ pub mod ops {
     /// conflict, and reporting the number of records saved so
     /// far (each overwrite and duplicate) to `record_saved`. Each is saved on
     /// its own, so a stop keeps every one saved before it, makes their
-    /// mounts, and fails with
-    /// `OPERATION_STOPPED` and their number in `importedCount`; any other
+    /// mounts, and fails with `OPERATION_STOPPED`, their number in
+    /// `importedCount` and the number of matching rows left undecided in
+    /// `undecidedCount` (issue #249); any other
     /// error after one is saved carries their number too. The import is
     /// closed either way: its files are imported again to decide the rest.
     pub fn resolve_import_conflicts_stoppable(
@@ -2554,10 +2561,12 @@ pub mod ops {
         let mut saved_count = 0;
         let stopped =
             |saved: u64| CommandError::operation_stopped(OperationKind::Import, Some(saved), None);
-        let mut was_stopped = false;
-        for conflict in pending {
+        // The matching rows a stop leaves undecided (issue #249).
+        let mut unreached = None;
+        let mut pending = pending.into_iter();
+        while let Some(conflict) = pending.next() {
             if is_cancelled() {
-                was_stopped = true;
+                unreached = Some(pending.len() + 1);
                 break;
             }
             let chosen = explicit.get(conflict.conflict_id.as_str());
@@ -2654,8 +2663,13 @@ pub mod ops {
         // one it had before (issue #249).
         resolve_mounts(conn, &mount_requests, &outcomes, &mut warnings, &|| Ok(()))
             .map_err(|e| e.with_imported_count(saved_count))?;
-        if was_stopped {
-            return Err(stopped(saved_count));
+        if let Some(unreached) = unreached {
+            // The import is closed: its files are imported again to decide them.
+            let mut err = stopped(saved_count);
+            if let Some(details) = err.details.as_mut() {
+                details["undecidedCount"] = (unreached + still_open.len()).into();
+            }
+            return Err(err);
         }
 
         if !still_open.is_empty() {

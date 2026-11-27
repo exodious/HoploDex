@@ -121,6 +121,7 @@ fn notices_are_returned_once() {
         operation: OperationKind::Import,
         imported_count: Some(12),
         deleted_count: None,
+        undecided_count: Some(3),
         left_behind_count: None,
         folder: None,
     };
@@ -143,6 +144,7 @@ fn the_file_uses_the_documented_shape() {
         operation: OperationKind::Import,
         imported_count: None,
         deleted_count: None,
+        undecided_count: None,
         left_behind_count: None,
         folder: None,
     });

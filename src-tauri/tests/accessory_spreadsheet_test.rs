@@ -1485,6 +1485,7 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
     assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
     assert_eq!(err.details.as_ref().unwrap()["operation"], "import");
     assert_eq!(err.details.as_ref().unwrap()["importedCount"], 1);
+    assert_eq!(err.details.as_ref().unwrap()["undecidedCount"], 1, "issue #249");
     assert_eq!(saved.get(), 1);
     let notes: Vec<Option<String>> = db
         .conn
@@ -1548,6 +1549,7 @@ fn a_stop_while_conflicts_are_resolved_still_makes_the_saved_rows_mounts() {
 
     assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
     assert_eq!(err.details.as_ref().unwrap()["importedCount"], 2);
+    assert_eq!(err.details.as_ref().unwrap()["undecidedCount"], 1, "the Light");
     assert_eq!(mount_of(&db.conn, optic), Some(rifle_uid), "the saved row's mount is made");
 }
 

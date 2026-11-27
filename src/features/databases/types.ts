@@ -64,6 +64,8 @@ export type ChooserNotice =
       operation: OperationKind;
       importedCount?: number;
       deletedCount?: number;
+      /** For an import's conflicts: the matching rows left undecided (issue #249). */
+      undecidedCount?: number;
       /** For `moveBackups`: how many are still in `folder`. */
       leftBehindCount?: number;
       folder?: string;

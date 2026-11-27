@@ -141,7 +141,12 @@ function stoppedText(notice: Extract<ChooserNotice, { kind: "operationStopped" }
   const stopped = `The computer went to sleep while ${STOPPED_OPERATION[notice.operation]} was running, so it was stopped.`;
   if (notice.operation === "import") {
     const count = notice.importedCount ?? 0;
-    return `${stopped} ${count} ${count === 1 ? "row was" : "rows were"} imported before it stopped. You can import the file again; rows already imported will be found as matches.`;
+    const undecided = notice.undecidedCount ?? 0;
+    const imported = `${count} ${count === 1 ? "row was" : "rows were"} imported before it stopped`;
+    // Issue #249: a stopped resolution's undecided rows are decided by importing again.
+    return undecided > 0
+      ? `${stopped} ${imported}, and ${undecided} matching ${undecided === 1 ? "row wasn't" : "rows weren't"} decided. Import the file again to decide them; rows already imported will be found as matches.`
+      : `${stopped} ${imported}. You can import the file again; rows already imported will be found as matches.`;
   }
   return `${stopped} ${name} is as it was before it started.`;
 }

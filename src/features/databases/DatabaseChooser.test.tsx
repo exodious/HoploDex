@@ -1001,6 +1001,16 @@ describe("DatabaseChooser after a lock (003 US6, contracts/ui-databases.md §1, 
       {
         kind: "operationStopped",
         databasePath: main.path,
+        operation: "import",
+        importedCount: 1,
+        undecidedCount: 3,
+      } as const,
+      "The computer went to sleep while an import was running, so it was stopped. 1 row was imported before it stopped, and 3 matching rows weren't decided. Import the file again to decide them; rows already imported will be found as matches.",
+    ],
+    [
+      {
+        kind: "operationStopped",
+        databasePath: main.path,
         operation: "deleteBackups",
         deletedCount: 2,
       } as const,
