@@ -33,6 +33,11 @@ describe("FlatpakReachNote (#260)", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Done" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Allow another folder…" }));
+    const reopened = screen.getByRole("dialog", { name: "Allow another folder" });
+    expect(within(reopened).getByRole("button", { name: "Copy" })).toBeVisible();
+    expect(within(reopened).queryByRole("button", { name: "Copied" })).toBeNull();
   });
 
   it("outside a Flatpak, shows nothing: no line, no link, no command", () => {

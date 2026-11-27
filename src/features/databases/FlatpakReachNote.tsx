@@ -40,18 +40,19 @@ function AllowFolderDialog({
       // The command stays selectable at a click, so it can still be copied by hand.
     }
   }
+  function changeOpen(next: boolean) {
+    onOpenChange(next);
+    setCopied(false);
+  }
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        setCopied(false);
-      }}
+      onOpenChange={changeOpen}
       title="Allow another folder"
       description="Run this command in a terminal with the folder in place of <folder>, then restart HoploDex."
       size="md"
       footer={
-        <Button variant="primary" onClick={() => onOpenChange(false)}>
+        <Button variant="primary" onClick={() => changeOpen(false)}>
           Done
         </Button>
       }
