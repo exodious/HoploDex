@@ -104,34 +104,34 @@ Bare IDs here mean this feature's. In code, cite them as `014 FR-001`, `014 US1-
 - [X] T032 [US5] Implement src/features/mounts/MountedEditor.tsx (research.md §8, contracts/ui.md §5) and add it to the active firearm and accessory edit forms with `mounted` (`mountedChanges.ts`) in their state, field changes, reverts and save input; raise `FORM_VERSION` (firearm 5, accessory 2).
 - [X] T033 [US5] Make src/features/mounts/MountedSection.tsx read-only with "Change what's mounted…" (opens the edit form with `focusField: "mounted"` from FirearmRecordPage.tsx and AccessoryRecordPage.tsx) and the Mount menu's New accessory… only; remove Unmount, Mount → Existing… and their questions.
 - [X] T034 [US5] E2E in e2e/specs/accessories-mounting.e2e.ts: replace the record-page Mount → Existing journey with the edit form's Mounted list, under `describe("… 014 US5 - Change What Is Mounted, and Save It with the Record")`; mount the same way in accessories-dispose.e2e.ts's setup.
-- [ ] T035 [US5] Seed: confirm src-tauri/examples/human_seed.rs already has a record mounted on another (no new column, so `human_seed_coverage_test.rs` needs nothing); add one only if quickstart M3 lacks it.
+- [X] T035 [US5] Seed: src-tauri/examples/human_seed.rs already has records mounted on others (no new column); its seeded pending draft's firearm form version goes to 5, with `human_seed_coverage_test.rs`.
 
 ---
 
 ## Phase 8: Docs and surface
 
 - [X] T036 Add the changed form, the discard question, the Mounted list and the read-only Mounted section to e2e/screenshots/screens.e2e.ts.
-- [ ] T037 Update docs/architecture/frontend.md (the shared change mechanism, close guard) and the contracts' notes: `_Amended by_` lines in specs/006-accessory-links/ (FR-012, contracts/ui-accessories.md §5, contracts/tauri-commands.md) and specs/003-database-protection-management/ (FR-010, FR-039, contracts/ui-databases.md §7).
-- [ ] T038 Check docs/attack-surface.md against research.md §11 (`npm test` runs `scripts/attack-surface.mjs`); update it only if a path or command changed.
+- [X] T037 Update docs/architecture/frontend.md (the shared change mechanism, close guard) and the contracts' notes: `_Amended by_` lines in specs/006-accessory-links/ (FR-012, contracts/ui-accessories.md §5, contracts/tauri-commands.md) and specs/003-database-protection-management/ (FR-010, FR-039, contracts/ui-databases.md §7).
+- [X] T038 Check docs/attack-surface.md against research.md §11 (`npm test` runs `scripts/attack-surface.mjs`); update it only if a path or command changed.
 
 ---
 
 ## Phase 9: Validation on every environment
 
-- [ ] T039 Linux dev container: format, lint, `npm test`, Rust tests, the dependency and license audit, in the background with logs.
-- [ ] T040 Linux dev container: `npm run build`, then E2E (all specs).
-- [ ] T041 Linux dev container: window-only screenshots of each changed form, before (main) and after.
-- [ ] T042 On macOS (VM, take the lock): Rust tests and E2E, in the task's folder on the external volume.
-- [ ] T043 On macOS: window-only screenshots, before and after (`screencapture -l <window id>`).
-- [ ] T044 On Windows (VM, take the lock): Rust tests and E2E, in the task's folder.
-- [ ] T045 On Windows: window-only screenshots, before and after.
-- [ ] T046 Report every test that failed then passed on rerun, and every skip, as they happen.
+- [X] T039 Linux dev container: format, lint, `npm test`, Rust tests, the dependency and license audit, in the background with logs.
+- [X] T040 Linux dev container: `npm run build`, then E2E (all specs).
+- [X] T041 Linux dev container: window-only screenshots of each changed form, before (main) and after.
+- [X] T042 On macOS (VM, take the lock): Rust tests and E2E, in the task's folder on the external volume.
+- [X] T043 On macOS: window-only screenshots, before and after (`screencapture -l <window id>`).
+- [X] T044 On Windows (VM, take the lock): Rust tests and E2E, in the task's folder.
+- [X] T045 On Windows: window-only screenshots, before and after.
+- [X] T046 Report every test that failed then passed on rerun, and every skip, as they happen.
 
 ---
 
 ## Phase 10: Close-out
 
-- [ ] T047 Run `/ai-security-review pr` before the PR; keep its three lines in `## Security review`.
+- [X] T047 Run `/ai-security-review pr` before the PR; keep its three lines in `## Security review`.
 - [ ] T048 PR description: `Closes #17` on its own line, screenshots, the persistence note (mount changes in the record's transaction, bounded), the performance note (research.md §10). Check `closingIssuesReferences`.
 - [ ] T049 Close-out per plan.md: check each issue's state before commenting; comment on none that is closed.
 
