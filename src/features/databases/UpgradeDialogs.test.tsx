@@ -217,6 +217,7 @@ describe("UpgradeFolderDialog's reach note (#260)", () => {
     const dialog = renderFolder("insufficientSpace", false);
     expect(within(dialog).queryByText(/can reach only/)).toBeNull();
     expect(within(dialog).queryByText(OVERRIDE)).toBeNull();
+    expect(dialog.querySelector(".hd-dialog__body")).toBeNull();
   });
 
   it("for a folder out of reach, leaves it to the refusal, which names the folder", () => {

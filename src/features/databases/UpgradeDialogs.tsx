@@ -221,9 +221,9 @@ export function UpgradeFolderDialog({
       bare
     >
       <form className="hd-dialog__form" onSubmit={(event) => void choose(event)} noValidate>
-        {problem.reason !== "outOfReach" && (
+        {flatpak && problem.reason !== "outOfReach" && (
           <div className="hd-dialog__body">
-            <FlatpakReachNote flatpak={flatpak} />
+            <FlatpakReachNote flatpak />
           </div>
         )}
         <footer className="hd-dialog__footer">
