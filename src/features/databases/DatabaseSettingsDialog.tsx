@@ -444,7 +444,9 @@ function SettingsForm({
                   Backups go to the default folder until you choose it again.
                 </p>
               )}
-              <FlatpakReachNote flatpak={status.flatpak} />
+              {location.unavailableReason !== "outOfReach" && (
+                <FlatpakReachNote flatpak={status.flatpak} />
+              )}
               <div className="hd-settings-location__actions">
                 <Button
                   size="sm"

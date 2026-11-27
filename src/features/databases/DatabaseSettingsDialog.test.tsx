@@ -160,6 +160,37 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     expect(screen.getByRole("button", { name: "Use the default" })).toBeEnabled();
   });
 
+  it("in a Flatpak, says what it reaches and how to grant another folder (#260)", () => {
+    renderSettings({ ...status(), flatpak: true });
+
+    const backups = screen.getByRole("group", { name: "Backups" });
+    expect(
+      within(backups).getByText(
+        "flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex",
+      ),
+    ).toBeVisible();
+  });
+
+  it("in a Flatpak, says what it reaches once for a location out of reach (#260)", () => {
+    renderSettings({
+      ...status({
+        kind: "custom",
+        path: "/srv/hoplodex-backups",
+        available: false,
+        unavailableReason: "outOfReach",
+      }),
+      flatpak: true,
+    });
+
+    const backups = screen.getByRole("group", { name: "Backups" });
+    expect(backups.textContent?.split("by default it can reach only").length).toBe(2);
+    expect(
+      within(backups).queryByText(
+        "flatpak override --user --filesystem=<folder> io.github.exodious.HoploDex",
+      ),
+    ).toBeNull();
+  });
+
   // 011 US1-8, contracts/tauri-commands.md "Commands that check reach": update_backup_settings
   it("shows a custom location refused as out of reach on the location field", async () => {
     const user = userEvent.setup();
