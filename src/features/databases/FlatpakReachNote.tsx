@@ -50,7 +50,7 @@ function AllowFolderDialog({
       onOpenChange={changeOpen}
       title="Allow another folder"
       description="Run this command in a terminal with the folder in place of <folder>, then restart HoploDex."
-      size="md"
+      size="lg"
       footer={
         <Button variant="primary" onClick={() => changeOpen(false)}>
           Done
