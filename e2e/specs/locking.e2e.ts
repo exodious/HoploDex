@@ -98,8 +98,7 @@ describe("003 US6 - Lock the Application When I Step Away (was us9-locking)", ()
   });
 
   it("014 US4: resumes with the same fields marked, and keeps nothing once they are reverted (014 US4-2 to US4-4, US4-8)", async () => {
-    // The database and firearm of the journey above.
-    await openFirearm(`${firearm.make} ${firearm.model}`);
+    // The database and firearm of the journey above, whose record page is open.
     await editNotes("marked across a lock");
     await pressLockShortcut();
     await waitForChooser();

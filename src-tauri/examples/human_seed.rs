@@ -89,7 +89,7 @@ const OTHER_MACHINE_NAME: &str = "Workshop PC";
 /// The version of the firearm edit form's kept drafts that this build knows
 /// (`FORM_VERSION` in `src/features/firearms/FirearmForm.tsx`): the seeded
 /// pending changes carry it, so they can be resumed. Keep it in step.
-const FIREARM_FORM_VERSION: i64 = 4;
+const FIREARM_FORM_VERSION: i64 = 5;
 /// The form version of pending changes kept by another version of HoploDex
 /// (`--pending-from`): one this build doesn't know, so they can't be resumed.
 const OTHER_FORM_VERSION: i64 = 3;
