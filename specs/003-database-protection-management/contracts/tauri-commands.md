@@ -179,6 +179,8 @@ type DatabaseStatus = {
   };
 };
 
+_Amended 2026-11-26: also carries `flatpak: boolean` (see `get_chooser_state`, #260)._
+
 type CloseOutcome = {
   backup: "made" | "notDue" | "alreadyToday" | "off" | "skipped" | "failed" | "notAttempted";
   failureReason?: "locationUnavailable" | "insufficientSpace" | "io" | "databaseUnreachable"; // databaseUnreachable: research §6
