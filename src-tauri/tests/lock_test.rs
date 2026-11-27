@@ -614,6 +614,62 @@ fn a_sleep_stops_an_import_after_the_row_in_progress() {
     assert_eq!(world.firearm_count(), 2, "the rows imported before the stop are kept");
 }
 
+#[test]
+fn a_sleep_while_matching_rows_are_resolved_names_the_undecided_ones_in_its_notice() {
+    // Issue #249: only a sleep or shutdown stops a resolution (a lock waits
+    // for it), and the chooser's notice is where the user sees what it left.
+    let world = World::new();
+    world.create();
+    const ROWS: usize = 1000;
+    let file = world.dir.path().join("import.csv");
+    let rows: Vec<String> =
+        (1..=ROWS).map(|n| support::csv_firearm("Colt", "Python", &format!("P{n}"), &[])).collect();
+    fs::write(&file, support::csv_file(&rows)).unwrap();
+    let id = world.session.current_id();
+    let import = |open: &hoplodex_lib::session::OpenDatabase| {
+        import_export::import_collection(
+            &open.conn,
+            support::read_import(&file, SpreadsheetFormat::Csv),
+            &open.imports,
+            &mut |_, _| {},
+        )
+    };
+    world.session.write_open(id, import).unwrap();
+    let again = world.session.write_open(id, import).unwrap();
+    assert_eq!(again.conflicts.len(), ROWS);
+
+    let stopped = thread::scope(|scope| {
+        let resolving = scope.spawn(|| {
+            import_export::resolve_in_session(
+                &world.session,
+                id,
+                &again.session_id,
+                &[],
+                Some("overwrite"),
+            )
+        });
+        while world.session.operations().running_kind() != Some(OperationKind::Import) {
+            thread::yield_now();
+        }
+        let sleeper = world.sleep_from_another_thread();
+        let stopped = resolving.join().unwrap().unwrap_err();
+        sleeper.join().unwrap();
+        stopped
+    });
+
+    assert_eq!(stopped.code, "OPERATION_STOPPED", "{stopped:?}");
+    let details = stopped.details.as_deref().unwrap();
+    let (saved, undecided) =
+        (details["importedCount"].as_u64().unwrap(), details["undecidedCount"].as_u64().unwrap());
+    assert!(undecided > 0, "stopped before the last conflict");
+    assert_eq!(saved + undecided, ROWS as u64);
+    assert!(world.notices().contains(&stopped_notice(
+        &world,
+        "import",
+        json!({ "importedCount": saved, "undecidedCount": undecided })
+    )));
+}
+
 /// An import reading a large valid file when `go` closes the collection from
 /// this thread (008 T051, research.md §11): the close goes ahead without
 /// waiting for the reading, and the reading ends within a second with
