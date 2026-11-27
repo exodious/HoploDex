@@ -1507,6 +1507,51 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
 }
 
 #[test]
+fn a_stop_while_conflicts_are_resolved_still_makes_the_saved_rows_mounts() {
+    // Issue #249: a record overwritten before the stop takes its row's mount,
+    // not the one it had before.
+    let db = TestDb::new();
+    let rifle = new_firearm(
+        &db,
+        &FirearmInput { firearm_type_id: RIFLE, ..support::firearm("Ruger", "Precision", "R1") },
+    );
+    let optic =
+        new_accessory(&db, &mounted(accessory_with(OPTIC, json!({ "make": "Leupold" })), rifle));
+    new_accessory(&db, &accessory_with(LIGHT_OR_LASER, json!({ "make": "SureFire" })));
+    let rifle_uid = uid_of(&db.conn, rifle);
+    let dest = TempDir::new().unwrap();
+    let (first, second) = export_all(&db, dest.path(), "stopped", SpreadsheetFormat::Csv);
+    mount_ops::mount_record(
+        &db.conn,
+        &serde_json::from_value(json!({ "item": optic, "host": null })).unwrap(),
+    )
+    .unwrap();
+
+    let store = ImportSessionStore::new();
+    let result = import(&db, &store, &[&first, second.as_deref().unwrap()]);
+    assert_eq!(result.conflicts.len(), 3, "{:?}", result.row_errors);
+    // The Rifle and the Optic are saved; the Light is stopped.
+    let asked = std::cell::Cell::new(0);
+    let err = import_export_ops::resolve_import_conflicts_stoppable(
+        &db.conn,
+        &store,
+        &result.session_id,
+        &[],
+        Some("overwrite"),
+        &|| {
+            asked.set(asked.get() + 1);
+            asked.get() > 2
+        },
+        &|_| {},
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
+    assert_eq!(err.details.as_ref().unwrap()["importedCount"], 2);
+    assert_eq!(mount_of(&db.conn, optic), Some(rifle_uid), "the saved row's mount is made");
+}
+
+#[test]
 fn a_stop_while_the_mounts_are_made_or_the_conflicts_listed_keeps_the_rows() {
     // `is_cancelled` answers yes from its `n`th question on: one is asked
     // before each row, so the next is the first mount's or conflict's.
