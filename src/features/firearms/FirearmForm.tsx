@@ -13,7 +13,12 @@ import {
   Select,
   TextArea,
   TextField,
+  UNREADABLE,
+  changedFields,
+  savedText,
+  useCloseGuard,
 } from "../../components";
+import type { FieldChange } from "../../components";
 import {
   dispositionOrderError,
   formatDate,
@@ -21,7 +26,13 @@ import {
   parseDateInput,
   todayIso,
 } from "../../lib/dates";
-import { inchesToInput, parseInches, parseWeight, weightToInputs } from "../../lib/measure";
+import {
+  formatWeight,
+  inchesToInput,
+  parseInches,
+  parseWeight,
+  weightToInputs,
+} from "../../lib/measure";
 import { dollarsToInput, parseDollars } from "../../lib/money";
 import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { MAX_LONG_TEXT_CHARS, MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
@@ -41,6 +52,8 @@ import type { GuidePart } from "./IdentificationGuide";
 import { caliberHint, caliberReducer } from "./caliberDerivation";
 import type { CaliberAction, CaliberMode, CaliberState } from "./caliberDerivation";
 import { MountChooser } from "../mounts/MountChooser";
+import { recordKey } from "../mounts/recordKey";
+import { recordNameText } from "../mounts/recordNames";
 import type { MountDetail, RecordLabel } from "../mounts/types";
 import { EntryField } from "./EntryField";
 import { entryTextError, snapNote } from "./entryText";
@@ -688,6 +701,74 @@ const FIELD_ORDER: Field[] = [
   "dispositionPrice",
 ];
 
+/** The fields that show a changed marker (014 FR-006): the weight's pair shows
+ * one, on pounds (014 FR-008). */
+const MARKED_FIELDS: readonly Field[] = [
+  ...FIELD_ORDER.filter((field) => field !== "weightOunces"),
+  "noSerialAttested",
+  "condition",
+];
+
+/** A whole number as stored, or {@link UNREADABLE}. */
+function wholeNumber(text: string): string {
+  if (text.trim() === "") return "";
+  return /^\d+$/.test(text.trim()) ? String(Number(text.trim())) : UNREADABLE;
+}
+
+/** What a save would store for `field` (014 FR-002, FR-003, FR-005), as
+ * `save` builds its input: a field the type or the classification leaves out
+ * stores nothing, and the weight's two boxes store one total. */
+function storedValue(field: Field, form: FormState, rules: FieldRules, disposed: boolean): string {
+  const date = (text: string) => {
+    const parsed = parseDateInput(text);
+    return parsed.ok ? (parsed.iso ?? "") : UNREADABLE;
+  };
+  const money = (text: string) => {
+    const parsed = parseDollars(text);
+    return parsed.ok ? String(parsed.dollars ?? "") : UNREADABLE;
+  };
+  const registered = form.registrationClassId !== "";
+  switch (field) {
+    case "actionTypeId":
+      return rules.actionTypeApplies ? form.actionTypeId : "";
+    case "mountedOn":
+      return disposed || !form.mountedOn ? "" : recordKey(form.mountedOn.record);
+    case "serialNumber":
+      return form.noSerialAttested ? "" : form.serialNumber.trim();
+    case "noSerialAttested":
+      return String(form.noSerialAttested);
+    case "barrelLength":
+    case "overallLength": {
+      if (field === "barrelLength" && !rules.barrelLengthApplies) return "";
+      const parsed = parseInches(form[field]);
+      return parsed.ok ? String(parsed.value ?? "") : UNREADABLE;
+    }
+    case "weightPounds":
+    case "weightOunces": {
+      const parsed = parseWeight(form.weightPounds, form.weightOunces);
+      return parsed.ok ? String(parsed.value ?? "") : UNREADABLE;
+    }
+    case "capacity":
+      return rules.capacityApplies ? wholeNumber(form.capacity) : "";
+    case "yearOfManufacture":
+      return wholeNumber(form.yearOfManufacture);
+    case "estimatedValue":
+    case "acquisitionPrice":
+    case "dispositionPrice":
+      return money(form[field]);
+    case "acquisitionDate":
+    case "dispositionDate":
+      return date(form[field]);
+    case "registrationApproved":
+      return registered ? date(form.registrationApproved) : "";
+    case "registrationForm":
+    case "registeredTo":
+      return registered ? form[field].trim() : "";
+    default:
+      return String(form[field] ?? "").trim();
+  }
+}
+
 /** Create/edit form for a firearm's record (001 US1). Insurance coverage is
  * set from the record's own coverage panel; a disposed record's
  * disposition details can be corrected here. Renders its own dialog body
@@ -706,6 +787,8 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     resumedValues(scope, target, toFormState(initialValues)),
   );
   useResumedDraftTaken(target);
+  // What is saved, never the resumed draft: every marker and revert refers to it
+  // (014 FR-020). An add form compares with how it opened (014 FR-019a).
   const [pristine] = useState(() => toFormState(initialValues));
   // specs/004-cartridges-action-types: the latest form, for a settle
   // response to check the field still holds what was sent.
@@ -1048,17 +1131,145 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     setPendingOrigin(null);
   }
 
+  // 014 FR-002, FR-019: one comparison drives the markers, Save, the quit
+  // question and the pending changes kept at a lock.
+  const changed = changedFields(pristine, form, MARKED_FIELDS, (field, state) =>
+    storedValue(field, state, rulesFor(state.firearmTypeId), disposed),
+  );
+  const isDirty = changed.size > 0;
+  const requestClose = useCloseGuard(isDirty, () => onCancel?.());
+
+  /** The saved value as a revert names it (014 FR-010). */
+  function savedDisplay(field: Field): string {
+    const saved = pristine;
+    const unspecified = (name: string | undefined) => name ?? "Unspecified";
+    switch (field) {
+      case "firearmTypeId":
+        return savedText(firearmTypeOption(firearmTypes.types, Number(saved.firearmTypeId)).label);
+      case "actionTypeId":
+        return unspecified(
+          actionTypes.actions.find((action) => String(action.id) === saved.actionTypeId)?.name,
+        );
+      case "registrationClassId":
+        return unspecified(
+          registrationClasses.classes.find((item) => String(item.id) === saved.registrationClassId)
+            ?.name,
+        );
+      case "origin":
+        return savedText(ORIGIN_OPTIONS.find((option) => option.value === saved.origin)?.label);
+      case "condition":
+        return savedText(CONDITION_OPTIONS.find((option) => option.value === saved.condition)?.label);
+      case "dispositionType":
+        return savedText(
+          DISPOSITION_TYPE_OPTIONS.find((option) => option.value === saved.dispositionType)?.label,
+        );
+      case "mountedOn":
+        return saved.mountedOn ? savedText(recordNameText(saved.mountedOn)) : "Not mounted";
+      case "noSerialAttested":
+        return saved.noSerialAttested ? "Checked" : "Not checked";
+      case "weightPounds": {
+        const parsed = parseWeight(saved.weightPounds, saved.weightOunces);
+        return parsed.ok && parsed.value != null ? formatWeight(parsed.value) : "Not recorded";
+      }
+      default:
+        return savedText(String(saved[field]));
+    }
+  }
+
+  /** 014 FR-011, FR-012: puts `field` back as saved, with what its change
+   * cleared (still empty) and what the edit brought: its note, its error and,
+   * for an entry field, its next re-spelling until it is edited again. */
+  function revert(field: Field) {
+    const saved = pristine;
+    setTouched((t) => ({ ...t, [field]: false }));
+    if (isEntryField(field)) {
+      lastSettled.current[field] = saved[field].trim();
+      setEntryNotes((notes) => ({ ...notes, [field]: undefined }));
+    }
+    const back = <K extends Field>(prev: FormState, keys: readonly K[]) => {
+      const next = { ...prev };
+      for (const key of keys) if (String(prev[key]).trim() === "") next[key] = saved[key];
+      return next;
+    };
+    switch (field) {
+      case "firearmTypeId":
+        setActionNote("");
+        setTypeAnnouncement("");
+        setForm((prev) => back({ ...prev, firearmTypeId: saved.firearmTypeId }, ["actionTypeId"]));
+        return;
+      case "origin":
+        setForm((prev) =>
+          back({ ...prev, origin: saved.origin }, [
+            "countryOfManufacture",
+            "importerName",
+            "originalMake",
+            "originalModel",
+            "originalSerialNumber",
+          ]),
+        );
+        return;
+      case "registrationClassId":
+        setForm((prev) =>
+          back({ ...prev, registrationClassId: saved.registrationClassId }, [
+            "registrationForm",
+            "registrationApproved",
+            "registeredTo",
+          ]),
+        );
+        return;
+      case "weightPounds":
+        setForm((prev) => ({
+          ...prev,
+          weightPounds: saved.weightPounds,
+          weightOunces: saved.weightOunces,
+        }));
+        return;
+      case "cartridge":
+        derivedFrom.current = null;
+        setForm((prev) => ({
+          ...prev,
+          cartridge: saved.cartridge,
+          caliberSuggestion: "",
+          caliberPrompt: "",
+        }));
+        return;
+      case "caliber":
+        setForm((prev) => ({
+          ...prev,
+          caliber: saved.caliber,
+          caliberMode: saved.caliberMode,
+          caliberSource: saved.caliberSource,
+          caliberSuggestion: "",
+          caliberPrompt: "",
+        }));
+        return;
+      default:
+        update(field, saved[field]);
+    }
+  }
+
+  /** The marker and revert for a changed field of an edit form (014 FR-006,
+   * FR-014): add forms have nothing saved to mark. */
+  const changeFor = (field: Field): FieldChange | undefined =>
+    initialValues && changed.has(field)
+      ? { saved: savedDisplay(field), onRevert: () => revert(field) }
+      : undefined;
+  const groupChanged = (fields: readonly Field[]) =>
+    initialValues != null && fields.some((field) => changed.has(field));
+
   // Closing or quitting asks about unsaved input first (specs/003 FR-010),
   // and a lock keeps it (003 FR-039).
   useDirtyForm({
     label: initialValues ? `${firearmName(initialValues)} (edit)` : "New firearm",
-    isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
+    isDirty,
     submit: save,
     draft: { ...target, values: form },
   });
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // Nothing differs from what is saved: Save says so and does nothing (014 FR-016).
+    if (initialValues && !isDirty) return;
     void save();
   }
 
@@ -1253,6 +1464,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   onLeave={() => leaveEntry("make")}
                   note={entryNotes.make}
                   error={errorFor("make")}
+                  change={changeFor("make")}
                   placeholder="e.g. Smith & Wesson"
                   autoFocus={!initialValues}
                 />
@@ -1269,6 +1481,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   onLeave={() => leaveEntry("model")}
                   note={entryNotes.model}
                   error={errorFor("model")}
+                  change={changeFor("model")}
                   placeholder="e.g. Model 29"
                 />
               </div>
@@ -1280,6 +1493,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 value={form.nickname}
                 onChange={(e) => update("nickname", e.target.value)}
                 error={errorFor("nickname")}
+                change={changeFor("nickname")}
                 fieldClassName="hd-field--half"
                 hint="Optional. Tells apart firearms with the same make and model; each active firearm needs its own."
                 placeholder="e.g. Range gun"
@@ -1296,6 +1510,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   touch("firearmTypeId")();
                 }}
                 error={errorFor("firearmTypeId")}
+                change={changeFor("firearmTypeId")}
                 minCardWidth={140}
                 options={firearmTypes.types.map((type) => ({
                   value: String(type.id),
@@ -1333,6 +1548,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     })),
                   ]}
                   error={errorFor("actionTypeId")}
+                  change={changeFor("actionTypeId")}
                   hint={actionNote || (actionTypes.failed ? ACTION_LIST_FAILED : undefined)}
                 />
                 <span className="hd-sr-only" role="status" aria-live="polite">
@@ -1351,6 +1567,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   record={initialValues ? { kind: "firearm", id: initialValues.id } : null}
                   hint="Only if this firearm is mounted on another firearm or an accessory, such as a suppressor on a rifle."
                   error={errorFor("mountedOn")}
+                  change={changeFor("mountedOn")}
                 />
               </div>
             )}
@@ -1368,6 +1585,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   onLeave={() => leaveEntry("cartridge")}
                   note={entryNotes.cartridge}
                   error={errorFor("cartridge")}
+                  change={changeFor("cartridge")}
                   hint={
                     isSuppressor
                       ? SUPPRESSOR_CARTRIDGE_HINT
@@ -1390,6 +1608,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   onLeave={() => leaveEntry("caliber")}
                   note={entryNotes.caliber}
                   error={errorFor("caliber")}
+                  change={changeFor("caliber")}
                   hint={caliberHintText}
                   placeholder={isSuppressor ? "e.g. .30" : "e.g. 9mm"}
                   trailing={
@@ -1426,6 +1645,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 onChange={(e) => update("serialNumber", e.target.value)}
                 onBlur={touch("serialNumber")}
                 error={errorFor("serialNumber")}
+                change={changeFor("serialNumber")}
                 disabled={form.noSerialAttested}
                 placeholder={form.noSerialAttested ? "None" : undefined}
                 spellCheck={false}
@@ -1434,6 +1654,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 label="This firearm has no serial number"
                 hint="Only for firearms not required to have one: made before October 22, 1968, or homemade."
                 checked={form.noSerialAttested}
+                change={changeFor("noSerialAttested")}
                 onCheckedChange={(checked) => {
                   update("noSerialAttested", checked);
                   touch("serialNumber")();
@@ -1446,6 +1667,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               summary={originGroupOpen ? undefined : originGroupSummary(form)}
               open={originGroupOpen}
               onOpenChange={setOriginGroupOpen}
+              changed={groupChanged(ORIGIN_GROUP_FIELDS)}
             >
               <div data-field="yearOfManufacture">
                 <TextField
@@ -1458,6 +1680,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   }
                   onBlur={touch("yearOfManufacture")}
                   error={errorFor("yearOfManufacture")}
+                  change={changeFor("yearOfManufacture")}
                   fieldClassName="hd-field--quarter"
                   hint="A single year, e.g. 1943. Put anything uncertain in Notes."
                   placeholder="e.g. 1943"
@@ -1469,6 +1692,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     label="Origin"
                     value={form.origin}
                     onChange={handleOriginChange}
+                    change={changeFor("origin")}
                     minCardWidth={150}
                     options={ORIGIN_OPTIONS}
                   />
@@ -1498,6 +1722,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                         onChange={(e) => update("countryOfManufacture", e.target.value)}
                         onBlur={touch("countryOfManufacture")}
                         error={errorFor("countryOfManufacture")}
+                        change={changeFor("countryOfManufacture")}
                       />
                     </div>
                     <div data-field="importerName">
@@ -1507,6 +1732,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                         onChange={(e) => update("importerName", e.target.value)}
                         onBlur={touch("importerName")}
                         error={errorFor("importerName")}
+                        change={changeFor("importerName")}
                       />
                     </div>
                   </>
@@ -1523,6 +1749,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                         onChange={(e) => update("importerName", e.target.value)}
                         onBlur={touch("importerName")}
                         error={errorFor("importerName")}
+                        change={changeFor("importerName")}
                       />
                     </div>
                   </>
@@ -1545,6 +1772,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                           onChange={(e) => update("originalMake", e.target.value)}
                           onBlur={touch("originalMake")}
                           error={errorFor("originalMake")}
+                          change={changeFor("originalMake")}
                         />
                       </div>
                       <div data-field="originalModel">
@@ -1554,6 +1782,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                           onChange={(e) => update("originalModel", e.target.value)}
                           onBlur={touch("originalModel")}
                           error={errorFor("originalModel")}
+                          change={changeFor("originalModel")}
                         />
                       </div>
                       <div data-field="originalSerialNumber">
@@ -1563,6 +1792,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                           onChange={(e) => update("originalSerialNumber", e.target.value)}
                           onBlur={touch("originalSerialNumber")}
                           error={errorFor("originalSerialNumber")}
+                          change={changeFor("originalSerialNumber")}
                         />
                       </div>
                     </div>
@@ -1588,6 +1818,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               }
               open={registrationGroupOpen}
               onOpenChange={setRegistrationGroupOpen}
+              changed={groupChanged(REGISTRATION_GROUP_FIELDS)}
             >
               {/* 005 FR-014: a record of what the owner enters; nothing here
                   decides what is regulated. */}
@@ -1620,6 +1851,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                       .map((item) => ({ value: String(item.id), label: item.name })),
                   ]}
                   error={errorFor("registrationClassId")}
+                  change={changeFor("registrationClassId")}
                   hint={registrationClasses.failed ? REGISTRATION_LIST_FAILED : undefined}
                 />
               </div>
@@ -1635,6 +1867,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                       onLeave={() => leaveEntry("registrationForm")}
                       note={entryNotes.registrationForm}
                       error={errorFor("registrationForm")}
+                      change={changeFor("registrationForm")}
                       placeholder="e.g. Form 4"
                     />
                   </div>
@@ -1646,6 +1879,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                       onValueChange={(text) => update("registrationApproved", text)}
                       onBlur={touch("registrationApproved")}
                       error={errorFor("registrationApproved")}
+                      change={changeFor("registrationApproved")}
                       hint="The date on the approved form (the tax stamp date)."
                     />
                   </div>
@@ -1659,6 +1893,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                       onLeave={() => leaveEntry("registeredTo")}
                       note={entryNotes.registeredTo}
                       error={errorFor("registeredTo")}
+                      change={changeFor("registeredTo")}
                       hint="A person, trust or company, as named on the form."
                       placeholder="e.g. Smith Family Trust"
                     />
@@ -1675,6 +1910,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
               summary={physicalGroupOpen ? undefined : physicalGroupSummary(form, rules)}
               open={physicalGroupOpen}
               onOpenChange={setPhysicalGroupOpen}
+              changed={groupChanged(PHYSICAL_GROUP_FIELDS)}
             >
               <div className="hd-form-grid hd-form-grid--2">
                 <div className="hd-form-pair">
@@ -1686,6 +1922,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                         onValueChange={(text) => update("barrelLength", text)}
                         onBlur={touch("barrelLength")}
                         error={errorFor("barrelLength")}
+                        change={changeFor("barrelLength")}
                         placeholder="e.g. 4.25"
                       />
                     </div>
@@ -1697,6 +1934,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                       onValueChange={(text) => update("overallLength", text)}
                       onBlur={touch("overallLength")}
                       error={errorFor("overallLength")}
+                      change={changeFor("overallLength")}
                       placeholder="e.g. 7.4"
                     />
                   </div>
@@ -1710,6 +1948,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                       onValueChange={(text) => update("weightPounds", text)}
                       onBlur={touch("weightPounds")}
                       error={errorFor("weightPounds")}
+                      change={changeFor("weightPounds")}
                       placeholder="e.g. 6.5"
                     />
                   </div>
@@ -1739,6 +1978,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                       onChange={(e) => update("capacity", e.target.value.replace(/\D/g, ""))}
                       onBlur={touch("capacity")}
                       error={errorFor("capacity")}
+                      change={changeFor("capacity")}
                       hint="Rounds in the magazine, cylinder or tube."
                     />
                   </div>
@@ -1749,6 +1989,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     value={form.finish}
                     onChange={(e) => update("finish", e.target.value)}
                     error={errorFor("finish")}
+                    change={changeFor("finish")}
                     placeholder="e.g. Blued, Cerakote"
                     hint="Searchable."
                   />
@@ -1760,6 +2001,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     update("condition", value === NOT_RECORDED ? "" : (value as Condition))
                   }
                   options={[{ value: NOT_RECORDED, label: "Not recorded" }, ...CONDITION_OPTIONS]}
+                  change={changeFor("condition")}
                 />
               </div>
             </Disclosure>
@@ -1776,6 +2018,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                 onValueChange={(text) => update("estimatedValue", text)}
                 onBlur={touch("estimatedValue")}
                 error={errorFor("estimatedValue")}
+                change={changeFor("estimatedValue")}
                 fieldClassName="hd-field--quarter"
                 hint="What it would cost to replace today. Used to check insurance coverage."
               />
@@ -1793,6 +2036,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   value={form.acquisitionSource}
                   onChange={(e) => update("acquisitionSource", e.target.value)}
                   error={errorFor("acquisitionSource")}
+                  change={changeFor("acquisitionSource")}
                   placeholder="Seller, shop, or person"
                 />
               </div>
@@ -1804,6 +2048,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   onValueChange={(text) => update("acquisitionDate", text)}
                   onBlur={touch("acquisitionDate")}
                   error={errorFor("acquisitionDate")}
+                  change={changeFor("acquisitionDate")}
                 />
               </div>
               <div data-field="acquisitionPrice">
@@ -1813,6 +2058,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   onValueChange={(text) => update("acquisitionPrice", text)}
                   onBlur={touch("acquisitionPrice")}
                   error={errorFor("acquisitionPrice")}
+                  change={changeFor("acquisitionPrice")}
                 />
               </div>
             </div>
@@ -1834,6 +2080,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   value={form.notes}
                   onChange={(e) => update("notes", e.target.value)}
                   error={errorFor("notes")}
+                  change={changeFor("notes")}
                   limit={MAX_LONG_TEXT_CHARS}
                   hint="Condition, markings, repairs — anything worth recording. All of it is searchable."
                   rows={4}
@@ -1846,6 +2093,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   value={form.accessories}
                   onChange={(e) => update("accessories", e.target.value)}
                   error={errorFor("accessories")}
+                  change={changeFor("accessories")}
                   limit={MAX_LONG_TEXT_CHARS}
                   hint="e.g. two magazines, original box, holster."
                   rows={4}
@@ -1868,6 +2116,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     onValueChange={(value) => update("dispositionType", value as DispositionType)}
                     options={DISPOSITION_TYPE_OPTIONS}
                     error={errorFor("dispositionType")}
+                    change={changeFor("dispositionType")}
                   />
                 </div>
                 <div data-field="dispositionRecipient" className="hd-form-span-3">
@@ -1878,6 +2127,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     onChange={(e) => update("dispositionRecipient", e.target.value)}
                     onBlur={touch("dispositionRecipient")}
                     error={errorFor("dispositionRecipient")}
+                    change={changeFor("dispositionRecipient")}
                   />
                 </div>
                 <div data-field="dispositionDate">
@@ -1889,6 +2139,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     onValueChange={(text) => update("dispositionDate", text)}
                     onBlur={touch("dispositionDate")}
                     error={errorFor("dispositionDate")}
+                    change={changeFor("dispositionDate")}
                   />
                 </div>
                 <div data-field="dispositionPrice">
@@ -1899,6 +2150,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                     onValueChange={(text) => update("dispositionPrice", text)}
                     onBlur={touch("dispositionPrice")}
                     error={errorFor("dispositionPrice")}
+                    change={changeFor("dispositionPrice")}
                   />
                 </div>
               </div>
@@ -1914,11 +2166,16 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             Required
           </p>
           {onCancel && (
-            <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+            <Button variant="secondary" onClick={requestClose} disabled={submitting}>
               Cancel
             </Button>
           )}
-          <Button type="submit" variant="primary" pending={submitting}>
+          <Button
+            type="submit"
+            variant="primary"
+            pending={submitting}
+            unavailable={initialValues && !isDirty ? "No changes to save" : undefined}
+          >
             {initialValues ? "Save changes" : "Add firearm"}
           </Button>
         </footer>

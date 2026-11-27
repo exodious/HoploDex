@@ -399,6 +399,8 @@ describe("FirearmForm origin group disclosure", () => {
     );
 
     await user.click(originGroupButton());
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -442,6 +444,8 @@ describe("FirearmForm origin group disclosure", () => {
     );
 
     await user.click(originGroupButton());
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(originGroupButton()).toHaveAttribute("aria-expanded", "true");
@@ -546,6 +550,8 @@ describe("FirearmForm physical details disclosure", () => {
     render(<FirearmForm initialValues={measured} onSubmit={onSubmit} />);
 
     await user.click(physicalGroupButton());
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
@@ -584,6 +590,8 @@ describe("FirearmForm physical details disclosure", () => {
     render(<FirearmForm initialValues={measured} onSubmit={onSubmit} />);
 
     await user.click(physicalGroupButton());
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(physicalGroupButton()).toHaveAttribute("aria-expanded", "true");
@@ -620,7 +628,7 @@ describe("FirearmForm resuming pending changes (003 FR-039)", () => {
 
     render(<FirearmForm initialValues={beretta} onSubmit={vi.fn()} />);
 
-    expect(screen.getByLabelText(/Notes/)).toHaveValue("Swapped the grips; half typed");
+    expect(screen.getByLabelText(/^Notes/)).toHaveValue("Swapped the grips; half typed");
     expect(screen.getByLabelText(/^Model/)).toHaveValue("92FS");
     expect(screen.getByLabelText(/^Caliber/)).toHaveValue("9mm");
     expect(getDirtyForm()?.label).toBe("Beretta 92FS (edit)");

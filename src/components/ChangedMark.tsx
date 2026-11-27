@@ -14,7 +14,7 @@ export interface ChangedMarkProps {
 }
 
 /** A changed field's "Changed" tag and its revert (014 FR-006, FR-010;
- * contracts/ui.md §1). The same in every form in scope (014 FR-029). */
+ * 014 contracts/ui.md §1). The same in every form in scope (014 FR-029). */
 export function ChangedMark({ label, change, id, focusTarget }: ChangedMarkProps) {
   return (
     <span className="hd-changed">

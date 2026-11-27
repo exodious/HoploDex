@@ -303,6 +303,10 @@ describe("FirearmForm suppressor (005 US1)", () => {
       />,
     );
 
+    // 014 FR-015: Save needs something to differ from what is saved.
+
+    await user.type(screen.getByLabelText(/^Notes/), "x");
+
     await user.click(screen.getByRole("button", { name: /^Save/ }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
@@ -464,6 +468,10 @@ describe("FirearmForm registration (005 US2)", () => {
     );
     await user.click(registrationButton());
     expect(registrationButton()).toHaveAttribute("aria-expanded", "false");
+
+    // 014 FR-015: Save needs something to differ from what is saved.
+
+    await user.type(screen.getByLabelText(/^Notes/), "x");
 
     await user.click(screen.getByRole("button", { name: /^Save/ }));
 
@@ -954,6 +962,8 @@ describe("FirearmForm Mounted on (006 US2)", () => {
       ),
     );
     await user.keyboard("{Escape}");
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "accessory", id: 11 });
@@ -981,6 +991,10 @@ describe("FirearmForm Mounted on (006 US2)", () => {
       }),
     );
     render(<FirearmForm initialValues={mounted} onSubmit={onSubmit} />);
+
+    // 014 FR-015: Save needs something to differ from what is saved.
+
+    await user.type(screen.getByLabelText(/^Notes/), "x");
 
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 

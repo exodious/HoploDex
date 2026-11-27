@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Combobox, Icon } from "../../components";
-import type { ComboboxOption } from "../../components";
+import type { ComboboxOption, FieldChange } from "../../components";
 import { useSessionScope } from "../session/sessionScope";
 import { listMountCandidates } from "./mountsService";
 import type { MountCandidate } from "./mountsService";
@@ -32,6 +32,8 @@ export interface MountChooserProps {
   hint?: string;
   error?: string;
   id?: string;
+  /** Set while it differs from what is saved (014 FR-023). */
+  change?: FieldChange;
 }
 
 const NOT_MOUNTED_KEY = "none";
@@ -58,6 +60,7 @@ export function MountChooser({
   placeholder = "Not mounted",
   hint,
   error,
+  change,
   id,
 }: MountChooserProps) {
   const scope = useSessionScope();
@@ -107,6 +110,7 @@ export function MountChooser({
       placeholder={placeholder}
       hint={hint}
       error={error}
+      change={change}
       loadOptions={loadOptions}
       onInputChange={setTypedText}
       onPick={pick}
