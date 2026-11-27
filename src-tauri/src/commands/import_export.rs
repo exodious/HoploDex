@@ -2667,7 +2667,7 @@ pub mod ops {
             // The import is closed: its files are imported again to decide them.
             let mut err = stopped(saved_count);
             if let Some(details) = err.details.as_mut() {
-                details["undecidedCount"] = (unreached + still_open.len()).into();
+                details["undecidedCount"] = (unreached + unresolved.len()).into();
             }
             return Err(err);
         }

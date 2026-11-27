@@ -1450,6 +1450,14 @@ fn past_the_mounted_records_limit_a_workbook_names_its_file_and_sheet_apart_and_
 #[test]
 fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
     let db = TestDb::new();
+    let changed = firearm_ops::create_firearm(
+        &db.conn,
+        &support::firearm("Ruger", "Precision", "R0"),
+        false,
+        None,
+    )
+    .unwrap()
+    .id;
     new_firearm(&db, &support::firearm("Ruger", "Precision", "R1"));
     new_firearm(&db, &support::firearm("Ruger", "Precision", "R2"));
     let dir = TempDir::new().unwrap();
@@ -1457,15 +1465,18 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
         dir.path(),
         "firearms.csv",
         &firearm_table(&[
+            firearm_cells("Ruger", "Precision", "R0", &[("notes", "From the sheet")]),
             firearm_cells("Ruger", "Precision", "R1", &[("notes", "From the sheet")]),
             firearm_cells("Ruger", "Precision", "R2", &[("notes", "From the sheet")]),
         ]),
     );
     let store = ImportSessionStore::new();
     let result = import(&db, &store, &[&path]);
-    assert_eq!(result.conflicts.len(), 2, "{:?}", result.row_errors);
+    assert_eq!(result.conflicts.len(), 3, "{:?}", result.row_errors);
+    // R0's record changes after the file is read, so its decision can't be applied.
+    firearm_ops::delete_firearm(&db.conn, changed, true).unwrap();
 
-    // Asked before each conflict: the second is stopped.
+    // Asked before each conflict: the third is stopped.
     let asked = std::cell::Cell::new(0);
     let saved = std::cell::Cell::new(0);
     let err = import_export_ops::resolve_import_conflicts_stoppable(
@@ -1476,7 +1487,7 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
         Some("overwrite"),
         &|| {
             asked.set(asked.get() + 1);
-            asked.get() > 1
+            asked.get() > 2
         },
         &|n| saved.set(n),
     )
@@ -1485,7 +1496,7 @@ fn a_stop_while_conflicts_are_resolved_keeps_and_counts_the_ones_saved() {
     assert_eq!(err.code, "OPERATION_STOPPED", "{err:?}");
     assert_eq!(err.details.as_ref().unwrap()["operation"], "import");
     assert_eq!(err.details.as_ref().unwrap()["importedCount"], 1);
-    assert_eq!(err.details.as_ref().unwrap()["undecidedCount"], 1, "issue #249");
+    assert_eq!(err.details.as_ref().unwrap()["undecidedCount"], 2, "R0 and R2, issue #249");
     assert_eq!(saved.get(), 1);
     let notes: Vec<Option<String>> = db
         .conn
