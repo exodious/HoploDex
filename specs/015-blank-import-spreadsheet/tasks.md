@@ -90,23 +90,23 @@ Bare IDs here mean this feature's. In code, cite them as `015 FR-003`, `015 US2-
 
 ## Phase 7: Validation on every environment
 
-- [ ] T021 In the Linux dev container, run format, lint, `npm test` and the dependency and license audit, in the background with logs.
-- [ ] T022 In the Linux dev container, run the Rust tests, then `npm run build` and the E2E specs (all), in the background with logs.
-- [ ] T023 On macOS (the VM, under its lock, in the task's folder on the external volume), run the Rust tests and the E2E specs.
-- [ ] T024 On Windows (the VM, under its lock, in the task's folder), run the Rust tests and the E2E specs.
-- [ ] T025 In the Linux dev container, take the before and after screenshots of the Import dialog and the new dialog.
-- [ ] T026 On macOS, take window-only before and after screenshots of the Import dialog and the new dialog.
-- [ ] T027 On Windows, take window-only before and after screenshots of the Import dialog and the new dialog.
-- [ ] T028 Report every test that failed then passed on rerun, and every skip, as they happen. SC-005 is shown by design (no record is read, research.md §6) and said so in the PR, rather than by a timing assertion.
+- [X] T021 In the Linux dev container, run format, lint, `npm test` and the dependency and license audit, in the background with logs.
+- [X] T022 In the Linux dev container, run the Rust tests, then `npm run build` and the E2E specs (all), in the background with logs.
+- [X] T023 On macOS (the VM, under its lock, in the task's folder on the external volume), run the Rust tests and the E2E specs.
+- [X] T024 On Windows (the VM, under its lock, in the task's folder), run the Rust tests and the E2E specs.
+- [X] T025 In the Linux dev container, take the before and after screenshots of the Import dialog and the new dialog.
+- [X] T026 On macOS, take window-only before and after screenshots of the Import dialog and the new dialog.
+- [X] T027 On Windows, take window-only before and after screenshots of the Import dialog and the new dialog.
+- [X] T028 Report every test that failed then passed on rerun, and every skip, as they happen. SC-005 is shown by design (no record is read, research.md §6) and said so in the PR, rather than by a timing assertion.
 
 ---
 
 ## Phase 8: Close-out
 
-- [ ] T029 Push the screenshots to `evidence/015-blank-import-spreadsheet-screenshots`.
-- [ ] T030 Run `/ai-security-review pr` before the PR; keep its three lines in `## Security review`.
-- [ ] T031 Write the PR title and description: `Closes #58` near the top, screenshots, the persistence and performance notes, what wasn't run. Check `closingIssuesReferences`.
-- [ ] T032 When the PR opens, file the issue for an easier way to link a hand-entered accessory to a new firearm (no milestone) and report its URL to firstmate (plan.md "Close-out").
+- [X] T029 Push the screenshots to `evidence/015-blank-import-spreadsheet-screenshots`.
+- [X] T030 Run `/ai-security-review pr` before the PR; keep its three lines in `## Security review`.
+- [X] T031 Write the PR title and description: `Closes #58` near the top, screenshots, the persistence and performance notes, what wasn't run. Check `closingIssuesReferences`.
+- [X] T032 When the PR opens, file the issue for an easier way to link a hand-entered accessory to a new firearm (no milestone) and report its URL to firstmate (plan.md "Close-out").
 
 ---
 
