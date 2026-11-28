@@ -236,10 +236,15 @@ function SettingsForm({
   function backupInput(existingBackups?: ExistingBackupsChoice): BackupSettingsInput {
     return {
       enabled,
-      keepCount: Number(keepCount.trim()),
-      location: location.input,
+      keepCount: enabled ? Number(keepCount.trim()) : saved.keepCount,
+      location: enabled ? location.input : savedLocation().input,
       ...(existingBackups ? { existingBackups } : {}),
     };
+  }
+
+  function lockInput(): CollectionSettings["lock"] {
+    const savedLock = status.settings.lock;
+    return lock.idleEnabled ? lock : { ...lock, idleMinutes: savedLock.idleMinutes };
   }
 
   function showSaveError(e: unknown) {
@@ -256,7 +261,7 @@ function SettingsForm({
    * happened to the old location's backups is said (003 contracts/ui-databases.md
    * §7 "Afterwards"). */
   async function finish(backupsSaved: BackupSettingsSaved, oldFolder?: string) {
-    const settings = await databasesService.updateLockSettings(scope, lock);
+    const settings = await databasesService.updateLockSettings(scope, lockInput());
     const outcome = backupsSaved.existingBackups;
     if (outcome?.action === "move" && outcome.leftBehind) {
       // The location is saved, so the result stays here.
@@ -360,7 +365,7 @@ function SettingsForm({
     event.preventDefault();
     if (!dirty) return;
     const count = Number(keepCount.trim());
-    if (!Number.isInteger(count) || keepCount.trim() === "") {
+    if (enabled && (!Number.isInteger(count) || keepCount.trim() === "")) {
       setErrors({ keepCount: "Enter a whole number of backups." });
       setRefused("keepCount");
       return;
@@ -390,14 +395,16 @@ function SettingsForm({
   const changes = {
     enabled: enabled !== saved.enabled,
     keepCount:
+      enabled &&
       (/^\d+$/.test(keepTrimmed) ? String(Number(keepTrimmed)) : UNREADABLE) !==
-      String(saved.keepCount),
+        String(saved.keepCount),
     // A folder picked again where the saved one is changes nothing.
     location:
+      enabled &&
       location.input.kind !== savedInput.kind &&
       !(savedInput.kind === "current" && location.path === saved.location.path),
     idleEnabled: lock.idleEnabled !== savedLock.idleEnabled,
-    idleMinutes: lock.idleMinutes !== savedLock.idleMinutes,
+    idleMinutes: lock.idleEnabled && lock.idleMinutes !== savedLock.idleMinutes,
     onScreenLock: lock.onScreenLock !== savedLock.onScreenLock,
   };
   const settingsDirty = Object.values(changes).some(Boolean);

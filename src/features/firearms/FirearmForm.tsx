@@ -1287,8 +1287,17 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
         const next: Record<string, unknown> = { ...prev, [field]: saved[field] };
         const reverted = next as unknown as FormState;
         const rules = rulesFor(reverted.firearmTypeId);
+        const refused = (dependent: Field) =>
+          dependent === "actionTypeId" &&
+          !actionsForType(actionTypes, reverted.firearmTypeId).some(
+            (action) => String(action.id) === reverted.actionTypeId,
+          );
         for (const dependent of dependents) {
-          if (!shownUnder(dependent, reverted, rules) || String(next[dependent]).trim() === "")
+          if (
+            !shownUnder(dependent, reverted, rules) ||
+            String(next[dependent]).trim() === "" ||
+            refused(dependent)
+          )
             next[dependent] = saved[dependent];
         }
         return reverted;
@@ -1634,6 +1643,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
             {rules.actionTypeApplies && (
               <div data-field="actionTypeId">
                 <Select
+                  key={form.firearmTypeId}
                   label="Action"
                   fieldClassName="hd-field--third"
                   value={form.actionTypeId === "" ? NOT_RECORDED : form.actionTypeId}

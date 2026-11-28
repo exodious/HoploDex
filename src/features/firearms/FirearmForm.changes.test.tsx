@@ -290,6 +290,30 @@ describe("014 US2 - Put One Field Back to Its Saved Value", () => {
     expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
+  it("reverting Type puts back the saved action when the one picked meanwhile is one the saved type refuses (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    // 004 FR-017: a Handgun allows Semi-automatic and Revolver; a Rifle, Bolt and Lever action.
+    const limited = {
+      ...collection,
+      actionTypes: { actions: ACTION_TYPES, allowedByFirearmType: { 1: [1, 2], 2: [3, 4] } },
+    } as unknown as CollectionState;
+    renderBase(
+      <CollectionContext.Provider value={limited}>
+        <FirearmForm initialValues={rifle} onSubmit={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    const action = () => screen.getByRole("combobox", { name: "Action" });
+    await user.click(screen.getByRole("radio", { name: "Handgun" }));
+    expect(action()).toHaveTextContent("Unspecified");
+    await user.click(action());
+    await user.click(await screen.findByRole("option", { name: "Revolver" }));
+    await user.click(revertOf("Type")!);
+    expect(screen.getByRole("radio", { name: "Rifle" })).toBeChecked();
+    expect(action()).toHaveTextContent("Bolt action");
+    expect(changedTags()).toHaveLength(0);
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("reverting Registered as empties the details it revealed (014 FR-012)", async () => {
     const user = userEvent.setup();
     render(<FirearmForm initialValues={glock} onSubmit={vi.fn()} />);

@@ -320,12 +320,10 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md §7)", 
     await user.type(keep, "12");
     await user.click(screen.getByRole("button", { name: "Change…" }));
     expect(await screen.findByText("/media/usb/Backups")).toBeInTheDocument();
-    // The backup fields are disabled once this is unticked.
-    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(SCOPE, {
-      enabled: false,
+      enabled: true,
       keepCount: 12,
       location: { kind: "chosen", token: picked("/media/usb/Backups").token },
     });
@@ -1521,5 +1519,71 @@ describe("014 US2 - Put One Field Back to Its Saved Value (Database settings)", 
     );
     expect(screen.queryByText("Changed")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+describe("014 US3 - Save Only When There Is Something to Save (Database settings)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({ folder: DEFAULT_BACKUPS, available: true, backups: [] });
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockReset()
+      .mockResolvedValue({ settings: status().settings, existingBackups: null });
+    vi.mocked(databasesService.updateLockSettings).mockReset().mockResolvedValue(status().settings);
+  });
+  const save = () => screen.getByRole("button", { name: "Save" });
+
+  it("neither marks nor saves a count that unticked backups disable (014 FR-005, FR-012, FR-014)", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "7");
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    expect(screen.getAllByText("Changed")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Revert Keep the latest/ })).toBeNull();
+    await user.click(save());
+    await waitFor(() =>
+      expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(SCOPE, {
+        enabled: false,
+        keepCount: 5,
+        location: { kind: "default" },
+      }),
+    );
+  });
+
+  it("has nothing to save when backups are ticked, the count edited and backups unticked again (014 FR-005)", async () => {
+    const user = userEvent.setup();
+    const base = status();
+    renderSettings({
+      ...base,
+      settings: { ...base.settings, backups: { ...base.settings.backups, enabled: false } },
+    });
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("neither marks nor saves a duration that the unticked idle lock disables (014 FR-005, FR-012, FR-014)", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("combobox", { name: /^After/ }));
+    await user.click(screen.getByRole("option", { name: "30 minutes" }));
+    await user.click(screen.getByRole("checkbox", { name: "Lock after a period without use" }));
+    expect(screen.getAllByText("Changed")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Revert After/ })).toBeNull();
+    await user.click(save());
+    await waitFor(() =>
+      expect(databasesService.updateLockSettings).toHaveBeenCalledWith(SCOPE, {
+        idleEnabled: false,
+        idleMinutes: 10,
+        onScreenLock: false,
+      }),
+    );
   });
 });
