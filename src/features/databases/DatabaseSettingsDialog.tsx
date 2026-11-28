@@ -412,8 +412,13 @@ function SettingsForm({
   ): FieldChange | undefined =>
     changes[field] ? { saved: savedText(savedValue), onRevert: revert } : undefined;
   const lockChanges = {
+    // 014 FR-012: turned back off, the duration it enables goes back too.
     idleEnabled: changeFor("idleEnabled", checked(savedLock.idleEnabled), () =>
-      setLock((current) => ({ ...current, idleEnabled: savedLock.idleEnabled })),
+      setLock((current) => ({
+        ...current,
+        idleEnabled: savedLock.idleEnabled,
+        ...(savedLock.idleEnabled ? {} : { idleMinutes: savedLock.idleMinutes }),
+      })),
     ),
     idleMinutes: changeFor("idleMinutes", minutesLabel(savedLock.idleMinutes), () =>
       setLock((current) => ({ ...current, idleMinutes: savedLock.idleMinutes })),
@@ -443,7 +448,15 @@ function SettingsForm({
               checked={enabled}
               disabled={saving}
               onCheckedChange={setEnabled}
-              change={changeFor("enabled", checked(saved.enabled), () => setEnabled(saved.enabled))}
+              change={changeFor("enabled", checked(saved.enabled), () => {
+                setEnabled(saved.enabled);
+                // 014 FR-012: turned back off, what it enables goes back too.
+                if (!saved.enabled) {
+                  setKeepCount(String(saved.keepCount));
+                  setLocation(savedLocation());
+                  setErrors({});
+                }
+              })}
               hint="When a changed database locks or HoploDex quits, at most once a day."
             />
             <div data-field="keepCount">

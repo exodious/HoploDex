@@ -268,3 +268,20 @@ describe("014 US3 - Save Only When There Is Something to Save (the coverage dial
     expect(onSave).not.toHaveBeenCalled();
   });
 });
+
+describe("014 US2 - Put One Field Back to Its Saved Value (the coverage dialog)", () => {
+  it("reverting Policy to Not scheduled empties the amount it showed, leaving nothing to save (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    const onSave = renderDialog();
+    await user.click(screen.getByRole("combobox", { name: /^Policy/ }));
+    await user.click(await screen.findByRole("option", { name: /Collectibles rider/ }));
+    await user.type(screen.getByLabelText(/^Scheduled amount/), "900");
+    await user.click(screen.getByRole("button", { name: /^Revert Policy to “Not scheduled”/ }));
+    const save = screen.getByRole("button", { name: "Save coverage" });
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("combobox", { name: /^Policy/ }));
+    await user.click(await screen.findByRole("option", { name: /Collectibles rider/ }));
+    expect(screen.getByLabelText(/^Scheduled amount/)).toHaveValue("");
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});

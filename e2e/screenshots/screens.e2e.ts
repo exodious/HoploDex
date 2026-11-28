@@ -431,6 +431,28 @@ for (const theme of ["Light", "Dark"] as const) {
       await shot(`05b-edit-firearm-changed-${suffix}`);
       await closeDialog();
 
+      // 014 FR-005, FR-014: "no serial number" disables the serial number, so
+      // its change and revert are on the checkbox alone.
+      await openDialog("Edit");
+      await toggle("This firearm has no serial number");
+      await settle();
+      await centerField("serialNumber");
+      await shot(`05c-edit-firearm-no-serial-${suffix}`);
+      await closeDialog();
+
+      // 014 FR-012: a changed origin with the field it revealed filled in; its
+      // revert puts both back.
+      await openDialog("Edit");
+      await setGroup("Origin and year of manufacture", true);
+      await choose("Re-imported");
+      await settle();
+      if (await $('[role="alertdialog"]').isExisting()) await clickButton("Discard and change");
+      await fill("Importer", "Century Arms");
+      await settle();
+      await centerField("origin");
+      await shot(`05d-edit-firearm-origin-revealed-${suffix}`);
+      await closeDialog();
+
       await openDialog((await $("button=Change").isExisting()) ? "Change" : "Assign");
       await shot(`06-coverage-${suffix}`);
       await closeDialog();

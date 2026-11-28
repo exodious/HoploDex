@@ -13,6 +13,8 @@ Hint text
 - The control's `aria-describedby` lists the tag first, then hint, then error.
 - Activating revert restores the value and focuses the field's input (or, for choice cards and checkboxes, the selected or first option).
 - Fieldsets (Type, Origin, weight, Mounted on, a Mounted list row) put the tag and revert after the legend or row name.
+- No tag or revert on a field that is hidden or disabled by another (the serial number under "This firearm has no serial number"), or whose saved value the form can't show under the current state (an action the current type doesn't allow): the change shows on the field that hides or limits it (014 FR-005, FR-014).
+- Reverting a field that hides, shows or disables others also puts back what it hides and what it emptied (014 FR-012): Type, Origin, Registered as, No serial number, the coverage dialog's Policy, Make automatic backups, Lock after a period without use.
 
 ## §2 Save (FR-015, FR-016)
 

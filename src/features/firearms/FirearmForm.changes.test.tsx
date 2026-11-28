@@ -9,14 +9,14 @@ import {
   originGroupButton,
   resetServiceMocks,
 } from "./firearmFormTestSupport";
-import { FirearmForm } from "./FirearmForm";
+import { FORM_VERSION, FirearmForm } from "./FirearmForm";
 import type { Firearm } from "./types";
 import type { RecordLabel } from "../mounts/types";
 import { getDirtyForm } from "../session/usePendingDraft";
 import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import { ACTION_TYPES, FIREARM_TYPES, REGISTRATION_CLASSES } from "../../test/collectionFixtures";
-import { render as renderBase } from "../../test/sessionScope";
+import { render as renderBase, setResumedDraft } from "../../test/sessionScope";
 
 beforeEach(resetServiceMocks);
 
@@ -199,6 +199,108 @@ describe("014 US2 - Put One Field Back to Its Saved Value", () => {
     expect(screen.getByLabelText("Country of manufacture")).toHaveValue("Austria");
     expect(screen.getByLabelText("Importer")).toHaveValue("Glock Inc.");
     expect(changedTags()).toHaveLength(0);
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  // The owner's testing of PR 281: fields that hide, show or disable others.
+  const revertOf = (name: string) =>
+    screen.queryByRole("button", { name: new RegExp(`^Revert ${name} to`) });
+  const openOrigin = async (user: ReturnType<typeof userEvent.setup>) => {
+    if (originGroupButton().getAttribute("aria-expanded") === "false") {
+      await user.click(originGroupButton());
+    }
+  };
+
+  it("shows the change on No serial number, not on the Serial number it disables, and its revert puts the serial back (014 FR-005, FR-014)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={glock} onSubmit={vi.fn()} />);
+    await user.click(screen.getByRole("checkbox", { name: /no serial number/ }));
+    expect(revertOf("Serial number")).toBeNull();
+    expect(changedTags()).toHaveLength(1);
+    await user.click(revertOf("This firearm has no serial number")!);
+    expect(screen.getByLabelText(/^Serial number/)).toHaveValue("ABC123");
+    expect(screen.getByLabelText(/^Serial number/)).toBeEnabled();
+    expect(changedTags()).toHaveLength(0);
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("reverting No serial number on a record saved without one empties the serial typed meanwhile (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    const noSerial = { ...glock, serialNumber: null, noSerialAttested: true } as Firearm;
+    render(<FirearmForm initialValues={noSerial} onSubmit={vi.fn()} />);
+    await user.click(screen.getByRole("checkbox", { name: /no serial number/ }));
+    await user.type(screen.getByLabelText(/^Serial number/), "TYPED-1");
+    await user.click(revertOf("This firearm has no serial number")!);
+    expect(getDirtyForm()).toBeNull();
+    await user.click(screen.getByRole("checkbox", { name: /no serial number/ }));
+    expect(screen.getByLabelText(/^Serial number/)).toHaveValue("");
+  });
+
+  it.each([
+    ["Imported", ["Country of manufacture", "Importer", "Original maker"]],
+    ["Re-imported", ["Importer", "Original serial number"]],
+  ])(
+    "reverting Origin from %s empties the fields it revealed, and leaves nothing to save (014 FR-012, US2-6)",
+    async (origin, revealed) => {
+      const user = userEvent.setup();
+      const onSubmit = vi.fn();
+      render(<FirearmForm initialValues={glock} onSubmit={onSubmit} />);
+      await openOrigin(user);
+      await user.click(screen.getByRole("radio", { name: new RegExp(`^${origin}`) }));
+      for (const label of revealed) await user.type(screen.getByLabelText(label), "typed");
+      await user.click(revertOf("Origin")!);
+      expect(changedTags()).toHaveLength(0);
+      expect(save()).toHaveAttribute("aria-disabled", "true");
+      expect(getDirtyForm()).toBeNull();
+      await user.click(screen.getByRole("radio", { name: new RegExp(`^${origin}`) }));
+      for (const label of revealed) expect(screen.getByLabelText(label)).toHaveValue("");
+    },
+  );
+
+  it("never sends what the origin hides, so a resumed draft holding it still saves (014 FR-005)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    // A kept draft (or any path) with a country under a Re-imported origin,
+    // which hides it: it is neither compared nor sent.
+    setResumedDraft({
+      formVersion: FORM_VERSION,
+      kind: "firearm",
+      mode: "edit",
+      targetId: glock.id,
+      label: "Glock 19 (edit)",
+      values: { origin: "reimported", countryOfManufacture: "Austria" },
+    });
+    render(<FirearmForm initialValues={glock} onSubmit={onSubmit} />);
+    expect(changedTags()).toHaveLength(1);
+    await user.click(save());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      origin: "reimported",
+      countryOfManufacture: null,
+    });
+  });
+
+  it("reverting Type puts back what the type hid, and shows no Action revert the type can't show (014 FR-012, FR-014)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={rifle} onSubmit={vi.fn()} />);
+    await user.click(screen.getByRole("radio", { name: "Suppressor" }));
+    expect(revertOf("Action")).toBeNull();
+    await user.click(revertOf("Type")!);
+    expect(screen.getByRole("radio", { name: "Rifle" })).toBeChecked();
+    expect(changedTags()).toHaveLength(0);
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("reverting Registered as empties the details it revealed (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    render(<FirearmForm initialValues={glock} onSubmit={vi.fn()} />);
+    const group = screen.getByRole("button", { name: /^Registration/ });
+    if (group.getAttribute("aria-expanded") === "false") await user.click(group);
+    await user.click(screen.getByRole("combobox", { name: /^Registered as/ }));
+    await user.click(await screen.findByRole("option", { name: "Suppressor" }));
+    await user.type(screen.getByLabelText(/^Registered to/), "Owner");
+    await user.click(revertOf("Registered as")!);
+    expect(screen.queryByLabelText(/^Registered to/)).not.toBeInTheDocument();
+    expect(getDirtyForm()).toBeNull();
     expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 

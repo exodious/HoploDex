@@ -1484,3 +1484,42 @@ describe("014 US1 - See Which Fields I Have Changed (Database settings)", () => 
     expect(screen.getByText("Changed")).toBeInTheDocument();
   });
 });
+
+describe("014 US2 - Put One Field Back to Its Saved Value (Database settings)", () => {
+  it("reverting Make automatic backups puts back the count it enabled (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    const base = status();
+    const off = {
+      ...base,
+      settings: { ...base.settings, backups: { ...base.settings.backups, enabled: false } },
+    };
+    renderSettings(off);
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
+    await user.click(screen.getByRole("button", { name: /^Revert Make automatic backups to/ }));
+    expect(keep).toHaveValue(String(base.settings.backups.keepCount));
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("reverting Lock after a period without use puts back the duration it enabled (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    const off = {
+      ...status(),
+      settings: { ...status().settings, lock: { ...status().settings.lock, idleEnabled: false } },
+    };
+    renderSettings(off);
+    await user.click(screen.getByRole("checkbox", { name: "Lock after a period without use" }));
+    await user.click(screen.getByRole("combobox", { name: /^After/ }));
+    const options = await screen.findAllByRole("option");
+    const other = options.find((o) => o.getAttribute("aria-selected") !== "true")!;
+    await user.click(other);
+    await user.click(
+      screen.getByRole("button", { name: /^Revert Lock after a period without use to/ }),
+    );
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-disabled", "true");
+  });
+});

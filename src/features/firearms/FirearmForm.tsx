@@ -736,6 +736,50 @@ function wholeNumber(text: string): string {
 /** What a save would store for `field` (014 FR-002, FR-003, FR-005), as
  * `save` builds its input: a field the type or the classification leaves out
  * stores nothing, and the weight's two boxes store one total. */
+/** Whether `field` is shown, and can be edited, while the form holds `form`:
+ * a field another one hides or disables (the type's, the origin's, the
+ * classification's, the serial number under "no serial number") is neither
+ * saved nor marked, and its change shows on the field that hides it (014 FR-005). */
+function shownUnder(field: Field, form: FormState, rules: FieldRules): boolean {
+  switch (field) {
+    case "actionTypeId":
+      return rules.actionTypeApplies;
+    case "barrelLength":
+      return rules.barrelLengthApplies;
+    case "capacity":
+      return rules.capacityApplies;
+    case "serialNumber":
+      return !form.noSerialAttested;
+    case "countryOfManufacture":
+      return form.origin === "imported";
+    case "importerName":
+    case "originalMake":
+    case "originalModel":
+    case "originalSerialNumber":
+      return importMarked(form.origin);
+    case "registrationForm":
+    case "registrationApproved":
+    case "registeredTo":
+      return form.registrationClassId !== "";
+    default:
+      return true;
+  }
+}
+
+/** The fields a change of `field` hides, shows or clears (014 FR-012). */
+const DEPENDENTS: Partial<Record<Field, readonly Field[]>> = {
+  firearmTypeId: ["actionTypeId", "barrelLength", "capacity"],
+  origin: [
+    "countryOfManufacture",
+    "importerName",
+    "originalMake",
+    "originalModel",
+    "originalSerialNumber",
+  ],
+  registrationClassId: ["registrationForm", "registrationApproved", "registeredTo"],
+  noSerialAttested: ["serialNumber"],
+};
+
 function storedValue(field: Field, form: FormState, rules: FieldRules, disposed: boolean): string {
   const date = (text: string) => {
     const parsed = parseDateInput(text);
@@ -746,6 +790,8 @@ function storedValue(field: Field, form: FormState, rules: FieldRules, disposed:
     return parsed.ok ? String(parsed.dollars ?? "") : UNREADABLE;
   };
   const registered = form.registrationClassId !== "";
+  // A field its controlling field hides stores nothing (014 FR-005), as `save` sends it.
+  if (!shownUnder(field, form, rules)) return "";
   switch (field) {
     case "actionTypeId":
       return rules.actionTypeApplies ? form.actionTypeId : "";
@@ -1224,37 +1270,32 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       lastSettled.current[field] = saved[field].trim();
       setEntryNotes((notes) => ({ ...notes, [field]: undefined }));
     }
-    const back = <K extends Field>(prev: FormState, keys: readonly K[]) => {
-      const next = { ...prev };
-      for (const key of keys) if (String(prev[key]).trim() === "") next[key] = saved[key];
-      return next;
-    };
-    switch (field) {
-      case "firearmTypeId":
+    // 014 FR-012: with the field back as saved, each field it hides takes its
+    // saved value (nothing left behind that the record doesn't have), and each it
+    // shows that is empty (cleared by the change) does too; one the user filled
+    // in, still shown, keeps the user's value.
+    const dependents = DEPENDENTS[field];
+    if (dependents) {
+      if (field === "firearmTypeId") {
         setActionNote("");
         setTypeAnnouncement("");
-        setForm((prev) => back({ ...prev, firearmTypeId: saved.firearmTypeId }, ["actionTypeId"]));
-        return;
-      case "origin":
-        setForm((prev) =>
-          back({ ...prev, origin: saved.origin }, [
-            "countryOfManufacture",
-            "importerName",
-            "originalMake",
-            "originalModel",
-            "originalSerialNumber",
-          ]),
-        );
-        return;
-      case "registrationClassId":
-        setForm((prev) =>
-          back({ ...prev, registrationClassId: saved.registrationClassId }, [
-            "registrationForm",
-            "registrationApproved",
-            "registeredTo",
-          ]),
-        );
-        return;
+      }
+      if (field === "origin") {
+        setPendingOrigin(null);
+      }
+      setForm((prev) => {
+        const next: Record<string, unknown> = { ...prev, [field]: saved[field] };
+        const reverted = next as unknown as FormState;
+        const rules = rulesFor(reverted.firearmTypeId);
+        for (const dependent of dependents) {
+          if (!shownUnder(dependent, reverted, rules) || String(next[dependent]).trim() === "")
+            next[dependent] = saved[dependent];
+        }
+        return reverted;
+      });
+      return;
+    }
+    switch (field) {
       case "weightPounds":
         setForm((prev) => ({
           ...prev,
@@ -1286,10 +1327,24 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     }
   }
 
+  /** Whether a revert of `field` would show: the field is shown and can be
+   * edited, and the form can show its saved value (an action the current type
+   * doesn't allow can't be). Otherwise the change shows on the field that
+   * hides or limits it, which is itself changed (014 FR-005, FR-014). */
+  function revertShows(field: Field): boolean {
+    if (!shownUnder(field, form, rules)) return false;
+    if (field === "actionTypeId" && pristine.actionTypeId !== "") {
+      return actionsForType(actionTypes, form.firearmTypeId).some(
+        (action) => String(action.id) === pristine.actionTypeId,
+      );
+    }
+    return true;
+  }
+
   /** The marker and revert for a changed field of an edit form (014 FR-006,
    * FR-014): add forms have nothing saved to mark. */
   const changeFor = (field: Field): FieldChange | undefined =>
-    initialValues && changed.has(field)
+    initialValues && changed.has(field) && revertShows(field)
       ? { saved: savedDisplay(field), onRevert: () => revert(field) }
       : undefined;
   const groupChanged = (fields: readonly Field[]) =>
@@ -1382,11 +1437,15 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
       scheduledCoverageAmount: initialValues?.scheduledCoverageAmount ?? null,
       origin: form.origin === "" ? null : form.origin,
       yearOfManufacture: form.yearOfManufacture === "" ? null : Number(form.yearOfManufacture),
-      countryOfManufacture: blankToNull(form.countryOfManufacture),
-      importerName: blankToNull(form.importerName),
-      originalMake: blankToNull(form.originalMake),
-      originalModel: blankToNull(form.originalModel),
-      originalSerialNumber: blankToNull(form.originalSerialNumber),
+      // What the origin hides is not sent, as it isn't compared (014 FR-005).
+      countryOfManufacture:
+        form.origin === "imported" ? blankToNull(form.countryOfManufacture) : null,
+      importerName: importMarked(form.origin) ? blankToNull(form.importerName) : null,
+      originalMake: importMarked(form.origin) ? blankToNull(form.originalMake) : null,
+      originalModel: importMarked(form.origin) ? blankToNull(form.originalModel) : null,
+      originalSerialNumber: importMarked(form.origin)
+        ? blankToNull(form.originalSerialNumber)
+        : null,
       // Details never outlive their classification (005 FR-009).
       registrationClassId:
         form.registrationClassId === "" ? null : Number(form.registrationClassId),

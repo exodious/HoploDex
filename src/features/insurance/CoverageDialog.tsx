@@ -134,8 +134,14 @@ function CoverageForm({
           : null
         : (policies.find((p) => String(p.id) === initialPolicyId)?.name ?? "Not scheduled"),
     revert: (field) => {
-      if (field === "policyId") setPolicyId(initialPolicyId);
-      else setAmount(initialAmount);
+      if (field === "amount") {
+        setAmount(initialAmount);
+        return;
+      }
+      setPolicyId(initialPolicyId);
+      // 014 FR-012: back to unscheduled, the hidden amount leaves nothing the
+      // record doesn't have; back to a schedule, an emptied amount is refilled.
+      if (initialPolicyId === NOT_SCHEDULED || amount.trim() === "") setAmount(initialAmount);
     },
   });
   const requestClose = useCloseGuard(isDirty, onCancel);
