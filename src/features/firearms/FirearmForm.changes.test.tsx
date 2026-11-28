@@ -359,6 +359,135 @@ describe("014 US5 - Change What Is Mounted, and Save It with the Record", () => 
     expect(await screen.findByRole("option", { name: /Trijicon/ })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Leupold/ })).not.toBeInTheDocument();
   });
+
+  // A draft says what its database did when it was kept; these records have
+  // changed since (014 FR-020).
+  const accessory = (
+    id: number,
+    model: string,
+    status = "active",
+    mountedOn = null as RecordLabel | null,
+  ) => ({
+    id,
+    make: "Aimpoint",
+    model,
+    kindName: "Optic",
+    serialNumber: null,
+    status,
+    mountedOn,
+  });
+  const tikka = {
+    id: 8,
+    make: "Tikka",
+    model: "T3x Lite",
+    nickname: null,
+    firearmTypeName: "Rifle",
+    serialNumber: null,
+    status: "active",
+    mountedOn: null,
+  };
+  const tikkaLabel: RecordLabel = {
+    record: { kind: "firearm", id: 8 },
+    make: "Tikka",
+    model: "T3x Lite",
+    nickname: null,
+    typeName: "Rifle",
+    serialNumber: null,
+    status: "active",
+  };
+  const kept = (id: number, model: string): RecordLabel => ({
+    ...tikkaLabel,
+    record: { kind: "accessory", id },
+    make: "Aimpoint",
+    model,
+    typeName: "Optic",
+  });
+  const now = {
+    ...collection,
+    loaded: true,
+    firearmsById: new Map([[8, tikka]]),
+    accessoriesById: new Map([
+      [21, accessory(21, "Micro T-2", "active", tikkaLabel)],
+      [
+        31,
+        accessory(31, "Micro H-2", "active", { ...tikkaLabel, record: { kind: "firearm", id: 7 } }),
+      ],
+      [33, accessory(33, "Comp M5", "disposed")],
+    ]),
+  } as unknown as CollectionState;
+  const resume = (values: object) =>
+    setResumedDraft({
+      formVersion: FORM_VERSION,
+      kind: "firearm",
+      mode: "edit",
+      targetId: rifle.id,
+      label: "Ruger American (edit)",
+      values,
+    });
+  const withLight = {
+    ...rifle,
+    mount: {
+      chain: [],
+      mounted: [{ label: kept(31, "Micro H-2"), host: { kind: "firearm", id: 7 }, depth: 1 }],
+    },
+  } as Firearm;
+
+  it("resumes the Mounted list as the records are now, keeping only what still changes something (014 FR-020, FR-025)", async () => {
+    const user = userEvent.setup();
+    resume({
+      notes: "half typed",
+      mounted: {
+        adds: [
+          { label: kept(21, "Micro T-1"), from: { ...tikkaLabel, make: "Mossberg", model: "500" } },
+          { label: kept(31, "Micro H-2"), from: null },
+          { label: kept(32, "Gone"), from: null },
+          { label: kept(33, "Comp M5"), from: null },
+        ],
+        removes: ["accessory:40"],
+      },
+    });
+    renderBase(
+      <CollectionContext.Provider value={now}>
+        <FirearmForm initialValues={withLight} onSubmit={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    expect(screen.getByText("Aimpoint Micro T-2 · Optic")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Will be mounted here, moving from Tikka T3x Lite with everything mounted on it.",
+      ),
+    ).toBeInTheDocument();
+    for (const gone of [/Micro T-1/, /Mossberg/, /Gone/, /Comp M5/, /Will be unmounted/])
+      expect(screen.queryByText(gone)).not.toBeInTheDocument();
+    expect(changedTags()).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: /^Revert Notes to/ }));
+    await user.click(screen.getByRole("button", { name: /^Revert Aimpoint Micro T-2/ }));
+    expect(changedTags()).toHaveLength(0);
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(getDirtyForm()).toBeNull();
+  });
+
+  it("resumes Mounted on as the record is now, and as saved when that record is gone or disposed (014 FR-020)", () => {
+    resume({ mountedOn: { ...tikkaLabel, model: "T3" } });
+    const { unmount } = renderBase(
+      <CollectionContext.Provider value={now}>
+        <FirearmForm initialValues={rifle} onSubmit={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    expect(screen.getByRole("combobox", { name: /^Mounted on/ })).toHaveValue("Tikka T3x Lite");
+    unmount();
+
+    resume({ mountedOn: kept(33, "Comp M5") });
+    renderBase(
+      <CollectionContext.Provider value={now}>
+        <FirearmForm initialValues={rifle} onSubmit={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    expect(screen.getByRole("combobox", { name: /^Mounted on/ })).toHaveValue("");
+    expect(changedTags()).toHaveLength(0);
+    expect(getDirtyForm()).toBeNull();
+  });
 });
 
 describe("014 US3 - Save Only When There Is Something to Save", () => {

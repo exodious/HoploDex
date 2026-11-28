@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Button,
@@ -68,7 +68,7 @@ function CoverageForm({
   onSave: (input: AssignCoverageInput) => Promise<void>;
   onCancel: () => void;
 }) {
-  const { policies, summary } = useCollection();
+  const { policies, summary, loaded } = useCollection();
   const { open: goTo } = useNavigation();
   const [initialPolicyId] = useState(
     subject.insurancePolicyId != null ? String(subject.insurancePolicyId) : NOT_SCHEDULED,
@@ -94,6 +94,16 @@ function CoverageForm({
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // A resumed draft's policy that no longer exists goes back to the saved
+  // coverage, amount and all, once the policies have loaded (014 FR-020).
+  useEffect(() => {
+    if (!loaded || policyId === NOT_SCHEDULED) return;
+    if (policies.some((policy) => String(policy.id) === policyId)) return;
+    setPolicyId(initialPolicyId);
+    setAmount(initialAmount);
+    // Once, when the collection has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
 
   const scheduled = policyId !== NOT_SCHEDULED;
   const valueNote =

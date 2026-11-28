@@ -57,6 +57,7 @@ import {
   NO_MOUNTED_CHANGES,
   mountChangesInput,
   readMountedChanges,
+  resumeMountedChanges,
   storedMounted,
 } from "../mounts/mountedChanges";
 import type { MountedChanges } from "../mounts/mountedChanges";
@@ -848,18 +849,24 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
     mode: initialValues ? "edit" : "add",
     targetId: initialValues?.id ?? null,
   };
-  // Pending changes the user resumed start as unsaved input (003 FR-039).
-  const [form, setForm] = useState<FormState>(() => {
-    const resumed = resumedValues(scope, target, toFormState(initialValues));
-    // A kept draft comes from the database: its list is read, never trusted.
-    return { ...resumed, mounted: readMountedChanges(resumed.mounted) };
-  });
   // 014 FR-024: what is mounted directly on the record, as saved.
   const [savedMounted] = useState(() =>
     (initialValues?.mount?.mounted ?? [])
       .filter((entry) => entry.depth <= 1)
       .map((entry) => entry.label),
   );
+  // Pending changes the user resumed start as unsaved input (003 FR-039).
+  const [form, setForm] = useState<FormState>(() => {
+    const resumed = resumedValues(scope, target, toFormState(initialValues));
+    // A kept draft comes from the database: its list is read, never trusted,
+    // and keeps only what still changes something (014 FR-020).
+    const mounted = resumeMountedChanges(
+      readMountedChanges(resumed.mounted),
+      savedMounted,
+      initialValues ? { kind: "firearm", id: initialValues.id } : null,
+    );
+    return { ...resumed, mounted };
+  });
   useResumedDraftTaken(target);
   // What is saved, never the resumed draft: every marker and revert refers to it
   // (014 FR-020). An add form compares with how it opened (014 FR-019a).
@@ -1679,6 +1686,7 @@ export function FirearmForm({ initialValues, focusField, onSubmit, onCancel }: F
                   hint="Only if this firearm is mounted on another firearm or an accessory, such as a suppressor on a rifle."
                   error={errorFor("mountedOn")}
                   change={changeFor("mountedOn")}
+                  saved={pristine.mountedOn}
                   exclude={new Set(form.mounted.adds.map((add) => recordKey(add.label.record)))}
                 />
               </div>

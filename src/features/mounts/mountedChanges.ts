@@ -56,6 +56,25 @@ export function readMountedChanges(value: unknown): MountedChanges {
     : NO_MOUNTED_CHANGES;
 }
 
+/** A resumed list against what is saved now (014 FR-020): unmounting an
+ * entry that is no longer here, or mounting one that already is (or the
+ * record itself), is no change, so it is dropped, as is a repeat. */
+export function resumeMountedChanges(
+  changes: MountedChanges,
+  saved: RecordLabel[],
+  self: RecordRef | null,
+): MountedChanges {
+  const here = new Set(saved.map((label) => recordKey(label.record)));
+  const taken = new Set(self ? [recordKey(self)] : []);
+  const adds = changes.adds.filter(({ label }) => {
+    const key = recordKey(label.record);
+    if (here.has(key) || taken.has(key)) return false;
+    taken.add(key);
+    return true;
+  });
+  return { adds, removes: [...new Set(changes.removes)].filter((key) => here.has(key)) };
+}
+
 /** What a save sends for the list. */
 export function mountChangesInput(changes: MountedChanges, saved: RecordLabel[]): MountChange[] {
   const removed = new Set(changes.removes);

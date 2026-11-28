@@ -58,7 +58,11 @@ unsaved input (`ConfirmDialog`'s `unsavedChanges` for Restore). Mount changes
 to an existing record are made only in the firearm and accessory edit forms'
 Mounted list (`features/mounts/MountedEditor.tsx`, `mountedChanges.ts`), sent
 as `update_*`'s `mountChanges` and saved with the record; the record page's
-Mounted section is read-only apart from Mount → New accessory….
+Mounted section is read-only apart from Mount → New accessory…. A resumed
+draft names other records as they were when it was kept, so the forms take
+their names and hosts from the collection as it is now
+(`features/mounts/currentRecords.ts`) and drop what no longer applies
+(`resumeMountedChanges`; 014 FR-020).
 
 `features/session/SessionProvider` shows the database chooser whenever nothing
 is open and renders the collection's providers only while a database is, keyed

@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Combobox, Icon } from "../../components";
 import type { ComboboxOption, FieldChange } from "../../components";
 import { useSessionScope } from "../session/sessionScope";
+import { isActiveNow, useCurrentRecords } from "./currentRecords";
 import { listMountCandidates } from "./mountsService";
 import type { MountCandidate } from "./mountsService";
 import { recordNameText } from "./recordNames";
@@ -39,6 +40,10 @@ export interface MountChooserProps {
   /** Records not to offer, by `recordKey`: what a form's Mounted list
    * already holds (014 FR-026). */
   exclude?: ReadonlySet<string>;
+  /** A form's saved value. A `value` a resumed draft kept is shown as the
+   * record is now, and goes back to this one if that record is gone or no
+   * longer active (014 FR-020). */
+  saved?: RecordLabel | null;
 }
 
 const NOT_MOUNTED_KEY = "none";
@@ -69,13 +74,22 @@ export function MountChooser({
   id,
   hostMountedOn,
   exclude,
+  saved,
 }: MountChooserProps) {
   const scope = useSessionScope();
   // The text typed since the field was last settled; `null` shows `value`.
   const [typed, setTyped] = useState<string | null>(null);
   const typedNow = useRef<string | null>(null);
   const candidates = useRef(new Map<string, MountCandidate>());
-  const text = typed ?? (value ? recordNameText(value) : "");
+  const current = useCurrentRecords();
+  const shown = value ? (current.find(value.record)?.label ?? value) : null;
+  const text = typed ?? (shown ? recordNameText(shown) : "");
+  useEffect(() => {
+    if (saved !== undefined && value && isActiveNow(current, value.record) === false)
+      onChange(saved);
+    // Once, when the collection has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current.loaded]);
 
   function setTypedText(next: string | null) {
     typedNow.current = next;

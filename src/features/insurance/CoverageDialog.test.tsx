@@ -7,9 +7,9 @@ import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import type { Firearm } from "../firearms/types";
 import { currentDraft, getDirtyForm } from "../session/usePendingDraft";
-import { CoverageDialog } from "./CoverageDialog";
+import { CoverageDialog, FORM_VERSION } from "./CoverageDialog";
 import type { BlanketSummary, InsurancePolicy } from "./types";
-import { render } from "../../test/sessionScope";
+import { render, setResumedDraft } from "../../test/sessionScope";
 
 const policy = {
   id: 7,
@@ -283,5 +283,30 @@ describe("014 US2 - Put One Field Back to Its Saved Value (the coverage dialog)"
     await user.click(await screen.findByRole("option", { name: /Collectibles rider/ }));
     expect(screen.getByLabelText(/^Scheduled amount/)).toHaveValue("");
     expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+describe("014 US4 - Unsaved Means the Same Thing Everywhere (the coverage dialog)", () => {
+  it("resumes a policy that no longer exists as the saved coverage, with nothing to save (014 FR-020)", () => {
+    setResumedDraft({
+      formVersion: FORM_VERSION,
+      kind: "firearm",
+      mode: "coverage",
+      targetId: firearm.id,
+      label: "Colt Python (coverage)",
+      values: { policyId: "99", amount: "900" },
+    });
+    render(
+      <CollectionContext.Provider value={{ ...collection(blanket), loaded: true }}>
+        <CoverageDialog open onOpenChange={vi.fn()} firearm={firearm} onSave={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    expect(screen.queryByLabelText(/^Scheduled amount/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save coverage" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(getDirtyForm()).toBeNull();
   });
 });

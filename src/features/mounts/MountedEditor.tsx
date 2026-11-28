@@ -1,5 +1,6 @@
-import { useId } from "react";
+import { useEffect, useId } from "react";
 import { Button, ChangedMark, placeFocus } from "../../components";
+import { isActiveNow, useCurrentRecords } from "./currentRecords";
 import { MountChooser } from "./MountChooser";
 import { recordKey } from "./recordKey";
 import { recordNameText, recordNameWithType } from "./recordNames";
@@ -44,6 +45,17 @@ export function MountedEditor({
     ...changes.adds.map((add) => recordKey(add.label.record)),
   ]);
   const focusAdd = () => document.getElementById(inputId);
+  // A resumed draft names what it adds as it was when kept (014 FR-020): each
+  // is shown as it is now, and one gone or no longer active is dropped, once
+  // the collection says so. The chooser offers only active records.
+  const current = useCurrentRecords();
+  useEffect(() => {
+    if (!current.loaded) return;
+    const adds = changes.adds.filter((add) => isActiveNow(current, add.label.record));
+    if (adds.length < changes.adds.length) onChange({ ...changes, adds });
+    // Once, when the collection has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current.loaded]);
 
   function add(label: RecordLabel | null, from?: RecordLabel | null) {
     if (!label) return;
@@ -117,7 +129,10 @@ export function MountedEditor({
               </li>
             );
           })}
-          {changes.adds.map(({ label, from }) => {
+          {changes.adds.map((add) => {
+            const now = current.find(add.label.record);
+            const label = now?.label ?? add.label;
+            const from = now ? now.mountedOn : add.from;
             const key = recordKey(label.record);
             const noteId = `${ownId}-${key}-note`;
             return (

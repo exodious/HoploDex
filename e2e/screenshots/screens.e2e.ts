@@ -1221,6 +1221,26 @@ describe("Screenshots: pending changes whose form couldn't be opened", () => {
   });
 });
 
+// 014 FR-020: the seeded pending edit's Mounted list was kept while the
+// collection was otherwise; resumed, it names the optic it adds, and where
+// the optic moves from, as they are now.
+describe("Screenshots: resumed pending changes with a Mounted list", () => {
+  it("names what it adds as it is now", async () => {
+    await reseed();
+    await openSharedToPending();
+    await clickButton("Resume editing");
+    await $('[role="dialog"] [data-field="mounted"]').waitForExist({ timeout: 10000 });
+    await centerField("mounted");
+    for (const theme of ["Light", "Dark"] as const) {
+      await chooseTheme(theme);
+      await shot(`74b-resumed-mounted-list-${theme.toLowerCase()}`);
+    }
+    await chooseTheme("Light");
+    await discardForm();
+    await settle();
+  });
+});
+
 // 008 FR-006 to FR-008: the import dialog while a large file is read, and after a
 // file is refused. The sandbox's open collection serves for both.
 describe("Screenshots: the import dialog's reading phase", () => {

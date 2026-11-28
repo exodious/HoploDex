@@ -252,6 +252,44 @@ describe("008 US4 - Pending Changes Kept by Another Version (was us9-locking)", 
   });
 });
 
+// 014 US5 with 014 FR-020: the seeded pending edit of the Beretta keeps a
+// Mounted list from when the collection was otherwise. It adds the Aimpoint
+// under its old name, "Micro T-1", as moving from the Mossberg, though it is
+// now the "Micro T-2" on the Tikka; and it unmounts the Surefire, which is no
+// longer on the Beretta.
+describe("014 US5 - Change What Is Mounted, and Save It with the Record", () => {
+  it("a resumed Mounted list names records as they are now, and keeps no change that no longer applies (014 FR-020, FR-025)", async () => {
+    await reseed();
+    await openSharedToPending();
+    await clickButton("Resume editing");
+    const form = await dialogTitled("Edit Beretta 92FS");
+
+    expect(form).toContain("Aimpoint Micro T-2");
+    expect(form).toContain(
+      "Will be mounted here, moving from Tikka T3x Lite with everything mounted on it.",
+    );
+    expect(form).not.toContain("Micro T-1");
+    expect(form).not.toContain("Mossberg");
+    expect(form).not.toContain("Will be unmounted.");
+
+    // With Notes and the Aimpoint reverted nothing differs from what is saved:
+    // no change is left that the form doesn't show.
+    await browser.execute(() => {
+      for (const name of ["Revert Notes to", "Revert Aimpoint Micro T-2"]) {
+        document.querySelector<HTMLElement>(`[aria-label^="${name}"]`)?.click();
+      }
+    });
+    const save = await $('[role="dialog"] button[type="submit"]');
+    await browser.waitUntil(async () => (await save.getAttribute("aria-disabled")) === "true", {
+      timeout: 5000,
+      timeoutMsg: "Save still had something to save",
+    });
+    expect((await dialogTitled("Edit Beretta 92FS")).match(/Changed/g)).toBeNull();
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true, timeout: 5000 });
+  });
+});
+
 // Issue #44: the app's Enter rule, with real key presses in the real app.
 // Enter in a confirmation's field confirms it, and Enter on a radio only
 // operates the radio: WebKitGTK would otherwise submit the radio's form.
