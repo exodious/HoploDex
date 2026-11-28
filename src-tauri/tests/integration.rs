@@ -53,6 +53,7 @@ mod import_binding_test;
 mod import_export_test;
 mod import_matching_test;
 mod import_reader_test;
+mod import_template_test;
 mod insurance_policy_test;
 mod insurance_status_test;
 mod keyring_test;

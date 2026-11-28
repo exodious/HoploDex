@@ -8,8 +8,10 @@ import type {
   GetExportScopeInput,
   ImportCollectionInput,
   ImportResult,
+  ImportTemplateResult,
   ResolveImportConflictsInput,
   ResolveResult,
+  SaveImportTemplateInput,
 } from "./types";
 
 export function getExportScope(
@@ -37,6 +39,15 @@ export function exportCollection(
   input: ExportCollectionInput,
 ): Promise<ExportResult> {
   return scope.invoke<ExportResult>("export_collection", { input });
+}
+
+/** Saves a blank import spreadsheet in the folder `chooseExportFolder`
+ * picked (015 FR-001). */
+export function saveImportTemplate(
+  scope: SessionScope,
+  input: SaveImportTemplateInput,
+): Promise<ImportTemplateResult> {
+  return scope.invoke<ImportTemplateResult>("save_import_template", { input });
 }
 
 export function importCollection(

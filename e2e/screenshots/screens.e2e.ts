@@ -853,6 +853,18 @@ for (const theme of ["Light", "Dark"] as const) {
     it("import and export", async () => {
       await openDialog("Import");
       await shot(`12-import-${suffix}`);
+      // 015 contracts/ui.md §3: the blank spreadsheet's dialog, above the Import dialog.
+      await clickButton("Get a blank spreadsheet…");
+      await $("h2=Get a blank spreadsheet").waitForExist();
+      await settle();
+      await shot(`79-import-blank-spreadsheet-${suffix}`);
+      // Escape closes the top dialog only; the Import dialog is beneath it.
+      await browser.execute(() =>
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        ),
+      );
+      await $("h2=Get a blank spreadsheet").waitForExist({ reverse: true });
       await closeDialog();
 
       await openDialog("Export");

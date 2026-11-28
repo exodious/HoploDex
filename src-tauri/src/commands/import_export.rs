@@ -26,6 +26,7 @@ use crate::services::disk_space;
 use crate::services::entry_text::{EntryField, check_entry_text};
 use crate::services::import_reader::limits::{ImportLimit, MAX_MOUNTED_ENTRIES};
 use crate::services::import_reader::read_files;
+use crate::services::import_template::{self, TemplateLists};
 use crate::services::mounts::{self, MountGraph};
 use crate::services::record_id;
 use crate::services::sandbox::{Need, Reach};
@@ -53,6 +54,16 @@ pub struct ExportResult {
     pub exported_accessory_count: usize,
     /// Firearm and accessory photos together.
     pub exported_photo_count: usize,
+}
+
+/// What `save_import_template` wrote (015 contracts/tauri-commands.md): the
+/// workbook, or the firearm CSV and the accessory CSV, under the names used.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportTemplateResult {
+    pub spreadsheet_path: PathBuf,
+    /// `None` for a workbook, which holds both sheets.
+    pub accessory_spreadsheet_path: Option<PathBuf>,
 }
 
 /// The records an export writes (006 FR-020): `ops::export_records`.
@@ -575,6 +586,100 @@ pub mod ops {
             Err(_) => reserved.discard(),
         }
         exported
+    }
+
+    /// The name a blank import spreadsheet is saved under, before `-2`, `-3`,
+    /// … (015 FR-007).
+    pub const TEMPLATE_BASE_NAME: &str = "hoplodex-import-template";
+
+    /// Saves a blank import spreadsheet in `folder` (015 FR-002 to FR-007): the
+    /// workbook, or the firearm and accessory CSV files. It reads the open
+    /// database's fixed lists for the notes and no record (015 FR-004), and
+    /// asks nothing before a network folder, since nothing of the collection
+    /// is in it (015 FR-008). Each file is created new under the first free
+    /// name; a save that fails removes what it made and nothing else.
+    pub fn save_import_template(
+        conn: &Connection,
+        folder: &Path,
+        format: SpreadsheetFormat,
+        reach: &Reach,
+    ) -> Result<ImportTemplateResult, CommandError> {
+        log::debug!(
+            "saving a blank import spreadsheet as {format:?} to {}",
+            crate::logging::place(folder)
+        );
+        let folder = reach.check(folder, Need::WriteFolder)?;
+        let lists = TemplateLists::read(conn)?;
+        let files = reserve_template(&folder, format)?;
+        let written = match &files[..] {
+            [(workbook, _)] => import_template::write_workbook(workbook, &lists),
+            [(firearms, _), (accessories, _)] => import_template::write_csv(firearms, accessories),
+            _ => Err(CommandError::new("INTERNAL_ERROR", "The template's files weren't made.")),
+        };
+        let paths: Vec<PathBuf> = files.into_iter().map(|(_, path)| path).collect();
+        if let Err(e) = written {
+            for path in &paths {
+                let _ = std::fs::remove_file(path);
+            }
+            // A disk that fills while the files are written names the folder.
+            return Err(e.located_at(&folder));
+        }
+        Ok(ImportTemplateResult {
+            spreadsheet_path: paths[0].clone(),
+            accessory_spreadsheet_path: paths.get(1).cloned(),
+        })
+    }
+
+    /// The template's files, each created new (`create_new`), under the first
+    /// of `hoplodex-import-template`, `-2`, `-3`, … whose files are all free
+    /// (015 research.md §3). A name only partly free has the files made for it
+    /// removed before the next is tried, so nothing already there is touched.
+    fn reserve_template(
+        folder: &Path,
+        format: SpreadsheetFormat,
+    ) -> Result<Vec<(std::fs::File, PathBuf)>, CommandError> {
+        let suffixes: &[&str] = match format {
+            SpreadsheetFormat::Xlsx => &[".xlsx"],
+            SpreadsheetFormat::Csv => &[".csv", "-accessories.csv"],
+        };
+        let remove = |made: Vec<(std::fs::File, PathBuf)>| {
+            for (file, path) in made {
+                drop(file);
+                let _ = std::fs::remove_file(path);
+            }
+        };
+        'names: for n in 1..=10_000 {
+            let base = if n == 1 {
+                TEMPLATE_BASE_NAME.to_owned()
+            } else {
+                format!("{TEMPLATE_BASE_NAME}-{n}")
+            };
+            let mut made = Vec::with_capacity(suffixes.len());
+            for suffix in suffixes {
+                let path = folder.join(format!("{base}{suffix}"));
+                match create_new(&path) {
+                    Ok(file) => made.push((file, path)),
+                    Err(e) => {
+                        remove(made);
+                        if e.kind() == std::io::ErrorKind::AlreadyExists {
+                            continue 'names;
+                        }
+                        return Err(CommandError::from_io(&e, || {
+                            CommandError::new(
+                                "INTERNAL_ERROR",
+                                format!("Could not create the blank spreadsheet: {e}"),
+                            )
+                        })
+                        .located_at(&path));
+                    }
+                }
+            }
+            return Ok(made);
+        }
+        Err(CommandError::new(
+            "INTERNAL_ERROR",
+            "Could not find a free name for the blank spreadsheet in that folder.",
+        ))
     }
 
     /// The records of `table` with these ids, by id.
@@ -2827,6 +2932,45 @@ pub async fn export_collection(
     })
     .await
     .map_err(|e| CommandError::new("INTERNAL_ERROR", format!("Could not export: {e}")))?
+}
+
+/// Input for `save_import_template` (015 contracts/tauri-commands.md).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveImportTemplateInput {
+    pub format: String,
+    /// The folder `choose_export_folder` holds the answer to.
+    pub folder_token: String,
+}
+
+/// Saves a blank import spreadsheet in the folder picked with
+/// `choose_export_folder` (015 FR-001, FR-007), taken by its token as
+/// `export_collection` takes it: used up when the save succeeds, put back
+/// when it fails (015 FR-009).
+#[tauri::command]
+pub async fn save_import_template(
+    input: SaveImportTemplateInput,
+    app: tauri::AppHandle,
+    session: ScopedSession,
+) -> Result<ImportTemplateResult, CommandError> {
+    if !session.is_current() {
+        return Err(CommandError::database_closed());
+    }
+    let format = parse_format(&input.format)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let reach = app.state::<Arc<Reach>>();
+        ops::export_to_chosen_folder(
+            &session.session,
+            session.id,
+            &input.folder_token,
+            &reach,
+            |folder| session.read(|conn| ops::save_import_template(conn, folder, format, &reach)),
+        )
+    })
+    .await
+    .map_err(|e| {
+        CommandError::new("INTERNAL_ERROR", format!("Could not save the blank spreadsheet: {e}"))
+    })?
 }
 
 #[derive(Debug, Clone, Deserialize)]

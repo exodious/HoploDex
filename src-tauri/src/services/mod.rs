@@ -11,6 +11,7 @@ pub mod file_swap;
 pub mod helper;
 pub mod import_matching;
 pub mod import_reader;
+pub mod import_template;
 pub mod insurance_status;
 pub mod keyring;
 pub mod machine_settings;

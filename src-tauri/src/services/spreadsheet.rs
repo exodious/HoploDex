@@ -80,6 +80,10 @@ pub const FIREARM_COLUMNS: &[&str] = &[
     "photo_filenames",
 ];
 
+/// The columns export writes and import ignores (001 FR-019), which the blank
+/// import spreadsheet leaves out (015 FR-003).
+pub const EXPORT_ONLY_COLUMNS: &[&str] = &["photo_filenames"];
+
 /// The accessory table's columns, in export order
 /// (006 contracts/spreadsheet-format.md "Accessory
 /// table: columns"). Read by header on import, like the firearm table's.
@@ -601,7 +605,7 @@ pub fn parse_scaled_decimal(
 /// A failure writing the export; a full disk is `DISK_FULL`, whichever
 /// writer reported it. The workbook writer holds its I/O errors without
 /// exposing them as a `source`, so they are looked for by variant.
-fn export_error(what: &str, e: impl std::error::Error + 'static) -> CommandError {
+pub(crate) fn export_error(what: &str, e: impl std::error::Error + 'static) -> CommandError {
     let any: &(dyn std::error::Error + 'static) = &e;
     let full = match any.downcast_ref::<rust_xlsxwriter::XlsxError>() {
         Some(rust_xlsxwriter::XlsxError::IoError(io)) => disk_space::is_disk_full(io),
@@ -640,7 +644,7 @@ pub fn unprotect_csv_cell(cell: &str) -> &str {
     }
 }
 
-fn write_csv_table<const N: usize>(
+pub(crate) fn write_csv_table<const N: usize>(
     out: impl std::io::Write,
     columns: &[&str],
     rows: impl Iterator<Item = [String; N]>,

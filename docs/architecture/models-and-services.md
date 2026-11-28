@@ -32,7 +32,11 @@ per table; import recognises each sheet's table by its header and reads columns
 by header, so a sheet exported before a column existed still imports, and one
 file or two can carry both tables; import passes a row's `record_id` to
 `create_firearm` and `create_accessory`, whose `uid` argument is `None`
-everywhere else, so the identifier and `mounted_on` survive), import matching,
+everywhere else, so the identifier and `mounted_on` survive), the blank import
+spreadsheet (`import_template`: the columns import reads, without the export-only
+`EXPORT_ONLY_COLUMNS`, a note on each workbook header naming what the column
+takes, with the open database's fixed lists, and every workbook column formatted
+as text; 015), import matching,
 insurance status, valuation, attachment storage, secure delete,
 
 - and for 003 `passphrase` (NFC-normalized, zeroized) and `passphrase_dialog`
