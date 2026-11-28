@@ -37,7 +37,7 @@ They cover each story's journey and the scenarios listed in [plan.md](plan.md#te
 
 1. Open the Accessories page, group by Mounted on, and note an accessory mounted on a firearm (its host).
 2. Open another active firearm's record page and choose **Change what's mounted…**. Expected: its edit form opens at the Mounted list.
-3. Choose **Add…** and pick the accessory from step 1. Expected: a row marked Changed, saying it will move from its host; nothing has changed in the collection.
+3. In **Add to Mounted**, search for the accessory from step 1 and pick it. Expected: a row marked Changed, saying it will move from its host; nothing has changed in the collection.
 4. Press ↺ on that row. Expected: the row is gone; Save disabled.
 5. Add it again and choose **Save**. Expected: the accessory is listed on this firearm's page and no longer on its old host's.
 

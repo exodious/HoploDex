@@ -160,7 +160,7 @@ fn refuses_an_item_listed_twice_and_more_than_the_bound() {
         .map(|id| change(RecordRef::Accessory(id + 1), true))
         .collect();
     let err = save_firearm(&db, rifle, "x", &many).unwrap_err();
-    assert_eq!(err.code, "VALIDATION_ERROR");
+    assert_mounted_error(err, "Save fewer changes to what is mounted at once.");
     assert_eq!(host_of(&db, scope), None);
 }
 

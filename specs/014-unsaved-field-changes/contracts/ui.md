@@ -36,7 +36,7 @@ In the firearm and accessory edit forms of an active record, after "Mounted on":
 ```
 Mounted
  Leupold VX-3HD (scope)                  [Remove]
- Trijicon RMR (red dot)  [Changed][↺]  Will be mounted here, moving from Glock 19 with 1 item.
+ Trijicon RMR (red dot)  [Changed][↺]  Will be mounted here, moving from Glock 19 with everything mounted on it.
  Aimpoint PRO (red dot)  [Changed][↺]  Will be unmounted.
 Add to Mounted
 [ Search for an accessory or firearm ]
