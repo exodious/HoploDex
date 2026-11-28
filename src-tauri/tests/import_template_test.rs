@@ -10,7 +10,7 @@ use crate::sheets;
 use crate::support;
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::import_export::ops::{self as import_export_ops, TEMPLATE_BASE_NAME};
@@ -286,7 +286,7 @@ fn a_filled_csv_template_imports_its_rows_and_makes_the_mount() {
     assert_filled_import(&db, &result, &uid);
 }
 
-fn append_rows(path: &PathBuf, rows: &[Vec<String>]) {
+fn append_rows(path: &Path, rows: &[Vec<String>]) {
     let mut table = sheets::read_csv(path);
     table.extend_from_slice(rows);
     sheets::write_csv(path, &table);
