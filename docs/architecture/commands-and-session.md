@@ -89,7 +89,7 @@ open session; `choose_database_folder` and `choose_database_file` with nothing
 open (`SessionId::NONE`); `choose_upgrade_backup_folder` for the waiting
 database's `awaitingId`. `add_photo_from_path` and `add_document_from_path`
 take a drop once (`take_drop`); `import_collection`, `export_collection`,
-`create_database`, `update_backup_settings` and `upgrade_database` take picks by
+`save_import_template` (a `choose_export_folder` pick, 015), `create_database`, `update_backup_settings` and `upgrade_database` take picks by
 token (`take_pick`), and all but the upgrade put them back when the operation
 fails (`put_back_pick`), except an import that fails or is stopped after saving
 rows (`details.importedCount`), which uses them up; `open_database` and `locate_database` take a

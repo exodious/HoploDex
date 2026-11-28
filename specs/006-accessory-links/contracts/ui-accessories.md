@@ -304,7 +304,8 @@ own deletion wording is unchanged.
   _Amended 2026-11-19 (code scanning alert 89): there is no path field, so
   no typed path: files come only from "Choose a file…", the chooser the
   backend opens, and once two are chosen that button is disabled; see
-  [001's `import_collection`](../../001-firearms-inventory/contracts/tauri-commands.md#import_collection)._
+  [001's `import_collection`](../../001-firearms-inventory/contracts/tauri-commands.md#import_collection).
+  _Amended by [spec 015](../../015-blank-import-spreadsheet/contracts/ui.md): below the file field, "No spreadsheet yet?" and **Get a blank spreadsheet…** open a dialog that saves the columns import reads with no records.__
 - **The import report** names each row's table ("Accessories, row 4") and
   lists mount warnings with the other warnings. The conflict list shows an
   accessory conflict by its `RecordName`, under a column headed by the

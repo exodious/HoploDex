@@ -1,4 +1,4 @@
-import { $, answerChooser, browser, clickButton } from "./ui";
+import { $, answerChooser, browser, clickButton, clickEl } from "./ui";
 
 /**
  * What the import specs share: the Import dialog with its file picked in the
@@ -35,4 +35,20 @@ export async function tally(label: string): Promise<number> {
     );
     return Number(item?.querySelector(".hd-tally__value")?.textContent ?? "NaN");
   }, label);
+}
+
+/** Saves a blank import spreadsheet in `folder` from the Import dialog
+ * (015 US1), as a workbook or as the two CSV files, and closes both dialogs. */
+export async function saveBlankSpreadsheet(folder: string, format: "xlsx" | "csv") {
+  await clickButton("Import");
+  await clickButton("Get a blank spreadsheet…");
+  if (format === "csv") await clickEl('input[type="radio"][value="csv"]');
+  await chooseExportFolder(folder);
+  await clickButton("Save");
+  await $(".hd-outcome__headline=Saved a blank spreadsheet.").waitForExist({
+    timeout: 15000,
+    timeoutMsg: "the blank spreadsheet was never saved",
+  });
+  await clickButton("Done");
+  await clickButton("Cancel");
 }

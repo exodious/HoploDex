@@ -39,7 +39,7 @@ The Import dialog gains "Get a blank spreadsheet…", which opens a small dialog
 - **V. User Privacy**: the template holds no record, value, policy name or database name (FR-004). Saving it leaves nothing of the collection outside the database, so it carries no unencrypted-data warning and asks nothing for a network folder (research.md §5). PASS.
 - **Security gates**: attack surface below; the per-PR AI review runs before the PR. Persistence: no schema or migration change, and no record is read or written.
 
-**Attack surface** (`docs/attack-surface.md`): `files` (choosers and chosen paths): `save_import_template` joins the commands that take a token for a picked folder (`choose_export_folder`'s), with the same questions (absolute, an existing directory, created exclusively, no symlink followed). `import-export`: new **Code** path `src-tauri/src/services/import_template.rs`. `ipc-commands`: one new **scoped** command, so `UNSCOPED_COMMANDS` is unchanged. No new **Accepted** risk. The reasoning is in research.md §5. The list is updated in this feature's pull request.
+**Attack surface** (`docs/attack-surface.md`): `paths` (filesystem locations from the web view): `save_import_template` joins the commands that take a token for a picked folder (`choose_export_folder`'s), with the same questions (absolute, an existing directory, created exclusively, no symlink followed). `import-export`: new **Code** path `src-tauri/src/services/import_template.rs`. `ipc-commands`: one new **scoped** command, so `UNSCOPED_COMMANDS` is unchanged. No new **Accepted** risk. The reasoning is in research.md §5. The list is updated in this feature's pull request.
 
 ## Test Levels
 

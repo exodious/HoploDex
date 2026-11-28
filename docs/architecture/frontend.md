@@ -127,12 +127,13 @@ A file from the picker is read in the web view, so the panel refuses one over
 its limit from `File.size` before reading it, and the backend checks the bytes
 it receives again.
 
-**The import's files, the export's folder, a new database's folder, the
-backup location and the upgrade's backup folder** are picked in a chooser the
-backend opens (`choose_import_files`, `choose_export_folder`,
+**The import's files, the export's folder (and the blank import spreadsheet's,
+015), a new database's folder, the backup location and the upgrade's backup
+folder** are picked in a chooser the backend opens (`choose_import_files`, `choose_export_folder`,
 `choose_database_folder`, `choose_backup_folder`, `choose_upgrade_backup_folder`,
 `services::chooser`), never typed: the page gets a token for each answer and
-shows its path (`ChosenPathField` in the import, export and create dialogs),
+shows its path (`ChosenPathField` in the import, export, blank spreadsheet and
+create dialogs),
 and the commands take the tokens. One that finishes uses them up; one that
 fails leaves them, so the dialog can try again (the upgrade picks again). The
 settings dialog sends `current` for the saved location. **Open another database

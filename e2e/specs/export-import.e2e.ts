@@ -1,9 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
-import { $, addFirearm, back, browser, clickButton, expect, invokeFailure } from "../support/ui";
+import {
+  $,
+  addFirearm,
+  back,
+  browser,
+  clickButton,
+  clickEl,
+  expect,
+  invokeFailure,
+} from "../support/ui";
 import { createDatabase, dialogHeightWhenOpened, listedNames } from "../support/ui";
 import { scratchDocuments, search } from "../support/ui";
 import { chooseExportFolder, chooseImportFiles, importFile, tally } from "../support/importExport";
+import { saveBlankSpreadsheet } from "../support/importExport";
 import { writeSheetsWorkbook } from "../support/spreadsheets";
 import { logLines } from "../support/documentPreview";
 
@@ -315,4 +325,152 @@ describe("Issue #116 - Export dialog shifts up a few pixels after it appears", (
       await search("");
     });
   }
+});
+
+// 015 (the blank import spreadsheet): saved from the Import dialog, imported
+// untouched and filled in.
+
+/** The database the 001 journey leaves open when the whole file runs, or a new one. */
+async function openDatabase() {
+  if (await $("button=Create a new database…").isExisting()) await createDatabase();
+}
+
+/** A data line for a template CSV file whose header line is `header`. */
+function templateLine(header: string, cells: Record<string, string>): string {
+  const columns = header.split(",");
+  for (const name of Object.keys(cells)) {
+    if (!columns.includes(name)) throw new Error(`the template has no ${name} column`);
+  }
+  return columns.map((column) => cells[column] ?? "").join(",");
+}
+
+const TEMPLATE = "hoplodex-import-template";
+
+describe("015 US1 - Get a blank spreadsheet to fill in", () => {
+  before(openDatabase);
+
+  it("saves a workbook, then the CSV files, from the Import dialog, which stays open beneath (015 US1-1 to US1-5)", async () => {
+    const folder = fs.mkdtempSync(path.join(scratchDocuments(), "template-"));
+    await clickButton("Import");
+    await clickButton("Get a blank spreadsheet…");
+    expect(await $('input[type="radio"][value="xlsx"]').isSelected()).toBe(true);
+    await chooseExportFolder(folder);
+    await clickButton("Save");
+    await $(".hd-outcome__headline=Saved a blank spreadsheet.").waitForExist({ timeout: 15000 });
+    const workbook = path.join(folder, `${TEMPLATE}.xlsx`);
+    // By name: the path shown is the folder as Rust reached it (a link resolved on macOS).
+    await expect($(`dd*=${TEMPLATE}.xlsx`)).toExist();
+    expect(fs.existsSync(workbook)).toBe(true);
+    await clickButton("Done");
+
+    await clickButton("Get a blank spreadsheet…");
+    await clickEl('input[type="radio"][value="csv"]');
+    await chooseExportFolder(folder);
+    await clickButton("Save");
+    await $(".hd-outcome__headline=Saved a blank spreadsheet.").waitForExist({ timeout: 15000 });
+    const firearms = path.join(folder, `${TEMPLATE}.csv`);
+    const accessories = path.join(folder, `${TEMPLATE}-accessories.csv`);
+    await expect($(`dd*=${TEMPLATE}-accessories.csv`)).toExist();
+    expect(fs.readFileSync(firearms, "utf-8")).toMatch(
+      /^record_id,make,model,[^\n]*,mounted_on\r?\n$/,
+    );
+    expect(fs.readFileSync(accessories, "utf-8")).toMatch(
+      /^record_id,kind,make,[^\n]*,mounted_on\r?\n$/,
+    );
+    await clickButton("Done");
+
+    // 015 US1-5: the Import dialog is still open beneath it.
+    await expect($('[role="dialog"]').$("button=Choose a file…")).toExist();
+    await clickButton("Cancel");
+  });
+
+  // 015 FR-007, FR-008: the folder is only ever the chooser's answer, and a
+  // network folder is written without export's question, since nothing of the
+  // collection is in the file.
+  it("writes only to a folder picked in the chooser, and asks nothing before a network folder (015 FR-007, FR-008)", async () => {
+    const notPicked = fs.mkdtempSync(path.join(scratchDocuments(), "not-picked-"));
+    const refused = await invokeFailure("save_import_template", {
+      input: { format: "csv", folderToken: notPicked },
+    });
+    expect(refused).toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(fs.readdirSync(notPicked)).toEqual([]);
+
+    // An E2E build takes this folder to be on a network share (sandbox.ts).
+    const share = path.join(process.env.HOPLODEX_E2E_NETWORK_FOLDER!, "Templates");
+    fs.mkdirSync(share, { recursive: true });
+    const asked = logLines("HOPLODEX_E2E_CONSENT_LOG").length;
+    await saveBlankSpreadsheet(share, "xlsx");
+    expect(fs.existsSync(path.join(share, `${TEMPLATE}.xlsx`))).toBe(true);
+    expect(logLines("HOPLODEX_E2E_CONSENT_LOG")).toHaveLength(asked);
+  });
+});
+
+describe("015 US2 - Import a filled-in template", () => {
+  before(openDatabase);
+
+  it("imports the CSV template untouched with nothing added, then filled with a firearm and an accessory mounted on it (015 US2-1, US2-2, US2-4)", async () => {
+    const folder = fs.mkdtempSync(path.join(scratchDocuments(), "template-"));
+    await saveBlankSpreadsheet(folder, "csv");
+    const firearms = path.join(folder, `${TEMPLATE}.csv`);
+    const accessories = path.join(folder, `${TEMPLATE}-accessories.csv`);
+
+    const importBoth = async () => {
+      await clickButton("Import");
+      await chooseImportFiles(firearms, accessories);
+      await clickButton("Import");
+      await $(".hd-tally").waitForExist({ timeout: 15000, timeoutMsg: "import never finished" });
+    };
+    await importBoth();
+    expect(await tally("added")).toBe(0);
+    expect(await tally("failed")).toBe(0);
+    await clickButton("Done");
+
+    // A made-up identifier in the firearm's record_id and the accessory's mounted_on.
+    const uid = "0b6c3a8e-1f2d-4c5b-9a7e-3d2f1e0c9b8a";
+    const firearmHeader = fs.readFileSync(firearms, "utf-8").trim();
+    const accessoryHeader = fs.readFileSync(accessories, "utf-8").trim();
+    fs.appendFileSync(
+      firearms,
+      `${templateLine(firearmHeader, {
+        record_id: uid,
+        make: "TemplateE2EMake",
+        model: "T1",
+        serial_number: "TPL-001",
+        caliber: "9mm",
+        firearm_type: "Handgun",
+      })}\n`,
+    );
+    fs.appendFileSync(
+      accessories,
+      `${templateLine(accessoryHeader, {
+        kind: "Optic",
+        make: "TemplateE2EOptic",
+        model: "O1",
+        mounted_on: uid,
+      })}\n`,
+    );
+    await importBoth();
+    expect(await tally("added")).toBe(2);
+    expect(await tally("failed")).toBe(0);
+    await clickButton("Done");
+
+    await search("TemplateE2EMake");
+    expect(await listedNames()).toEqual(["TemplateE2EMake T1"]);
+    expect(await $("body").getText()).toContain("1 accessory mounted");
+    await search("");
+  });
+});
+
+describe("015 US3 - Guidance that is never imported", () => {
+  before(openDatabase);
+
+  it("imports the workbook template, notes and all, with nothing added or failed (015 US3-2)", async () => {
+    const folder = fs.mkdtempSync(path.join(scratchDocuments(), "template-"));
+    await saveBlankSpreadsheet(folder, "xlsx");
+
+    await importFile(path.join(folder, `${TEMPLATE}.xlsx`));
+    expect(await tally("added")).toBe(0);
+    expect(await tally("failed")).toBe(0);
+    await clickButton("Done");
+  });
 });
