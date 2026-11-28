@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,5 +31,5 @@
 
 ## Notes
 
-- Three [NEEDS CLARIFICATION] markers remain, for the issue's own open questions (where it is offered, formats, contents). They are the owner's decisions and are put to the owner with clarify's questions.
+- The three [NEEDS CLARIFICATION] markers (the issue's open questions) were answered by the owner on 2026-11-28 (spec.md "Clarifications").
 - The spec names `FIREARM_COLUMNS`, `ACCESSORY_COLUMNS` and the token-held chooser because the issue and the project's specs do; they are the contract the template must keep, not a design choice.
