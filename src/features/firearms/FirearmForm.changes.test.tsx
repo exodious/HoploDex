@@ -488,6 +488,29 @@ describe("014 US5 - Change What Is Mounted, and Save It with the Record", () => 
     expect(changedTags()).toHaveLength(0);
     expect(getDirtyForm()).toBeNull();
   });
+
+  it("keeps a resumed Mounted list and Mounted on when the collection couldn't be loaded (014 FR-020)", () => {
+    resume({
+      mountedOn: tikkaLabel,
+      mounted: { adds: [{ label: kept(21, "Micro T-1"), from: null }], removes: [] },
+    });
+    const failed = {
+      ...collection,
+      loaded: true,
+      error: "The collection couldn't be loaded.",
+      firearmsById: new Map(),
+      accessoriesById: new Map(),
+    } as unknown as CollectionState;
+    renderBase(
+      <CollectionContext.Provider value={failed}>
+        <FirearmForm initialValues={rifle} onSubmit={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    expect(screen.getByText("Aimpoint Micro T-1 · Optic")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /^Mounted on/ })).toHaveValue("Tikka T3x Lite");
+    expect(changedTags()).toHaveLength(2);
+    expect(getDirtyForm()).not.toBeNull();
+  });
 });
 
 describe("014 US3 - Save Only When There Is Something to Save", () => {

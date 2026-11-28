@@ -309,4 +309,28 @@ describe("014 US4 - Unsaved Means the Same Thing Everywhere (the coverage dialog
     );
     expect(getDirtyForm()).toBeNull();
   });
+
+  it("keeps a resumed policy when the collection couldn't be loaded (014 FR-020)", () => {
+    setResumedDraft({
+      formVersion: FORM_VERSION,
+      kind: "firearm",
+      mode: "coverage",
+      targetId: firearm.id,
+      label: "Colt Python (coverage)",
+      values: { policyId: "7", amount: "900" },
+    });
+    const failed = {
+      ...collection(blanket),
+      policies: [],
+      policiesById: new Map(),
+      loaded: true,
+      error: "The collection couldn't be loaded.",
+    } as unknown as CollectionState;
+    render(
+      <CollectionContext.Provider value={failed}>
+        <CoverageDialog open onOpenChange={vi.fn()} firearm={firearm} onSave={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    expect(currentDraft()).toMatchObject({ values: { policyId: "7", amount: "900" } });
+  });
 });

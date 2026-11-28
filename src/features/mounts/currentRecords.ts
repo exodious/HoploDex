@@ -8,14 +8,14 @@ export type CurrentRecord = { label: RecordLabel; mountedOn: RecordLabel | null 
 
 /** Records as they are now, for a form naming records a resumed draft kept
  * (014 FR-020): a draft says only what its database did when it was kept.
- * `find` gives `undefined` until the collection has loaded (or outside one),
- * and `null` for a record it doesn't have. */
+ * `find` gives `undefined` until the collection has loaded without an error
+ * (or outside one), and `null` for a record it doesn't have. */
 export function useCurrentRecords(): {
   loaded: boolean;
   find: (record: RecordRef) => CurrentRecord | null | undefined;
 } {
   const collection = useContext(CollectionContext);
-  const loaded = collection?.loaded ?? false;
+  const loaded = !!collection?.loaded && !collection.error;
   return {
     loaded,
     find(record) {

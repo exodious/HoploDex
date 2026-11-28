@@ -68,7 +68,8 @@ function CoverageForm({
   onSave: (input: AssignCoverageInput) => Promise<void>;
   onCancel: () => void;
 }) {
-  const { policies, summary, loaded } = useCollection();
+  const { policies, summary, loaded: listed, error } = useCollection();
+  const loaded = listed && !error;
   const { open: goTo } = useNavigation();
   const [initialPolicyId] = useState(
     subject.insurancePolicyId != null ? String(subject.insurancePolicyId) : NOT_SCHEDULED,
