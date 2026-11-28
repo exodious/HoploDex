@@ -22,6 +22,21 @@ export interface ExportCollectionInput {
   filter?: ListFirearmsInput;
 }
 
+/** `save_import_template`'s input (015 contracts/tauri-commands.md). */
+export interface SaveImportTemplateInput {
+  format: SpreadsheetFormat;
+  /** `choose_export_folder`'s token for the folder. */
+  folderToken: string;
+}
+
+/** What `save_import_template` wrote: the workbook, or the firearm and
+ * accessory CSV files, under the names it used (015 FR-007). */
+export interface ImportTemplateResult {
+  spreadsheetPath: string;
+  /** Null for a workbook, which holds both sheets. */
+  accessorySpreadsheetPath: string | null;
+}
+
 /** `get_export_scope`'s input (006 FR-020). */
 export interface GetExportScopeInput {
   scope: "all" | "filtered";

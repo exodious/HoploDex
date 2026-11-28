@@ -95,6 +95,7 @@ pub const COMMANDS: &[&str] = &[
     "choose_backup_folder",
     "get_export_scope",
     "export_collection",
+    "save_import_template",
     "import_collection",
     "cancel_import",
     "resolve_import_conflicts",

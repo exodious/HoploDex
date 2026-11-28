@@ -98,6 +98,7 @@
     "allow-choose-backup-folder",
     "allow-get-export-scope",
     "allow-export-collection",
+    "allow-save-import-template",
     "allow-import-collection",
     "allow-cancel-import",
     "allow-resolve-import-conflicts"

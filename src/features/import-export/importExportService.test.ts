@@ -26,6 +26,7 @@ describe("importExportService", () => {
       folderToken: "f1",
       scope: "all",
     });
+    await importExportService.saveImportTemplate(scope, { format: "xlsx", folderToken: "f2" });
     await importExportService.chooseImportFiles(scope);
     await importExportService.importCollection(scope, { fileTokens: ["t1"] });
     await importExportService.resolveImportConflicts(scope, {
@@ -41,6 +42,7 @@ describe("importExportService", () => {
         { input: { format: "csv", folderToken: "f1", scope: "all" } },
         { session: 17 },
       ],
+      ["save_import_template", { input: { format: "xlsx", folderToken: "f2" } }, { session: 17 }],
       ["choose_import_files", undefined, { session: 17 }],
       ["import_collection", { input: { fileTokens: ["t1"] } }, { session: 17 }],
       [

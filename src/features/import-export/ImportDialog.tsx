@@ -26,6 +26,7 @@ import {
 } from "../mounts/recordCounts";
 import { recordKey } from "../mounts/recordKey";
 import { accessoryNameText } from "../mounts/recordNames";
+import { BlankSpreadsheetDialog } from "./BlankSpreadsheetDialog";
 import { ChosenPathField } from "./ChosenPathField";
 import * as importExportService from "./importExportService";
 import type {
@@ -223,6 +224,8 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   const [disposeWith, setDisposeWith] = useState<Record<string, Record<string, string>>>({});
   const [resolvedCount, setResolvedCount] = useState<number | null>(null);
   const [unresolved, setUnresolved] = useState<RowError[]>([]);
+  // 015 FR-001: the blank spreadsheet's dialog, above this one.
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   useEffect(() => {
     if (!importing) return;
@@ -402,6 +405,13 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
               ))}
             </ul>
           )}
+          <div className="hd-form-note hd-io-template">
+            <span>No spreadsheet yet?</span>
+            <Button size="sm" disabled={importing} onClick={() => setTemplateOpen(true)}>
+              Get a blank spreadsheet…
+            </Button>
+          </div>
+          <BlankSpreadsheetDialog open={templateOpen} onOpenChange={setTemplateOpen} />
           {importing &&
             (reading ? (
               <ProgressBar
