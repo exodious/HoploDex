@@ -42,6 +42,8 @@ describe("DisposeDialog", () => {
     await user.click(screen.getByRole("button", { name: "Open" }));
     await user.type(screen.getByLabelText("Transferred to"), "Jane Doe");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    // 014 FR-021a: input in it, so Cancel asks first.
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
 
     await user.click(screen.getByRole("button", { name: "Open" }));
     expect(screen.getByLabelText("Transferred to")).toHaveValue("");

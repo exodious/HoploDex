@@ -1,6 +1,14 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Button, ChoiceCards, DateField, Dialog, MoneyField, TextField } from "../../components";
+import {
+  Button,
+  ChoiceCards,
+  DateField,
+  Dialog,
+  MoneyField,
+  TextField,
+  useCloseGuard,
+} from "../../components";
 import { dispositionOrderError, futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { parseDollars } from "../../lib/money";
 import { MAX_SHORT_TEXT_CHARS, textLengthError } from "../../lib/textLimits";
@@ -208,14 +216,17 @@ function DisposeForm({
   // Closing or quitting asks about unsaved input first (specs/003 FR-010),
   // and a lock keeps it (003 FR-039).
   const values: DisposeValues = { dispositionType, recipient, date, price, disposeWith };
+  const isDirty =
+    dispositionType !== "" ||
+    recipient !== "" ||
+    date !== today ||
+    price !== "" ||
+    Object.keys(disposeWith).length > 0;
+  // Cancel, Escape and the close button ask before dropping it (014 FR-021a).
+  const requestClose = useCloseGuard(isDirty, onCancel);
   useDirtyForm({
     label,
-    isDirty:
-      dispositionType !== "" ||
-      recipient !== "" ||
-      date !== today ||
-      price !== "" ||
-      Object.keys(disposeWith).length > 0,
+    isDirty,
     submit: save,
     draft: { ...target, values },
   });
@@ -337,7 +348,7 @@ function DisposeForm({
         )}
       </div>
       <footer className="hd-dialog__footer">
-        <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+        <Button variant="secondary" onClick={requestClose} disabled={submitting}>
           Cancel
         </Button>
         <Button type="submit" variant="primary" pending={submitting}>

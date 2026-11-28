@@ -1030,7 +1030,7 @@ describe("SessionProvider (008: resuming pending changes)", () => {
 
     await waitFor(() => expect(actionsSent()).toEqual(["resume", "opened"]));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(screen.getByLabelText(/Notes/)).toHaveValue("Kept at the lock");
+    expect(screen.getByLabelText(/^Notes/)).toHaveValue("Kept at the lock");
     expect(screen.getByRole("button", { name: "Collection button" })).toBeInTheDocument();
   });
 

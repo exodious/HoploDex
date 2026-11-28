@@ -222,6 +222,24 @@ pub mod ops {
         load_accessory(conn, id)
     }
 
+    /// [`update_accessory`] with the edit form's Mounted list, all or none
+    /// (014 FR-027), as `firearms::ops::update_firearm_with_mounted` does.
+    pub fn update_accessory_with_mounted(
+        conn: &Connection,
+        id: i64,
+        input: &AccessoryInput,
+        mount_changes: &[mounts::MountChange],
+    ) -> Result<Accessory, CommandError> {
+        if mount_changes.is_empty() || input.status != FirearmStatus::Active {
+            return update_accessory(conn, id, input);
+        }
+        mounts::atomically(conn, || {
+            update_accessory(conn, id, input)?;
+            mounts::save_mounted_changes(conn, RecordRef::Accessory(id), mount_changes)?;
+            load_accessory(conn, id)
+        })
+    }
+
     pub fn update_accessory(
         conn: &Connection,
         id: i64,
@@ -703,9 +721,17 @@ pub async fn create_accessory(
 pub async fn update_accessory(
     id: i64,
     input: AccessoryInput,
+    mount_changes: Option<Vec<mounts::MountChange>>,
     session: ScopedSession,
 ) -> Result<Accessory, CommandError> {
-    session.write(|conn| ops::update_accessory(conn, id, &input))
+    session.write(|conn| {
+        ops::update_accessory_with_mounted(
+            conn,
+            id,
+            &input,
+            mount_changes.as_deref().unwrap_or_default(),
+        )
+    })
 }
 
 #[tauri::command]

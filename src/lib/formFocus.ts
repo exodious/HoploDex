@@ -6,7 +6,8 @@
 /** Focuses `field`'s control inside `form`. Resolves whether it found one. */
 export function focusFormField(form: ParentNode | null | undefined, field: string): boolean {
   const control = form?.querySelector<HTMLElement>(
-    `[data-field="${field}"] :is(input, textarea, button)`,
+    // Not a changed field's revert, which sits before its control (014 FR-010).
+    `[data-field="${field}"] :is(input, textarea, button):not(.hd-changed__revert)`,
   );
   control?.focus();
   return control != null;

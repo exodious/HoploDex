@@ -6,6 +6,7 @@ import {
   clickButton,
   choose,
   expect,
+  fieldValue,
   fill,
   openMenu,
   settle,
@@ -23,7 +24,7 @@ import {
   toggle,
 } from "../support/ui";
 import type { NewFirearm } from "../support/ui";
-import { createDatabase } from "../support/ui";
+import { createDatabase, goTo } from "../support/ui";
 import { relaunchApp } from "../support/app";
 
 /**
@@ -180,7 +181,11 @@ describe("001 US1 - Record a Firearm (was us1-record-firearm)", () => {
     // The backend's refusal lands on the Nickname field, not just the dialog.
     expect(await waitForFieldError("Nickname")).toContain("already used by E2ENick Twin");
     await expect($("#record-name")).not.toExist();
+    // The add form holds input, so Cancel asks first (014 FR-021a).
     await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
+    await clickButton("Discard");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 
   it("blocks a reversal while its nickname is taken, on the New nickname field, until it is renamed (001 US1-12)", async () => {
@@ -320,6 +325,177 @@ describe("001 US1 - Record a Firearm (was us1-record-firearm)", () => {
     });
     await $(".hd-runhead").waitForExist({ reverse: true });
     await expect($("#record-name")).toBeFocused();
+  });
+});
+
+// 014 US1, US2: the database of the story above, whose last record is open.
+describe("014 US1 - See Which Fields I Have Changed", () => {
+  /** The labels of the open form's changed fields. */
+  const changedLabels = () =>
+    browser.execute(() =>
+      [...document.querySelectorAll('[role="dialog"] .hd-changed')].map(
+        (mark) =>
+          mark.parentElement?.querySelector(".hd-field__label, .hd-checkbox__label")?.textContent ??
+          "",
+      ),
+    );
+
+  it("marks only the edited field, unmarks it typed back, and reverts it into focus (014 US1-1 to US1-3, US2-1 to US2-3)", async () => {
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    expect(await changedLabels()).toEqual([]);
+
+    const nickname = await fieldValue("Nickname");
+    await fill("Nickname", "Marked");
+    await browser.waitUntil(async () => (await changedLabels()).join() === "Nickname", {
+      timeoutMsg: "Nickname was never marked as the only change",
+    });
+    await fill("Nickname", nickname);
+    await browser.waitUntil(async () => (await changedLabels()).length === 0, {
+      timeoutMsg: "Nickname stayed marked when typed back",
+    });
+
+    await fill("Nickname", "Marked");
+    await browser.execute(() =>
+      document
+        .querySelector<HTMLElement>('[role="dialog"] [aria-label^="Revert Nickname to"]')
+        ?.click(),
+    );
+    await browser.waitUntil(async () => (await fieldValue("Nickname")) === nickname, {
+      timeoutMsg: "the revert never put the saved nickname back",
+    });
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            (document.activeElement as HTMLInputElement | null)?.labels?.[0]?.textContent ===
+            "Nickname",
+        ),
+      { timeoutMsg: "focus never went to the reverted field" },
+    );
+    expect(await changedLabels()).toEqual([]);
+
+    // Nothing unsaved now: Cancel closes at once (014 US4-9).
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+});
+
+// 014 US2 with fields that change others (014 FR-005, FR-012, FR-014, and the
+// owner's testing of PR 281): every revert shown does something visible, no
+// revert leaves a value the saved record doesn't have in a field it hid, and Save
+// waits for a difference a save would store.
+describe("014 US2 - Put One Field Back to Its Saved Value", () => {
+  const save = () => $('[role="dialog"] button[type="submit"]');
+  const changedCount = () =>
+    browser.execute(() => document.querySelectorAll('[role="dialog"] .hd-changed').length);
+  const revert = (field: string) =>
+    browser.execute((name: string) => {
+      const button = document.querySelector<HTMLElement>(
+        `[role="dialog"] [aria-label^="Revert ${name} to"]`,
+      );
+      button?.click();
+      return Boolean(button);
+    }, field);
+  const hasRevert = (field: string) =>
+    browser.execute(
+      (name: string) =>
+        Boolean(document.querySelector(`[role="dialog"] [aria-label^="Revert ${name} to"]`)),
+      field,
+    );
+  async function waitNothingToSave() {
+    await browser.waitUntil(async () => (await save().getAttribute("aria-disabled")) === "true", {
+      timeoutMsg: "Save stayed available with nothing a save would store",
+    });
+    expect(await changedCount()).toBe(0);
+  }
+  async function openOriginGroup() {
+    await browser.execute(() => {
+      const button = [
+        ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+      ].find((b) => b.textContent?.trim().startsWith("Origin and year of manufacture"));
+      if (button?.getAttribute("aria-expanded") === "false") button.click();
+    });
+    await settle();
+  }
+
+  // Each test starts on the record page with no form open, whatever the last left.
+  afterEach(async () => {
+    if (!(await $('[role="dialog"]').isExisting())) return;
+    await browser.execute(() =>
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    await settle();
+    if (await $('[role="alertdialog"]').isExisting()) await clickButton("Discard");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+
+  before(async () => {
+    await goTo("Collection");
+    await addFirearm({
+      make: "E2ERevert",
+      model: "Dependent",
+      caliber: "9mm",
+      type: "Handgun",
+      serial: "DEP-1",
+    });
+  });
+
+  it("shows no revert on Serial number that No serial number disabled, and reverting the checkbox puts the serial back (014 FR-005, FR-014)", async () => {
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    await toggle("This firearm has no serial number");
+    await browser.waitUntil(async () => (await changedCount()) > 0);
+    // The disabled, emptied Serial number has nothing a revert could show.
+    expect(await hasRevert("Serial number")).toBe(false);
+    expect(await revert("This firearm has no serial number")).toBe(true);
+    await browser.waitUntil(async () => (await fieldValue("Serial number")) === "DEP-1", {
+      timeoutMsg: "reverting No serial number didn't put the serial number back",
+    });
+    await waitNothingToSave();
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+
+  it("reverting Origin empties the fields it revealed, and leaves nothing to save (014 FR-012, US2-6)", async () => {
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    await openOriginGroup();
+    await choose("Imported");
+    await fill("Country of manufacture", "Austria");
+    await fill("Importer", "Glock Inc.");
+    await fill("Original maker", "Glock GmbH");
+    expect(await revert("Origin")).toBe(true);
+    await waitNothingToSave();
+    // Choosing it again shows the fields as the saved record has them: empty.
+    await choose("Imported");
+    expect(await fieldValue("Country of manufacture")).toBe("");
+    expect(await fieldValue("Importer")).toBe("");
+    expect(await fieldValue("Original maker")).toBe("");
+    expect(await revert("Origin")).toBe(true);
+    await waitNothingToSave();
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+  });
+
+  it("does the same for Re-imported's importer and original marks (014 FR-012)", async () => {
+    await clickButton("Edit");
+    await $('[role="dialog"]').waitForExist();
+    await openOriginGroup();
+    await choose("Re-imported");
+    await fill("Importer", "Century Arms");
+    await fill("Original serial number", "X-9");
+    expect(await revert("Origin")).toBe(true);
+    await waitNothingToSave();
+    await choose("Re-imported");
+    expect(await fieldValue("Importer")).toBe("");
+    expect(await fieldValue("Original serial number")).toBe("");
+    expect(await revert("Origin")).toBe(true);
+    await waitNothingToSave();
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 });
 

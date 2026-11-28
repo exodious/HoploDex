@@ -251,4 +251,8 @@ function markStaged(scope: SessionScope, draft: Draft, target: DraftTarget): voi
   );
   if (!from || staged.from === from) return;
   staged = { json: JSON.stringify(draft), from };
+  // Opened with nothing left to save (a resumed draft matching what is saved,
+  // or pruned to it, 014 FR-020): the backend's copy goes now, or a lock would
+  // keep it (014 FR-019).
+  if (!from.current.isDirty) schedule(from, null);
 }

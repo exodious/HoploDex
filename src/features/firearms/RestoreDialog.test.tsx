@@ -32,6 +32,19 @@ function renderDialog(onRestore = vi.fn().mockResolvedValue(undefined)) {
 }
 
 describe("RestoreDialog (001 FR-033)", () => {
+  it("asks before Cancel drops a choice, and closes at once without one (014 FR-021a)", async () => {
+    const user = userEvent.setup();
+    const { onOpenChange } = renderDialog();
+    await user.click(screen.getByRole("radio", { name: /Keep as history/ }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onOpenChange).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole("button", { name: "Keep editing" }));
+    expect(screen.getByRole("radio", { name: /Keep as history/ })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   // 001 US1-12
   it("asks what to do with the disposition and never picks for the user", async () => {
     const user = userEvent.setup();

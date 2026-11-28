@@ -320,12 +320,10 @@ describe("DatabaseSettingsDialog: Backups (003 contracts/ui-databases.md Â§7)", 
     await user.type(keep, "12");
     await user.click(screen.getByRole("button", { name: "Changeâ€¦" }));
     expect(await screen.findByText("/media/usb/Backups")).toBeInTheDocument();
-    // The backup fields are disabled once this is unticked.
-    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(SCOPE, {
-      enabled: false,
+      enabled: true,
       keepCount: 12,
       location: { kind: "chosen", token: picked("/media/usb/Backups").token },
     });
@@ -513,37 +511,37 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
   it("is disabled until a field differs from what is saved, and again when it is put back", async () => {
     const user = userEvent.setup();
     renderSettings();
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     const keep = screen.getByLabelText("Keep the latest");
     await user.clear(keep);
     await user.type(keep, "9");
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     await user.clear(keep);
     await user.type(keep, "5");
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     await user.click(screen.getByRole("combobox", { name: "After" }));
     await user.click(screen.getByRole("option", { name: "30 minutes" }));
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     await user.click(screen.getByRole("combobox", { name: "After" }));
     await user.click(screen.getByRole("option", { name: "10 minutes" }));
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
   it("notices a changed location", async () => {
     const user = userEvent.setup();
     renderSettings(status({ kind: "custom", path: "/media/usb/Backups", available: true }));
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     await user.click(screen.getByRole("button", { name: "Use the default" }));
 
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
   });
 
   it("does not submit with Enter while nothing differs", async () => {
@@ -565,6 +563,9 @@ describe("DatabaseSettingsDialog: Save waits for a change (issue #34)", () => {
 
     await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    // 014 FR-021a: a setting differs, so Cancel asks first.
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
 
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
     expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
@@ -603,6 +604,22 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     passphraseSaved: saved,
   });
 
+  it("marks a staged Remember, and its revert drops the choice and asks nothing (014 FR-001, Edge Cases)", async () => {
+    const user = userEvent.setup();
+    renderSettings(withKeyring(false));
+
+    await user.click(remember());
+    expect(within(thisComputer()).getByText("Changed")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Revert Remember the passphrase on this computer to â€œNot checkedâ€",
+      }),
+    );
+    expect(remember()).not.toBeChecked();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+    expect(databasesService.savePassphrase).not.toHaveBeenCalled();
+  });
+
   /** Ticks Remember, clicks Save and answers the passphrase prompt that follows. */
   /** Ticks Remember and saves: the native dialog (the mocked command) says
    * what it gives away and asks for the passphrase (amended 2026-11-04). */
@@ -625,7 +642,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
   it("only stages Remember when it is ticked: no prompt, nothing saved, and Save becomes available", async () => {
     const user = userEvent.setup();
     renderSettings(withKeyring());
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
 
     await user.click(remember());
 
@@ -637,7 +654,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     ).toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(databasesService.savePassphrase).not.toHaveBeenCalled();
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
   });
 
   it("asks for the passphrase in the native dialog only when Save is clicked, then closes", async () => {
@@ -694,7 +711,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
 
     await remembering(user);
 
-    await waitFor(() => expect(save()).toBeEnabled());
+    await waitFor(() => expect(save()).not.toHaveAttribute("aria-disabled"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(databasesService.updateBackupSettings).not.toHaveBeenCalled();
     expect(props.onOpenChange).not.toHaveBeenCalled();
@@ -741,7 +758,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     expect(props.onOpenChange).not.toHaveBeenCalled();
     // It is shown as it now is, and Save only has the settings left to save.
     expect(remember()).toBeChecked();
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
@@ -755,7 +772,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
       ),
     ).toBeInTheDocument();
     expect(remember()).toBeChecked();
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
     await user.click(remember());
 
     expect(remember()).not.toBeChecked();
@@ -765,7 +782,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
       ),
     ).toBeInTheDocument();
     expect(databasesService.forgetSavedPassphrase).not.toHaveBeenCalled();
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
     expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
   });
 
@@ -775,6 +792,8 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
 
     await user.click(remember());
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    // 014 FR-021a: the staged choice differs, so Cancel asks first.
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
 
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
     expect(databasesService.forgetSavedPassphrase).not.toHaveBeenCalled();
@@ -788,7 +807,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     await user.click(remember());
     await user.click(remember());
 
-    expect(save()).toBeDisabled();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
   });
 
   it("forgets the saved passphrase on Save, and closes", async () => {
@@ -842,7 +861,7 @@ describe("DatabaseSettingsDialog: This computer (003 contracts/ui-databases.md Â
     expect(props.onOpenChange).not.toHaveBeenCalled();
     expect(props.onPassphraseSavedChange).not.toHaveBeenCalled();
     expect(remember()).not.toBeChecked();
-    expect(save()).toBeEnabled();
+    expect(save()).not.toHaveAttribute("aria-disabled");
   });
 
   // 003 US5-4
@@ -1258,7 +1277,7 @@ describe("DatabaseSettingsDialog: changing the location (003 contracts/ui-databa
     const backups = screen.getByRole("group", { name: "Backups" });
     expect(within(backups).getByText("(next to the database)")).toBeInTheDocument();
     expect(within(backups).getByRole("button", { name: "Use the default" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it.each([
@@ -1446,5 +1465,125 @@ describe("DatabaseSettingsDialog: Documents (007 contracts/ui-document-preview.m
     // Nothing was undone: the setting is the store's, not the form's.
     expect(mediaService.setDocumentOpening).toHaveBeenCalledTimes(1);
     expect(external()).toBeChecked();
+  });
+});
+
+describe("014 US1 - See Which Fields I Have Changed (Database settings)", () => {
+  it("compares Keep the latest as the number it saves (014 FR-002)", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const keep = screen.getByLabelText("Keep the latest");
+    const saved = (keep as HTMLInputElement).value;
+    await user.clear(keep);
+    await user.type(keep, `0${saved}`);
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    await user.clear(keep);
+    await user.type(keep, String(Number(saved) + 1));
+    expect(screen.getByText("Changed")).toBeInTheDocument();
+  });
+});
+
+describe("014 US2 - Put One Field Back to Its Saved Value (Database settings)", () => {
+  it("reverting Make automatic backups puts back the count it enabled (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    const base = status();
+    const off = {
+      ...base,
+      settings: { ...base.settings, backups: { ...base.settings.backups, enabled: false } },
+    };
+    renderSettings(off);
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
+    await user.click(screen.getByRole("button", { name: /^Revert Make automatic backups to/ }));
+    expect(keep).toHaveValue(String(base.settings.backups.keepCount));
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("reverting Lock after a period without use puts back the duration it enabled (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    const off = {
+      ...status(),
+      settings: { ...status().settings, lock: { ...status().settings.lock, idleEnabled: false } },
+    };
+    renderSettings(off);
+    await user.click(screen.getByRole("checkbox", { name: "Lock after a period without use" }));
+    await user.click(screen.getByRole("combobox", { name: /^After/ }));
+    const options = await screen.findAllByRole("option");
+    const other = options.find((o) => o.getAttribute("aria-selected") !== "true")!;
+    await user.click(other);
+    await user.click(
+      screen.getByRole("button", { name: /^Revert Lock after a period without use to/ }),
+    );
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+describe("014 US3 - Save Only When There Is Something to Save (Database settings)", () => {
+  beforeEach(() => {
+    vi.mocked(databasesService.listBackups)
+      .mockReset()
+      .mockResolvedValue({ folder: DEFAULT_BACKUPS, available: true, backups: [] });
+    vi.mocked(databasesService.updateBackupSettings)
+      .mockReset()
+      .mockResolvedValue({ settings: status().settings, existingBackups: null });
+    vi.mocked(databasesService.updateLockSettings).mockReset().mockResolvedValue(status().settings);
+  });
+  const save = () => screen.getByRole("button", { name: "Save" });
+
+  it("neither marks nor saves a count that unticked backups disable (014 FR-005, FR-012, FR-014)", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "7");
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    expect(screen.getAllByText("Changed")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Revert Keep the latest/ })).toBeNull();
+    await user.click(save());
+    await waitFor(() =>
+      expect(databasesService.updateBackupSettings).toHaveBeenCalledWith(SCOPE, {
+        enabled: false,
+        keepCount: 5,
+        location: { kind: "default" },
+      }),
+    );
+  });
+
+  it("has nothing to save when backups are ticked, the count edited and backups unticked again (014 FR-005)", async () => {
+    const user = userEvent.setup();
+    const base = status();
+    renderSettings({
+      ...base,
+      settings: { ...base.settings, backups: { ...base.settings.backups, enabled: false } },
+    });
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    const keep = screen.getByLabelText("Keep the latest");
+    await user.clear(keep);
+    await user.type(keep, "9");
+    await user.click(screen.getByRole("checkbox", { name: "Make automatic backups" }));
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    expect(save()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("neither marks nor saves a duration that the unticked idle lock disables (014 FR-005, FR-012, FR-014)", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("combobox", { name: /^After/ }));
+    await user.click(screen.getByRole("option", { name: "30 minutes" }));
+    await user.click(screen.getByRole("checkbox", { name: "Lock after a period without use" }));
+    expect(screen.getAllByText("Changed")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Revert After/ })).toBeNull();
+    await user.click(save());
+    await waitFor(() =>
+      expect(databasesService.updateLockSettings).toHaveBeenCalledWith(SCOPE, {
+        idleEnabled: false,
+        idleMinutes: 10,
+        onScreenLock: false,
+      }),
+    );
   });
 });

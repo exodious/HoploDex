@@ -214,6 +214,8 @@ describe("FirearmForm cartridge and caliber (004 US1)", () => {
     render(<FirearmForm initialValues={saved} onSubmit={onSubmit} />);
 
     expect(cartridgeField()).toHaveValue("9x19mm Parabellum");
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
       cartridge: "9x19mm Parabellum",
@@ -227,8 +229,8 @@ describe("FirearmForm drafts of the caliber state (004 research.md §8)", () => 
 
   // 006 research.md §19: the Mounted on choice raised it
   // from 3 to 4.
-  it("is version 4", () => {
-    expect(FORM_VERSION).toBe(4);
+  it("is version 5, with the Mounted list (014 research.md §8)", () => {
+    expect(FORM_VERSION).toBe(5);
   });
 
   it("discards a version 3 draft", () => {
@@ -806,6 +808,8 @@ describe("FirearmForm action (004 US3)", () => {
     );
 
     expect(action()).toHaveTextContent("Revolver");
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: /^Save/ }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0].actionTypeId).toBe(2);

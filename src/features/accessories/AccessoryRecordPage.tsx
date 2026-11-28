@@ -22,6 +22,7 @@ import { DeleteMountedNote } from "../mounts/DeleteMountedNote";
 import { directlyMounted } from "../mounts/directlyMounted";
 import { MountedOnChain } from "../mounts/MountedOnChain";
 import { MountedSection } from "../mounts/MountedSection";
+import type { MountChange } from "../mounts/mountsService";
 import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
 import { accessoryNameText } from "../mounts/recordNames";
 import type { RecordLabel } from "../mounts/types";
@@ -61,6 +62,8 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   const [accessory, setAccessory] = useState<AccessoryDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<RecordDialog | null>(null);
+  // The edit form opens at its Mounted list from "Change what's mounted…" (014 FR-028).
+  const [editAtMounted, setEditAtMounted] = useState(false);
   // The action bar, which the pinned strip waits to scroll away (#47): the
   // strip takes over the actions the moment they leave the screen.
   const [bar, setBar] = useState<HTMLElement | null>(null);
@@ -158,8 +161,8 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
     notify(message);
   }
 
-  async function handleUpdate(input: AccessoryInput) {
-    const updated = await accessoriesService.updateAccessory(scope, id, input);
+  async function handleUpdate(input: AccessoryInput, mountChanges?: MountChange[]) {
+    const updated = await accessoriesService.updateAccessory(scope, id, input, mountChanges);
     await afterChange(updated, `Saved changes to ${name}.`);
   }
 
@@ -207,7 +210,14 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
   function actions(size: "md" | "sm") {
     return (
       <>
-        <Button size={size} icon="pencil" onClick={() => setDialog("edit")}>
+        <Button
+          size={size}
+          icon="pencil"
+          onClick={() => {
+            setEditAtMounted(false);
+            setDialog("edit");
+          }}
+        >
           Edit
         </Button>
         {disposed ? (
@@ -342,7 +352,10 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
             <TextBlock
               text={accessory.notes}
               empty="No notes recorded."
-              onAdd={() => setDialog("edit")}
+              onAdd={() => {
+                setEditAtMounted(false);
+                setDialog("edit");
+              }}
             />
           </section>
 
@@ -352,6 +365,10 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
               record={label}
               mounted={accessory.mount.mounted}
               onNewAccessory={() => setDialog("mountNew")}
+              onChangeMounted={() => {
+                setEditAtMounted(true);
+                setDialog("edit");
+              }}
             />
           )}
 
@@ -448,6 +465,7 @@ export function AccessoryRecordPage({ id }: AccessoryRecordPageProps) {
       >
         <AccessoryForm
           initialValues={accessory}
+          focusField={editAtMounted ? "mounted" : undefined}
           onSubmit={handleUpdate}
           onCancel={() => setDialog(null)}
         />

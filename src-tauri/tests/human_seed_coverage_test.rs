@@ -481,7 +481,7 @@ fn the_seeded_pending_changes_name_the_version_that_kept_them() {
         assert_eq!(label, "Beretta 92FS — edit");
         assert_eq!(saved.as_deref(), Some(saved_by), "{pending_from:?}");
         assert_eq!(
-            form_version == 4,
+            form_version == 5,
             resumable_form,
             "{pending_from:?}: the form version is the current one only without the option"
         );

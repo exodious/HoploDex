@@ -254,9 +254,49 @@ describe("001 US3 - Track Value and Insurance Coverage (was us3-value-insurance)
     });
     await $('[role="dialog"]*=InsE2E Overlap Base').waitForExist();
     expect(await dialogFieldError("Coverage starts")).toContain("InsE2E Overlap Base");
+    // The add form holds input, so Cancel asks first (014 FR-021a).
     await clickButton("Cancel");
+    await $('[role="alertdialog"]').waitForExist({ timeout: 5000 });
+    await clickButton("Discard");
     await $('[role="dialog"]').waitForExist({ reverse: true });
     await expect($("article.hd-policy*=InsE2E Overlap New")).not.toExist();
+  });
+});
+
+describe("014 US3 - Save Only When There Is Something to Save", () => {
+  // The firearm the journey above scheduled at $600.
+  it("enables Save coverage only while the amount differs, and Enter saves nothing without a change (014 US3-1 to US3-4, US3-7)", async () => {
+    await openCoverage("InsE2EGlock 19");
+    await clickButton("Change");
+    await $('[role="dialog"]').waitForExist();
+    const save = await $('[role="dialog"] button[type="submit"]');
+    expect(await save.getAttribute("aria-disabled")).toBe("true");
+    expect(await save.getAttribute("title")).toBe("No changes to save");
+
+    await fill("Scheduled amount", "700");
+    await browser.waitUntil(async () => (await save.getAttribute("aria-disabled")) === null, {
+      timeout: 5000,
+      timeoutMsg: "Save coverage never became available",
+    });
+    expect(await $('[role="dialog"]').getText()).toContain("Changed");
+
+    await fill("Scheduled amount", "600");
+    await browser.waitUntil(async () => (await save.getAttribute("aria-disabled")) === "true", {
+      timeout: 5000,
+      timeoutMsg: "Save coverage stayed available with nothing to save",
+    });
+    // Enter in the field submits only through an enabled Save (#44).
+    await browser.execute(() => {
+      const field = document.querySelector<HTMLInputElement>('[role="dialog"] input[inputmode]');
+      field?.focus();
+      field?.form?.requestSubmit();
+    });
+    await settle();
+    expect(await $('[role="dialog"]').isExisting()).toBe(true);
+
+    // Nothing differs, so Cancel closes at once (014 US4-9).
+    await clickButton("Cancel");
+    await $('[role="dialog"]').waitForExist({ reverse: true });
   });
 });
 

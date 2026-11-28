@@ -118,7 +118,7 @@ describe("usePendingDraft: staging (003 research.md §16)", () => {
     const user = setup();
     render(policyForm(scope));
 
-    await user.type(screen.getByLabelText(/Notes/), "Rider");
+    await user.type(screen.getByLabelText(/^Notes/), "Rider");
     vi.advanceTimersByTime(STAGE_DELAY_MS - 50);
     expect(staged()).toEqual([]);
     vi.advanceTimersByTime(50);
@@ -130,7 +130,7 @@ describe("usePendingDraft: staging (003 research.md §16)", () => {
     const user = setup();
     render(policyForm(createSessionScope(5)));
 
-    await user.type(screen.getByLabelText(/Notes/), "Rider");
+    await user.type(screen.getByLabelText(/^Notes/), "Rider");
     vi.advanceTimersByTime(STAGE_DELAY_MS);
 
     expect(stagedCalls().map((call) => call.session)).toEqual([5]);
@@ -140,7 +140,7 @@ describe("usePendingDraft: staging (003 research.md §16)", () => {
     const user = setup();
     render(policyForm(scope));
 
-    await user.type(screen.getByLabelText(/Notes/), "Rider");
+    await user.type(screen.getByLabelText(/^Notes/), "Rider");
     await user.tab();
 
     expect(staged()).toEqual([editDraft({ notes: "Rider" })]);
@@ -158,10 +158,10 @@ describe("usePendingDraft: staging (003 research.md §16)", () => {
   it("stages null once the input is back as it was", async () => {
     const user = setup();
     render(policyForm(scope));
-    await user.type(screen.getByLabelText(/Notes/), "R");
+    await user.type(screen.getByLabelText(/^Notes/), "R");
     vi.advanceTimersByTime(STAGE_DELAY_MS);
 
-    await user.clear(screen.getByLabelText(/Notes/));
+    await user.clear(screen.getByLabelText(/^Notes/));
     vi.advanceTimersByTime(STAGE_DELAY_MS);
 
     expect(staged()).toEqual([editDraft({ notes: "R" }), null]);
@@ -170,7 +170,7 @@ describe("usePendingDraft: staging (003 research.md §16)", () => {
   it("stages null once a form with a staged draft is saved and closed", async () => {
     const user = setup();
     const { unmount } = render(policyForm(scope));
-    await user.type(screen.getByLabelText(/Notes/), "Rider");
+    await user.type(screen.getByLabelText(/^Notes/), "Rider");
     vi.advanceTimersByTime(STAGE_DELAY_MS);
 
     unmount();
@@ -182,7 +182,7 @@ describe("usePendingDraft: staging (003 research.md §16)", () => {
     const user = setup();
     render(policyForm(scope));
 
-    await user.type(screen.getByLabelText(/Notes/), "Ri");
+    await user.type(screen.getByLabelText(/^Notes/), "Ri");
 
     expect(currentDraft()).toEqual(editDraft({ notes: "Ri" }));
   });
@@ -202,7 +202,7 @@ describe("usePendingDraft: the scope's end (008 US1, research.md §4)", () => {
     const user = setup();
     const scope = createSessionScope(1);
     render(policyForm(scope));
-    await user.type(screen.getByLabelText(/Notes/), "Rider");
+    await user.type(screen.getByLabelText(/^Notes/), "Rider");
     expect(staged()).toEqual([]);
 
     scope.end();
@@ -215,7 +215,7 @@ describe("usePendingDraft: the scope's end (008 US1, research.md §4)", () => {
     const user = setup();
     const scope = createSessionScope(1);
     render(policyForm(scope));
-    await user.type(screen.getByLabelText(/Notes/), "Rider");
+    await user.type(screen.getByLabelText(/^Notes/), "Rider");
 
     scope.end();
     flushPendingDraft();
@@ -228,7 +228,7 @@ describe("usePendingDraft: the scope's end (008 US1, research.md §4)", () => {
     const user = setup();
     const scope = createSessionScope(1);
     const { unmount } = render(policyForm(scope));
-    await user.type(screen.getByLabelText(/Notes/), "Rider");
+    await user.type(screen.getByLabelText(/^Notes/), "Rider");
     vi.advanceTimersByTime(STAGE_DELAY_MS);
     expect(staged()).toHaveLength(1);
 
@@ -242,7 +242,7 @@ describe("usePendingDraft: the scope's end (008 US1, research.md §4)", () => {
     const user = setup();
     const first = createSessionScope(1);
     render(policyForm(first));
-    await user.type(screen.getByLabelText(/Notes/), "Rider");
+    await user.type(screen.getByLabelText(/^Notes/), "Rider");
     vi.advanceTimersByTime(STAGE_DELAY_MS);
     expect(stagedCalls()).toEqual([{ draft: editDraft({ notes: "Rider" }), session: 1 }]);
 
@@ -268,11 +268,24 @@ describe("usePendingDraft: resuming (003 FR-039, 008 research.md §6)", () => {
 
     render(policyForm(scope));
 
-    expect(screen.getByLabelText(/Notes/)).toHaveValue("Kept at a lock");
+    expect(screen.getByLabelText(/^Notes/)).toHaveValue("Kept at a lock");
     expect(screen.getByLabelText("Agent name")).toHaveValue("Dana");
     expect(getDirtyForm()?.label).toBe("Collector Floater (edit)");
     await waitFor(() => expect(resolved()).toEqual(["opened"]));
     expect(scope.resumed).toBeNull();
+  });
+
+  it("clears the kept changes at once when the form opens with nothing left to save (014 FR-019, FR-020)", async () => {
+    const scope = createSessionScope(1);
+    // Kept changes that match what is saved now: the form opens clean.
+    scope.resumed = { draft: editDraft({}), state: "opening" };
+
+    render(policyForm(scope));
+
+    expect(getDirtyForm()).toBeNull();
+    await waitFor(() => expect(resolved()).toEqual(["opened"]));
+    // The backend holds them as staged from the open: a lock would keep them.
+    await waitFor(() => expect(staged()).toEqual([null]));
   });
 
   it("leaves changes for another record, or another form version, alone", async () => {
@@ -280,7 +293,7 @@ describe("usePendingDraft: resuming (003 FR-039, 008 research.md §6)", () => {
     const other = { ...editDraft({ notes: "Elsewhere" }), targetId: 8 };
     scope.resumed = { draft: other, state: "opening" };
     render(policyForm(scope));
-    expect(screen.getByLabelText(/Notes/)).toHaveValue("");
+    expect(screen.getByLabelText(/^Notes/)).toHaveValue("");
     expect(scope.resumed).toEqual({ draft: other, state: "opening" });
 
     const older = { ...editDraft({ notes: "Older" }), formVersion: FORM_VERSION + 1 };
@@ -300,7 +313,7 @@ describe("usePendingDraft: resuming (003 FR-039, 008 research.md §6)", () => {
 
     render(policyForm(other));
 
-    expect(screen.getByLabelText(/Notes/)).toHaveValue("");
+    expect(screen.getByLabelText(/^Notes/)).toHaveValue("");
     expect(getDirtyForm()).toBeNull();
     await act(async () => {});
     expect(resolved()).toEqual([]);

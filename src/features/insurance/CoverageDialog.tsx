@@ -1,6 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Button, Dialog, MoneyField, Select } from "../../components";
+import {
+  Button,
+  Dialog,
+  formChanges,
+  MoneyField,
+  Select,
+  UNREADABLE,
+  useCloseGuard,
+} from "../../components";
 import { dollarsToInput, formatDollars, parseDollars } from "../../lib/money";
 import { CommandFailure } from "../../services/tauriClient";
 import { useCollection } from "../app/collectionStore";
@@ -60,7 +68,8 @@ function CoverageForm({
   onSave: (input: AssignCoverageInput) => Promise<void>;
   onCancel: () => void;
 }) {
-  const { policies, summary } = useCollection();
+  const { policies, summary, loaded: listed, error } = useCollection();
+  const loaded = listed && !error;
   const { open: goTo } = useNavigation();
   const [initialPolicyId] = useState(
     subject.insurancePolicyId != null ? String(subject.insurancePolicyId) : NOT_SCHEDULED,
@@ -86,6 +95,16 @@ function CoverageForm({
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // A resumed draft's policy that no longer exists goes back to the saved
+  // coverage, amount and all, once the policies have loaded (014 FR-020).
+  useEffect(() => {
+    if (!loaded || policyId === NOT_SCHEDULED) return;
+    if (policies.some((policy) => String(policy.id) === policyId)) return;
+    setPolicyId(initialPolicyId);
+    setAmount(initialAmount);
+    // Once, when the collection has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
 
   const scheduled = policyId !== NOT_SCHEDULED;
   const valueNote =
@@ -105,15 +124,49 @@ function CoverageForm({
   // Closing or quitting asks about unsaved input first (003 FR-010),
   // and a lock keeps it (003 FR-039).
   const values: CoverageValues = { policyId, amount };
+  // 014 FR-002, FR-019: the amount is compared in whole dollars, and only
+  // while scheduled, as a save stores it.
+  const saved: CoverageValues = { policyId: initialPolicyId, amount: initialAmount };
+  const { isDirty, changeFor } = formChanges({
+    saved,
+    current: values,
+    fields: ["policyId", "amount"] as const,
+    stored: (field, state) => {
+      if (field === "policyId") return state.policyId;
+      if (state.policyId === NOT_SCHEDULED) return "";
+      const parsed = parseDollars(state.amount);
+      return parsed.ok ? String(parsed.dollars ?? "") : UNREADABLE;
+    },
+    editing: true,
+    display: (field) =>
+      field === "amount"
+        ? subject.scheduledCoverageAmount != null && initialPolicyId !== NOT_SCHEDULED
+          ? formatDollars(subject.scheduledCoverageAmount)
+          : null
+        : (policies.find((p) => String(p.id) === initialPolicyId)?.name ?? "Not scheduled"),
+    revert: (field) => {
+      if (field === "amount") {
+        setAmount(initialAmount);
+        return;
+      }
+      setPolicyId(initialPolicyId);
+      // 014 FR-012: back to unscheduled, the hidden amount leaves nothing the
+      // record doesn't have; back to a schedule, an emptied amount is refilled.
+      if (initialPolicyId === NOT_SCHEDULED || amount.trim() === "") setAmount(initialAmount);
+    },
+  });
+  const requestClose = useCloseGuard(isDirty, onCancel);
   useDirtyForm({
     label: `${subject.name} (coverage)`,
-    isDirty: policyId !== initialPolicyId || amount !== initialAmount,
+    isDirty,
     submit: save,
     draft: { ...target, values },
   });
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // Nothing differs from what is saved: Save says so and does nothing (014 FR-016).
+    if (!isDirty) return;
     void save();
   }
 
@@ -185,6 +238,7 @@ function CoverageForm({
               detail: `${p.insuranceCompany} · ${expiryLabel(p)}`,
             })),
           ]}
+          change={changeFor("policyId")}
         />
         {!scheduled && (
           <p className="hd-form-note">
@@ -200,16 +254,22 @@ function CoverageForm({
             value={amount}
             onValueChange={setAmount}
             error={submitted ? amountError : undefined}
+            change={changeFor("amount")}
             fieldClassName="hd-field--third"
             hint={valueNote}
           />
         )}
       </div>
       <footer className="hd-dialog__footer">
-        <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+        <Button variant="secondary" onClick={requestClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" pending={submitting}>
+        <Button
+          type="submit"
+          variant="primary"
+          pending={submitting}
+          unavailable={isDirty ? undefined : "No changes to save"}
+        >
           Save coverage
         </Button>
       </footer>

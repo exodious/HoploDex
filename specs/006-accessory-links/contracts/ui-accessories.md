@@ -136,6 +136,8 @@ firearm or an accessory, such as a suppressor on a rifle."
 
 ## 5. The Mounted section (record pages; FR-012, FR-013)
 
+_Amended by [spec 014](../../014-unsaved-field-changes/contracts/ui.md) §5: the section is read-only, with "Change what's mounted…" opening the edit form at its Mounted list; the Mount menu keeps only New accessory…, and the Unmount and move questions are gone (014 FR-028)._
+
 The Mounted section appears on every **active** firearm's and accessory's
 record page. On a firearm's page it sits in the main column after Notes and
 before the free-text **Accessories** subsection (FR-007), and the

@@ -471,6 +471,60 @@ pub fn host_of_record(
     .map_err(CommandError::from_db)
 }
 
+/// One change in an edit form's Mounted list (014 FR-024, FR-025): `item`
+/// mounted on the record being saved, or unmounted from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MountChange {
+    pub item: RecordRef,
+    pub mounted: bool,
+}
+
+/// The most changes one save of a Mounted list takes: far more than a form
+/// shows, and a bound on what the page can make the save do.
+pub const MAX_MOUNT_CHANGES: usize = 1_000;
+
+/// The Mounted list has changed under the form (014 contracts/tauri-commands.md).
+pub const STALE_MOUNTED_LIST: &str =
+    "What is mounted on this record has changed. Close the form and open it again.";
+
+/// 014 FR-027: saves an edit form's Mounted list on `record`, after the
+/// record and its own Mounted on, in the caller's savepoint, so the save
+/// stands whole or not at all. An item mounted here moves with everything on
+/// it (006 FR-010); one unmounted from here keeps what is on it, and must be
+/// directly on `record` now. Each change is checked against the ones before
+/// it, as `set_mount` checks one. Errors are `VALIDATION_ERROR` on `mounted`.
+pub fn save_mounted_changes(
+    conn: &Connection,
+    record: RecordRef,
+    changes: &[MountChange],
+) -> Result<(), CommandError> {
+    if changes.is_empty() {
+        return Ok(());
+    }
+    if changes.len() > MAX_MOUNT_CHANGES {
+        return Err(field_error("mounted", "Save fewer changes to what is mounted at once."));
+    }
+    let mut seen = HashSet::new();
+    if !changes.iter().all(|change| seen.insert(change.item)) {
+        return Err(field_error("mounted", STALE_MOUNTED_LIST));
+    }
+    let mut graph = MountGraph::load(conn)?;
+    for change in changes {
+        let host = if change.mounted {
+            Some(record)
+        } else {
+            if graph.host_of(change.item) != Some(record) {
+                return Err(field_error("mounted", STALE_MOUNTED_LIST));
+            }
+            None
+        };
+        set_mount(conn, &graph, change.item, host, "mounted")?;
+        graph.place(change.item, host);
+    }
+    Ok(())
+}
+
 /// Runs `body` so that all of its writes stand or none do. A savepoint, not
 /// a transaction, because a caller (reversing a disposition) may already
 /// have one open.

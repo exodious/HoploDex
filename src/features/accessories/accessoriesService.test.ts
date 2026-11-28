@@ -70,7 +70,12 @@ describe("accessoriesService IPC arguments", () => {
     await accessoriesService.disposeAccessory(scope, 3, input);
     await accessoriesService.reverseAccessoryDisposition(scope, 3, { history: "keep" });
 
-    expect(invoke).toHaveBeenNthCalledWith(1, "update_accessory", { id: 3, input }, SESSION);
+    expect(invoke).toHaveBeenNthCalledWith(
+      1,
+      "update_accessory",
+      { id: 3, input, mountChanges: [] },
+      SESSION,
+    );
     expect(invoke).toHaveBeenNthCalledWith(2, "dispose_accessory", { id: 3, input }, SESSION);
     expect(invoke).toHaveBeenNthCalledWith(
       3,

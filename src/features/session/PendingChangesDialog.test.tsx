@@ -173,7 +173,7 @@ describe("PendingChangesDialog (003 FR-039, contracts/ui-databases.md §13)", ()
       expect(sessionService.resolvePendingChanges).toHaveBeenLastCalledWith(SCOPE, "opened"),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(screen.getByLabelText(/Notes/)).toHaveValue("Kept at the lock");
+    expect(screen.getByLabelText(/^Notes/)).toHaveValue("Kept at the lock");
     expect(openScope?.resumed).toBeNull();
   });
 

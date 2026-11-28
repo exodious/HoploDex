@@ -1,7 +1,17 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { flushSync } from "react-dom";
-import { Button, DateField, MoneyField, Select, TextArea, TextField } from "../../components";
+import {
+  Button,
+  DateField,
+  formChanges,
+  MoneyField,
+  Select,
+  TextArea,
+  TextField,
+  UNREADABLE,
+  useCloseGuard,
+} from "../../components";
 import { futureDateError, parseDateInput, todayIso } from "../../lib/dates";
 import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { dollarsToInput, parseDollars } from "../../lib/money";
@@ -16,7 +26,18 @@ import { settleEntry } from "../firearms/firearmsService";
 import type { DerivedCaliber } from "../firearms/types";
 import "../firearms/forms.css";
 import { MountChooser } from "../mounts/MountChooser";
-import { accessoryNameText } from "../mounts/recordNames";
+import { MountedEditor } from "../mounts/MountedEditor";
+import {
+  NO_MOUNTED_CHANGES,
+  mountChangesInput,
+  readMountedChanges,
+  resumeMountedChanges,
+  storedMounted,
+} from "../mounts/mountedChanges";
+import type { MountedChanges } from "../mounts/mountedChanges";
+import type { MountChange } from "../mounts/mountsService";
+import { recordKey } from "../mounts/recordKey";
+import { accessoryNameText, recordNameText } from "../mounts/recordNames";
 import type { MountDetail, RecordLabel } from "../mounts/types";
 import { useSessionScope } from "../session/sessionScope";
 import { resumedValues, useDirtyForm, useResumedDraftTaken } from "../session/usePendingDraft";
@@ -35,13 +56,16 @@ export interface AccessoryFormProps {
    * (006 contracts/ui-accessories.md §5): Mounted on starts as this, and can be changed
    * or cleared. */
   presetMountedOn?: RecordLabel;
-  onSubmit: (input: AccessoryInput) => Promise<void>;
+  onSubmit: (input: AccessoryInput, mountChanges?: MountChange[]) => Promise<void>;
   onCancel?: () => void;
+  /** "mounted": opens at the Mounted list (014 FR-028). */
+  focusField?: "mounted";
 }
 
 /** The version of this form's kept drafts (specs/003 research.md §16). Raise
- * it when `FormState` changes shape, so older drafts are only discarded. */
-export const FORM_VERSION = 1;
+ * it when `FormState` changes shape, so older drafts are only discarded. 2: the
+ * Mounted list's changes (014 research.md §8). */
+export const FORM_VERSION = 2;
 
 /** 006 FR-002: shown under Kind. */
 const KIND_HINT = "A suppressor is recorded as a firearm.";
@@ -81,6 +105,8 @@ interface FormState {
   acquisitionSource: string;
   acquisitionDate: string;
   acquisitionPrice: string;
+  /** 014 FR-024: the Mounted list's changes, saved with the record. */
+  mounted: MountedChanges;
 }
 
 type Field = keyof FormState;
@@ -111,6 +137,7 @@ function toFormState(
     acquisitionSource: accessory?.acquisitionSource ?? "",
     acquisitionDate: accessory?.acquisitionDate ?? "",
     acquisitionPrice: dollarsToInput(accessory?.acquisitionPrice ?? null),
+    mounted: NO_MOUNTED_CHANGES,
   };
 }
 
@@ -188,12 +215,34 @@ const FIELD_ORDER: Field[] = [
   "caliber",
   "serialNumber",
   "mountedOn",
+  "mounted",
   "estimatedValue",
   "acquisitionSource",
   "acquisitionDate",
   "acquisitionPrice",
   "notes",
 ];
+
+/** What a save stores for `field` (014 FR-002, FR-003, FR-005). */
+function storedValue(field: Field, form: FormState, disposed: boolean): string {
+  switch (field) {
+    case "mountedOn":
+      return disposed || !form.mountedOn ? "" : recordKey(form.mountedOn.record);
+    case "mounted":
+      return disposed ? "" : storedMounted(form.mounted);
+    case "estimatedValue":
+    case "acquisitionPrice": {
+      const parsed = parseDollars(form[field]);
+      return parsed.ok ? String(parsed.dollars ?? "") : UNREADABLE;
+    }
+    case "acquisitionDate": {
+      const parsed = parseDateInput(form.acquisitionDate);
+      return parsed.ok ? (parsed.iso ?? "") : UNREADABLE;
+    }
+    default:
+      return String(form[field] ?? "").trim();
+  }
+}
 
 function isEntryField(name: string | undefined): name is AccessoryEntryField {
   return name === "make" || name === "model" || name === "cartridge" || name === "caliber";
@@ -208,6 +257,7 @@ export function AccessoryForm({
   presetMountedOn,
   onSubmit,
   onCancel,
+  focusField,
 }: AccessoryFormProps) {
   const scope = useSessionScope();
   const kinds = useAccessoryKinds();
@@ -217,10 +267,31 @@ export function AccessoryForm({
     mode: initialValues ? "edit" : "add",
     targetId: initialValues?.id ?? null,
   };
-  // Pending changes the user resumed start as unsaved input (specs/003 FR-039).
-  const [form, setForm] = useState<FormState>(() =>
-    resumedValues(scope, target, toFormState(initialValues, presetMountedOn)),
+  // 014 FR-024: what is mounted directly on the record, as saved.
+  const [savedMounted] = useState(() =>
+    (initialValues?.mount?.mounted ?? [])
+      .filter((entry) => entry.depth <= 1)
+      .map((entry) => entry.label),
   );
+  // Pending changes the user resumed start as unsaved input (specs/003 FR-039).
+  const [form, setForm] = useState<FormState>(() => {
+    const resumed = resumedValues(scope, target, toFormState(initialValues, presetMountedOn));
+    // A kept draft comes from the database: its list is read, never trusted,
+    // and keeps only what still changes something (014 FR-020).
+    const mounted = resumeMountedChanges(
+      readMountedChanges(resumed.mounted),
+      savedMounted,
+      initialValues ? { kind: "accessory", id: initialValues.id } : null,
+    );
+    return { ...resumed, mounted };
+  });
+  useEffect(() => {
+    if (focusField !== "mounted") return;
+    // From the record page's "Change what's mounted…" (014 FR-028).
+    const field = document.getElementById("af-mounted-add");
+    field?.focus({ preventScroll: true });
+    field?.scrollIntoView?.({ block: "center" });
+  }, [focusField]);
   useResumedDraftTaken(target);
   const [pristine] = useState(() => toFormState(initialValues, presetMountedOn));
   // The latest form, for a settle response to check the field still holds
@@ -395,17 +466,58 @@ export function AccessoryForm({
   // Closing or quitting asks about unsaved input first (003 FR-010),
   // and a lock keeps it (003 FR-039), labelled with the accessory's name (006 FR-027).
   const ownKindName = kinds.kinds.find((kind) => kind.id === ownKindId)?.name ?? "Accessory";
+  // 014 FR-002, FR-019: one comparison for the markers, Save, the quit
+  // question and the pending changes kept at a lock.
+  const disposed = initialValues?.status === "disposed";
+  const { isDirty, changeFor } = formChanges({
+    saved: pristine,
+    current: form,
+    fields: FIELD_ORDER,
+    stored: (field, state) => storedValue(field, state, disposed),
+    editing: initialValues != null,
+    display: (field) => {
+      if (field === "accessoryKindId")
+        return kinds.kinds.find((kind) => String(kind.id) === pristine.accessoryKindId)?.name;
+      if (field === "mountedOn")
+        return pristine.mountedOn ? recordNameText(pristine.mountedOn) : "Not mounted";
+      return String(pristine[field] ?? "");
+    },
+    revert: (field) => {
+      setTouched((t) => ({ ...t, [field]: false }));
+      if (isEntryField(field)) {
+        lastSettled.current[field] = String(pristine[field]).trim();
+        setEntryNotes((notes) => ({ ...notes, [field]: undefined }));
+      }
+      if (field === "cartridge") derivedFrom.current = null;
+      setForm((prev) => ({
+        ...prev,
+        [field]: pristine[field],
+        ...(field === "caliber"
+          ? {
+              caliberMode: pristine.caliberMode,
+              caliberSource: pristine.caliberSource,
+            }
+          : {}),
+        ...(field === "cartridge" || field === "caliber"
+          ? { caliberSuggestion: "", caliberPrompt: "" }
+          : {}),
+      }));
+    },
+  });
+  const requestClose = useCloseGuard(isDirty, () => onCancel?.());
   useDirtyForm({
     label: initialValues
       ? `${accessoryNameText(initialValues.make, initialValues.model, ownKindName)} (edit)`
       : "New accessory",
-    isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
+    isDirty,
     submit: save,
     draft: { ...target, values: form },
   });
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // Nothing differs from what is saved: Save says so and does nothing (014 FR-016).
+    if (initialValues && !isDirty) return;
     void save();
   }
 
@@ -462,7 +574,10 @@ export function AccessoryForm({
     setSubmitting(true);
     setServerError(null);
     try {
-      await onSubmit(input);
+      await onSubmit(
+        input,
+        disposed ? [] : mountChangesInput(latestForm.current.mounted, savedMounted),
+      );
       return true;
     } catch (error) {
       if (error instanceof CommandFailure) {
@@ -504,6 +619,7 @@ export function AccessoryForm({
               }}
               options={kindOptions}
               error={errorFor("accessoryKindId")}
+              change={changeFor("accessoryKindId")}
               hint={kindHint}
             />
           </div>
@@ -520,6 +636,7 @@ export function AccessoryForm({
                 onLeave={() => leaveEntry("make")}
                 note={entryNotes.make}
                 error={errorFor("make")}
+                change={changeFor("make")}
                 placeholder="e.g. Leupold"
               />
             </div>
@@ -535,6 +652,7 @@ export function AccessoryForm({
                 onLeave={() => leaveEntry("model")}
                 note={entryNotes.model}
                 error={errorFor("model")}
+                change={changeFor("model")}
                 placeholder="e.g. VX-5HD 3-15x44"
               />
             </div>
@@ -553,6 +671,7 @@ export function AccessoryForm({
                 onLeave={() => leaveEntry("cartridge")}
                 note={entryNotes.cartridge}
                 error={errorFor("cartridge")}
+                change={changeFor("cartridge")}
                 hint="Optional. The round it takes, e.g. 5.56x45mm NATO."
                 placeholder="e.g. 5.56x45mm NATO"
               />
@@ -568,6 +687,7 @@ export function AccessoryForm({
                 onLeave={() => leaveEntry("caliber")}
                 note={entryNotes.caliber}
                 error={errorFor("caliber")}
+                change={changeFor("caliber")}
                 hint={caliberHint(caliberState)}
                 placeholder="e.g. 5.56mm"
                 trailing={
@@ -605,6 +725,7 @@ export function AccessoryForm({
               onChange={(e) => update("serialNumber", e.target.value)}
               onBlur={touch("serialNumber")}
               error={errorFor("serialNumber")}
+              change={changeFor("serialNumber")}
               spellCheck={false}
             />
           </div>
@@ -618,8 +739,22 @@ export function AccessoryForm({
                 record={initialValues ? { kind: "accessory", id: initialValues.id } : null}
                 hint="The firearm or accessory it is on now, if any."
                 error={errorFor("mountedOn")}
+                change={changeFor("mountedOn")}
+                saved={pristine.mountedOn}
+                exclude={new Set(form.mounted.adds.map((add) => recordKey(add.label.record)))}
               />
             </div>
+          )}
+          {initialValues && !disposed && (
+            <MountedEditor
+              record={{ kind: "accessory", id: initialValues.id }}
+              saved={savedMounted}
+              changes={form.mounted}
+              onChange={(mounted) => update("mounted", mounted)}
+              mountedOn={form.mountedOn}
+              addId="af-mounted-add"
+              error={errorFor("mounted")}
+            />
           )}
         </section>
 
@@ -634,6 +769,7 @@ export function AccessoryForm({
               onValueChange={(text) => update("estimatedValue", text)}
               onBlur={touch("estimatedValue")}
               error={errorFor("estimatedValue")}
+              change={changeFor("estimatedValue")}
               fieldClassName="hd-field--quarter"
               hint={VALUE_HINT}
             />
@@ -651,6 +787,7 @@ export function AccessoryForm({
                 value={form.acquisitionSource}
                 onChange={(e) => update("acquisitionSource", e.target.value)}
                 error={errorFor("acquisitionSource")}
+                change={changeFor("acquisitionSource")}
                 placeholder="Seller, shop, or person"
               />
             </div>
@@ -662,6 +799,7 @@ export function AccessoryForm({
                 onValueChange={(text) => update("acquisitionDate", text)}
                 onBlur={touch("acquisitionDate")}
                 error={errorFor("acquisitionDate")}
+                change={changeFor("acquisitionDate")}
               />
             </div>
             <div data-field="acquisitionPrice">
@@ -671,6 +809,7 @@ export function AccessoryForm({
                 onValueChange={(text) => update("acquisitionPrice", text)}
                 onBlur={touch("acquisitionPrice")}
                 error={errorFor("acquisitionPrice")}
+                change={changeFor("acquisitionPrice")}
               />
             </div>
           </div>
@@ -686,6 +825,7 @@ export function AccessoryForm({
               value={form.notes}
               onChange={(e) => update("notes", e.target.value)}
               error={errorFor("notes")}
+              change={changeFor("notes")}
               limit={MAX_LONG_TEXT_CHARS}
               hint="Condition, markings, settings — anything worth recording. All of it is searchable."
               rows={4}
@@ -702,11 +842,16 @@ export function AccessoryForm({
           Required
         </p>
         {onCancel && (
-          <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+          <Button variant="secondary" onClick={requestClose} disabled={submitting}>
             Cancel
           </Button>
         )}
-        <Button type="submit" variant="primary" pending={submitting}>
+        <Button
+          type="submit"
+          variant="primary"
+          pending={submitting}
+          unavailable={initialValues && !isDirty ? "No changes to save" : undefined}
+        >
           Save
         </Button>
       </footer>

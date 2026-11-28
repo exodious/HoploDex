@@ -645,8 +645,8 @@ describe("AccessoryForm unsaved changes (006 FR-027)", () => {
     expect(screen.getByLabelText(/^Notes/)).toHaveValue("Zeroed at 100 yards.");
   });
 
-  it("is the first version of its drafts", () => {
-    expect(FORM_VERSION).toBe(1);
+  it("is version 2 of its drafts, with the Mounted list (014 research.md §8)", () => {
+    expect(FORM_VERSION).toBe(2);
   });
 });
 
@@ -789,6 +789,24 @@ describe("AccessoryForm Mounted on (006 US2)", () => {
     );
   });
 
+  it("doesn't offer as its host a record the Mounted list will mount on it (014 FR-026, Edge Cases)", async () => {
+    const user = userEvent.setup();
+    listMountCandidates.mockResolvedValue({
+      candidates: [
+        { label: rifle, mountedOn: null },
+        { label: upper, mountedOn: null },
+      ],
+    });
+    render(<AccessoryForm initialValues={saved} onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("combobox", { name: /^Add to Mounted/ }));
+    await user.click(await screen.findByRole("option", { name: /LaRue PredatAR/ }));
+    await user.click(mountedOnField());
+
+    expect(await screen.findByRole("option", { name: /BCM upper/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /LaRue PredatAR/ })).not.toBeInTheDocument();
+  });
+
   it("sends the chosen host's RecordRef as mountedOn on save", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -810,6 +828,8 @@ describe("AccessoryForm Mounted on (006 US2)", () => {
     render(<AccessoryForm initialValues={mountedOptic} onSubmit={onSubmit} />);
 
     expect(mountedOnField()).toHaveDisplayValue(/BCM upper · Upper receiver/);
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSubmit.mock.calls[0][0].mountedOn).toEqual({ kind: "accessory", id: 11 });
@@ -869,9 +889,32 @@ describe("AccessoryForm Mounted on (006 US2)", () => {
     );
     render(<AccessoryForm initialValues={mountedOptic} onSubmit={onSubmit} />);
 
+    // 014 FR-015: Save needs something to differ from what is saved.
+    await user.type(screen.getByLabelText(/^Notes/), "x");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(mountedOnField()).toHaveAccessibleDescription(expect.stringContaining(message));
+  });
+});
+
+describe("014 US1 - See Which Fields I Have Changed (the accessory form)", () => {
+  it("marks a changed field, reverts it, and Save follows (014 FR-001, US2-1, US3-3)", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<AccessoryForm initialValues={saved} onSubmit={onSubmit} />);
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toHaveAttribute("aria-disabled", "true");
+
+    const notes = screen.getByLabelText(/^Notes/);
+    await user.type(notes, " Again.");
+    expect(screen.getByText("Changed")).toBeInTheDocument();
+    expect(save).not.toHaveAttribute("aria-disabled");
+    await user.click(
+      screen.getByRole("button", { name: "Revert Notes to “Zeroed at 100 yards.”" }),
+    );
+    expect(notes).toHaveValue("Zeroed at 100 yards.");
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

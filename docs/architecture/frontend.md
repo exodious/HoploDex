@@ -43,6 +43,27 @@ with the backend as the authority; `src/lib/formFocus.ts` moves focus to the
 first field a failed save refused (the form's own check or the backend's
 `fieldErrors`), for every form.
 
+Every form that edits something saved says which fields differ from what is
+saved, and Save waits for one (014): `components/fieldChanges.ts`'s
+`changedFields`/`formChanges` compare what a save would store for each field
+(each form's `stored`), and that one `isDirty` feeds the form's Save, its
+`useDirtyForm` (the quit question and the pending changes kept at a lock) and
+the close question. A field component takes `change` (`FieldFrame` renders
+`ChangedMark`, the "Changed" tag and its revert, the tag's id first in the
+control's `aria-describedby`); `Button`'s `unavailable` is a Save that looks
+disabled but stays focusable, its reason as tooltip and description; and
+`Dialog`'s close guard (`components/closeGuard.ts`, `useCloseGuard`) asks
+"Discard changes?" before Escape, the close button or the form's Cancel drops
+unsaved input (`ConfirmDialog`'s `unsavedChanges` for Restore). Mount changes
+to an existing record are made only in the firearm and accessory edit forms'
+Mounted list (`features/mounts/MountedEditor.tsx`, `mountedChanges.ts`), sent
+as `update_*`'s `mountChanges` and saved with the record; the record page's
+Mounted section is read-only apart from Mount → New accessory…. A resumed
+draft names other records as they were when it was kept, so the forms take
+their names and hosts from the collection as it is now
+(`features/mounts/currentRecords.ts`) and drop what no longer applies
+(`resumeMountedChanges`; 014 FR-020).
+
 `features/session/SessionProvider` shows the database chooser whenever nothing
 is open and renders the collection's providers only while a database is, keyed
 by that open, so a close or switch drops all collection state; it also handles

@@ -14,8 +14,9 @@
 //! - "Main collection": the full collection, with non-default backup and lock
 //!   settings, backed up (two backups, yesterday's and today's, in
 //!   `<dir>/Backups`) and closed cleanly;
-//! - "Shared collection": a few firearms, changes waiting for a backup,
-//!   pending changes from a locked edit, and left open by another computer
+//! - "Shared collection": a few firearms and accessories, changes waiting for
+//!   a backup, pending changes from a locked edit whose Mounted list was kept
+//!   when the collection was otherwise, and left open by another computer
 //!   ("Workshop PC"), so the take-over prompt shows;
 //! - with `--older`, "Older collection" in `<dir>/Older/`: a copy of the
 //!   stored 0.1.0 database (`tests/fixtures/releases/0.1.0.hoplodex`, opened
@@ -43,11 +44,13 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, FixedOffset, Local, TimeZone};
 use hoplodex_lib::APP_VERSION;
+use hoplodex_lib::commands::accessories::ops as accessory_ops;
 use hoplodex_lib::commands::firearms::ListFirearmsInput;
 use hoplodex_lib::commands::firearms::ops as firearm_ops;
 use hoplodex_lib::commands::insurance::ops as insurance_ops;
 use hoplodex_lib::commands::photos::ops as photo_ops;
 use hoplodex_lib::db;
+use hoplodex_lib::models::accessory::AccessoryInput;
 use hoplodex_lib::models::firearm::{FirearmInput, FirearmStatus};
 use hoplodex_lib::models::record::RecordRef;
 use hoplodex_lib::services::backups::{
@@ -89,7 +92,7 @@ const OTHER_MACHINE_NAME: &str = "Workshop PC";
 /// The version of the firearm edit form's kept drafts that this build knows
 /// (`FORM_VERSION` in `src/features/firearms/FirearmForm.tsx`): the seeded
 /// pending changes carry it, so they can be resumed. Keep it in step.
-const FIREARM_FORM_VERSION: i64 = 4;
+const FIREARM_FORM_VERSION: i64 = 5;
 /// The form version of pending changes kept by another version of HoploDex
 /// (`--pending-from`): one this build doesn't know, so they can't be resumed.
 const OTHER_FORM_VERSION: i64 = 3;
@@ -315,7 +318,7 @@ pub fn seed_sandbox_with(
         db::create_database(&paths.shared, &passphrase(), &identity),
         "creating the shared database",
     );
-    let shared_firearm = seed_shared(&shared);
+    let shared_records = seed_shared(&shared);
     must(
         shared.execute_batch(
             "UPDATE collection_settings SET backups_enabled = 0, idle_lock_enabled = 0,
@@ -329,13 +332,9 @@ pub fn seed_sandbox_with(
                                           values_json, saved_at)
              VALUES (1, 'firearm', 'edit', ?1, 'Beretta 92FS — edit', ?2, ?3, ?4)",
             rusqlite::params![
-                shared_firearm,
+                shared_records.beretta,
                 if pending_from.is_some() { OTHER_FORM_VERSION } else { FIREARM_FORM_VERSION },
-                serde_json::json!({
-                    "make": "Beretta", "model": "92FS", "serialNumber": "BER92-0417",
-                    "caliber": "9mm", "notes": "Swapped the grips for the walnut set; half typed"
-                })
-                .to_string(),
+                shared_pending_values(&shared_records).to_string(),
                 db::now_utc()
             ],
         ),
@@ -513,8 +512,45 @@ fn database_id(conn: &Connection) -> String {
     must(conn.query_row("SELECT database_id FROM app_state", [], |row| row.get(0)), "a database id")
 }
 
-/// A few firearms of their own; returns the one the pending edit is for.
-fn seed_shared(conn: &Connection) -> i64 {
+/// The records of "Shared collection" its pending changes name.
+struct SharedRecords {
+    /// The firearm the pending edit is for.
+    beretta: i64,
+    mossberg: i64,
+    /// On the Tikka, though the pending changes say it is on the Mossberg.
+    optic: i64,
+    /// On the Mossberg, though the pending changes unmount it from the Beretta.
+    light: i64,
+}
+
+/// The pending edit of the Beretta. Its Mounted list was kept while the
+/// collection was otherwise (a draft is only what its database says, 014
+/// spec.md "A resumed draft"): it adds the optic under the name it had then,
+/// "moving from" the Mossberg it has since left, and unmounts the light,
+/// which is no longer on the Beretta. Resuming shows the optic as it is now,
+/// moving from the Tikka, and no change for the light.
+fn shared_pending_values(records: &SharedRecords) -> serde_json::Value {
+    let label = |kind: &str, id: i64, make: &str, model: &str, type_name: &str| {
+        serde_json::json!({
+            "record": { "kind": kind, "id": id }, "make": make, "model": model,
+            "nickname": null, "typeName": type_name, "serialNumber": null, "status": "active"
+        })
+    };
+    serde_json::json!({
+        "make": "Beretta", "model": "92FS", "serialNumber": "BER92-0417",
+        "caliber": "9mm", "notes": "Swapped the grips for the walnut set; half typed",
+        "mounted": {
+            "adds": [{
+                "label": label("accessory", records.optic, "Aimpoint", "Micro T-1", "Optic"),
+                "from": label("firearm", records.mossberg, "Mossberg", "500", "Shotgun"),
+            }],
+            "removes": [format!("accessory:{}", records.light)],
+        }
+    })
+}
+
+/// A few firearms and accessories of their own.
+fn seed_shared(conn: &Connection) -> SharedRecords {
     let add = |input: FirearmInput| {
         let label = format!("{} {}", input.make, input.model);
         must(firearm_ops::create_firearm(conn, &input, false, None), &label).id
@@ -530,16 +566,28 @@ fn seed_shared(conn: &Connection) -> i64 {
     let (name, bytes) = seed_photo!("beretta-92fs-atf.jpg");
     let photo = must(photo_ops::add_photo(conn, RecordRef::Firearm(beretta), &bytes, name), name);
     assert_eq!(photo.id, 1, "the shared database's first photo must have id 1");
-    add(FirearmInput {
+    let tikka = add(FirearmInput {
         estimated_value: Some(1_100),
         notes: text("Kept at the workshop"),
         ..base("Tikka", "T3x Lite", "TK-558120", ".308 Win", RIFLE)
     });
-    add(FirearmInput {
+    let mossberg = add(FirearmInput {
         estimated_value: Some(400),
         ..base("Mossberg", "500", "MOS-V441872", "12 ga", SHOTGUN)
     });
-    beretta
+    let accessory = |input: AccessoryInput| {
+        let label = format!("{} {}", input.make, input.model);
+        must(accessory_ops::create_accessory(conn, &input, None), &label).id
+    };
+    let optic = accessory(AccessoryInput {
+        mounted_on: Some(RecordRef::Firearm(tikka)),
+        ..bare_accessory(KIND_OPTIC, "Aimpoint", "Micro T-2")
+    });
+    let light = accessory(AccessoryInput {
+        mounted_on: Some(RecordRef::Firearm(mossberg)),
+        ..bare_accessory(KIND_LIGHT, "Surefire", "X300U")
+    });
+    SharedRecords { beretta, mossberg, optic, light }
 }
 
 /// Spreadsheets to try File > Import with, each shaped to hit a different

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useLayoutEffect, useRef } from "react";
+import { forwardRef, useCallback, useId, useLayoutEffect, useRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
@@ -14,6 +14,10 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Shows a spinner and blocks repeat activation while an action runs —
    * visible feedback within 100ms (constitution Principle IV). */
   pending?: boolean;
+  /** Why the button can't act now, such as "No changes to save". It then
+   * looks disabled but stays in the tab order, its reason as its tooltip and
+   * description, and activating it does nothing (014 FR-016). */
+  unavailable?: string;
 }
 
 /** Shared button styling/behavior — no screen should style its own <button>.
@@ -30,11 +34,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       type = "button",
       disabled,
       autoFocus,
+      unavailable,
+      onClick,
       children,
       ...props
     },
     ref,
   ) => {
+    const reasonId = useId();
     const own = useRef<HTMLButtonElement | null>(null);
     const setRef = useCallback(
       (node: HTMLButtonElement | null) => {
@@ -56,7 +63,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ]
       .filter(Boolean)
       .join(" ");
-    return (
+    const button = (
       <button
         ref={setRef}
         type={type}
@@ -64,6 +71,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || pending}
         aria-busy={pending || undefined}
         {...props}
+        aria-disabled={unavailable ? true : props["aria-disabled"]}
+        aria-describedby={unavailable ? reasonId : props["aria-describedby"]}
+        title={unavailable ?? props.title}
+        onClick={(event) => {
+          // Also stops a submit button's form, which Enter in a field reaches
+          // through a click on it (the Enter rule, #44).
+          if (unavailable) event.preventDefault();
+          else onClick?.(event);
+        }}
       >
         {pending ? (
           <span className="hd-spinner" aria-hidden />
@@ -72,6 +88,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         )}
         {children}
       </button>
+    );
+    if (!unavailable) return button;
+    // Outside the button, so the reason describes it rather than joining its name.
+    return (
+      <>
+        {button}
+        <span id={reasonId} className="hd-sr-only">
+          {unavailable}
+        </span>
+      </>
     );
   },
 );

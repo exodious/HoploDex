@@ -198,6 +198,7 @@ fn a_passphrase_to_remember_is_saved_when_a_screen_lock_locks_the_open_at_once()
     ops::update_lock_settings(
         &world.session,
         world.session.current_id(),
+        &world.machine,
         &LockSettingsInput { idle_enabled: false, idle_minutes: 10, on_screen_lock: true },
     )
     .unwrap();

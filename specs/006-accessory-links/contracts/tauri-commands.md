@@ -243,6 +243,8 @@ record.
 
 ### `mount_record`
 
+_Amended by [spec 014](../../014-unsaved-field-changes/contracts/tauri-commands.md): the record page no longer calls it; `update_firearm` and `update_accessory` take a `mountChanges` list saved with the record, and `list_mount_candidates` a `hostMountedOn` (014 FR-026, FR-027)._
+
 ```ts
 input: { item: RecordRef; host: RecordRef | null }   // null = unmount
 output: { item: RecordLabel; host: RecordLabel | null }

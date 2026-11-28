@@ -7,9 +7,9 @@ import { CollectionContext } from "../app/collectionStore";
 import type { CollectionState } from "../app/collectionStore";
 import type { Firearm } from "../firearms/types";
 import { currentDraft, getDirtyForm } from "../session/usePendingDraft";
-import { CoverageDialog } from "./CoverageDialog";
+import { CoverageDialog, FORM_VERSION } from "./CoverageDialog";
 import type { BlanketSummary, InsurancePolicy } from "./types";
-import { render } from "../../test/sessionScope";
+import { render, setResumedDraft } from "../../test/sessionScope";
 
 const policy = {
   id: 7,
@@ -238,5 +238,99 @@ describe("CoverageDialog for an accessory (006 FR-009)", () => {
       label: `${NAME} (coverage)`,
       values: { policyId: "7" },
     });
+  });
+});
+
+describe("014 US3 - Save Only When There Is Something to Save (the coverage dialog)", () => {
+  it("enables Save while the amount differs, marks it, and is disabled again once typed back (014 US3-7)", async () => {
+    const user = userEvent.setup();
+    const scheduled = {
+      ...firearm,
+      insurancePolicyId: 7,
+      scheduledCoverageAmount: 2000,
+    } as Firearm;
+    const onSave = renderDialog(undefined, blanket, scheduled);
+    const save = screen.getByRole("button", { name: "Save coverage" });
+    expect(save).toHaveAttribute("aria-disabled", "true");
+
+    const amount = screen.getByLabelText(/^Scheduled amount/);
+    await user.clear(amount);
+    await user.type(amount, "2500");
+    expect(save).not.toHaveAttribute("aria-disabled");
+    expect(
+      screen.getByRole("button", { name: /^Revert Scheduled amount to “\$2,000/ }),
+    ).toBeInTheDocument();
+
+    await user.clear(amount);
+    await user.type(amount, "2000");
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    await user.click(save);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+describe("014 US2 - Put One Field Back to Its Saved Value (the coverage dialog)", () => {
+  it("reverting Policy to Not scheduled empties the amount it showed, leaving nothing to save (014 FR-012)", async () => {
+    const user = userEvent.setup();
+    const onSave = renderDialog();
+    await user.click(screen.getByRole("combobox", { name: /^Policy/ }));
+    await user.click(await screen.findByRole("option", { name: /Collectibles rider/ }));
+    await user.type(screen.getByLabelText(/^Scheduled amount/), "900");
+    await user.click(screen.getByRole("button", { name: /^Revert Policy to “Not scheduled”/ }));
+    const save = screen.getByRole("button", { name: "Save coverage" });
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("combobox", { name: /^Policy/ }));
+    await user.click(await screen.findByRole("option", { name: /Collectibles rider/ }));
+    expect(screen.getByLabelText(/^Scheduled amount/)).toHaveValue("");
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+describe("014 US4 - Unsaved Means the Same Thing Everywhere (the coverage dialog)", () => {
+  it("resumes a policy that no longer exists as the saved coverage, with nothing to save (014 FR-020)", () => {
+    setResumedDraft({
+      formVersion: FORM_VERSION,
+      kind: "firearm",
+      mode: "coverage",
+      targetId: firearm.id,
+      label: "Colt Python (coverage)",
+      values: { policyId: "99", amount: "900" },
+    });
+    render(
+      <CollectionContext.Provider value={{ ...collection(blanket), loaded: true }}>
+        <CoverageDialog open onOpenChange={vi.fn()} firearm={firearm} onSave={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    expect(screen.queryByLabelText(/^Scheduled amount/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Changed")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save coverage" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(getDirtyForm()).toBeNull();
+  });
+
+  it("keeps a resumed policy when the collection couldn't be loaded (014 FR-020)", () => {
+    setResumedDraft({
+      formVersion: FORM_VERSION,
+      kind: "firearm",
+      mode: "coverage",
+      targetId: firearm.id,
+      label: "Colt Python (coverage)",
+      values: { policyId: "7", amount: "900" },
+    });
+    const failed = {
+      ...collection(blanket),
+      policies: [],
+      policiesById: new Map(),
+      loaded: true,
+      error: "The collection couldn't be loaded.",
+    } as unknown as CollectionState;
+    render(
+      <CollectionContext.Provider value={failed}>
+        <CoverageDialog open onOpenChange={vi.fn()} firearm={firearm} onSave={vi.fn()} />
+      </CollectionContext.Provider>,
+    );
+    expect(currentDraft()).toMatchObject({ values: { policyId: "7", amount: "900" } });
   });
 });

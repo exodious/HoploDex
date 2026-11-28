@@ -1,6 +1,15 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Button, DateField, MoneyField, TextArea, TextField } from "../../components";
+import {
+  Button,
+  DateField,
+  formChanges,
+  MoneyField,
+  TextArea,
+  TextField,
+  UNREADABLE,
+  useCloseGuard,
+} from "../../components";
 import { parseDateInput } from "../../lib/dates";
 import { firstRefusedField, focusFormField } from "../../lib/formFocus";
 import { dollarsToInput, parseDollars } from "../../lib/money";
@@ -101,6 +110,19 @@ function validate(form: FormState): Partial<Record<Field, string>> {
   return errors;
 }
 
+/** What a save stores for `field` (014 FR-002, FR-003). */
+function storedValue(field: Field, form: FormState): string {
+  if (field === "blanketCoverageLimit") {
+    const parsed = parseDollars(form.blanketCoverageLimit);
+    return parsed.ok ? String(parsed.dollars ?? "") : UNREADABLE;
+  }
+  if (field === "effectiveStartDate" || field === "effectiveEndDate") {
+    const parsed = parseDateInput(form[field]);
+    return parsed.ok ? (parsed.iso ?? "") : UNREADABLE;
+  }
+  return form[field].trim();
+}
+
 const FIELD_ORDER: Field[] = [
   "name",
   "policyNumber",
@@ -158,20 +180,39 @@ export function InsurancePolicyForm({
       setForm((prev) => ({ ...prev, [field]: e.target.value })),
     onBlur: touch(field),
     error: errorFor(field),
+    change: changeFor(field),
   });
   const set = (field: Field) => (text: string) => setForm((prev) => ({ ...prev, [field]: text }));
+
+  // 014 FR-002, FR-019: one comparison for the markers, Save, the quit
+  // question and the pending changes kept at a lock.
+  const { isDirty, changeFor } = formChanges({
+    saved: pristine,
+    current: form,
+    fields: FIELD_ORDER,
+    stored: storedValue,
+    editing: initialValues != null,
+    display: (field) => pristine[field],
+    revert: (field) => {
+      setTouched((t) => ({ ...t, [field]: false }));
+      setForm((prev) => ({ ...prev, [field]: pristine[field] }));
+    },
+  });
+  const requestClose = useCloseGuard(isDirty, () => onCancel?.());
 
   // Closing or quitting asks about unsaved input first (003 FR-010),
   // and a lock keeps it (003 FR-039).
   useDirtyForm({
     label: initialValues ? `${initialValues.name} (edit)` : "New insurance policy",
-    isDirty: JSON.stringify(form) !== JSON.stringify(pristine),
+    isDirty,
     submit: save,
     draft: { ...target, values: form },
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Nothing differs from what is saved: Save says so and does nothing (014 FR-016).
+    if (initialValues && !isDirty) return;
     void save();
   }
 
@@ -262,6 +303,7 @@ export function InsurancePolicyForm({
               onValueChange={set("blanketCoverageLimit")}
               onBlur={touch("blanketCoverageLimit")}
               error={errorFor("blanketCoverageLimit")}
+              change={changeFor("blanketCoverageLimit")}
               fieldClassName="hd-field--quarter"
               hint="Makes this a blanket policy: its limit is shared by every firearm and accessory not scheduled individually while it is in force. Leave blank for a policy that only covers the firearms and accessories scheduled on it."
             />
@@ -281,6 +323,7 @@ export function InsurancePolicyForm({
                 onValueChange={set("effectiveStartDate")}
                 onBlur={touch("effectiveStartDate")}
                 error={errorFor("effectiveStartDate")}
+                change={changeFor("effectiveStartDate")}
               />
             </div>
             <div data-field="effectiveEndDate">
@@ -291,6 +334,7 @@ export function InsurancePolicyForm({
                 onValueChange={set("effectiveEndDate")}
                 onBlur={touch("effectiveEndDate")}
                 error={errorFor("effectiveEndDate")}
+                change={changeFor("effectiveEndDate")}
                 hint="You'll be warned 30 days before this date."
               />
             </div>
@@ -336,6 +380,7 @@ export function InsurancePolicyForm({
               value={form.notes}
               onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
               error={errorFor("notes")}
+              change={changeFor("notes")}
               limit={MAX_LONG_TEXT_CHARS}
             />
           </div>
@@ -350,11 +395,16 @@ export function InsurancePolicyForm({
           Required
         </p>
         {onCancel && (
-          <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+          <Button variant="secondary" onClick={requestClose} disabled={submitting}>
             Cancel
           </Button>
         )}
-        <Button type="submit" variant="primary" pending={submitting}>
+        <Button
+          type="submit"
+          variant="primary"
+          pending={submitting}
+          unavailable={initialValues && !isDirty ? "No changes to save" : undefined}
+        >
           {initialValues ? "Save changes" : "Add policy"}
         </Button>
       </footer>

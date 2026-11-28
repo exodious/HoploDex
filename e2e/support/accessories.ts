@@ -140,18 +140,36 @@ export async function openMountMenu(entry: 0 | 1) {
   await realKey("Return");
 }
 
-/** The "Mount on {name}" dialog's search is focused when it opens; make sure,
- * then type. */
-export async function searchMountDialog(text: string) {
+/** A real click on the record's heading, then Tab to "Change what's
+ * mounted…" and press it: the edit form opens with focus in its Mounted
+ * list's add field (014 FR-028). */
+export async function openMountedList() {
+  await realClick("#record-name");
+  await tabToControl("Change what");
+  await realKey("Return");
   await $('[role="dialog"]').waitForDisplayed({ timeout: 5000 });
-  for (let step = 0; step < 4; step++) {
-    const onCombobox = await browser.execute(
-      () => document.activeElement?.getAttribute("role") === "combobox",
-    );
-    if (onCombobox) break;
-    await realKey("Tab");
-  }
-  await typeReal(text);
+  await browser.waitUntil(
+    () => browser.execute(() => document.activeElement?.id.endsWith("-mounted-add") ?? false),
+    { timeout: 5000, timeoutMsg: "focus did not start in the Mounted list's add field" },
+  );
+}
+
+/** Waits for the open form to show `text`. */
+export async function formSays(text: string) {
+  await browser.waitUntil(
+    async () =>
+      (
+        await browser.execute(() => document.querySelector('[role="dialog"]')?.textContent ?? "")
+      ).includes(text),
+    { timeout: 5000, timeoutMsg: `the form never said "${text}"` },
+  );
+}
+
+/** Tab to the form's Save and press it; the form closes. */
+export async function saveForm() {
+  await tabToControl("Save changes");
+  await realKey("Return");
+  await $('[role="dialog"]').waitForDisplayed({ reverse: true, timeout: 8000 });
 }
 
 /** Presses Shift+Tab until a button, link or menu item whose text starts with

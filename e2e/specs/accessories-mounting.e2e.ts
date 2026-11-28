@@ -9,7 +9,9 @@ import {
   mountedSectionText,
   openFirearmByKeys,
   openMountMenu,
-  searchMountDialog,
+  formSays,
+  openMountedList,
+  saveForm,
   seedFirearms,
   tabTo,
   typeReal,
@@ -18,11 +20,12 @@ import {
 import { realKey, skipWithoutRealInput } from "../support/realInput";
 
 /**
- * End-to-end coverage of 006 SC-001, US2-1, US2-3a and US2-4: from the
- * keyboard alone, as real key events through the X server, an accessory is
- * added and mounted on a firearm from that firearm's page, an existing
- * firearm is mounted on it, and that firearm is moved to another from the
- * other's page after the move is confirmed. The suggestion list's, menu's and
+ * End-to-end coverage of 006 SC-001, US2-1, US2-3a and US2-4, as 014 US5
+ * changes them: from the keyboard alone, as real key events through the X
+ * server, an accessory is added and mounted on a firearm from that firearm's
+ * page, an existing firearm is added to the firearm's Mounted list in its edit
+ * form and saved with it, and that firearm is moved to another the same way,
+ * its row saying where it moves from. The suggestion list's, menu's and
  * dialogs' focus behaviour is WebKitGTK's to get right, and WebDriver's own
  * keys don't pass through GTK. See
  * docs/development/real-input.md.
@@ -42,7 +45,7 @@ describe("006 US2 - Mount an Item on a Firearm (was us12-accessories-mounting)",
     await seedFirearms();
   });
 
-  it("adds an Optic from a Rifle's page, mounts a Suppressor on it, then moves the Suppressor to an AR, from the keyboard alone (006 SC-001, US2-1, US2-3a, US2-4)", async () => {
+  it("adds an Optic from a Rifle's page, mounts a Suppressor on it, then moves the Suppressor to an AR, from the keyboard alone (006 SC-001, US2-1, US2-3a, US2-4; 014 US5-1 to US5-4, US5-7)", async () => {
     const started = Date.now();
 
     // Open the seeded Rifle and add an Optic mounted on it.
@@ -70,20 +73,24 @@ describe("006 US2 - Mount an Item on a Firearm (was us12-accessories-mounting)",
 
     await mountedSectionShows("Nikon P3 · Optic");
 
-    // Mount the Suppressor, an existing firearm, on the Rifle.
-    await openMountMenu(1);
-    await searchMountDialog("omeg");
+    // Mount the Suppressor, an existing firearm, on the Rifle: in the Rifle's
+    // edit form, held until Save (014 US5).
+    await openMountedList();
+    await typeReal("omeg");
     await chooseSuggestion("SilencerCo Omega 300");
+    await formSays("Will be mounted here, with everything mounted on it.");
+    expect(await mountedSectionText()).not.toContain("SilencerCo Omega 300");
+    await saveForm();
     await mountedSectionShows("SilencerCo Omega 300");
     expect(await mountedSectionText()).toContain("Nikon P3 · Optic");
 
     await backToCollectionByKeys();
 
     // Open the AR and mount the Suppressor on it. It is mounted on the Rifle,
-    // so the dialog lists it with where it is, and moving it asks first.
+    // so the list offers it with where it is, and its row says it moves.
     await openFirearmByKeys("Daniel Defense DDM4");
-    await openMountMenu(1);
-    await searchMountDialog("omeg");
+    await openMountedList();
+    await typeReal("omeg");
     await $('[role="listbox"]').waitForDisplayed({ timeout: 5000 });
     // The text, not WebDriver's getText: WebKitGTK's leaves out the name and
     // the "Mounted on" line of a row (both ellipsised) that are plainly shown.
@@ -95,21 +102,10 @@ describe("006 US2 - Mount an Item on a Firearm (was us12-accessories-mounting)",
       { timeout: 5000, timeoutMsg: "the Suppressor's row never said where it is mounted" },
     );
     await chooseSuggestion("SilencerCo Omega 300");
-
-    const ask = await $('[role="alertdialog"]');
-    await ask.waitForDisplayed({ timeout: 5000 });
-    const asked = (await ask.getText()).replace(/\s+/g, " ");
-    expect(asked).toContain("Move SilencerCo Omega 300?");
-    expect(asked).toContain(
-      "It is mounted on LaRue PredatAR. Moving it takes everything mounted on it along.",
+    await formSays(
+      "Will be mounted here, moving from LaRue PredatAR with everything mounted on it.",
     );
-    // A non-destructive question opens with focus on its confirm button, so
-    // Enter confirms (issue #44): no Tab.
-    await browser.waitUntil(
-      () => browser.execute(() => document.activeElement?.textContent?.trim() === "Move"),
-      { timeout: 5000, timeoutMsg: "focus did not start on Move" },
-    );
-    await realKey("Return");
+    await saveForm();
 
     await mountedSectionShows("SilencerCo Omega 300");
     if (budgetsChecked()) expect(Date.now() - started).toBeLessThan(TASK_LIMIT_MS);

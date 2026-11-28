@@ -17,7 +17,13 @@ export type ListMountCandidatesInput = {
   query: string;
   /** Default 50, at most 100. */
   limit?: number;
+  /** Role "item": the host's Mounted on as its open edit form holds it, so
+   * the host's chain is judged as the form would save it (014 FR-026). */
+  hostMountedOn?: { on: RecordRef | null };
 };
+
+/** One change in an edit form's Mounted list, saved with the record (014 FR-027). */
+export type MountChange = { item: RecordRef; mounted: boolean };
 
 export type MountRecordOutput = { item: RecordLabel; host: RecordLabel | null };
 

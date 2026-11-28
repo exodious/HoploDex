@@ -22,6 +22,7 @@ import { DeleteMountedNote } from "../mounts/DeleteMountedNote";
 import { directlyMounted } from "../mounts/directlyMounted";
 import { MountedOnChain } from "../mounts/MountedOnChain";
 import { MountedSection } from "../mounts/MountedSection";
+import type { MountChange } from "../mounts/mountsService";
 import { NewAccessoryDialog } from "../mounts/NewAccessoryDialog";
 import type { RecordLabel } from "../mounts/types";
 import { useSessionScope } from "../session/sessionScope";
@@ -174,8 +175,18 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
     setDialog("edit");
   }
 
-  async function handleUpdate(input: FirearmInput, confirmedWarnings?: boolean) {
-    const updated = await firearmsService.updateFirearm(scope, id, input, confirmedWarnings);
+  async function handleUpdate(
+    input: FirearmInput,
+    confirmedWarnings?: boolean,
+    mountChanges?: MountChange[],
+  ) {
+    const updated = await firearmsService.updateFirearm(
+      scope,
+      id,
+      input,
+      confirmedWarnings,
+      mountChanges,
+    );
     await afterChange(updated, `Saved changes to ${firearmName(updated)}.`);
   }
 
@@ -427,6 +438,7 @@ export function FirearmRecordPage({ id }: FirearmRecordPageProps) {
               record={label}
               mounted={firearm.mount.mounted}
               onNewAccessory={() => setDialog("mountNew")}
+              onChangeMounted={() => editField("mounted")}
             />
           )}
 
