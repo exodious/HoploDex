@@ -275,6 +275,19 @@ describe("usePendingDraft: resuming (003 FR-039, 008 research.md §6)", () => {
     expect(scope.resumed).toBeNull();
   });
 
+  it("clears the kept changes at once when the form opens with nothing left to save (014 FR-019, FR-020)", async () => {
+    const scope = createSessionScope(1);
+    // Kept changes that match what is saved now: the form opens clean.
+    scope.resumed = { draft: editDraft({}), state: "opening" };
+
+    render(policyForm(scope));
+
+    expect(getDirtyForm()).toBeNull();
+    await waitFor(() => expect(resolved()).toEqual(["opened"]));
+    // The backend holds them as staged from the open: a lock would keep them.
+    await waitFor(() => expect(staged()).toEqual([null]));
+  });
+
   it("leaves changes for another record, or another form version, alone", async () => {
     const scope = createSessionScope(1);
     const other = { ...editDraft({ notes: "Elsewhere" }), targetId: 8 };
