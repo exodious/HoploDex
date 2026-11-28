@@ -364,88 +364,90 @@ function ImportFlow({ onClose }: { onClose: () => void }) {
   // ── Step 1: choose a file ──────────────────────────────────────────────
   if (!result) {
     return (
-      <form className="hd-dialog__form" onSubmit={handleImport} noValidate>
-        <div className="hd-dialog__body hd-io-body">
-          <ChosenPathField
-            label="Spreadsheet file"
-            value={
-              files.length === 0 ? (
-                <span className="hd-io-chosen__none">No file chosen</span>
+      <>
+        <form className="hd-dialog__form" onSubmit={handleImport} noValidate>
+          <div className="hd-dialog__body hd-io-body">
+            <ChosenPathField
+              label="Spreadsheet file"
+              value={
+                files.length === 0 ? (
+                  <span className="hd-io-chosen__none">No file chosen</span>
+                ) : (
+                  <span className="hd-io-chosen__none">
+                    {count(files.length, "file chosen", "files chosen")}
+                  </span>
+                )
+              }
+              chooseLabel="Choose a file…"
+              onChoose={() => void chooseFile()}
+              error={fileError}
+              disabled={full || importing}
+              hint={
+                full
+                  ? "Two files chosen, the most one import takes. Remove one to choose another."
+                  : "Choose one file, or the firearm and accessory files together. Rows that match a firearm or accessory you already have are held for you to decide on."
+              }
+            />
+            {files.length > 0 && (
+              <ul className="hd-io-files" aria-label="Files to import">
+                {files.map(({ path }) => (
+                  <li key={path}>
+                    <span className="hd-io-files__path">{path}</span>
+                    <button
+                      type="button"
+                      className="hd-input__text-action"
+                      aria-label={`Remove ${path}`}
+                      disabled={importing}
+                      onClick={() => setFiles((current) => current.filter((f) => f.path !== path))}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="hd-form-note hd-io-template">
+              <span>No spreadsheet yet?</span>
+              <Button size="sm" disabled={importing} onClick={() => setTemplateOpen(true)}>
+                Get a blank spreadsheet…
+              </Button>
+            </div>
+            {importing &&
+              (reading ? (
+                <ProgressBar
+                  label="Reading progress"
+                  value={progress}
+                  caption={readingCaption(
+                    files.map((file) => file.path),
+                    progress,
+                  )}
+                />
               ) : (
-                <span className="hd-io-chosen__none">
-                  {count(files.length, "file chosen", "files chosen")}
-                </span>
-              )
-            }
-            chooseLabel="Choose a file…"
-            onChoose={() => void chooseFile()}
-            error={fileError}
-            disabled={full || importing}
-            hint={
-              full
-                ? "Two files chosen, the most one import takes. Remove one to choose another."
-                : "Choose one file, or the firearm and accessory files together. Rows that match a firearm or accessory you already have are held for you to decide on."
-            }
-          />
-          {files.length > 0 && (
-            <ul className="hd-io-files" aria-label="Files to import">
-              {files.map(({ path }) => (
-                <li key={path}>
-                  <span className="hd-io-files__path">{path}</span>
-                  <button
-                    type="button"
-                    className="hd-input__text-action"
-                    aria-label={`Remove ${path}`}
-                    disabled={importing}
-                    onClick={() => setFiles((current) => current.filter((f) => f.path !== path))}
-                  >
-                    Remove
-                  </button>
-                </li>
+                <ProgressBar label="Import progress" value={progress} unit="rows" />
               ))}
-            </ul>
-          )}
-          <div className="hd-form-note hd-io-template">
-            <span>No spreadsheet yet?</span>
-            <Button size="sm" disabled={importing} onClick={() => setTemplateOpen(true)}>
-              Get a blank spreadsheet…
-            </Button>
+            {error && (
+              <p className="hd-banner hd-banner--error" role="alert">
+                {error}
+              </p>
+            )}
           </div>
-          <BlankSpreadsheetDialog open={templateOpen} onOpenChange={setTemplateOpen} />
-          {importing &&
-            (reading ? (
-              <ProgressBar
-                label="Reading progress"
-                value={progress}
-                caption={readingCaption(
-                  files.map((file) => file.path),
-                  progress,
-                )}
-              />
+          <footer className="hd-dialog__footer">
+            {reading ? (
+              <Button variant="secondary" onClick={stopReading}>
+                Stop reading
+              </Button>
             ) : (
-              <ProgressBar label="Import progress" value={progress} unit="rows" />
-            ))}
-          {error && (
-            <p className="hd-banner hd-banner--error" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <footer className="hd-dialog__footer">
-          {reading ? (
-            <Button variant="secondary" onClick={stopReading}>
-              Stop reading
+              <Button variant="secondary" onClick={onClose} disabled={importing}>
+                Cancel
+              </Button>
+            )}
+            <Button type="submit" variant="primary" icon="download" pending={importing}>
+              {importing ? "Importing…" : "Import"}
             </Button>
-          ) : (
-            <Button variant="secondary" onClick={onClose} disabled={importing}>
-              Cancel
-            </Button>
-          )}
-          <Button type="submit" variant="primary" icon="download" pending={importing}>
-            {importing ? "Importing…" : "Import"}
-          </Button>
-        </footer>
-      </form>
+          </footer>
+        </form>
+        <BlankSpreadsheetDialog open={templateOpen} onOpenChange={setTemplateOpen} />
+      </>
     );
   }
 

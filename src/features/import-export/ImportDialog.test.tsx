@@ -1152,4 +1152,30 @@ describe("015 US1 - Get a blank spreadsheet to fill in", () => {
     expect(screen.getByRole("dialog", { name: "Import from a spreadsheet" })).toBeInTheDocument();
     expect(screen.getByText("/data/firearms.csv")).toBeInTheDocument();
   });
+
+  it("saving the blank spreadsheet doesn't submit the Import dialog behind it (015 FR-001)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(importExportService.importCollection).mockReset();
+    vi.mocked(importExportService.chooseExportFolder).mockResolvedValueOnce({
+      token: "token:/out",
+      path: "/out",
+    });
+    vi.mocked(importExportService.saveImportTemplate).mockResolvedValue({
+      spreadsheetPath: "/out/hoplodex-import-template.xlsx",
+      accessorySpreadsheetPath: null,
+    });
+    renderDialog();
+    await chooseFile(user, "/data/firearms.csv");
+
+    await user.click(screen.getByRole("button", { name: "Get a blank spreadsheet…" }));
+    const template = await screen.findByRole("dialog", { name: "Get a blank spreadsheet" });
+    await user.click(within(template).getByRole("button", { name: "Choose a folder…" }));
+    await user.click(within(template).getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Saved a blank spreadsheet.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Done" }));
+
+    expect(importExportService.importCollection).not.toHaveBeenCalled();
+    expect(screen.getByText("/data/firearms.csv")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });
